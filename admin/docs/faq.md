@@ -22,7 +22,7 @@ N.O.M.A.D. needs capable hardware, especially for AI features. General targets:
 - SSD storage. 500GB covers a minimal install; more if you want full Wikipedia, larger AI models, or extensive map regions.
 - A GPU helps for AI inference. On Linux: NVIDIA or AMD with appropriate drivers. On Mac: the built-in Apple Silicon GPU is used automatically via Metal — no separate GPU needed.
 
-**For detailed build recommendations at three price points ($200–$800+) for Linux installs, see the upstream [Hardware Guide](https://www.projectnomad.us/hardware).**
+**For detailed build recommendations at three price points ($150–$1,000+) for Linux installs, see the upstream [Hardware Guide](https://www.projectnomad.us/hardware).**
 
 <!-- MAC-EDITION-LINK — remove this block to sever the macOS hardware note -->
 > **On Mac:** The Mac edition runs on Apple Silicon (M1 / M2 / M3 / M4 or later) with macOS 14 (Sonoma) or newer. The Apple Silicon GPU is used automatically — no NVIDIA Container Toolkit, no driver install. See [Installing N.O.M.A.D. on your Mac](/docs/mac-install) for the Mac-specific prerequisites.
