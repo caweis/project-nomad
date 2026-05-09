@@ -2007,20 +2007,25 @@ step_orbstack_tune_quiet() {
     return 0
   fi
 
-  local host_gb target_gb current_gb
+  local host_gb target_gb current_mib current_gb
   host_gb=$(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 ))
   target_gb=$(( host_gb * 8 / 10 ))
   [[ $(( host_gb - target_gb )) -lt 4 ]] && target_gb=$(( host_gb - 4 ))
   [[ $target_gb -lt 4 ]] && target_gb=4
 
-  current_gb="$(orb config show 2>/dev/null | awk -F'[: ]+' '/^memory/{print $2}' | head -1)"
+  # `orb config show` outputs `memory_mib: <int>` — parse MiB explicitly,
+  # convert to GiB for comparison. Earlier version compared MiB to GB which
+  # was always-true (16384 >= 25), making this step a silent no-op.
+  current_mib="$(orb config show 2>/dev/null | awk -F'[: ]+' '/^memory_mib/{print $2}' | head -1)"
+  current_gb=0
+  [[ "$current_mib" =~ ^[0-9]+$ ]] && current_gb=$(( current_mib / 1024 ))
 
-  if [[ -n "$current_gb" && "$current_gb" -ge "$target_gb" ]]; then
+  if [[ "$current_gb" -ge "$target_gb" ]]; then
     ok "OrbStack already at ${current_gb} GB (target was ${target_gb}) — skipping"
     return 0
   fi
 
-  log "tuning OrbStack: ${current_gb:-unset} GB → ${target_gb} GB (80% of ${host_gb} GB host)"
+  log "tuning OrbStack: ${current_gb} GB → ${target_gb} GB (80% of ${host_gb} GB host)"
   if orb config set memory_gib "$target_gb" 2>/dev/null; then
     log "restarting OrbStack VM (~10s)…"
     orb stop  >/dev/null 2>&1 || true
@@ -2075,13 +2080,17 @@ cmd_orbstack_tune() {
     [[ $target_gb -lt 4 ]] && target_gb=4
   fi
 
-  current_gb="$(orb config show 2>/dev/null | awk -F'[: ]+' '/^memory/{print $2}' | head -1)"
+  # See note in step_orbstack_tune_quiet: orb reports memory_mib, not GB.
+  local current_mib
+  current_mib="$(orb config show 2>/dev/null | awk -F'[: ]+' '/^memory_mib/{print $2}' | head -1)"
+  current_gb=0
+  [[ "$current_mib" =~ ^[0-9]+$ ]] && current_gb=$(( current_mib / 1024 ))
 
   log "host RAM:         ${host_gb} GB"
-  log "current OrbStack: ${current_gb:-unset} GB"
+  log "current OrbStack: ${current_gb} GB ($current_mib MiB)"
   log "target:           ${target_gb} GB ($([[ -n "$explicit_target" ]] && echo "explicit" || echo "80% of host, min 4 GB host reserve"))"
 
-  if [[ -n "$current_gb" && "$current_gb" -ge "$target_gb" ]]; then
+  if [[ "$current_gb" -ge "$target_gb" ]]; then
     ok "OrbStack already allocates ${current_gb} GB — no change needed"
     return 0
   fi

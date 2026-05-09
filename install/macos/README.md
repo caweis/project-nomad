@@ -63,11 +63,11 @@ For the full NOMAD experience on the second Mac, run the regular install path.
 | Tier | Min RAM | What gets pulled |
 |---|---|---|
 | `tiny` | 8 GB | llama3.2:3b, gemma3:1b, nomic-embed-text |
-| `small` | 16 GB | llama3.1:8b, qwen3:8b, gemma3:4b, nomic-embed-text |
-| `medium` | 36 GB | llama3.1:8b, qwen3:14b, mistral-small:24b, gemma3:12b, nomic-embed-text |
-| `large` | 65 GB | llama3.1:8b, qwen3:32b, qwen2.5-coder:32b, mistral-small:24b, gemma3:27b, nomic-embed-text, mxbai-embed-large |
-| `xl` | 128 GB | + qwen2.5:72b, deepseek-r1:32b, llama3.3:70b |
-| `dreamy` | 192+ GB | + deepseek-r1:70b, phi4:14b — for maxed-out Studios |
+| `small` | 16 GB | llama3.1:8b, qwen2.5-coder:7b, gemma3:4b, nomic-embed-text |
+| `medium` | 36 GB | llama3.1:8b, qwen3:14b, qwen2.5-coder:14b, gemma3:12b, nomic-embed-text |
+| `large` | 65 GB | llama3.1:8b, qwen3:14b, qwen2.5-coder:32b, gemma3:27b, mistral-small:24b, nomic-embed-text |
+| `xl` | 128 GB | llama3.1:8b, qwen3:32b, qwen2.5-coder:32b, llama3.3:70b, deepseek-r1:32b, gemma3:27b, mistral-small:24b, nomic-embed-text, mxbai-embed-large |
+| `dreamy` | 192+ GB | + qwen2.5:72b, deepseek-r1:70b, phi4:14b — for maxed-out Studios |
 
 Pull a different tier later: `nomad models pull large`. List installed with per-Mac fits-this-Mac verdict: `nomad models list`.
 
