@@ -30,6 +30,9 @@
 #   bash nomad reset-ollama                  # recover from stuck LaunchAgent state
 #   bash nomad uninstall                     # clean wipe (containers, agent, .env, opt. data)
 #   bash nomad reinstall                     # nuclear: wipe everything + reinstall in one shot
+#   bash nomad install-field-desk [--port N] [--foreground] [--force]
+#                                            # SysAdminDoc Field Desk alongside admin
+#                                            # (default :8081, shares Ollama on :11434)
 #
 # Globals at the top, all logic in named functions, single dispatch at the bottom.
 
@@ -2350,6 +2353,101 @@ cmd_system() {
   esac
 }
 
+# ─── Field Desk coexistence install ───────────────────────────────────────────
+# SysAdminDoc/project-nomad-desktop is a separate product (NOMAD Field Desk) —
+# different architecture, broader survival-domain features. Coexists cleanly:
+# both apps default to :8080 but Field Desk respects NOMAD_PORT, and both want
+# Ollama on :11434 (good — single Metal daemon serves both). Pattern at
+# SysAdminDoc/project-nomad-desktop#3.
+cmd_install_field_desk() {
+  local port="${NOMAD_FIELD_DESK_PORT:-8081}"
+  local target="$HOME/Applications/NOMADFieldDesk-macOS"
+  local url="https://github.com/SysAdminDoc/project-nomad-desktop/releases/latest/download/NOMADFieldDesk-macOS"
+  local sha_url="https://github.com/SysAdminDoc/project-nomad-desktop/releases/latest/download/SHA256SUMS.txt"
+  local foreground=0 force=0
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --port)         port="$2"; shift 2 ;;
+      --foreground)   foreground=1; shift ;;
+      --force)        force=1; shift ;;
+      *) die "usage: nomad install-field-desk [--port PORT] [--foreground] [--force]" ;;
+    esac
+  done
+
+  # Refuse the port if already in use by something other than Field Desk itself
+  if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
+    local owner
+    owner="$(lsof -nP -iTCP:"$port" -sTCP:LISTEN | awk 'NR==2 {print $1}')"
+    if [[ "$owner" != NOMADField* && "$owner" != "Python" ]]; then
+      die ":$port already in use by $owner — pass --port with a free port"
+    fi
+    warn "Field Desk-like process already on :$port ($owner) — re-launching anyway"
+  fi
+
+  # Sanity-check the upstream Crosstalk admin (informational, not fatal)
+  if curl -fsS --max-time 2 http://127.0.0.1:8080/api/health >/dev/null 2>&1; then
+    ok "Crosstalk admin responding on :8080 — Ollama on :11434 will be shared"
+  else
+    warn "Crosstalk admin not on :8080 — Field Desk will run alone (still works)"
+  fi
+
+  # Sanity-check Ollama (Field Desk needs it for the AI Chat tab)
+  if curl -fsS --max-time 2 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+    ok "Ollama serving on :11434 — Field Desk's AI Chat will use it"
+  else
+    warn "Ollama not on :11434 — AI Chat won't work until 'nomad up' or 'nomad reset-ollama'"
+  fi
+
+  # Download the binary if missing or --force
+  mkdir -p "$(dirname "$target")"
+  if [[ ! -x "$target" || $force -eq 1 ]]; then
+    log "downloading Field Desk → $target"
+    curl -fL --progress-bar -o "$target.tmp" "$url" \
+      || die "download failed — check network or fetch manually: $url"
+    chmod +x "$target.tmp"
+
+    # SHA256 verify against the release's SHA256SUMS.txt — defense in depth
+    local sha_file expected actual
+    sha_file="$(mktemp)"
+    if curl -fsS -o "$sha_file" "$sha_url"; then
+      expected="$(awk '/NOMADFieldDesk-macOS$/ {print $1}' "$sha_file")"
+      actual="$(shasum -a 256 "$target.tmp" | awk '{print $1}')"
+      if [[ -n "$expected" && "$expected" != "$actual" ]]; then
+        rm -f "$target.tmp" "$sha_file"
+        die "SHA256 mismatch — expected $expected, got $actual"
+      fi
+      ok "SHA256 verified ($actual)"
+    else
+      warn "couldn't fetch SHA256SUMS.txt — proceeding without verify"
+    fi
+    rm -f "$sha_file"
+    mv "$target.tmp" "$target"
+  else
+    ok "Field Desk already at $target  (use --force to redownload)"
+  fi
+
+  # Launch on a non-conflicting port. NOMAD_HOST=127.0.0.1 keeps it loopback-only
+  # per their security posture; user can override their .env for LAN sharing.
+  log "starting Field Desk on http://127.0.0.1:$port  (Ollama shared from :11434)"
+  if [[ $foreground -eq 1 ]]; then
+    NOMAD_PORT="$port" NOMAD_OLLAMA_PORT=11434 NOMAD_HOST=127.0.0.1 "$target"
+  else
+    nohup env NOMAD_PORT="$port" NOMAD_OLLAMA_PORT=11434 NOMAD_HOST=127.0.0.1 \
+      "$target" >/dev/null 2>&1 &
+    local fd_pid=$!
+    disown "$fd_pid" 2>/dev/null || true
+    sleep 2
+    if kill -0 "$fd_pid" 2>/dev/null; then
+      ok "Field Desk pid $fd_pid → http://127.0.0.1:$port"
+      ok "to stop later: kill $fd_pid  (or close from menu bar)"
+      open "http://127.0.0.1:$port" 2>/dev/null || true
+    else
+      die "Field Desk exited on launch — re-run with --foreground to see stderr"
+    fi
+  fi
+}
+
 # ─── arg parsing + dispatch ───────────────────────────────────────────────────
 DATA_ROOT_ARG=""
 TIER="auto"            # auto | tiny | small | medium | large | xl | dreamy
@@ -2395,8 +2493,9 @@ case "$CMD" in
   reset-ollama)    cmd_reset_ollama ;;
   uninstall)       cmd_uninstall ;;
   reinstall)       cmd_reinstall ;;
+  install-field-desk) cmd_install_field_desk "${EXTRA_ARGS[@]}" ;;
   help|--help|-h)
-    sed -n '2,27p' "$0" | sed 's/^# //; s/^#//'
+    sed -n '2,36p' "$0" | sed 's/^# //; s/^#//'
     ;;
   *) die "unknown command: $CMD
 Run 'nomad help' for usage." ;;

@@ -61,6 +61,11 @@
 .Nm
 .Cm uninstall
 .Nm
+.Cm install-field-desk
+.Op Fl -port Ar PORT
+.Op Fl -foreground
+.Op Fl -force
+.Nm
 .Cm upgrade-models
 .Nm
 .Cm help
@@ -175,6 +180,31 @@ LaunchAgent + plist, the benchmark patcher LaunchAgent, secrets at
 .Pa ~/.config/project-nomad/.env ,
 and (with confirm) data drive contents. Preserves Homebrew, OrbStack, and
 Ollama themselves (other apps may depend on them).
+.It Cm install-field-desk Op Fl -port Ar PORT Op Fl -foreground Op Fl -force
+Install
+.Lk https://github.com/SysAdminDoc/project-nomad-desktop "SysAdminDoc/project-nomad-desktop"
+(NOMAD Field Desk) alongside the upstream Crosstalk admin. Downloads the
+current macOS release binary, SHA-256 verifies it against
+.Pa SHA256SUMS.txt
+in the same release, and launches it on a non-conflicting port.
+Field Desk auto-discovers the existing Metal-accelerated Ollama daemon on
+.Cm :11434 ,
+so a single Ollama serves both apps. Default port:
+.Cm 8081
+(override with
+.Fl -port
+or
+.Ev NOMAD_FIELD_DESK_PORT Ns ).
+Binary lands at
+.Pa ~/Applications/NOMADFieldDesk-macOS .
+With
+.Fl -foreground
+the binary runs in the foreground (useful for debugging); default backgrounds
+it via nohup.
+.Fl -force
+forces a redownload even if the binary is present.
+Field Desk is a separate product with its own update cadence and license —
+this subcommand wraps install-and-launch only, not auto-update.
 .It Cm upgrade-models
 Re-pull all currently-installed Ollama models at their latest tag.
 .It Cm help
