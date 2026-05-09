@@ -2026,7 +2026,16 @@ step_orbstack_tune_quiet() {
   fi
 
   log "tuning OrbStack: ${current_gb} GB → ${target_gb} GB (80% of ${host_gb} GB host)"
-  if orb config set memory_gib "$target_gb" 2>/dev/null; then
+  # OrbStack 1.x → 2.x renamed the setter from memory_gib to memory_mib.
+  # Try memory_mib first (current API), fall back to memory_gib (old API).
+  local target_mib=$(( target_gb * 1024 ))
+  local set_ok=0
+  if orb config set memory_mib "$target_mib" 2>/dev/null; then
+    set_ok=1
+  elif orb config set memory_gib "$target_gb" 2>/dev/null; then
+    set_ok=1
+  fi
+  if [[ $set_ok -eq 1 ]]; then
     log "restarting OrbStack VM (~10s)…"
     orb stop  >/dev/null 2>&1 || true
     sleep 2
@@ -2040,7 +2049,7 @@ step_orbstack_tune_quiet() {
     done
     ok "OrbStack tuned to ${target_gb} GB and restarted"
   else
-    warn "'orb config set memory_gib' failed — your OrbStack version may not expose this knob."
+    warn "'orb config set' failed for both memory_mib and memory_gib — your OrbStack version may not expose either."
     warn "Manual: OrbStack.app → Settings → Resources → Memory → ${target_gb} GB"
   fi
 }
@@ -2098,11 +2107,17 @@ cmd_orbstack_tune() {
   confirm "Bump OrbStack memory limit to ${target_gb} GB and restart? (interrupts running containers briefly)" \
     || die "aborted"
 
-  log "setting orb config memory_gib=${target_gb}"
-  if ! orb config set memory_gib "$target_gb" 2>&1; then
-    warn "'orb config set' failed — your OrbStack version may not expose memory_gib"
-    warn "Bump manually: OrbStack app → Settings → Resources → Memory → ${target_gb} GB"
-    return 1
+  # OrbStack 1.x → 2.x renamed the setter from memory_gib to memory_mib.
+  # Try the current API first, fall back to the older one.
+  local target_mib=$(( target_gb * 1024 ))
+  log "setting orb config memory_mib=${target_mib}  (= ${target_gb} GB)"
+  if ! orb config set memory_mib "$target_mib" 2>&1; then
+    log "memory_mib not accepted — falling back to memory_gib (older OrbStack)"
+    if ! orb config set memory_gib "$target_gb" 2>&1; then
+      warn "'orb config set' failed for both memory_mib and memory_gib"
+      warn "Bump manually: OrbStack app → Settings → Resources → Memory → ${target_gb} GB"
+      return 1
+    fi
   fi
 
   log "restarting OrbStack to apply (~10–15s)…"
