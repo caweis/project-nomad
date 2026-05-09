@@ -1,0 +1,135 @@
+# Project NOMAD — macOS base compose file.
+# Built on proximasan/project-nomad-silicon's multi-arch images and admin patches
+# (lineage: snfettig → NoamanKhalil → proximasan). Their fork supplies:
+#   • Native arm64 + amd64 GHCR images (no Rosetta on Apple Silicon)
+#   • Admin patches to read APPLE_CHIP_MODEL env var as a si.cpu() fallback
+#     (containers can't see the host's Apple chip — env-var override fixes
+#     the "GPU: -" / "CPU: -" issue on the upstream benchmark leaderboard)
+#   • isNativeOllama() / getNativeOllamaURL() in admin for first-class
+#     native-Ollama support (admin no longer tries to spawn nomad_ollama
+#     when remote Ollama is configured)
+#   • GPU type 'apple' with Metal health-status surfacing
+#
+# Differences from upstream `install/management_compose.yaml`:
+#   • SPLIT STORAGE for unplug-resilience:
+#     - ${NOMAD_STATE_ROOT}  → mysql + redis (always-internal, never detachable)
+#     - ${NOMAD_DATA_ROOT}   → admin's storage volume (Wikipedia ZIMs, models, maps)
+#   • disk-collector service removed — incompatible with macOS Docker file sharing
+#   • Secrets sourced from .env via --env-file (off-iCloud)
+#   • APPLE_CHIP_MODEL injected from install-time host probe
+
+name: project-nomad
+
+services:
+  admin:
+    # proximasan's fork — multi-arch (linux/amd64,linux/arm64), patched for Apple Silicon.
+    # Override at install time via NOMAD_ADMIN_IMAGE if you need upstream's image instead.
+    image: ${NOMAD_ADMIN_IMAGE:-ghcr.io/proximasan/project-nomad:latest}
+    pull_policy: always
+    container_name: nomad_admin
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ${NOMAD_DATA_ROOT}/storage:/app/storage
+      - /var/run/docker.sock:/var/run/docker.sock
+      - nomad-update-shared:/app/update-shared
+    environment:
+      - NODE_ENV=production
+      - PORT=8080
+      - LOG_LEVEL=info
+      - APP_KEY=${APP_KEY}
+      - HOST=0.0.0.0
+      - URL=${URL}
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_DATABASE=nomad
+      - DB_USER=nomad_user
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=nomad
+      - DB_SSL=false
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DISABLE_COMPRESSION=false
+      # CRITICAL: tells admin what host path to use when spawning content
+      # containers (Kiwix, Qdrant, Kolibri, FlatNotes, Ollama). Without this,
+      # admin defaults to /opt/project-nomad/storage (Linux convention) which
+      # doesn't exist on macOS — every spawn fails with "Failed to start
+      # service nomad_<x>_server". Reference: stormychel PR #618 + upstream
+      # bugs #588, #655, #710, #493, #809.
+      - NOMAD_STORAGE_PATH=${NOMAD_DATA_ROOT}/storage
+      # Apple Silicon hardware identification — proximasan's admin reads these
+      # as a si.cpu()/si.graphics() fallback so the upstream benchmark
+      # leaderboard sees the real chip + Metal GPU instead of the OrbStack VM's
+      # generic ARM64 view. Defense-in-depth: even with the auto-patcher
+      # LaunchAgent, this gives admin the right values from container start.
+      - APPLE_CHIP_MODEL=${APPLE_CHIP_MODEL:-}
+      - APPLE_GPU_MODEL=${APPLE_GPU_MODEL:-}
+      - HOST_PLATFORM=${HOST_PLATFORM:-darwin}
+    depends_on:
+      mysql: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  dozzle:
+    image: amir20/dozzle:v10.0
+    container_name: nomad_dozzle
+    restart: unless-stopped
+    ports:
+      - "9999:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - DOZZLE_ENABLE_ACTIONS=false
+      - DOZZLE_ENABLE_SHELL=false
+
+  mysql:
+    image: mysql:8.0
+    container_name: nomad_mysql
+    restart: unless-stopped
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_DATABASE=nomad
+      - MYSQL_USER=nomad_user
+      - MYSQL_PASSWORD=${DB_PASSWORD}
+    volumes:
+      # Always internal — survives the data drive being unplugged.
+      - ${NOMAD_STATE_ROOT}/mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: nomad_redis
+    restart: unless-stopped
+    volumes:
+      # Always internal — survives the data drive being unplugged.
+      - ${NOMAD_STATE_ROOT}/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  updater:
+    image: ${NOMAD_UPDATER_IMAGE:-ghcr.io/proximasan/project-nomad-sidecar-updater:latest}
+    pull_policy: always
+    container_name: nomad_updater
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${NOMAD_DATA_ROOT}:/opt/project-nomad
+      - nomad-update-shared:/shared
+
+volumes:
+  nomad-update-shared:
+    driver: local

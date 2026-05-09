@@ -1,0 +1,2403 @@
+#!/usr/bin/env bash
+# nomad — Project NOMAD installer + lifecycle CLI for macOS (Apple Silicon).
+#
+# Apache-2.0 — companion to upstream Project NOMAD (Crosstalk Solutions).
+# Idempotent. Safe to re-run; that's also the repair path.
+#
+# Usage:
+#   bash nomad install [--data-root PATH] [--tier auto|tiny|small|medium|large|xl|dreamy]
+#                      [--models "names..."] [--no-models] [--yes]
+#   bash nomad check   [system|stack|install|all]   # default: all (writes log)
+#                                            # install = pre-flight inventory
+#   bash nomad up
+#   bash nomad down
+#   bash nomad restart [SERVICE]             # default: admin
+#   bash nomad logs    [SERVICE]             # default: admin
+#   bash nomad models [list|pull [TIER|NAMES...]]
+#                                            # tier: tiny→2GB, small→10, medium→26,
+#                                            # large→65, xl→130, dreamy→215 (Studio)
+#   bash nomad upgrade-models                # pull latest tags of installed
+#   bash nomad downloads [list|cancel ID|remove ID]   # admin's job queue
+#   bash nomad zim wikipedia [state|select VARIANT]   # Wikipedia download state
+#   bash nomad zim [list|remote]
+#   bash nomad services [list|install NAME|affect ACTION NAME]
+#   bash nomad system [info|debug|internet]
+#   bash nomad api PATH [JSON_BODY]          # raw admin API call (escape hatch)
+#   bash nomad benchmark [run|patch-host]    # run = native vs Rosetta tokens/sec
+#                                            # patch-host = inject real Apple chip into
+#                                            # admin's latest benchmark row before Submit
+#   bash nomad orbstack-tune [GB]            # bump OrbStack VM RAM (default: 80% of host)
+#   bash nomad reset-ollama                  # recover from stuck LaunchAgent state
+#   bash nomad uninstall                     # clean wipe (containers, agent, .env, opt. data)
+#   bash nomad reinstall                     # nuclear: wipe everything + reinstall in one shot
+#
+# Globals at the top, all logic in named functions, single dispatch at the bottom.
+
+set -euo pipefail
+
+# ─── constants ────────────────────────────────────────────────────────────────
+HERE="$(cd "$(dirname "$0")" && pwd)"
+COMPOSE_BASE="$HERE/compose.yaml"
+SECRETS_DIR="$HOME/.config/project-nomad"
+ENV_FILE="$SECRETS_DIR/.env"
+# Hot state — always on internal disk, never on a detachable drive.
+# MySQL + Redis bind-mount here so the data drive can be safely unplugged
+# without killing the management plane.
+NOMAD_STATE_ROOT_DEFAULT="$SECRETS_DIR/state"
+LA_LABEL="com.projectnomad.ollama"
+LA_PLIST="$HOME/Library/LaunchAgents/${LA_LABEL}.plist"
+LA_TARGET="gui/$(id -u)"
+
+# Second LaunchAgent: auto-patches admin's benchmark_results with this Mac's
+# real Apple chip + Metal GPU, so the upstream leaderboard shows correct
+# hardware instead of "-". Polls every 30s.
+PATCHER_LABEL="com.projectnomad.benchmark-patcher"
+PATCHER_PLIST="$HOME/Library/LaunchAgents/${PATCHER_LABEL}.plist"
+PATCHER_SCRIPT="$SECRETS_DIR/benchmark-patcher.sh"
+
+# Model tiers — auto-selected from RAM, override with --tier or --models.
+# All names are confirmed-existing on ollama.com/library as of 2026.
+# Note: Llama 3.2 only ships 1b/3b (text); the 8b size lives in Llama 3.1.
+#
+# Approx sizes (Q4 quantization) — stack these to estimate pull total:
+#   llama3.2:3b ~2GB   gemma3:1b ~0.8GB   gemma3:4b ~3GB   llama3.1:8b ~5GB
+#   qwen2.5:7b ~5GB   qwen2.5-coder:7b ~5GB   gemma3:12b ~8GB
+#   qwen3:14b ~9GB   qwen2.5-coder:14b ~9GB   phi4:14b ~9GB
+#   mistral-small:24b ~14GB   gemma3:27b ~17GB   qwen3:32b ~20GB
+#   qwen2.5-coder:32b ~20GB   deepseek-r1:32b ~20GB   llama3.3:70b ~40GB
+#   qwen2.5:72b ~41GB   deepseek-r1:70b ~40GB
+#   nomic-embed-text ~0.3GB   mxbai-embed-large ~0.7GB
+
+TIER_TINY="llama3.2:3b gemma3:1b nomic-embed-text"
+TIER_SMALL="llama3.1:8b qwen2.5-coder:7b gemma3:4b nomic-embed-text"
+TIER_MEDIUM="llama3.1:8b qwen3:14b qwen2.5-coder:14b gemma3:12b nomic-embed-text"
+TIER_LARGE="llama3.1:8b qwen3:14b qwen2.5-coder:32b gemma3:27b mistral-small:24b nomic-embed-text"
+TIER_XL="llama3.1:8b qwen3:32b qwen2.5-coder:32b llama3.3:70b deepseek-r1:32b gemma3:27b mistral-small:24b nomic-embed-text mxbai-embed-large"
+TIER_DREAMY="llama3.1:8b qwen3:32b qwen2.5:72b qwen2.5-coder:32b llama3.3:70b deepseek-r1:32b deepseek-r1:70b mistral-small:24b gemma3:27b phi4:14b nomic-embed-text mxbai-embed-large"
+
+# Approx pull-size estimate per tier (GB) — used only for the confirm prompt
+tier_size_gb() {
+  case "$1" in
+    tiny)   echo 3   ;;
+    small)  echo 13  ;;
+    medium) echo 34  ;;
+    large)  echo 65  ;;
+    xl)     echo 147 ;;
+    dreamy) echo 215 ;;
+    *)      echo "?" ;;
+  esac
+}
+
+# Auto-pick tier from system RAM (works on Intel + Apple Silicon).
+# Tier ladder vs hardware:
+#   <12 GB  → tiny    (M1/M2 Air base, low-RAM Macs)
+#   <20 GB  → small   (16 GB MacBook Pro)
+#   <40 GB  → medium  (24/32 GB MacBook Pro / mini M2 Pro)
+#   <72 GB  → large   (Mac Studio M2 Max 64 GB)
+#   <128 GB → xl      (Mac Studio M2 Ultra 96–128 GB)
+#   ≥128 GB → dreamy  (Mac Studio M2/M3 Ultra 192/256/512 GB)
+auto_tier() {
+  local ram_gb
+  ram_gb=$(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 ))
+  if   [[ $ram_gb -lt 12 ]];  then echo tiny
+  elif [[ $ram_gb -lt 20 ]];  then echo small
+  elif [[ $ram_gb -lt 40 ]];  then echo medium
+  elif [[ $ram_gb -lt 72 ]];  then echo large
+  elif [[ $ram_gb -lt 128 ]]; then echo xl
+  else                             echo dreamy
+  fi
+}
+
+# Resolve a tier name to its model list. "auto" = auto_tier.
+resolve_tier_models() {
+  local tier="${1:-auto}"
+  [[ "$tier" == "auto" ]] && tier="$(auto_tier)"
+  case "$tier" in
+    tiny)   echo "$TIER_TINY"   ;;
+    small)  echo "$TIER_SMALL"  ;;
+    medium) echo "$TIER_MEDIUM" ;;
+    large)  echo "$TIER_LARGE"  ;;
+    xl)     echo "$TIER_XL"     ;;
+    dreamy) echo "$TIER_DREAMY" ;;
+    *) die "unknown tier: $tier (valid: auto|tiny|small|medium|large|xl|dreamy)" ;;
+  esac
+}
+
+# Ports we rely on — system-check looks for collisions
+NOMAD_PORTS="8080 9999 11434 3306 6379"
+
+# ─── output helpers ───────────────────────────────────────────────────────────
+if [[ -t 1 ]]; then
+  C_OK=$'\033[0;32m'; C_WARN=$'\033[0;33m'; C_ERR=$'\033[0;31m'
+  C_HEAD=$'\033[1;36m'; C_DIM=$'\033[0;90m'; C_OFF=$'\033[0m'
+else
+  C_OK=''; C_WARN=''; C_ERR=''; C_HEAD=''; C_DIM=''; C_OFF=''
+fi
+log()     { printf "%s==>%s %s\n" "$C_HEAD" "$C_OFF" "$*"; }
+ok()      { printf "%s ✓ %s%s\n"  "$C_OK"   "$*" "$C_OFF"; }
+warn()    { printf "%s ⚠ %s%s\n"  "$C_WARN" "$*" "$C_OFF"; }
+die()     { printf "%s ✗ %s%s\n"  "$C_ERR"  "$*" "$C_OFF" >&2; exit 1; }
+section() { printf "\n%s── %s ──%s\n" "$C_HEAD" "$*" "$C_OFF"; }
+dim()     { printf "%s%s%s\n" "$C_DIM" "$*" "$C_OFF"; }
+flag()    { FINDINGS+=("$1|$2|$3"); }   # severity|title|recommendation
+
+NOMAD_YES=0
+confirm() {
+  [[ "$NOMAD_YES" -eq 1 ]] && { echo "$1 [auto-yes]"; return 0; }
+  read -r -p "$1 [y/N] " a; [[ "$a" =~ ^[Yy]$ ]]
+}
+
+# ─── admin API client ─────────────────────────────────────────────────────────
+# All admin routes are unauthenticated (single-user appliance design — see
+# admin/start/kernel.ts). We hit them directly. jq required for parsing.
+ADMIN_BASE="${NOMAD_ADMIN_URL:-http://localhost:8080}"
+
+api_check_up() {
+  curl -fsS --max-time 3 "$ADMIN_BASE/api/health" >/dev/null 2>&1 \
+    || die "admin not reachable at $ADMIN_BASE — start the stack with 'nomad up' or check 'nomad check stack'"
+}
+
+api_get()    { curl -fsS --max-time 30 "$ADMIN_BASE$1"; }
+api_delete() { curl -fsS --max-time 30 -X DELETE "$ADMIN_BASE$1"; }
+api_post()   {
+  local path="$1" body="${2:-}"
+  if [[ -n "$body" ]]; then
+    curl -fsS --max-time 30 -H 'Content-Type: application/json' -X POST -d "$body" "$ADMIN_BASE$path"
+  else
+    curl -fsS --max-time 30 -X POST "$ADMIN_BASE$path"
+  fi
+}
+api_patch() {
+  curl -fsS --max-time 30 -H 'Content-Type: application/json' -X PATCH -d "$2" "$ADMIN_BASE$1"
+}
+
+# ─── docker discovery + compose wrapper ───────────────────────────────────────
+find_docker() {
+  command -v docker >/dev/null 2>&1 && { command -v docker; return 0; }
+  for d in /opt/homebrew/bin/docker /usr/local/bin/docker \
+           "$HOME/.orbstack/bin/docker" \
+           /Applications/OrbStack.app/Contents/MacOS/xbin/docker \
+           /Applications/OrbStack.app/Contents/MacOS/bin/docker; do
+    [[ -x "$d" ]] && { echo "$d"; return 0; }
+  done
+  return 1
+}
+ensure_docker_path() {
+  local d; d="$(find_docker)" || return 1
+  local dir; dir="$(dirname "$d")"
+  case ":$PATH:" in *":$dir:"*) ;; *) export PATH="$dir:$PATH" ;; esac
+}
+
+# Same pattern for ollama — when nomad runs in a fresh shell that hasn't
+# sourced brew shellenv yet, /opt/homebrew/bin isn't on PATH.
+ensure_ollama_path() {
+  command -v ollama >/dev/null 2>&1 && return 0
+  for o in /opt/homebrew/bin/ollama /usr/local/bin/ollama; do
+    if [[ -x "$o" ]]; then
+      export PATH="$(dirname "$o"):$PATH"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Compose wrapper — base compose.yaml has platform: linux/amd64 baked in for
+# the amd64-only GHCR images, so no override-layering needed.
+dc() { docker compose -f "$COMPOSE_BASE" --env-file "$ENV_FILE" "$@"; }
+
+# ─── sudo bootstrap ───────────────────────────────────────────────────────────
+sudo_bootstrap() {
+  [[ $EUID -eq 0 ]] && die "do NOT run with sudo. Run as your user; you'll be prompted once."
+  sudo -n true 2>/dev/null && return 0
+  log "admin rights needed once for Homebrew + Rosetta — prompting"
+  sudo -v || die "sudo authentication failed"
+  ( while true; do sudo -n true 2>/dev/null || exit 0; sleep 50; kill -0 $$ 2>/dev/null || exit 0; done ) &
+  trap 'kill $! 2>/dev/null || true' EXIT INT TERM
+}
+
+# ─── system check ─────────────────────────────────────────────────────────────
+FINDINGS=()
+check_system() {
+  section "System"
+
+  # OS / arch
+  local os ver arch
+  os="$(uname)"; ver="$(sw_vers -productVersion 2>/dev/null)"; arch="$(uname -m)"
+  [[ "$os" == "Darwin" ]] || { flag "🔴" "Not macOS ($os)" "This installer is macOS-only"; return 1; }
+  ok "macOS $ver on $arch"
+  if [[ "$arch" != "arm64" ]]; then
+    warn "$arch — tuned for Apple Silicon; Intel Macs work but slower (no Metal)"
+  fi
+
+  # OS version >= 13
+  local major; major="$(echo "$ver" | cut -d. -f1)"
+  if [[ -n "$major" && "$major" -lt 13 ]]; then
+    flag "🟡" "macOS $ver is older than 13" "OrbStack requires macOS 13+; consider updating"
+  fi
+
+  # RAM
+  local ram_gb
+  ram_gb=$(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 ))
+  if [[ "$ram_gb" -lt 8 ]]; then
+    flag "🔴" "${ram_gb} GB RAM is below minimum" "Need 16+ GB for Ollama + container stack"
+  elif [[ "$ram_gb" -lt 16 ]]; then
+    flag "🟡" "${ram_gb} GB RAM is tight" "8B-param models will be slow; use --models llama3.2:3b"
+  else
+    ok "${ram_gb} GB RAM"
+  fi
+
+  # Boot disk (we don't install here, but warn if low)
+  local boot_free_gb
+  boot_free_gb="$(df -g / 2>/dev/null | awk 'NR==2{print $4}')"
+  if [[ -n "$boot_free_gb" && "$boot_free_gb" -lt 10 ]]; then
+    flag "🟡" "Only ${boot_free_gb} GB free on boot disk" "OrbStack VM caches some data on boot disk; free space is tight"
+  fi
+
+  # Rosetta on Apple Silicon
+  if [[ "$arch" == "arm64" ]]; then
+    if /usr/bin/arch -x86_64 /usr/bin/true >/dev/null 2>&1; then
+      ok "Rosetta 2 ready"
+    else
+      warn "Rosetta 2 not installed (will install during 'nomad install')"
+    fi
+  fi
+
+  # Port collisions
+  for p in $NOMAD_PORTS; do
+    if lsof -nP -iTCP:"$p" -sTCP:LISTEN >/dev/null 2>&1; then
+      local proc; proc="$(lsof -nP -iTCP:"$p" -sTCP:LISTEN | awk 'NR==2{print $1}')"
+      flag "🟡" "Port $p in use by '$proc'" "NOMAD needs $p; stop the other service or it won't bind"
+    fi
+  done
+  ok "checked ports: $NOMAD_PORTS"
+
+  # Network reachability — 2xx/3xx/401/403 all mean "server reachable" (registries
+  # legitimately return 401 to unauthenticated HEAD probes)
+  for host in download.kiwix.org ghcr.io registry.ollama.ai; do
+    local code
+    code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 -I "https://$host" 2>/dev/null)"
+    case "$code" in
+      000)     flag "🟡" "$host unreachable" "Check network" ;;
+      5*)      flag "🟡" "$host returned HTTP $code (server error)" "Try again later" ;;
+      *)       ok "$host reachable (HTTP $code)" ;;
+    esac
+  done
+
+  # Homebrew
+  if command -v brew >/dev/null 2>&1; then
+    ok "Homebrew $(brew --version | head -1 | awk '{print $2}')"
+  else
+    warn "Homebrew not installed (will install during 'nomad install')"
+  fi
+}
+
+check_stack() {
+  section "Stack"
+  if ! ensure_docker_path; then
+    flag "🔴" "Docker CLI not found" "Run: nomad install"
+    return 0
+  fi
+  if ! docker version >/dev/null 2>&1; then
+    flag "🔴" "Docker daemon not reachable" "Open OrbStack.app"
+    return 0
+  fi
+  ok "docker $(docker version --format '{{.Server.Version}}')"
+
+  if [[ ! -f "$ENV_FILE" ]]; then
+    flag "🔴" ".env missing at $ENV_FILE" "Run: nomad install"
+    return 0
+  fi
+
+  # Storage architecture — split state (internal, hot) vs data (configurable, cold)
+  local state_root data_root
+  state_root="$(grep '^NOMAD_STATE_ROOT=' "$ENV_FILE" 2>/dev/null | cut -d= -f2-)"
+  data_root="$(grep '^NOMAD_DATA_ROOT=' "$ENV_FILE" 2>/dev/null | cut -d= -f2-)"
+  echo
+  echo "  Storage architecture:"
+  if [[ -n "$state_root" && -d "$state_root" ]]; then
+    local sz; sz="$(du -sh "$state_root" 2>/dev/null | awk '{print $1}')"
+    printf "    %s✓%s state (mysql/redis): %s   (%s used, internal)\n" "$C_OK" "$C_OFF" "$state_root" "$sz"
+  else
+    printf "    %s✗%s state root missing: %s\n" "$C_ERR" "$C_OFF" "${state_root:-(unset)}"
+    flag "🔴" "NOMAD_STATE_ROOT missing or unset" "Run: nomad install (will recreate at $NOMAD_STATE_ROOT_DEFAULT)"
+  fi
+  if [[ -n "$data_root" && -d "$data_root" ]]; then
+    local sz; sz="$(du -sh "$data_root" 2>/dev/null | awk '{print $1}')"
+    local free; free="$(df -h "$data_root" 2>/dev/null | awk 'NR==2{print $4}')"
+    local on_external="no"
+    [[ "$data_root" == /Volumes/* ]] && on_external="yes — drive currently mounted"
+    printf "    %s✓%s data (content): %s   (%s used, %s free, on external drive: %s)\n" \
+      "$C_OK" "$C_OFF" "$data_root" "${sz:-?}" "${free:-?}" "$on_external"
+  elif [[ -n "$data_root" ]]; then
+    printf "    %s⚠%s data drive unplugged: %s\n" "$C_WARN" "$C_OFF" "$data_root"
+    flag "🟡" "Data drive disconnected ($data_root)" "Replug the drive then 'nomad up' — admin keeps running, content services need it"
+  fi
+  echo
+
+  for svc in admin mysql redis; do
+    local state; state="$(dc ps --format '{{.State}}' "$svc" 2>/dev/null)"
+    [[ "$state" != "running" ]] && flag "🔴" "$svc not running (state=${state:-missing})" "Run: nomad up"
+  done
+
+  # Native Ollama
+  if curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+    ok "native Ollama responding on :11434"
+  else
+    flag "🔴" "Native Ollama not responding" "Check ~/Library/Logs/ollama.err.log"
+  fi
+
+  # Admin's view of the world (via its own API — same auth-free routes the UI uses)
+  if ! curl -fsS --max-time 3 "$ADMIN_BASE/api/health" >/dev/null 2>&1; then
+    flag "🔴" "Admin API ($ADMIN_BASE) not responding" "Run: nomad logs admin"
+    return 0
+  fi
+  ok "admin API responding"
+
+  # Remote-Ollama wiring (via /api/ollama/remote-status)
+  local rs; rs="$(api_get /api/ollama/remote-status 2>/dev/null)"
+  local configured connected
+  configured="$(echo "$rs" | jq -r '.configured' 2>/dev/null)"
+  connected="$(echo "$rs"  | jq -r '.connected'  2>/dev/null)"
+  if [[ "$configured" == "true" && "$connected" == "true" ]]; then
+    ok "admin → native Ollama wired up (configured + connected)"
+  elif [[ "$configured" == "true" ]]; then
+    flag "🔴" "Remote Ollama configured but admin can't reach it" "Run: nomad install (re-runs configureRemote)"
+  else
+    flag "🔴" "Remote Ollama not configured in admin" "Run: nomad install (idempotent — runs configureRemote)"
+  fi
+
+  # Download jobs — failed jobs are usually what brings users to 'nomad check'
+  local jobs failed_n active_n waiting_n
+  jobs="$(api_get /api/downloads/jobs 2>/dev/null)"
+  if [[ -n "$jobs" ]]; then
+    failed_n="$(echo "$jobs"  | jq '(.failed  // []) | length' 2>/dev/null)"
+    active_n="$(echo "$jobs"  | jq '(.active  // []) | length' 2>/dev/null)"
+    waiting_n="$(echo "$jobs" | jq '(.waiting // []) | length' 2>/dev/null)"
+    [[ -z "$failed_n"  || ! "$failed_n"  =~ ^[0-9]+$ ]] && failed_n=0
+    [[ -z "$active_n"  || ! "$active_n"  =~ ^[0-9]+$ ]] && active_n=0
+    [[ -z "$waiting_n" || ! "$waiting_n" =~ ^[0-9]+$ ]] && waiting_n=0
+    if [[ "$failed_n" -gt 0 ]]; then
+      flag "🟡" "$failed_n failed download(s)" "Run: nomad downloads list  (and: nomad downloads remove JOBID to clear)"
+    fi
+    if [[ "$waiting_n" -gt 0 && "$active_n" -eq 0 ]]; then
+      flag "🟡" "$waiting_n waiting download(s) but 0 active" "Worker may be stuck — try: nomad restart admin"
+    fi
+    ok "downloads — active=$active_n waiting=$waiting_n failed=$failed_n"
+  fi
+
+  # Wikipedia state — Chris's frequent issue
+  local wiki; wiki="$(api_get /api/zim/wikipedia 2>/dev/null)"
+  if [[ -n "$wiki" ]]; then
+    local selected status
+    selected="$(echo "$wiki" | jq -r '.selectedOptionId // .selected_option_id // "(none)"' 2>/dev/null)"
+    status="$(echo "$wiki"   | jq -r '.status // "?"' 2>/dev/null)"
+    ok "Wikipedia — selected=$selected status=$status"
+  fi
+}
+
+# Pre-flight install inventory — what's already in place, what's missing, what's
+# broken. Run before 'nomad install' to see exactly what it would and wouldn't
+# touch on a re-run. Read-only.
+INV_SKIP=0
+INV_INSTALL=0
+INV_FIX=0
+inv_ok()      { printf "  %s✓%s %-26s %s\n" "$C_OK"   "$C_OFF" "$1" "$2"; INV_SKIP=$((INV_SKIP+1)); }
+inv_missing() { printf "  %s✗%s %-26s %s\n" "$C_ERR"  "$C_OFF" "$1" "$2"; INV_INSTALL=$((INV_INSTALL+1)); }
+inv_broken()  { printf "  %s⚠%s %-26s %s\n" "$C_WARN" "$C_OFF" "$1" "$2"; INV_FIX=$((INV_FIX+1)); }
+
+check_install() {
+  section "Install Inventory"
+  echo "  ✓ already installed (would skip)   ✗ missing (would install)   ⚠ broken (would fix)"
+  echo
+
+  # --- toolchain ---
+  if /usr/bin/xcode-select -p >/dev/null 2>&1; then
+    inv_ok "Xcode CLT" "at $(/usr/bin/xcode-select -p)"
+  else
+    inv_missing "Xcode CLT" "system install dialog"
+  fi
+
+  if command -v brew >/dev/null 2>&1; then
+    inv_ok "Homebrew" "$(brew --version | head -1 | awk '{print $2}')"
+  else
+    inv_missing "Homebrew" "official curl-based installer"
+  fi
+
+  if command -v jq >/dev/null 2>&1; then
+    inv_ok "jq" "$(jq --version)"
+  else
+    inv_missing "jq" "brew install jq"
+  fi
+
+  if [[ "$(uname -m)" == "arm64" ]]; then
+    if /usr/bin/arch -x86_64 /usr/bin/true >/dev/null 2>&1; then
+      inv_ok "Rosetta 2" "ready"
+    else
+      inv_missing "Rosetta 2" "softwareupdate --install-rosetta"
+    fi
+  fi
+
+  # --- container runtime ---
+  local orb_app=""
+  for p in /Applications/OrbStack.app "$HOME/Applications/OrbStack.app"; do
+    [[ -d "$p" ]] && orb_app="$p" && break
+  done
+  if [[ -n "$orb_app" ]]; then
+    inv_ok "OrbStack" "at $orb_app"
+  else
+    inv_missing "OrbStack" "brew install --cask orbstack"
+  fi
+
+  if ensure_docker_path && docker version >/dev/null 2>&1; then
+    inv_ok "Docker daemon" "$(docker version --format '{{.Server.Version}}')"
+  elif command -v docker >/dev/null 2>&1; then
+    inv_broken "Docker daemon" "CLI present but daemon unreachable — open OrbStack.app"
+  else
+    inv_missing "Docker daemon" "comes with OrbStack"
+  fi
+
+  # --- Ollama (binary, agent, port, API) ---
+  if command -v ollama >/dev/null 2>&1; then
+    inv_ok "Ollama binary" "$(ollama --version 2>&1 | head -1 | sed 's/^.*version //')"
+  else
+    inv_missing "Ollama binary" "brew install ollama"
+  fi
+
+  if [[ -f "$LA_PLIST" ]]; then
+    if launchctl print "$LA_TARGET/$LA_LABEL" >/dev/null 2>&1; then
+      local lstate; lstate="$(launchctl print "$LA_TARGET/$LA_LABEL" 2>/dev/null | awk -F' = ' '/^\tstate/{print $2;exit}' | tr -d ' ')"
+      inv_ok "Ollama LaunchAgent" "loaded (state=${lstate:-?})"
+    else
+      inv_broken "Ollama LaunchAgent" "plist present but not loaded — nomad reset-ollama"
+    fi
+  else
+    inv_missing "Ollama LaunchAgent" "would write $LA_PLIST"
+  fi
+
+  if curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+    local n_models; n_models="$(curl -fsS http://127.0.0.1:11434/api/tags | jq '.models | length' 2>/dev/null)"
+    inv_ok "Ollama API" "responding on :11434, ${n_models:-0} model(s)"
+  else
+    inv_missing "Ollama API" "needs LaunchAgent running"
+  fi
+
+  if lsof -nP -iTCP:11434 -sTCP:LISTEN >/dev/null 2>&1; then
+    local bind; bind="$(lsof -nP -iTCP:11434 -sTCP:LISTEN | awk 'NR==2{print $9}')"
+    if [[ "$bind" == *"127.0.0.1:11434"* ]]; then
+      inv_broken "Ollama port binding" "$bind — containers can't reach via host.docker.internal"
+    else
+      inv_ok "Ollama port binding" "$bind"
+    fi
+  fi
+
+  # --- NOMAD-specific state ---
+  if [[ -f "$ENV_FILE" ]]; then
+    local missing_keys=()
+    local key
+    for key in NOMAD_DATA_ROOT APP_KEY MYSQL_ROOT_PASSWORD DB_PASSWORD URL; do
+      grep -qE "^${key}=.+" "$ENV_FILE" 2>/dev/null || missing_keys+=("$key")
+    done
+    if [[ ${#missing_keys[@]} -eq 0 ]]; then
+      inv_ok ".env secrets" "all 5 keys present at $ENV_FILE"
+    else
+      inv_broken ".env secrets" "missing/empty: ${missing_keys[*]}"
+    fi
+  else
+    inv_missing ".env secrets" "would generate APP_KEY + DB passwords"
+  fi
+
+  local data_root="" state_root=""
+  if [[ -f "$ENV_FILE" ]]; then
+    data_root="$(grep '^NOMAD_DATA_ROOT='  "$ENV_FILE" | cut -d= -f2- 2>/dev/null)"
+    state_root="$(grep '^NOMAD_STATE_ROOT=' "$ENV_FILE" | cut -d= -f2- 2>/dev/null)"
+  fi
+  [[ -z "$state_root" ]] && state_root="$NOMAD_STATE_ROOT_DEFAULT"
+
+  # State root (always-internal hot state)
+  if [[ -d "$state_root" ]]; then
+    local sz; sz="$(du -sh "$state_root" 2>/dev/null | awk '{print $1}')"
+    inv_ok "State root (mysql/redis)" "$state_root (${sz:-?}, internal)"
+  else
+    inv_missing "State root (mysql/redis)" "would create at $state_root"
+  fi
+
+  # Data root (configurable, possibly external)
+  if [[ -n "$data_root" && -d "$data_root" ]]; then
+    local free sz
+    free="$(df -h "$data_root" 2>/dev/null | awk 'NR==2{print $4}')"
+    sz="$(du -sh "$data_root" 2>/dev/null | awk '{print $1}')"
+    local where="internal"
+    [[ "$data_root" == /Volumes/* ]] && where="external — currently mounted"
+    inv_ok "Data root (content)" "$data_root (${sz:-?} used, ${free:-?} free, $where)"
+  elif [[ -n "$data_root" ]]; then
+    inv_broken "Data root (content)" "$data_root not mounted — drive unplugged"
+  else
+    inv_missing "Data root (content)" "would prompt to pick disk"
+  fi
+
+  if ensure_docker_path && docker version >/dev/null 2>&1; then
+    local needed=("ghcr.io/crosstalk-solutions/project-nomad:latest" \
+                  "ghcr.io/crosstalk-solutions/project-nomad-sidecar-updater:latest" \
+                  "amir20/dozzle:v10.0" "mysql:8.0" "redis:7-alpine")
+    local cached=0 img
+    for img in "${needed[@]}"; do
+      docker image inspect "$img" >/dev/null 2>&1 && cached=$((cached+1))
+    done
+    if [[ "$cached" -eq ${#needed[@]} ]]; then
+      inv_ok "Compose images" "all ${#needed[@]} cached locally"
+    elif [[ "$cached" -gt 0 ]]; then
+      inv_broken "Compose images" "$cached of ${#needed[@]} cached — would pull missing"
+    else
+      inv_missing "Compose images" "would pull all ${#needed[@]}"
+    fi
+
+    local running; running="$(docker ps --filter 'name=^nomad_' --format '{{.Names}}' 2>/dev/null | wc -l | tr -d ' ')"
+    if [[ "$running" -ge 5 ]]; then
+      inv_ok "NOMAD containers" "$running running"
+    elif [[ "$running" -gt 0 ]]; then
+      inv_broken "NOMAD containers" "$running running — would docker compose up -d"
+    else
+      inv_missing "NOMAD containers" "would start admin/mysql/redis/dozzle/updater"
+    fi
+  fi
+
+  if curl -fsS --max-time 3 http://localhost:8080/api/health >/dev/null 2>&1; then
+    inv_ok "Admin API" "responding on :8080"
+    local rs cfg conn
+    rs="$(curl -fsS --max-time 3 http://localhost:8080/api/ollama/remote-status 2>/dev/null)"
+    cfg="$(echo "$rs" | jq -r '.configured' 2>/dev/null)"
+    conn="$(echo "$rs" | jq -r '.connected'  2>/dev/null)"
+    if [[ "$cfg" == "true" && "$conn" == "true" ]]; then
+      inv_ok "Admin → Ollama wiring" "configured + connected"
+    elif [[ "$cfg" == "true" ]]; then
+      inv_broken "Admin → Ollama wiring" "configured but admin can't reach Ollama"
+    else
+      inv_missing "Admin → Ollama wiring" "POST /api/ollama/configure-remote"
+    fi
+  else
+    inv_missing "Admin API" "needs containers running"
+  fi
+
+  # Plan summary
+  echo
+  printf "%s── plan if you run 'nomad install' now ──%s\n" "$C_HEAD" "$C_OFF"
+  printf "  ${C_OK}skip${C_OFF}     %2d components already in place\n" "$INV_SKIP"
+  printf "  ${C_ERR}install${C_OFF}  %2d missing components\n"          "$INV_INSTALL"
+  printf "  ${C_WARN}fix${C_OFF}      %2d broken components\n"          "$INV_FIX"
+  echo
+  if [[ $((INV_INSTALL + INV_FIX)) -eq 0 ]]; then
+    ok "Everything in place — 'nomad install' would be a no-op."
+  elif [[ "$INV_INSTALL" -eq 0 ]]; then
+    log "all components present; 'nomad install' would only fix the broken ones."
+  else
+    log "'nomad install' would install $INV_INSTALL and fix $INV_FIX, skipping $INV_SKIP."
+  fi
+}
+
+print_findings() {
+  if [[ ${#FINDINGS[@]} -eq 0 ]]; then
+    ok "no issues detected"; return 0
+  fi
+  printf "\n%s── findings ──%s\n" "$C_HEAD" "$C_OFF"
+  for f in "${FINDINGS[@]}"; do
+    IFS='|' read -r sev title rec <<<"$f"
+    printf "%s %s\n   %s→ %s%s\n" "$sev" "$title" "$C_DIM" "$rec" "$C_OFF"
+  done
+}
+
+cmd_check() {
+  local what="${1:-all}"
+  # Tee output to a log file for iCloud sync
+  local ts log_path latest_path
+  ts="$(date +%Y%m%d-%H%M%S)"
+  log_path="$HERE/nomad-check-${ts}.log"
+  latest_path="$HERE/nomad-check-latest.log"
+  exec > >(tee \
+    >(sed -E 's/\x1B\[[0-9;]*[a-zA-Z]//g' > "$log_path") \
+    >(sed -E 's/\x1B\[[0-9;]*[a-zA-Z]//g' > "$latest_path")) 2>&1
+
+  printf "%s── nomad check (%s) — %s ──%s\n" "$C_HEAD" "$what" "$(date '+%Y-%m-%d %H:%M:%S')" "$C_OFF"
+  printf "%s   log: %s%s\n" "$C_HEAD" "$log_path" "$C_OFF"
+  case "$what" in
+    system)    check_system ;;
+    stack)     check_stack ;;
+    install|inventory) check_install ;;
+    all|*)     check_system; check_stack; check_install ;;
+  esac
+  print_findings
+  echo
+  dim "logs: $latest_path  (also $log_path)"
+}
+
+# ─── install steps ────────────────────────────────────────────────────────────
+step_deps() {
+  section "Dependencies"
+
+  # Xcode CLT
+  if ! /usr/bin/xcode-select -p >/dev/null 2>&1; then
+    log "installing Xcode Command Line Tools (system dialog will appear)"
+    /usr/bin/xcode-select --install 2>/dev/null || true
+    log "waiting for CLT install (5–20 min)…"
+    while ! /usr/bin/xcode-select -p >/dev/null 2>&1; do sleep 10; printf "."; done
+    echo; ok "Xcode CLT installed"
+  else
+    ok "Xcode CLT present"
+  fi
+
+  # Homebrew
+  if ! command -v brew >/dev/null 2>&1; then
+    log "installing Homebrew"
+    NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    [[ -x /opt/homebrew/bin/brew ]] && eval "$(/opt/homebrew/bin/brew shellenv)"
+    [[ -x /usr/local/bin/brew   ]] && eval "$(/usr/local/bin/brew shellenv)"
+    command -v brew >/dev/null 2>&1 || die "Homebrew install failed"
+  fi
+  ok "Homebrew $(brew --version | head -1 | awk '{print $2}')"
+  brew update --quiet || warn "brew update hiccup — continuing"
+
+  # jq
+  command -v jq >/dev/null 2>&1 || brew install jq
+  ok "jq $(jq --version)"
+
+  # Rosetta on Apple Silicon
+  if [[ "$(uname -m)" == "arm64" ]]; then
+    if /usr/bin/arch -x86_64 /usr/bin/true >/dev/null 2>&1; then
+      ok "Rosetta 2 ready"
+    else
+      log "installing Rosetta 2"
+      sudo softwareupdate --install-rosetta --agree-to-license || warn "Rosetta install reported error — OrbStack may install on first amd64 pull"
+    fi
+  fi
+}
+
+# Returns the chosen DATA_ROOT on stdout
+DATA_ROOT_RESOLVED=""
+step_data_root() {
+  section "Data root"
+  local picked="$1"
+
+  if [[ -z "$picked" ]]; then
+    echo "Where should NOMAD store its data?"
+    echo "  [0] Internal disk: $HOME/project-nomad-data  (default — works without external drive)"
+    local cands=("INTERNAL")
+    local i=1
+    for v in /Volumes/*; do
+      [[ -d "$v" ]] || continue
+      local name; name="$(basename "$v")"
+      [[ "$name" == "Macintosh HD" || "$name" == "Macintosh HD - Data" || "$name" == "Recovery" ]] && continue
+      if ! touch "$v/.nomad-write-test" 2>/dev/null; then
+        continue
+      fi
+      rm -f "$v/.nomad-write-test"
+      local fs free
+      fs="$(diskutil info "$v" 2>/dev/null | awk -F': *' '/Type \(Bundle\)/{print $2}' | xargs)"
+      free="$(df -h "$v" 2>/dev/null | awk 'NR==2{print $4}')"
+      printf "  [%d] External: %s  (fs=%s, free=%s)\n" "$i" "$v" "${fs:-?}" "${free:-?}"
+      cands+=("$v"); i=$((i+1))
+    done
+    echo
+    read -r -p "Pick a number [0=internal default], or paste a full path: " sel
+    sel="${sel:-0}"
+    if [[ "$sel" =~ ^[0-9]+$ ]]; then
+      local idx="$sel"
+      if [[ $idx -eq 0 ]]; then
+        picked="$HOME/project-nomad-data"
+      else
+        [[ $idx -ge 1 && $idx -lt ${#cands[@]} ]] || die "out of range"
+        picked="${cands[$idx]}/project-nomad"
+      fi
+    else
+      picked="$sel"
+    fi
+  fi
+
+  # Strict path resolution — no boot-drive fallthrough
+  local parent; parent="$(dirname "$picked")"
+  [[ -d "$parent" ]] || die "parent dir does not exist: $parent
+Make sure your external drive is mounted, or pick another path."
+  local parent_abs; parent_abs="$(cd "$parent" && pwd)"
+  picked="$parent_abs/$(basename "$picked")"
+  echo "Data root: $picked"
+
+  # Filesystem (MySQL won't tolerate exFAT)
+  local volume fs
+  volume="$(df "$parent_abs" | awk 'NR==2{print $NF}')"
+  fs="$(diskutil info "$volume" 2>/dev/null | awk -F': *' '/Type \(Bundle\)/{print $2}' | xargs)"
+  case "$fs" in
+    apfs|APFS) ok "$volume is APFS" ;;
+    hfs+|HFS+|jhfs+|hfs|HFS) warn "$volume is $fs — APFS preferred" ;;
+    exfat|*FAT*|msdos) die "$volume is $fs — MySQL requires APFS or HFS+. Reformat in Disk Utility." ;;
+    *) warn "could not detect filesystem ($fs) — proceeding" ;;
+  esac
+
+  # Boot-drive guard
+  local boot_vol; boot_vol="$(df / | awk 'NR==2{print $NF}')"
+  if [[ "$volume" == "$boot_vol" ]]; then
+    warn "$picked is on the BOOT volume — content can be 100s of GB"
+    confirm "Install on boot drive?" || die "aborted — pick an external drive"
+  fi
+
+  # Disk space
+  local free_gb; free_gb="$(df -g "$parent_abs" 2>/dev/null | awk 'NR==2{print $4}')"
+  if [[ -n "$free_gb" && "$free_gb" =~ ^[0-9]+$ && "$free_gb" -lt 50 ]]; then
+    warn "${free_gb} GB free — full English Wikipedia (96 GB) won't fit"
+  fi
+
+  # mysql + redis NO LONGER live here — they're on the internal state root.
+  # Only content (Wikipedia, models, maps, etc.) goes on the data drive so
+  # the drive can be safely unplugged without crashing the management plane.
+  mkdir -p "$picked"/{storage,ollama-models}
+
+  # Drop the portable HTML chat UI on the drive (alongside quick-chat.sh).
+  # The shell script launches Ollama, then opens this page in the default browser.
+  if [[ -f "$HERE/quick-chat.html" ]]; then
+    cp "$HERE/quick-chat.html" "$picked/quick-chat.html"
+    ok "quick-chat.html deployed to $picked/quick-chat.html  (browser UI)"
+  else
+    warn "quick-chat.html not found in bundle ($HERE) — drive will get only the shell version"
+  fi
+
+  # Drop a portable quick-chat script ON the drive — when this drive is plugged
+  # into any other Mac, the user can run /Volumes/<drive>/project-nomad/quick-chat.sh
+  # and immediately have ollama-as-a-server with all the cached models. No NOMAD
+  # install needed on the second Mac, no Docker, no admin — just the LLM chat layer.
+  cat > "$picked/quick-chat.sh" <<'QUICK_CHAT_EOF'
+#!/usr/bin/env bash
+# quick-chat.sh — portable Ollama bootstrapper for the NOMAD data drive.
+# Lives on the drive so it travels with it. Run on ANY Mac:
+#   bash /Volumes/<drive>/project-nomad/quick-chat.sh
+# Result: native Ollama running, all the drive's cached models available, ready to chat.
+#
+# Does NOT install NOMAD. Just gets you LLM chat using the models on this drive.
+# For the full NOMAD experience (admin UI / Wikipedia / RAG), install the bundle.
+
+set -euo pipefail
+
+C_OK=$'\033[0;32m'; C_WARN=$'\033[0;33m'; C_ERR=$'\033[0;31m'; C_HEAD=$'\033[1;36m'; C_OFF=$'\033[0m'
+log()  { printf "%s==>%s %s\n"  "$C_HEAD" "$C_OFF" "$*"; }
+ok()   { printf "%s ✓ %s%s\n"   "$C_OK"   "$*" "$C_OFF"; }
+warn() { printf "%s ⚠ %s%s\n"   "$C_WARN" "$*" "$C_OFF"; }
+die()  { printf "%s ✗ %s%s\n"   "$C_ERR"  "$*" "$C_OFF" >&2; exit 1; }
+
+[[ "$(uname)" == "Darwin" ]] || die "macOS only — this is a Mac LLM bootstrapper"
+
+DRIVE_ROOT="$(cd "$(dirname "$0")" && pwd)"
+MODELS_DIR="$DRIVE_ROOT/ollama-models"
+[[ -d "$MODELS_DIR" ]] || die "no ollama-models/ at $MODELS_DIR — is this the NOMAD data drive?"
+
+log "Project NOMAD — quick-chat (portable LLM mode)"
+echo "  drive:    $DRIVE_ROOT"
+echo "  models:   $MODELS_DIR"
+echo
+
+# 1. Ensure ollama is installed
+if ! command -v ollama >/dev/null 2>&1; then
+  for o in /opt/homebrew/bin/ollama /usr/local/bin/ollama; do
+    [[ -x "$o" ]] && export PATH="$(dirname "$o"):$PATH" && break
+  done
+fi
+if ! command -v ollama >/dev/null 2>&1; then
+  if command -v brew >/dev/null 2>&1; then
+    log "installing ollama via Homebrew"
+    brew install ollama
+  else
+    die "ollama not installed and Homebrew not present.
+Install Homebrew first:
+  /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"
+Then re-run this script."
+  fi
+fi
+ok "ollama $(ollama --version 2>&1 | head -1)"
+
+# 2. If a NOMAD LaunchAgent is already running on this Mac, just use it.
+if curl -fsS --max-time 2 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+  ok "ollama already serving on :11434 — using it"
+else
+  # Check if :11434 is squatted by something else
+  if lsof -nP -iTCP:11434 -sTCP:LISTEN >/dev/null 2>&1; then
+    warn ":11434 is in use but not responding. Stop the existing service first:"
+    lsof -nP -iTCP:11434 -sTCP:LISTEN | head -3
+    die "free :11434 then retry"
+  fi
+  log "starting ollama serve (Ctrl-C to stop the daemon when done)"
+  log "models load lazily from the drive — first chat with each model is slower"
+  echo
+  export OLLAMA_MODELS="$MODELS_DIR"
+  export OLLAMA_HOST="127.0.0.1:11434"
+  export OLLAMA_KEEP_ALIVE="30m"
+  export OLLAMA_FLASH_ATTENTION="1"
+  export OLLAMA_KV_CACHE_TYPE="q8_0"
+  # Allow browser pages (file:// or any local origin) to hit the API
+  export OLLAMA_ORIGINS="*"
+  ollama serve &
+  OLLAMA_PID=$!
+  trap 'kill $OLLAMA_PID 2>/dev/null || true' EXIT INT TERM
+
+  # Wait for API
+  for i in $(seq 1 15); do
+    curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1 && break
+    sleep 1
+  done
+  ok "ollama serving on http://127.0.0.1:11434"
+fi
+
+# 3. List models
+echo
+log "models on this drive:"
+OLLAMA_MODELS="$MODELS_DIR" ollama list 2>/dev/null | tail -n +1
+
+# 4. Open the browser chat UI (preferred) — falls back to terminal chat if HTML missing
+echo
+HTML_UI="$DRIVE_ROOT/quick-chat.html"
+if [[ -f "$HTML_UI" && -z "${1:-}" ]]; then
+  log "opening browser chat: $HTML_UI"
+  open "$HTML_UI"
+  echo
+  echo "  Browser tab is now talking to Ollama on http://127.0.0.1:11434"
+  echo "  When you're done, return to this terminal and Ctrl-C to stop ollama serve."
+  echo
+  # Keep the daemon alive in the foreground until user quits
+  wait "$OLLAMA_PID" 2>/dev/null
+else
+  # Terminal fallback — pass a model name as $1 to skip browser
+  DEFAULT_MODEL="${1:-}"
+  if [[ -z "$DEFAULT_MODEL" ]]; then
+    DEFAULT_MODEL="$(OLLAMA_MODELS="$MODELS_DIR" ollama list 2>/dev/null | awk 'NR>1 {print $1, $3}' | sort -k2 -h | head -1 | awk '{print $1}')"
+  fi
+  if [[ -n "$DEFAULT_MODEL" ]]; then
+    log "starting terminal chat with $DEFAULT_MODEL  (Ctrl-D or /bye to exit)"
+    echo
+    OLLAMA_MODELS="$MODELS_DIR" ollama run "$DEFAULT_MODEL"
+  else
+    warn "no models found on the drive at $MODELS_DIR"
+    warn "to pull one: ollama pull llama3.2:3b"
+  fi
+fi
+QUICK_CHAT_EOF
+  chmod +x "$picked/quick-chat.sh"
+  ok "quick-chat.sh deployed to $picked/quick-chat.sh  (portable across Macs)"
+
+  DATA_ROOT_RESOLVED="$picked"
+  ok "data tree ready under $picked  (storage + ollama-models + quick-chat.sh)"
+}
+
+step_orbstack() {
+  section "OrbStack"
+  local app=""
+  for p in /Applications/OrbStack.app "$HOME/Applications/OrbStack.app"; do
+    [[ -d "$p" ]] && app="$p" && break
+  done
+  if [[ -z "$app" ]]; then
+    log "installing OrbStack via brew cask"
+    brew install --cask orbstack
+    [[ -x /opt/homebrew/bin/brew ]] && eval "$(/opt/homebrew/bin/brew shellenv)"
+    for p in /Applications/OrbStack.app "$HOME/Applications/OrbStack.app"; do
+      [[ -d "$p" ]] && app="$p" && break
+    done
+    [[ -n "$app" ]] || die "OrbStack.app not found after brew install"
+  fi
+  ok "OrbStack at $app"
+
+  /usr/bin/pgrep -x OrbStack >/dev/null 2>&1 || { log "launching OrbStack — accept any prompts"; open -a OrbStack; }
+
+  log "waiting up to 3 min for docker daemon…"
+  local deadline=$(( $(date +%s) + 180 ))
+  while [[ $(date +%s) -lt $deadline ]]; do
+    if ensure_docker_path && docker version >/dev/null 2>&1; then
+      ok "docker daemon up: $(docker version --format '{{.Server.Version}}')"
+      return 0
+    fi
+    sleep 2; printf "."
+  done
+  echo
+  die "docker daemon never came up. Open OrbStack.app, finish first-run, re-run 'nomad install'"
+}
+
+step_ollama_native() {
+  section "Native Ollama (Metal)"
+  command -v ollama >/dev/null 2>&1 || brew install ollama
+  ok "ollama $(ollama --version 2>/dev/null | head -1)"
+
+  # Stop brew-managed service if present (we run our own LaunchAgent)
+  if launchctl list 2>/dev/null | grep -q homebrew.mxcl.ollama; then
+    brew services stop ollama >/dev/null || true
+  fi
+
+  # CRITICAL ORDERING: bootout the LaunchAgent BEFORE killing the ollama process.
+  # If we kill first, launchd's KeepAlive=true immediately respawns the process,
+  # and the subsequent bootstrap fails with "5: Input/output error" because the
+  # label is still loaded.
+  if launchctl print "$LA_TARGET/$LA_LABEL" >/dev/null 2>&1; then
+    log "unloading existing LaunchAgent (preventing KeepAlive respawn)"
+    launchctl bootout "$LA_TARGET/$LA_LABEL" 2>/dev/null || true
+    sleep 2  # let launchd commit
+  fi
+
+  # Now free :11434 — any leftover process is an orphan, won't respawn
+  if lsof -nP -iTCP:11434 -sTCP:LISTEN >/dev/null 2>&1; then
+    local pid proc
+    pid="$(lsof -nP -iTCP:11434 -sTCP:LISTEN -F p 2>/dev/null | awk '/^p/{sub(/^p/,"");print;exit}')"
+    proc="$(lsof -nP -iTCP:11434 -sTCP:LISTEN -F c 2>/dev/null | awk '/^c/{sub(/^c/,"");print;exit}')"
+    warn "process '$proc' (pid $pid) on :11434 after bootout — likely orphan"
+    if confirm "Kill it?"; then
+      kill "$pid" 2>/dev/null || true; sleep 1
+      lsof -nP -iTCP:11434 -sTCP:LISTEN >/dev/null 2>&1 && kill -9 "$pid" 2>/dev/null || true
+      sleep 1
+      lsof -nP -iTCP:11434 -sTCP:LISTEN >/dev/null 2>&1 && die "could not free :11434"
+    else
+      die ":11434 must be free for native Ollama"
+    fi
+  fi
+
+  # Write LaunchAgent — binds 0.0.0.0 so containers can reach via host.docker.internal
+  mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
+  local ollama_bin; ollama_bin="$(command -v ollama)"
+  # Compute MAX_LOADED_MODELS from RAM — controls how many models stay hot in
+  # unified memory. Higher = faster model switching, more memory pressure.
+  local ram_gb max_loaded
+  ram_gb=$(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 ))
+  if   [[ $ram_gb -lt 16 ]];  then max_loaded=1
+  elif [[ $ram_gb -lt 64 ]];  then max_loaded=2
+  elif [[ $ram_gb -lt 128 ]]; then max_loaded=3
+  else                             max_loaded=4
+  fi
+
+  # ---- LaunchAgent wrapper script ----
+  # The LaunchAgent runs this wrapper (not ollama directly). The wrapper
+  # resolves OLLAMA_MODELS at runtime so renamed/remounted drives don't break
+  # the daemon. Falls back to ~/.ollama/models if the drive is unplugged.
+  local LAUNCHER="$SECRETS_DIR/ollama-launcher.sh"
+  cat > "$LAUNCHER" <<LAUNCH_EOF
+#!/usr/bin/env bash
+# Auto-generated by nomad install. Resolves NOMAD data drive at runtime.
+
+# 1. Try the configured data root from .env
+configured=""
+if [[ -f "$ENV_FILE" ]]; then
+  configured="\$(grep '^NOMAD_DATA_ROOT=' "$ENV_FILE" | cut -d= -f2-)"
+fi
+DRIVE_MODELS=""
+if [[ -n "\$configured" && -d "\$configured/ollama-models" ]]; then
+  DRIVE_MODELS="\$configured/ollama-models"
+fi
+
+# 2. Fallback: scan /Volumes for any drive that has project-nomad/ollama-models
+#    (handles renames / remounts where the configured path doesn't match)
+if [[ -z "\$DRIVE_MODELS" ]]; then
+  for v in /Volumes/*; do
+    if [[ -d "\$v/project-nomad/ollama-models" ]]; then
+      DRIVE_MODELS="\$v/project-nomad/ollama-models"
+      break
+    fi
+  done
+fi
+
+# 3. Internal fallback (drive missing — admin still works, just no models from drive)
+if [[ -z "\$DRIVE_MODELS" ]]; then
+  DRIVE_MODELS="\$HOME/.ollama/models"
+  echo "[ollama-launcher] data drive not found at \$configured — falling back to \$DRIVE_MODELS" >&2
+else
+  echo "[ollama-launcher] using models from \$DRIVE_MODELS" >&2
+fi
+
+export OLLAMA_MODELS="\$DRIVE_MODELS"
+exec ${ollama_bin} serve
+LAUNCH_EOF
+  chmod +x "$LAUNCHER"
+
+  cat > "$LA_PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>            <string>${LA_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${LAUNCHER}</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>OLLAMA_HOST</key>             <string>0.0.0.0:11434</string>
+    <key>OLLAMA_KEEP_ALIVE</key>       <string>30m</string>
+    <key>OLLAMA_FLASH_ATTENTION</key>  <string>1</string>
+    <key>OLLAMA_KV_CACHE_TYPE</key>    <string>q8_0</string>
+    <key>OLLAMA_NUM_PARALLEL</key>     <string>4</string>
+    <key>OLLAMA_MAX_LOADED_MODELS</key><string>${max_loaded}</string>
+    <!-- OLLAMA_ORIGINS=* allows the quick-chat.html (file:// or any local origin)
+         to hit the Ollama API. Single-user offline Mac — broad origin is fine. -->
+    <key>OLLAMA_ORIGINS</key>          <string>*</string>
+    <key>PATH</key>                    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>RunAtLoad</key>         <true/>
+  <key>KeepAlive</key>         <true/>
+  <key>StandardOutPath</key>   <string>${HOME}/Library/Logs/ollama.out.log</string>
+  <key>StandardErrorPath</key> <string>${HOME}/Library/Logs/ollama.err.log</string>
+</dict>
+</plist>
+EOF
+  log "Ollama tuning: KV-cache=q8_0 (2× context for same RAM), num_parallel=4, max_loaded_models=$max_loaded for ${ram_gb} GB RAM"
+  log "LaunchAgent wrapper at $LAUNCHER  (rename-safe drive resolution at runtime)"
+  chmod 644 "$LA_PLIST"
+
+  # Bootstrap with retry — "Input/output error" means launchd still has the label
+  # in some transient state; sleep + bootout-again + retry is the documented dance.
+  local attempt last_err=""
+  for attempt in 1 2 3; do
+    if launchctl bootstrap "$LA_TARGET" "$LA_PLIST" 2>/tmp/nomad-bootstrap.log; then
+      last_err=""
+      ok "LaunchAgent bootstrapped"
+      break
+    fi
+    last_err="$(cat /tmp/nomad-bootstrap.log)"
+    warn "bootstrap attempt $attempt failed: $last_err"
+    if echo "$last_err" | grep -q "Input/output error"; then
+      launchctl bootout "$LA_TARGET/$LA_LABEL" 2>/dev/null || true
+      sleep $((attempt * 2))
+    else
+      sleep 2
+    fi
+  done
+  if [[ -n "$last_err" ]]; then
+    die "bootstrap failed after 3 attempts: $last_err
+Manual recovery:
+  launchctl bootout $LA_TARGET/$LA_LABEL 2>/dev/null
+  pkill -f 'ollama serve'
+  sleep 5
+  launchctl bootstrap $LA_TARGET $LA_PLIST"
+  fi
+
+  log "waiting for Ollama API on :11434…"
+  local deadline=$(( $(date +%s) + 30 ))
+  while [[ $(date +%s) -lt $deadline ]]; do
+    curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1 && { ok "Ollama API responding"; return 0; }
+    sleep 1
+  done
+  die "Ollama did not start — check ~/Library/Logs/ollama.err.log"
+}
+
+# Symlink ourselves into brew's bin dir so `nomad <cmd>` works without the
+# 'bash' prefix or cd'ing into the bundle folder. Also install the manpage so
+# `man nomad` works. Silent on failure.
+step_self_install_to_path() {
+  local prefix bindir target manpath manpage_target
+  prefix="$(brew --prefix 2>/dev/null)"
+  [[ -z "$prefix" ]] && return 0
+
+  # CLI symlink
+  bindir="$prefix/bin"
+  target="$bindir/nomad"
+  if [[ -d "$bindir" && -w "$bindir" ]]; then
+    if [[ -L "$target" && "$(readlink "$target")" == "$HERE/nomad" ]]; then
+      :   # already linked
+    elif ln -sf "$HERE/nomad" "$target" 2>/dev/null; then
+      ok "linked: $target → $HERE/nomad  (you can now run 'nomad <cmd>' directly)"
+    fi
+  fi
+
+  # Manpage — only if we have one in the bundle
+  if [[ -f "$HERE/nomad.1" ]]; then
+    manpath="$prefix/share/man/man1"
+    manpage_target="$manpath/nomad.1"
+    mkdir -p "$manpath" 2>/dev/null
+    if [[ -d "$manpath" && -w "$manpath" ]]; then
+      if [[ -L "$manpage_target" && "$(readlink "$manpage_target")" == "$HERE/nomad.1" ]]; then
+        :
+      elif ln -sf "$HERE/nomad.1" "$manpage_target" 2>/dev/null; then
+        ok "manpage: $manpage_target  ('man nomad' now works)"
+      fi
+    fi
+  fi
+}
+
+step_secrets() {
+  section "Secrets (.env, off-iCloud) + state root (always-internal)"
+  mkdir -p "$SECRETS_DIR" && chmod 700 "$SECRETS_DIR"
+
+  # State root: hot mysql/redis state, always internal — survives drive eject
+  mkdir -p "$NOMAD_STATE_ROOT_DEFAULT"/{mysql,redis}
+  chmod 700 "$NOMAD_STATE_ROOT_DEFAULT"
+  ok "state root: $NOMAD_STATE_ROOT_DEFAULT  (mysql+redis go here)"
+
+  # Capture host hardware ONCE so admin can identify the real Apple chip via
+  # APPLE_CHIP_MODEL / APPLE_GPU_MODEL env vars (proximasan's fork reads these
+  # in si.cpu() / si.graphics() fallback paths)
+  local apple_chip apple_gpu
+  apple_chip="$(/usr/sbin/system_profiler SPHardwareDataType 2>/dev/null \
+    | /usr/bin/awk -F': *' '/Chip|Processor Name/{print $2; exit}' | xargs)"
+  [[ -z "$apple_chip" ]] && apple_chip="$(/usr/sbin/sysctl -n machdep.cpu.brand_string 2>/dev/null | xargs)"
+  if [[ "$(uname -m)" == "arm64" && -n "$apple_chip" ]]; then
+    apple_gpu="${apple_chip} (Metal)"
+  else
+    apple_gpu="$(/usr/sbin/system_profiler SPDisplaysDataType 2>/dev/null \
+      | /usr/bin/awk -F': *' '/Chipset Model/{print $2; exit}' | xargs)"
+  fi
+
+  if [[ -f "$ENV_FILE" ]]; then
+    warn ".env exists — preserving secrets"
+    # Backfill new keys for envs created before the split / Apple-chip injection
+    grep -qE "^NOMAD_STATE_ROOT=" "$ENV_FILE" || \
+      printf "NOMAD_STATE_ROOT=%s\n" "$NOMAD_STATE_ROOT_DEFAULT" >> "$ENV_FILE"
+    grep -qE "^APPLE_CHIP_MODEL=" "$ENV_FILE" || \
+      printf "APPLE_CHIP_MODEL=%s\n" "$apple_chip" >> "$ENV_FILE"
+    grep -qE "^APPLE_GPU_MODEL=" "$ENV_FILE" || \
+      printf "APPLE_GPU_MODEL=%s\n" "$apple_gpu"  >> "$ENV_FILE"
+    grep -qE "^HOST_PLATFORM=" "$ENV_FILE" || \
+      printf "HOST_PLATFORM=darwin\n" >> "$ENV_FILE"
+  else
+    cat > "$ENV_FILE" <<EOF
+NOMAD_DATA_ROOT=${DATA_ROOT_RESOLVED}
+NOMAD_STATE_ROOT=${NOMAD_STATE_ROOT_DEFAULT}
+APP_KEY=$(openssl rand -hex 32)
+MYSQL_ROOT_PASSWORD=$(openssl rand -hex 24)
+DB_PASSWORD=$(openssl rand -hex 24)
+URL=http://localhost:8080
+APPLE_CHIP_MODEL=${apple_chip}
+APPLE_GPU_MODEL=${apple_gpu}
+HOST_PLATFORM=darwin
+EOF
+    chmod 600 "$ENV_FILE"
+    ok "$ENV_FILE written (chmod 600)"
+    log "host hardware injected for admin: $apple_chip / $apple_gpu"
+  fi
+  echo "$ENV_FILE" > "$HERE/.env-pointer"
+
+  # Validate required keys (Apple chip vars are best-effort, not required)
+  for key in NOMAD_DATA_ROOT NOMAD_STATE_ROOT APP_KEY MYSQL_ROOT_PASSWORD DB_PASSWORD URL; do
+    grep -qE "^${key}=.+" "$ENV_FILE" || die ".env at $ENV_FILE missing $key — delete and re-run"
+  done
+
+  # Drive-change is now safe — mysql/redis live on internal state root,
+  # so swapping data roots only relocates content (Wikipedia, models, maps).
+  # No credential mismatch possible.
+  local current; current="$(grep '^NOMAD_DATA_ROOT=' "$ENV_FILE" | cut -d= -f2-)"
+  if [[ "$current" != "$DATA_ROOT_RESOLVED" ]]; then
+    /usr/bin/sed -i '' "s|^NOMAD_DATA_ROOT=.*|NOMAD_DATA_ROOT=$DATA_ROOT_RESOLVED|" "$ENV_FILE"
+    log "switched NOMAD_DATA_ROOT: $current → $DATA_ROOT_RESOLVED  (mysql/redis stay on internal state root)"
+  fi
+}
+
+# Pull a single model via Ollama's HTTP API, rendering our own progress line.
+# Args: model name, current index, total count, overall start timestamp.
+# Always-visible counter format:
+#   [2/4] qwen3:14b      pulling   42%   3845 MB / 9100 MB    elapsed 1m23s   total 4m07s
+# Falls back to per-line output (no \r) when stdout isn't a TTY (logging/piped).
+pull_one_model() {
+  local m="$1" idx="$2" tot="$3" overall_start="$4"
+  local model_start; model_start="$(date +%s)"
+  local last_pct=-1 last_status=""
+  local cr; [[ -t 1 ]] && cr=$'\r' || cr=$'\n'
+
+  fmt_dur() {
+    local s="$1"
+    if [[ "$s" -ge 60 ]]; then printf '%dm%02ds' $((s/60)) $((s%60))
+    else printf '%ds' "$s"; fi
+  }
+
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    local fields status total_b done_b
+    fields="$(echo "$line" | jq -r '"\(.status // "")|\(.total // 0)|\(.completed // 0)|\(.error // "")"' 2>/dev/null || echo "||0|0|")"
+    IFS='|' read -r status total_b done_b err <<<"$fields"
+    [[ ! "$total_b" =~ ^[0-9]+$ ]] && total_b=0
+    [[ ! "$done_b"  =~ ^[0-9]+$ ]] && done_b=0
+    if [[ -n "$err" ]]; then
+      printf "\n"
+      warn "API error for $m: $err"
+      return 1
+    fi
+
+    local elapsed=$(( $(date +%s) - model_start ))
+    local total_elapsed=$(( $(date +%s) - overall_start ))
+    if [[ "$total_b" -gt 0 ]]; then
+      local pct=$(( done_b * 100 / total_b ))
+      if [[ "$pct" -ne "$last_pct" || "$status" != "$last_status" ]]; then
+        printf "%s[%d/%d] %-22s %-9s %3d%%  %5d MB / %5d MB  elapsed %-7s total %-7s   " \
+          "$cr" "$idx" "$tot" "$m" "${status:0:9}" "$pct" \
+          "$(( done_b / 1048576 ))" "$(( total_b / 1048576 ))" \
+          "$(fmt_dur $elapsed)" "$(fmt_dur $total_elapsed)"
+        last_pct=$pct
+        last_status="$status"
+      fi
+    elif [[ -n "$status" && "$status" != "$last_status" ]]; then
+      printf "%s[%d/%d] %-22s %-50s elapsed %-7s   " \
+        "$cr" "$idx" "$tot" "$m" "${status:0:50}" \
+        "$(fmt_dur $elapsed)"
+      last_status="$status"
+    fi
+  done < <(curl -fsSN -X POST http://127.0.0.1:11434/api/pull \
+              -H 'Content-Type: application/json' \
+              -d "{\"name\":\"$m\",\"stream\":true}" 2>/dev/null)
+
+  printf "\n"
+  return 0
+}
+
+# Pre-pull the embedding model BEFORE wiring admin. ~270 MB, ~30 sec on
+# residential broadband. Means the moment admin learns about Ollama, RAG and
+# file embeddings work immediately. Without this, admin reports "Ollama
+# installed" but any embedding-dependent feature returns 500 until the main
+# foreground pull finishes the chat models.
+step_pull_embedding_quick() {
+  [[ "$SKIP_MODELS" -eq 1 ]] && return 0
+  local m="nomic-embed-text"
+  # Skip if already present
+  if curl -fsS http://127.0.0.1:11434/api/tags 2>/dev/null \
+     | jq -e --arg m "$m" '.models[]? | select(.name | startswith($m + ":") or .name == $m)' >/dev/null 2>&1; then
+    ok "embedding model $m already present"
+    return 0
+  fi
+  log "pre-pulling embedding model ($m, ~270 MB) so admin's RAG works the moment we wire it"
+  if pull_one_model "$m" 1 1 "$(date +%s)"; then
+    ok "embedding model ready"
+  else
+    warn "embedding pre-pull failed — admin will be wired but RAG is degraded until you 'nomad models pull $m'"
+  fi
+}
+
+# Warn loudly if the user forced a tier larger than what their RAM can handle.
+# Exits via die unless they confirm or pass --yes.
+warn_if_tier_above_auto() {
+  [[ "$TIER" == "auto" ]] && return 0
+  local auto_t; auto_t="$(auto_tier)"
+  local order=(tiny small medium large xl dreamy)
+  local auto_idx=-1 picked_idx=-1 i=0
+  for t in "${order[@]}"; do
+    [[ "$t" == "$auto_t" ]] && auto_idx=$i
+    [[ "$t" == "$TIER"   ]] && picked_idx=$i
+    i=$((i+1))
+  done
+  if [[ "$picked_idx" -gt "$auto_idx" ]]; then
+    local ram_gb; ram_gb=$(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 ))
+    echo
+    warn "you picked --tier $TIER but your ${ram_gb} GB Mac auto-resolves to '$auto_t'."
+    warn "Models in '$TIER' use up to $(tier_size_gb "$TIER") GB RAM at peak."
+    warn "Inference will be slow and may swap to disk during chat."
+    if ! confirm "Continue with --tier $TIER anyway?"; then
+      die "aborted — try 'nomad install --tier $auto_t' for auto-sized models"
+    fi
+    log "proceeding with oversized tier — you've been warned"
+  fi
+}
+
+# Pull the resolved tier — runs AFTER admin is up so the admin UI is usable
+# while models stream in. Each model pulled via the Ollama API so we render
+# our own counter (always visible, works when piped).
+step_pull_models() {
+  [[ "$SKIP_MODELS" -eq 1 ]] && return 0
+  local resolved_tier="$TIER"
+  [[ "$resolved_tier" == "auto" ]] && resolved_tier="$(auto_tier)"
+  local size_gb; size_gb="$(tier_size_gb "$resolved_tier")"
+
+  section "Model pulls — tier '$resolved_tier' (~${size_gb} GB total)"
+  log "models: $MODELS"
+  log "you can open http://localhost:8080 now — models stream into admin as they finish"
+  echo
+
+  local total ok_count=0 fail_count=0 i=0
+  total="$(echo "$MODELS" | wc -w | tr -d ' ')"
+  local overall_start; overall_start="$(date +%s)"
+
+  for m in $MODELS; do
+    i=$((i+1))
+    if pull_one_model "$m" "$i" "$total" "$overall_start"; then
+      ok "[$i/$total] $m ready"
+      ok_count=$((ok_count+1))
+    else
+      warn "[$i/$total] $m FAILED — admin works without it; retry: nomad models pull $m"
+      fail_count=$((fail_count+1))
+    fi
+  done
+
+  local total_dur=$(( $(date +%s) - overall_start ))
+  if [[ "$fail_count" -eq 0 ]]; then
+    ok "all $ok_count model(s) pulled in $((total_dur / 60))m$((total_dur % 60))s"
+  else
+    warn "$ok_count succeeded, $fail_count failed in $((total_dur / 60))m$((total_dur % 60))s"
+  fi
+}
+
+step_compose_pull() {
+  section "Compose pull"
+  ensure_docker_path
+  if ! dc pull 2>&1 | tee /tmp/nomad-pull.log; then
+    # Did proximasan's images fail? Fall back to upstream amd64 (slower, Rosetta-emulated)
+    if grep -qiE "proximasan|manifest unknown|not found|denied" /tmp/nomad-pull.log; then
+      warn "proximasan's images unreachable — falling back to upstream amd64 (Rosetta-emulated)"
+      # Append fallback overrides to .env so subsequent dc commands inherit them
+      grep -q "^NOMAD_ADMIN_IMAGE="   "$ENV_FILE" \
+        || echo "NOMAD_ADMIN_IMAGE=ghcr.io/crosstalk-solutions/project-nomad:latest" >> "$ENV_FILE"
+      grep -q "^NOMAD_UPDATER_IMAGE=" "$ENV_FILE" \
+        || echo "NOMAD_UPDATER_IMAGE=ghcr.io/crosstalk-solutions/project-nomad-sidecar-updater:latest" >> "$ENV_FILE"
+      # Re-add platform amd64 to the running compose (sed-injection if not already there)
+      if ! grep -q "platform: linux/amd64" "$COMPOSE_BASE"; then
+        cp "$COMPOSE_BASE" "$COMPOSE_BASE.bak"
+        awk '/^services:/{p=1} p && /^  (admin|updater):/{print; print "    platform: linux/amd64  # nomad: amd64-fallback"; next} {print}' \
+          "$COMPOSE_BASE" > "$COMPOSE_BASE.tmp" && mv "$COMPOSE_BASE.tmp" "$COMPOSE_BASE"
+      fi
+      log "retrying pull with upstream + platform: linux/amd64"
+      dc pull 2>&1 | tee /tmp/nomad-pull.log \
+        || die "fallback pull also failed — see /tmp/nomad-pull.log"
+      ok "compose images pulled (upstream amd64 fallback)"
+    else
+      die "compose pull failed — see /tmp/nomad-pull.log
+(common causes: no network, GHCR rate limit, auth issue)"
+    fi
+  else
+    ok "compose images pulled (proximasan multi-arch — native)"
+  fi
+}
+
+step_compose_up() {
+  section "Compose up"
+  dc up -d
+  ok "containers up"
+}
+
+step_wait_admin() {
+  section "Admin /api/health"
+  local deadline=$(( $(date +%s) + 180 ))
+  while [[ $(date +%s) -lt $deadline ]]; do
+    curl -fsS http://localhost:8080/api/health >/dev/null 2>&1 && { ok "admin healthy"; return 0; }
+    sleep 3
+  done
+  warn "admin slow to come up — last status:"
+  dc ps || true
+  die "investigate: nomad logs admin"
+}
+
+# Install a background LaunchAgent that polls admin's benchmark_results table
+# every 30 seconds and patches any unpatched rows with this Mac's real Apple
+# chip + Metal GPU. Means the upstream leaderboard never sees "-" for our
+# hardware — even after re-runs, even after Macs change. Idempotent: re-running
+# the install just rewrites the script and re-bootstraps the agent.
+step_install_benchmark_patcher() {
+  section "Benchmark host-info auto-patcher"
+
+  cat > "$PATCHER_SCRIPT" <<PATCHER_EOF
+#!/bin/bash
+# Auto-patch admin's benchmark_results with the Mac's real CPU/GPU. Containers
+# can't see Apple Silicon — admin records empty fields, leaderboard shows "-".
+# This script fixes any unpatched rows. Runs every 30s via LaunchAgent.
+
+set -uo pipefail
+
+ENV_FILE="$ENV_FILE"
+[[ -f "\$ENV_FILE" ]] || exit 0
+
+# Read DB password from .env without sourcing (avoid expansion issues)
+DB_PASSWORD="\$(grep '^DB_PASSWORD=' "\$ENV_FILE" | cut -d= -f2-)"
+[[ -n "\$DB_PASSWORD" ]] || exit 0
+
+# Find docker on PATH
+for d in /opt/homebrew/bin/docker /usr/local/bin/docker /Applications/OrbStack.app/Contents/MacOS/xbin/docker; do
+  if [[ -x "\$d" ]]; then
+    export PATH="\$(dirname "\$d"):\$PATH"
+    break
+  fi
+done
+command -v docker >/dev/null 2>&1 || exit 0
+docker version >/dev/null 2>&1 || exit 0
+
+# Quick existence check — if mysql container isn't running, nothing to patch
+docker ps --format '{{.Names}}' 2>/dev/null | grep -qE '^nomad_mysql$' || exit 0
+
+# Collect host hardware (cheap, ~10ms)
+chip="\$(/usr/sbin/system_profiler SPHardwareDataType 2>/dev/null | /usr/bin/awk -F': *' '/Chip|Processor Name/{print \$2; exit}' | xargs)"
+[[ -z "\$chip" ]] && chip="\$(/usr/sbin/sysctl -n machdep.cpu.brand_string 2>/dev/null | xargs)"
+[[ -z "\$chip" ]] && exit 0   # nothing to do if we can't even identify the chip
+
+cores="\$(/usr/sbin/sysctl -n hw.ncpu)"
+arch="\$(/usr/bin/uname -m)"
+if [[ "\$arch" == "arm64" ]]; then
+  gpu_model="\${chip} (Metal)"
+else
+  gpu_model="\$(/usr/sbin/system_profiler SPDisplaysDataType 2>/dev/null | /usr/bin/awk -F': *' '/Chipset Model/{print \$2; exit}' | xargs)"
+  [[ -z "\$gpu_model" ]] && gpu_model="\$chip"
+fi
+
+# Patch any rows where the model isn't already an Apple chip name (so we
+# don't keep rewriting already-correct rows uselessly)
+SQL="UPDATE benchmark_results
+     SET cpu_model = '\$chip',
+         cpu_cores = \$cores,
+         cpu_threads = \$cores,
+         gpu_model = '\$gpu_model'
+     WHERE (cpu_model = '' OR cpu_model IS NULL OR cpu_model NOT LIKE 'Apple%');"
+
+# Run silently — log only if there's an error worth investigating
+echo "\$SQL" | docker exec -i -e MYSQL_PWD="\$DB_PASSWORD" nomad_mysql \
+  /usr/bin/mysql -u nomad_user nomad >/dev/null 2>>"\$HOME/Library/Logs/nomad-benchmark-patcher.err.log" || true
+PATCHER_EOF
+  chmod 755 "$PATCHER_SCRIPT"
+  ok "patcher script: $PATCHER_SCRIPT"
+
+  # LaunchAgent — runs every 30s
+  cat > "$PATCHER_PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>            <string>${PATCHER_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${PATCHER_SCRIPT}</string>
+  </array>
+  <key>StartInterval</key>    <integer>30</integer>
+  <key>RunAtLoad</key>        <true/>
+  <key>StandardOutPath</key>  <string>${HOME}/Library/Logs/nomad-benchmark-patcher.out.log</string>
+  <key>StandardErrorPath</key><string>${HOME}/Library/Logs/nomad-benchmark-patcher.err.log</string>
+</dict>
+</plist>
+EOF
+  chmod 644 "$PATCHER_PLIST"
+
+  # Re-bootstrap (replaces any prior version)
+  if launchctl print "$LA_TARGET/$PATCHER_LABEL" >/dev/null 2>&1; then
+    launchctl bootout "$LA_TARGET/$PATCHER_LABEL" 2>/dev/null || true
+    sleep 1
+  fi
+  if launchctl bootstrap "$LA_TARGET" "$PATCHER_PLIST" 2>/dev/null; then
+    ok "auto-patcher loaded (every 30s, fills in real Apple chip on benchmark rows)"
+  else
+    warn "couldn't bootstrap patcher — leaderboard submissions will still show '-'.  Manual: nomad benchmark patch-host"
+  fi
+}
+
+# Wire admin → native Ollama via the admin's own API.
+# POST /api/ollama/configure-remote runs the full side-effect chain:
+#   • validates URL format
+#   • tests connectivity to the remote /v1/models endpoint
+#   • sets KV ai.remoteOllamaUrl
+#   • marks services.nomad_ollama installed=1
+#   • stops local nomad_ollama container if running
+#   • triggers Qdrant preflight install (for RAG embeddings)
+#   • sets chat.suggestionsEnabled=false
+#   • triggers RAG docs discovery
+# Idempotent — safe to re-run.
+step_configure_native_ollama() {
+  section "Wire admin → native Ollama (via admin API)"
+  api_check_up
+  local body resp
+  body='{"remoteUrl":"http://host.docker.internal:11434"}'
+  if resp="$(api_post /api/ollama/configure-remote "$body" 2>&1)"; then
+    if echo "$resp" | jq -e '.success == true' >/dev/null 2>&1; then
+      ok "configured: $(echo "$resp" | jq -r '.message // "Remote Ollama configured."')"
+      return 0
+    fi
+    warn "API returned: $resp"
+  else
+    warn "POST /api/ollama/configure-remote failed: $resp"
+  fi
+  # Defensive fallback for the rare case admin's API is up but configureRemote
+  # can't reach native Ollama (e.g., DNS for host.docker.internal not resolving
+  # inside the admin container yet). Direct SQL bypasses the connectivity test.
+  warn "falling back to direct SQL seed"
+  local db_pw; db_pw="$(grep '^DB_PASSWORD=' "$ENV_FILE" | cut -d= -f2-)"
+  echo '
+INSERT INTO kv_store (`key`, value, created_at, updated_at)
+VALUES ("ai.remoteOllamaUrl", "http://host.docker.internal:11434", NOW(), NOW()) AS new
+ON DUPLICATE KEY UPDATE
+  value      = IF(kv_store.value IS NULL OR kv_store.value = "", new.value, kv_store.value),
+  updated_at = NOW();
+UPDATE services SET installed = 1, installation_status = "idle", updated_at = NOW()
+WHERE service_name = "nomad_ollama" AND installed = 0;
+' | dc exec -T -e MYSQL_PWD="$db_pw" mysql mysql -u nomad_user nomad >/dev/null 2>&1 \
+  && { ok "seeded via SQL fallback"; dc restart admin >/dev/null; sleep 5; return 0; } \
+  || warn "both API and SQL paths failed — manually set Settings → Models → Remote Ollama URL"
+}
+
+cmd_install() {
+  sudo_bootstrap
+  log "Project NOMAD — macOS install (target: $(uname -m), $(sw_vers -productVersion))"
+
+  # If user picked a tier larger than auto-detected, warn explicitly about
+  # slowness/swap before committing — let them confirm or back off.
+  warn_if_tier_above_auto
+
+  step_deps
+  step_data_root "$DATA_ROOT_ARG"
+  step_orbstack
+  step_orbstack_tune_quiet  # auto-bump VM RAM to 80% of host (proportional, no prompt during install)
+  step_ollama_native
+  step_self_install_to_path
+  step_secrets
+  step_compose_pull
+  step_compose_up
+  step_wait_admin
+  step_pull_embedding_quick    # ~270 MB, ~30s — admin's RAG works the moment we wire
+  step_configure_native_ollama
+  step_install_benchmark_patcher   # background daemon that fixes leaderboard CPU/GPU automatically
+
+  # Admin is now usable. Print the URL banner BEFORE the long model pull so the
+  # user can open the admin in a browser while models stream in.
+  cat <<EOF
+
+${C_OK}── Admin is up ──${C_OFF}
+  Admin UI ........ http://localhost:8080
+  Log viewer ...... http://localhost:9999  (Dozzle)
+  Native Ollama ... http://localhost:11434  (Metal-accelerated)
+
+  ${C_HEAD}You can open the admin in your browser now.${C_OFF}
+  Models continue pulling below — the admin will see them as they finish.
+
+EOF
+
+  step_pull_models     # foreground; user sees native ollama progress
+
+  cat <<EOF
+
+${C_OK}════════════════════════════════════════════════════════════${C_OFF}
+${C_OK}  Project NOMAD install complete.${C_OFF}
+${C_OK}════════════════════════════════════════════════════════════${C_OFF}
+
+  Admin ........... http://localhost:8080  (open + complete onboarding)
+  Native Ollama is already wired into admin — easy-setup defaults to it.
+
+  Lifecycle:
+    nomad up | down | restart        # stack
+    nomad logs [service]             # tail logs (default: admin)
+    nomad check                      # full diagnostic + auto-flag issues
+    nomad models                     # list + show tier table
+    nomad models pull <tier|names>   # pull more models
+
+EOF
+}
+
+# ─── lifecycle subcommands ────────────────────────────────────────────────────
+cmd_up()     { ensure_docker_path; dc up -d; }
+cmd_down()   { ensure_docker_path; dc down; }
+cmd_restart(){ ensure_docker_path; dc restart "${1:-admin}"; }
+cmd_logs() {
+  ensure_docker_path
+  # Default: snapshot last 100 lines of admin (no follow).
+  # Pass-through any flags + service names: nomad logs -f admin / nomad logs --tail 500 mysql
+  if [[ $# -eq 0 ]]; then
+    dc logs --tail=100 admin
+  else
+    dc logs "$@"
+  fi
+}
+
+cmd_models() {
+  local sub="${1:-list}"
+  case "$sub" in
+    list|"")
+      if ! curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+        die "native Ollama not responding — run 'nomad install' or 'nomad reset-ollama'"
+      fi
+      local ram_gb; ram_gb=$(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 ))
+      # Rule of thumb: a Q4 model needs ~1.2× its file size in RAM for inference
+      # (weights + KV cache + overhead). Compare against (RAM - 6 GB OS+apps reserve).
+      local usable_ram_gb=$(( ram_gb - 6 ))
+      [[ $usable_ram_gb -lt 2 ]] && usable_ram_gb=2
+
+      echo "Installed models (native Ollama on :11434, this Mac has ${ram_gb} GB RAM, ~${usable_ram_gb} GB usable for inference):"
+      # Per-model fits check: emit name | size | fits | modified
+      curl -fsS http://127.0.0.1:11434/api/tags \
+        | jq -r --arg ur "$usable_ram_gb" '
+          .models[]? |
+          (.size/1024/1024/1024) as $gb |
+          ($gb * 1.2) as $needed |
+          (if $needed <= ($ur|tonumber) then "✓ fits"
+           elif $needed <= ($ur|tonumber)*1.3 then "⚠ tight (may swap)"
+           else "✗ too big" end) as $verdict |
+          "  \(.name)\t\($gb | tostring | .[0:5]) GB\t\($needed | tostring | .[0:5]) GB needed\t\($verdict)\tmodified=\(.modified_at[0:19])"' \
+        | column -t -s $'\t'
+      echo
+      local detected; detected="$(auto_tier)"
+      echo "Tiers (auto-detected for this Mac: ${ram_gb} GB RAM → '$detected'):"
+      printf "  %-7s ~%4s GB   %s\n" "tiny"   "$(tier_size_gb tiny)"   "$TIER_TINY"
+      printf "  %-7s ~%4s GB   %s\n" "small"  "$(tier_size_gb small)"  "$TIER_SMALL"
+      printf "  %-7s ~%4s GB   %s\n" "medium" "$(tier_size_gb medium)" "$TIER_MEDIUM"
+      printf "  %-7s ~%4s GB   %s\n" "large"  "$(tier_size_gb large)"  "$TIER_LARGE"
+      printf "  %-7s ~%4s GB   %s\n" "xl"     "$(tier_size_gb xl)"     "$TIER_XL"
+      printf "  %-7s ~%4s GB   %s\n" "dreamy" "$(tier_size_gb dreamy)" "$TIER_DREAMY"
+      echo
+      echo "Pull a tier:           nomad models pull <tier>"
+      echo "Pull specific names:   nomad models pull qwen3:32b deepseek-r1:32b"
+      ;;
+    pull)
+      shift
+      ensure_ollama_path || die "ollama not found anywhere — run 'nomad install' first"
+      if ! curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+        die "native Ollama not responding — run 'nomad reset-ollama'"
+      fi
+      # Args: nothing (use --tier or auto), tier name, or specific model names
+      local to_pull
+      if [[ $# -eq 0 ]]; then
+        to_pull="$MODELS"   # already resolved from --tier or auto at dispatch
+        local t="$TIER"; [[ "$t" == "auto" ]] && t="$(auto_tier)"
+        log "pulling tier '$t' (~$(tier_size_gb "$t") GB): $to_pull"
+      elif [[ $# -eq 1 ]] && echo " auto tiny small medium large xl dreamy " | grep -q " $1 "; then
+        to_pull="$(resolve_tier_models "$1")"
+        local t="$1"; [[ "$t" == "auto" ]] && t="$(auto_tier)"
+        log "pulling tier '$t' (~$(tier_size_gb "$t") GB): $to_pull"
+      else
+        to_pull="$*"
+        log "pulling: $to_pull"
+      fi
+      local ok_count=0 fail_count=0
+      for m in $to_pull; do
+        if ollama pull "$m"; then
+          ok "pulled: $m"
+          ok_count=$((ok_count+1))
+        else
+          warn "failed: $m  (check name at https://ollama.com/library)"
+          fail_count=$((fail_count+1))
+        fi
+      done
+      if [[ "$fail_count" -eq 0 ]]; then
+        ok "all $ok_count model(s) pulled"
+      else
+        warn "$ok_count succeeded, $fail_count failed"
+        [[ "$ok_count" -eq 0 ]] && exit 1
+      fi
+      ;;
+    *)
+      die "usage: nomad models [list|pull [NAME ...]]" ;;
+  esac
+}
+
+cmd_upgrade_models() {
+  if ! curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+    die "native Ollama not responding"
+  fi
+  local installed
+  installed="$(curl -fsS http://127.0.0.1:11434/api/tags | jq -r '.models[]?.name')"
+  [[ -z "$installed" ]] && { warn "no models installed — pull some first"; return 0; }
+  log "upgrading installed models (re-pull = latest tag of same family):"
+  for m in $installed; do
+    log "  $m"
+    ollama pull "$m"
+  done
+  ok "all installed models refreshed"
+}
+
+# ─── API-backed subcommands ───────────────────────────────────────────────────
+
+# Generic escape hatch for any admin endpoint. Pretty-prints JSON via jq.
+# Usage: nomad api /api/system/info
+#        nomad api /api/ollama/configure-remote '{"remoteUrl":"http://..."}'
+#        nomad api /api/downloads/jobs/zim
+cmd_api() {
+  api_check_up
+  local path="${1:?usage: nomad api <PATH> [JSON_BODY]}"
+  local body="${2:-}"
+  local method="GET"
+  [[ -n "$body" ]] && method="POST"
+  local resp
+  if [[ "$method" == "POST" ]]; then
+    resp="$(api_post "$path" "$body")"
+  else
+    resp="$(api_get "$path")"
+  fi
+  if echo "$resp" | jq . >/dev/null 2>&1; then
+    echo "$resp" | jq .
+  else
+    echo "$resp"
+  fi
+}
+
+# List download jobs across all queues (downloads, embed, etc.).
+# Subcommands: cancel, remove
+cmd_downloads() {
+  api_check_up
+  local sub="${1:-list}"
+  case "$sub" in
+    list|"")
+      local resp; resp="$(api_get /api/downloads/jobs)"
+      if [[ -z "$resp" || "$resp" == "[]" || "$resp" == "{}" ]]; then
+        ok "no download jobs in any state"; return 0
+      fi
+      # Pretty-print: state | filetype | url | progress | error
+      echo "$resp" | jq -r '
+        if type == "object" then
+          (.active // []) + (.waiting // []) + (.delayed // []) + (.failed // []) + (.completed // [])
+        else . end
+        | .[] |
+        [
+          (.state // "?"),
+          (.filetype // .data.filetype // "?"),
+          (.data.url // .url // "?" | tostring | .[-60:]),
+          (.progress.percent // .progress // 0 | tostring + "%"),
+          ((.failedReason // "") | .[0:60])
+        ] | @tsv
+      ' 2>/dev/null | column -t -s $'\t' || echo "$resp" | jq .
+      ;;
+    cancel)
+      local jid="${2:?usage: nomad downloads cancel JOBID}"
+      api_post "/api/downloads/jobs/$jid/cancel" >/dev/null && ok "cancelled $jid"
+      ;;
+    remove)
+      local jid="${2:?usage: nomad downloads remove JOBID}"
+      api_delete "/api/downloads/jobs/$jid" >/dev/null && ok "removed $jid"
+      ;;
+    *)
+      die "unknown subcommand: $sub
+usage: nomad downloads [list|cancel JOBID|remove JOBID]" ;;
+  esac
+}
+
+# Wikipedia state + variant selection.
+# Subcommands: state (default), select, list
+cmd_zim() {
+  api_check_up
+  local sub="${1:-list}"
+  case "$sub" in
+    list)
+      log "installed ZIMs (admin's catalog):"
+      api_get /api/zim/list | jq . 2>/dev/null || true
+      ;;
+    wikipedia)
+      local action="${2:-state}"
+      case "$action" in
+        state|"")
+          api_get /api/zim/wikipedia | jq . ;;
+        select)
+          local variant="${3:?usage: nomad zim wikipedia select VARIANT_ID
+Variants: top-mini | top-nopic | all-mini | all-nopic | all-maxi (see upstream collections/wikipedia.json)}"
+          local resp
+          resp="$(api_post /api/zim/wikipedia/select "{\"optionId\":\"$variant\"}")"
+          echo "$resp" | jq . 2>/dev/null || echo "$resp"
+          ;;
+        *)
+          die "unknown wikipedia subcommand: $action
+usage: nomad zim wikipedia [state|select VARIANT]" ;;
+      esac ;;
+    remote)
+      api_get /api/zim/list-remote | jq . ;;
+    *)
+      die "unknown subcommand: $sub
+usage: nomad zim [list|wikipedia [state|select VARIANT]|remote]" ;;
+  esac
+}
+
+# Service install/affect/list.
+# Subcommands: list (default), install NAME, affect ACTION NAME (start/stop/restart)
+cmd_services() {
+  api_check_up
+  local sub="${1:-list}"
+  case "$sub" in
+    list|"")
+      log "services:"
+      api_get /api/system/services \
+        | jq -r '.[]? // empty | "\(.service_name // "?")\t\(.installed // false | tostring)\t\(.installation_status // "?")\t\(.container_image // "")"' 2>/dev/null \
+        | column -t -s $'\t' \
+        || api_get /api/system/services | jq . ;;
+    install)
+      local name="${2:?usage: nomad services install NAME}"
+      api_post /api/system/services/install "{\"serviceName\":\"$name\"}" | jq . ;;
+    affect)
+      local action="${2:?}" name="${3:?usage: nomad services affect <start|stop|restart> NAME}"
+      api_post /api/system/services/affect "{\"action\":\"$action\",\"serviceName\":\"$name\"}" | jq . ;;
+    *)
+      die "unknown subcommand: $sub
+usage: nomad services [list|install NAME|affect ACTION NAME]" ;;
+  esac
+}
+
+# Full reinstall — nuclear "wipe everything and start fresh" path. One command.
+# Wipes all NOMAD state (containers, LaunchAgent, .env, drive contents, cached
+# compose images), then runs cmd_install from scratch on the same drive.
+# Preserves brew + OrbStack + Ollama (those are user-level tools).
+cmd_reinstall() {
+  section "Full reinstall — wipe + start fresh"
+  echo "This wipes ALL NOMAD state and reinstalls from scratch:"
+  echo "  • Stops + removes all NOMAD containers + named volumes"
+  echo "  • Removes Ollama LaunchAgent + plist"
+  echo "  • Removes secrets (~/.config/project-nomad/.env)"
+  echo "  • Removes ALL data on the external drive (mysql, redis, ollama-models, storage)"
+  echo "  • Removes cached compose images (forces fresh pull)"
+  echo "  • Re-runs 'nomad install' from scratch"
+  echo
+  echo "Brew tools (ollama, orbstack, jq) and this bundle stay intact."
+  echo
+  confirm "Wipe everything and reinstall?" || die "aborted"
+
+  # Capture data root before wipe so install reuses the same drive without prompting
+  local saved_root=""
+  [[ -f "$ENV_FILE" ]] && saved_root="$(grep '^NOMAD_DATA_ROOT=' "$ENV_FILE" | cut -d= -f2-)"
+
+  # All subsequent prompts auto-yes (uninstall's "remove drive data" included)
+  NOMAD_YES=1
+  cmd_uninstall
+
+  # Remove cached compose images so install pulls fresh
+  if ensure_docker_path && docker version >/dev/null 2>&1; then
+    log "removing cached compose images"
+    for img in \
+      ghcr.io/crosstalk-solutions/project-nomad:latest \
+      ghcr.io/crosstalk-solutions/project-nomad-sidecar-updater:latest \
+      amir20/dozzle:v10.0 mysql:8.0 redis:7-alpine; do
+      docker image rm -f "$img" >/dev/null 2>&1 || true
+    done
+    # Also clear the amd64 override so install starts clean
+    docker image prune -f >/dev/null 2>&1 || true
+  fi
+
+  # Clean any /tmp scratch from previous runs
+  rm -f /tmp/nomad-*.log /tmp/nomad-*.result /tmp/nomad-pull.log /tmp/nomad-bootstrap.log 2>/dev/null || true
+
+  echo
+  log "starting fresh install in 3 seconds (Ctrl-C to abort)…"
+  sleep 3
+
+  # Reuse the same drive — install won't re-prompt
+  DATA_ROOT_ARG="$saved_root"
+  cmd_install
+}
+
+# Full uninstall — clean wipe of NOMAD state. Preserves user-level installs
+# (Homebrew, OrbStack, Ollama) since other apps may depend on them.
+# Removes:
+#   • All NOMAD containers (admin/mysql/redis/dozzle/updater + admin-spawned
+#     content containers like nomad_ollama, nomad_kiwix, nomad_qdrant, etc.)
+#   • Named volumes (nomad-update-shared)
+#   • Ollama LaunchAgent + plist
+#   • Secrets at ~/.config/project-nomad/.env
+#   • Optionally: data on the external drive (mysql, redis, ollama-models, storage)
+cmd_uninstall() {
+  section "Uninstall Project NOMAD"
+
+  echo "This will remove:"
+  echo "  • All nomad_* containers + named volumes"
+  echo "  • Ollama LaunchAgent (~/Library/LaunchAgents/$LA_LABEL.plist)"
+  echo "  • Secrets ($ENV_FILE)"
+  echo "  • Optionally: data drive contents (you confirm separately)"
+  echo
+  echo "This will NOT remove: Homebrew, OrbStack, Ollama (user-level installs)."
+  echo
+  confirm "Proceed?" || die "aborted"
+
+  # 1. Capture data-root before we delete .env
+  local data_root=""
+  [[ -f "$ENV_FILE" ]] && data_root="$(grep '^NOMAD_DATA_ROOT=' "$ENV_FILE" | cut -d= -f2-)"
+
+  # 2. KILL everything NOMAD-related — SIGKILL first, no graceful shutdown.
+  # Use SUBSTRING name match (more universal than regex anchor) plus the
+  # compose-project labels for both 'project-nomad' (our stack) AND
+  # 'project-nomad-management' (admin-spawned content containers OrbStack
+  # groups separately). Also use -a so stopped containers are caught.
+  if ensure_docker_path && docker version >/dev/null 2>&1; then
+    log "discovering all NOMAD containers (running + stopped)…"
+    # Find every container with 'nomad' in name OR labeled by our compose projects
+    local all_ids
+    all_ids="$( {
+      docker ps -aq --filter 'name=nomad'
+      docker ps -aq --filter 'label=com.docker.compose.project=project-nomad'
+      docker ps -aq --filter 'label=com.docker.compose.project=project-nomad-management'
+    } 2>/dev/null | sort -u )"
+
+    if [[ -n "$all_ids" ]]; then
+      log "containers to destroy:"
+      docker ps -a --format '    {{.ID}}  {{.Names}}  {{.Status}}' 2>/dev/null \
+        | grep -E "$(echo "$all_ids" | tr '\n' '|' | sed 's/|$//')" || true
+
+      # SIGKILL anything still running
+      local running_ids; running_ids="$(docker ps -q 2>/dev/null | grep -F -f <(echo "$all_ids") || true)"
+      if [[ -n "$running_ids" ]]; then
+        log "SIGKILL on running containers"
+        # shellcheck disable=SC2086
+        docker kill $running_ids >/dev/null 2>&1 || true
+      fi
+
+      # Tear down our compose project (network, named volumes)
+      if [[ -f "$ENV_FILE" && -f "$COMPOSE_BASE" ]]; then
+        dc down -v --remove-orphans --timeout 0 2>&1 | sed 's/^/  /' || true
+      fi
+
+      # Force-remove all discovered containers (stopped + alive)
+      # shellcheck disable=SC2086
+      docker rm -f $all_ids >/dev/null 2>&1 || true
+    fi
+
+    # Networks — both compose projects can leave one each
+    docker network rm project-nomad_default project-nomad-management_default >/dev/null 2>&1 || true
+
+    # Volumes — named volume + anything labeled by either compose project
+    docker volume rm nomad-update-shared >/dev/null 2>&1 || true
+    local labeled_vols
+    labeled_vols="$( {
+      docker volume ls -q --filter 'label=com.docker.compose.project=project-nomad'
+      docker volume ls -q --filter 'label=com.docker.compose.project=project-nomad-management'
+    } 2>/dev/null | sort -u )"
+    if [[ -n "$labeled_vols" ]]; then
+      # shellcheck disable=SC2086
+      docker volume rm $labeled_vols >/dev/null 2>&1 || true
+    fi
+
+    # Verify nothing remains with 'nomad' in the name
+    local remaining; remaining="$(docker ps -aq --filter 'name=nomad' 2>/dev/null)"
+    if [[ -z "$remaining" ]]; then
+      ok "all NOMAD containers + volumes + networks destroyed"
+    else
+      warn "some containers survived:"
+      docker ps -a --filter 'name=nomad' --format '    {{.Names}}\t{{.Status}}'
+    fi
+  else
+    warn "docker not reachable — skipping container removal"
+  fi
+
+  # 3. Bootout LaunchAgents + kill any orphan ollama
+  for label in "$LA_LABEL" "$PATCHER_LABEL"; do
+    if launchctl print "$LA_TARGET/$label" >/dev/null 2>&1; then
+      launchctl bootout "$LA_TARGET/$label" 2>/dev/null || true
+      sleep 1
+    fi
+  done
+  pkill -f 'ollama serve' 2>/dev/null || true
+  for plist in "$LA_PLIST" "$PATCHER_PLIST"; do
+    [[ -f "$plist" ]] && rm -f "$plist" && ok "removed $plist"
+  done
+  [[ -f "$PATCHER_SCRIPT" ]] && rm -f "$PATCHER_SCRIPT"
+
+  # 4. Capture state-root path before we remove .env
+  local state_root=""
+  [[ -f "$ENV_FILE" ]] && state_root="$(grep '^NOMAD_STATE_ROOT=' "$ENV_FILE" 2>/dev/null | cut -d= -f2-)"
+  [[ -z "$state_root" ]] && state_root="$NOMAD_STATE_ROOT_DEFAULT"
+
+  # 5. Remove secrets + pointer
+  if [[ -f "$ENV_FILE" ]]; then
+    rm -f "$ENV_FILE" && ok "removed $ENV_FILE"
+  fi
+  rm -f "$HERE/.env-pointer"
+
+  # 6. State root (mysql + redis) — always wipe on uninstall (it's tied to the
+  # secrets we just deleted; mysql can't decrypt itself with a new password)
+  if [[ -d "$state_root" ]]; then
+    rm -rf "$state_root" && ok "state root cleaned: $state_root  (mysql + redis data gone)"
+  fi
+
+  # 7. Optionally remove data drive contents (content — Wikipedia, models, maps)
+  if [[ -n "$data_root" && -d "$data_root" ]]; then
+    echo
+    echo "Content at $data_root:"
+    du -sh "$data_root"/* 2>/dev/null | sed 's/^/  /'
+    echo
+    if confirm "Also remove all content on the data drive? (storage, ollama-models)"; then
+      rm -rf "$data_root"
+      ok "data drive cleaned: $data_root"
+    else
+      log "preserving content at $data_root — re-run 'nomad install' to reuse it"
+    fi
+  fi
+
+  echo
+  ok "Project NOMAD uninstalled"
+  dim "Reinstall:                bash nomad install"
+  dim "Also remove brew tools:   brew uninstall ollama jq && brew uninstall --cask orbstack"
+}
+
+# Auto-tune variant called from install — no prompt, no human in loop.
+# Skips silently if 'orb' isn't on PATH or if current allocation is already
+# at/above target. Logs whatever it does.
+step_orbstack_tune_quiet() {
+  section "OrbStack memory tune (auto)"
+  if ! command -v orb >/dev/null 2>&1; then
+    for o in /Applications/OrbStack.app/Contents/MacOS/xbin/orb \
+             /Applications/OrbStack.app/Contents/MacOS/bin/orb; do
+      [[ -x "$o" ]] && { export PATH="$(dirname "$o"):$PATH"; break; }
+    done
+  fi
+  if ! command -v orb >/dev/null 2>&1; then
+    warn "'orb' CLI not found — skipping memory tune. Run 'nomad orbstack-tune' later if needed"
+    return 0
+  fi
+
+  local host_gb target_gb current_gb
+  host_gb=$(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 ))
+  target_gb=$(( host_gb * 8 / 10 ))
+  [[ $(( host_gb - target_gb )) -lt 4 ]] && target_gb=$(( host_gb - 4 ))
+  [[ $target_gb -lt 4 ]] && target_gb=4
+
+  current_gb="$(orb config show 2>/dev/null | awk -F'[: ]+' '/^memory/{print $2}' | head -1)"
+
+  if [[ -n "$current_gb" && "$current_gb" -ge "$target_gb" ]]; then
+    ok "OrbStack already at ${current_gb} GB (target was ${target_gb}) — skipping"
+    return 0
+  fi
+
+  log "tuning OrbStack: ${current_gb:-unset} GB → ${target_gb} GB (80% of ${host_gb} GB host)"
+  if orb config set memory_gib "$target_gb" 2>/dev/null; then
+    log "restarting OrbStack VM (~10s)…"
+    orb stop  >/dev/null 2>&1 || true
+    sleep 2
+    orb start >/dev/null 2>&1 || true
+    sleep 6
+    # Re-wait for daemon since we just restarted it
+    local d=$(( $(date +%s) + 60 ))
+    while [[ $(date +%s) -lt $d ]]; do
+      docker version >/dev/null 2>&1 && break
+      sleep 2
+    done
+    ok "OrbStack tuned to ${target_gb} GB and restarted"
+  else
+    warn "'orb config set memory_gib' failed — your OrbStack version may not expose this knob."
+    warn "Manual: OrbStack.app → Settings → Resources → Memory → ${target_gb} GB"
+  fi
+}
+
+# OrbStack memory tuner — by default OrbStack allocates roughly half the host
+# RAM to its Linux VM. On a 32 GB Mac that means admin's "System Information"
+# panel reports ~15 GB, even though the host has 32. This bumps OrbStack to
+# host_ram - 8 GB (capped at 96 GB) — leaves macOS enough headroom while
+# giving the VM most of the unified memory pool.
+#
+# Note: this does NOT change inference speed. Native Ollama already uses the
+# full 32 GB via Metal. The tune just makes admin's system stats honest.
+cmd_orbstack_tune() {
+  section "OrbStack memory tune"
+
+  if ! command -v orb >/dev/null 2>&1; then
+    for o in /Applications/OrbStack.app/Contents/MacOS/xbin/orb \
+             /Applications/OrbStack.app/Contents/MacOS/bin/orb; do
+      [[ -x "$o" ]] && { export PATH="$(dirname "$o"):$PATH"; break; }
+    done
+  fi
+  command -v orb >/dev/null 2>&1 \
+    || die "'orb' CLI not found. Install OrbStack first, or bump memory manually in OrbStack → Settings → Resources"
+
+  # Optional explicit override: nomad orbstack-tune <gb>
+  local explicit_target="${1:-}"
+  local host_gb target_gb current_gb
+  host_gb=$(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 ))
+
+  if [[ -n "$explicit_target" && "$explicit_target" =~ ^[0-9]+$ ]]; then
+    target_gb="$explicit_target"
+  else
+    # 80% of host RAM (proportional, scales from 8 GB Air to 512 GB Studio).
+    # Floor: 4 GB for the VM. Always reserve at least 4 GB for macOS.
+    target_gb=$(( host_gb * 8 / 10 ))
+    [[ $(( host_gb - target_gb )) -lt 4 ]] && target_gb=$(( host_gb - 4 ))
+    [[ $target_gb -lt 4 ]] && target_gb=4
+  fi
+
+  current_gb="$(orb config show 2>/dev/null | awk -F'[: ]+' '/^memory/{print $2}' | head -1)"
+
+  log "host RAM:         ${host_gb} GB"
+  log "current OrbStack: ${current_gb:-unset} GB"
+  log "target:           ${target_gb} GB ($([[ -n "$explicit_target" ]] && echo "explicit" || echo "80% of host, min 4 GB host reserve"))"
+
+  if [[ -n "$current_gb" && "$current_gb" -ge "$target_gb" ]]; then
+    ok "OrbStack already allocates ${current_gb} GB — no change needed"
+    return 0
+  fi
+
+  confirm "Bump OrbStack memory limit to ${target_gb} GB and restart? (interrupts running containers briefly)" \
+    || die "aborted"
+
+  log "setting orb config memory_gib=${target_gb}"
+  if ! orb config set memory_gib "$target_gb" 2>&1; then
+    warn "'orb config set' failed — your OrbStack version may not expose memory_gib"
+    warn "Bump manually: OrbStack app → Settings → Resources → Memory → ${target_gb} GB"
+    return 1
+  fi
+
+  log "restarting OrbStack to apply (~10–15s)…"
+  orb stop  >/dev/null 2>&1 || true
+  sleep 2
+  orb start >/dev/null 2>&1 || true
+  sleep 6
+
+  ok "OrbStack memory limit now ${target_gb} GB"
+  log "the NOMAD stack should auto-restart. If admin's System Information still shows the old number, run: nomad up"
+}
+
+# Reset the Ollama LaunchAgent — recovery for "bootstrap failed: 5: Input/output
+# error" or any other stuck-launchd state. Bootout, kill orphan ollama processes,
+# wait for launchd to commit, re-bootstrap, wait for API.
+# Use this when 'nomad install' bombs at the LaunchAgent step on a machine that
+# had an older buggy NOMAD install previously load the agent.
+cmd_reset_ollama() {
+  section "Reset Ollama LaunchAgent"
+
+  # 1. Bootout (must happen BEFORE killing process so KeepAlive can't respawn)
+  if launchctl print "$LA_TARGET/$LA_LABEL" >/dev/null 2>&1; then
+    log "unloading $LA_LABEL"
+    launchctl bootout "$LA_TARGET/$LA_LABEL" 2>/dev/null \
+      || warn "bootout returned non-zero (continuing — likely already unloaded)"
+    sleep 2
+  else
+    log "$LA_LABEL is not loaded — proceeding to clean up any orphan processes"
+  fi
+
+  # 2. Kill any orphan ollama serve processes (KeepAlive can't fight us now)
+  if pgrep -f "ollama serve" >/dev/null 2>&1; then
+    log "killing orphan 'ollama serve' processes"
+    pkill -f "ollama serve" 2>/dev/null || true
+    sleep 2
+    if pgrep -f "ollama serve" >/dev/null 2>&1; then
+      pkill -9 -f "ollama serve" 2>/dev/null || true
+      sleep 1
+    fi
+    pgrep -f "ollama serve" >/dev/null 2>&1 \
+      && die "could not kill ollama serve — manual: ps aux | grep ollama"
+  fi
+
+  # 3. Confirm :11434 is free
+  if lsof -nP -iTCP:11434 -sTCP:LISTEN >/dev/null 2>&1; then
+    warn ":11434 still has a listener after the kill"
+    lsof -nP -iTCP:11434 -sTCP:LISTEN
+    die "free it manually, then re-run: nomad reset-ollama"
+  fi
+  ok ":11434 free"
+
+  # 4. Plist must exist (if not, user needs to run install which generates it)
+  if [[ ! -f "$LA_PLIST" ]]; then
+    die "LaunchAgent plist missing at $LA_PLIST
+This means NOMAD has never been installed on this machine.
+Run: bash nomad install"
+  fi
+  ok "plist present at $LA_PLIST"
+
+  # 5. Re-bootstrap (with retry on residual I/O error)
+  log "bootstrapping LaunchAgent"
+  local attempt last_err=""
+  for attempt in 1 2 3; do
+    if launchctl bootstrap "$LA_TARGET" "$LA_PLIST" 2>/tmp/nomad-bootstrap.log; then
+      last_err=""
+      break
+    fi
+    last_err="$(cat /tmp/nomad-bootstrap.log)"
+    warn "bootstrap attempt $attempt failed: $last_err"
+    launchctl bootout "$LA_TARGET/$LA_LABEL" 2>/dev/null || true
+    sleep $((attempt * 2))
+  done
+  [[ -n "$last_err" ]] && die "bootstrap still failing after 3 attempts: $last_err
+Reboot the Mac and try again — this clears all launchd transient state."
+  ok "LaunchAgent loaded"
+
+  # 6. Wait for API to come back up
+  log "waiting for Ollama API on :11434…"
+  local deadline=$(( $(date +%s) + 30 ))
+  while [[ $(date +%s) -lt $deadline ]]; do
+    if curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+      ok "Ollama API responding"
+      return 0
+    fi
+    sleep 1
+  done
+  warn "API not yet responding — tail ~/Library/Logs/ollama.err.log for hints"
+}
+
+# Benchmark — native Metal Ollama vs container (Rosetta-emulated) Ollama on
+# the same Mac, same model, same prompt. The Council's #1 publish-gate ask:
+# put one reproducible benchmark number in the README before any "10× faster"
+# claim ships.
+# Patch admin's latest benchmark row with this Mac's actual host hardware
+# (Apple chip + Metal GPU). Containers can't see Metal — admin records empty
+# CPU/GPU which then submits as "-" to the upstream leaderboard. This lets
+# Mac submissions show real hardware before user clicks Submit in the UI.
+cmd_benchmark_patch_host() {
+  ensure_docker_path
+  api_check_up
+  [[ -f "$ENV_FILE" ]] || die ".env missing — run 'nomad install' first"
+
+  # Collect host hardware from macOS, not from inside the container
+  local chip cores ram_gb hw_block
+  hw_block="$(system_profiler SPHardwareDataType 2>/dev/null)"
+  chip="$(echo "$hw_block" | awk -F': *' '/Chip|Processor Name/{print $2; exit}' | xargs)"
+  [[ -z "$chip" ]] && chip="$(sysctl -n machdep.cpu.brand_string 2>/dev/null | xargs)"
+  cores="$(sysctl -n hw.ncpu)"
+  ram_gb=$(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 ))
+
+  # GPU: on Apple Silicon, the GPU is integrated into the SoC (e.g. "Apple M4 (Metal)").
+  # On Intel Macs there's a discrete or integrated GPU that we'd want to detect separately.
+  local gpu_model
+  if [[ "$(uname -m)" == "arm64" && -n "$chip" ]]; then
+    gpu_model="$chip (Metal)"
+  else
+    gpu_model="$(system_profiler SPDisplaysDataType 2>/dev/null | awk -F': *' '/Chipset Model/{print $2; exit}' | xargs)"
+    [[ -z "$gpu_model" ]] && gpu_model="(unknown)"
+  fi
+
+  log "Host hardware (macOS, real values, not container-view):"
+  log "  CPU:    $chip"
+  log "  Cores:  $cores"
+  log "  GPU:    $gpu_model"
+  log "  RAM:    ${ram_gb} GB"
+  echo
+
+  local db_pw; db_pw="$(grep '^DB_PASSWORD=' "$ENV_FILE" | cut -d= -f2-)"
+
+  # Verify there IS a latest benchmark row to patch
+  local row_count
+  row_count="$(echo 'SELECT COUNT(*) FROM benchmark_results;' \
+    | dc exec -T -e MYSQL_PWD="$db_pw" mysql mysql -u nomad_user --silent --skip-column-names nomad 2>/dev/null \
+    | tr -d '[:space:]')"
+  if [[ -z "$row_count" || "$row_count" == "0" ]]; then
+    die "no benchmark_results in admin DB — run a benchmark from admin UI first (Settings → Benchmark)"
+  fi
+
+  log "patching latest of $row_count benchmark row(s) with host hardware…"
+  # Single-quote the values for SQL safety (chip names are stable strings)
+  local sql
+  sql="UPDATE benchmark_results
+       SET cpu_model = '$chip',
+           cpu_cores = $cores,
+           cpu_threads = $cores,
+           gpu_model = '$gpu_model'
+       WHERE id = (
+         SELECT id FROM (
+           SELECT id FROM benchmark_results ORDER BY id DESC LIMIT 1
+         ) AS latest
+       );"
+
+  if echo "$sql" | dc exec -T -e MYSQL_PWD="$db_pw" mysql mysql -u nomad_user nomad >/tmp/nomad-bench-patch.log 2>&1; then
+    ok "patched"
+    # Show the patched row for confirmation
+    echo
+    echo 'SELECT id, cpu_model, cpu_cores, gpu_model, cpu_score, submitted_to_repository FROM benchmark_results ORDER BY id DESC LIMIT 1;' \
+      | dc exec -T -e MYSQL_PWD="$db_pw" mysql mysql -u nomad_user --table nomad 2>/dev/null | sed 's/^/    /'
+    echo
+    log "now click Submit in admin UI (Settings → Benchmark) and upstream will see the real hardware."
+    log "or if you've already submitted: re-run benchmark + patch-host + submit."
+  else
+    cat /tmp/nomad-bench-patch.log
+    die "SQL update failed — see above"
+  fi
+}
+
+cmd_benchmark() {
+  local sub="${1:-run}"
+  case "$sub" in
+    patch-host) cmd_benchmark_patch_host; return 0 ;;
+    run|"")     ;;  # fall through to native-vs-container comparison
+    *)          die "usage: nomad benchmark [run|patch-host] [MODEL]" ;;
+  esac
+  shift 2>/dev/null || true
+  local model="${1:-llama3.1:8b}"
+  local prompt="Write a one-paragraph plain-English explanation of how ocean tides work."
+  ensure_docker_path
+  ensure_ollama_path || die "ollama not found anywhere — run 'nomad install' first"
+
+  section "Benchmark — $model — native Metal vs container Rosetta"
+  log "prompt: \"$prompt\""
+  echo
+
+  # ---- NATIVE ----
+  log "[1/2] native Ollama (Metal)"
+  if ! ollama list 2>/dev/null | awk '{print $1}' | grep -qE "^${model}$"; then
+    log "pulling $model into native Ollama (~5 GB)…"
+    ollama pull "$model"
+  fi
+  local native_log; native_log="$(mktemp)"
+  echo "$prompt" | ollama run --verbose "$model" >"$native_log" 2>&1
+  local native_eval_rate native_total_dur
+  native_eval_rate="$(grep -E "eval rate" "$native_log" | tail -1 | grep -oE '[0-9.]+ tokens/s' || echo "?")"
+  native_total_dur="$(grep -E "total duration" "$native_log" | tail -1 | awk '{print $NF}' || echo "?")"
+  ok "native: $native_eval_rate (total wall time $native_total_dur)"
+
+  # ---- CONTAINER (Rosetta) ----
+  log "[2/2] container Ollama (linux/amd64 via Rosetta)"
+  local cname=nomad_bench_ollama
+  docker rm -f "$cname" >/dev/null 2>&1 || true
+  log "starting $cname (forced platform=linux/amd64)…"
+  docker run -d --rm --name "$cname" \
+    --platform linux/amd64 \
+    -p 11435:11434 \
+    -v "/tmp/nomad-bench-models:/root/.ollama" \
+    ollama/ollama:latest >/dev/null
+  # Wait for the container's Ollama API
+  log "waiting for container Ollama to come up (slow under Rosetta)…"
+  local d=$(( $(date +%s) + 60 ))
+  while [[ $(date +%s) -lt $d ]]; do
+    docker exec "$cname" curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1 && break
+    sleep 2
+  done
+  log "pulling $model into container Ollama (~5 GB, slow under Rosetta)…"
+  docker exec "$cname" ollama pull "$model"
+  local container_log; container_log="$(mktemp)"
+  docker exec -i "$cname" sh -c "echo '$prompt' | ollama run --verbose $model" >"$container_log" 2>&1
+  local cont_eval_rate cont_total_dur
+  cont_eval_rate="$(grep -E "eval rate" "$container_log" | tail -1 | grep -oE '[0-9.]+ tokens/s' || echo "?")"
+  cont_total_dur="$(grep -E "total duration" "$container_log" | tail -1 | awk '{print $NF}' || echo "?")"
+  ok "container: $cont_eval_rate (total wall time $cont_total_dur)"
+  docker stop "$cname" >/dev/null 2>&1 || true
+
+  # ---- REPORT ----
+  cat <<EOF
+
+${C_HEAD}── Benchmark Result ($(sw_vers -productVersion) on $(uname -m)) ──${C_OFF}
+
+  Model:           $model
+  Native (Metal):     $native_eval_rate     (total ${native_total_dur})
+  Container (Rosetta): $cont_eval_rate    (total ${cont_total_dur})
+
+Markdown for the README:
+
+| Path                 | Eval rate         | Total wall time |
+|----------------------|-------------------|-----------------|
+| Native Ollama (Metal) | $native_eval_rate | $native_total_dur |
+| Container (Rosetta) | $cont_eval_rate | $cont_total_dur |
+
+Hardware: $(sw_vers -productVersion), $(uname -m), $(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 )) GB RAM.
+Model: $model. Prompt: "$prompt"
+
+EOF
+  rm -f "$native_log" "$container_log"
+}
+
+# System info via API
+cmd_system() {
+  api_check_up
+  local sub="${1:-info}"
+  case "$sub" in
+    info)     api_get /api/system/info | jq . ;;
+    debug)    api_get /api/system/debug-info | jq . ;;
+    internet) api_get /api/system/internet-status | jq . ;;
+    *)        die "usage: nomad system [info|debug|internet]" ;;
+  esac
+}
+
+# ─── arg parsing + dispatch ───────────────────────────────────────────────────
+DATA_ROOT_ARG=""
+TIER="auto"            # auto | tiny | small | medium | large | xl | dreamy
+MODELS=""              # if non-empty, overrides tier resolution
+SKIP_MODELS=0
+
+CMD="${1:-help}"
+[[ $# -gt 0 ]] && shift
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --data-root)  DATA_ROOT_ARG="$2"; shift 2 ;;
+    --tier)       TIER="$2"; shift 2 ;;
+    --models)     MODELS="$2"; shift 2 ;;
+    --no-models)  SKIP_MODELS=1; shift ;;
+    --yes|-y)     NOMAD_YES=1; shift ;;
+    --help|-h)    CMD="help"; shift ;;
+    *)            EXTRA_ARGS+=("$1"); shift ;;
+  esac
+done
+
+# Resolve final model list: --models takes precedence; otherwise resolve tier
+if [[ -z "$MODELS" ]]; then
+  MODELS="$(resolve_tier_models "$TIER")"
+fi
+EXTRA_ARGS=("${EXTRA_ARGS[@]:-}")
+
+case "$CMD" in
+  install)         cmd_install ;;
+  check)           cmd_check "${EXTRA_ARGS[0]:-all}" ;;
+  up)              cmd_up ;;
+  down)            cmd_down ;;
+  restart)         cmd_restart "${EXTRA_ARGS[0]:-admin}" ;;
+  logs)            cmd_logs    "${EXTRA_ARGS[0]:-admin}" ;;
+  models)          cmd_models   "${EXTRA_ARGS[@]}" ;;
+  upgrade-models)  cmd_upgrade_models ;;
+  downloads)       cmd_downloads "${EXTRA_ARGS[@]:-list}" ;;
+  zim)             cmd_zim       "${EXTRA_ARGS[@]:-list}" ;;
+  services)        cmd_services  "${EXTRA_ARGS[@]:-list}" ;;
+  system)          cmd_system    "${EXTRA_ARGS[@]:-info}" ;;
+  api)             cmd_api       "${EXTRA_ARGS[@]}" ;;
+  benchmark)       cmd_benchmark "${EXTRA_ARGS[@]}" ;;
+  orbstack-tune)   cmd_orbstack_tune "${EXTRA_ARGS[@]}" ;;
+  reset-ollama)    cmd_reset_ollama ;;
+  uninstall)       cmd_uninstall ;;
+  reinstall)       cmd_reinstall ;;
+  help|--help|-h)
+    sed -n '2,27p' "$0" | sed 's/^# //; s/^#//'
+    ;;
+  *) die "unknown command: $CMD
+Run 'nomad help' for usage." ;;
+esac
