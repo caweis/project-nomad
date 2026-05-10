@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Project NOMAD — macOS Distribution Help</title>
+<title>Project NOMAD — Welcome</title>
 <style>
   :root {
     --bg: #faf8f4;
@@ -33,19 +33,18 @@
     background: var(--bg);
     color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
-    font-size: 16px;
-    line-height: 1.6;
+    font-size: 17px;
+    line-height: 1.65;
     -webkit-font-smoothing: antialiased;
   }
 
-  /* ── Hero header ── */
   .hero {
     background: linear-gradient(135deg, var(--bg-hero) 0%, #2f4d24 100%);
     color: #fff;
     padding: 3rem 1.5rem 2.5rem;
     border-bottom: 4px solid var(--bg-hero-accent);
   }
-  .hero-inner { max-width: 820px; margin: 0 auto; }
+  .hero-inner { max-width: 740px; margin: 0 auto; }
   .hero-eyebrow {
     color: #b8d4b8;
     font-size: 0.85rem;
@@ -64,26 +63,12 @@
   .hero p {
     margin: 0;
     color: #d8e8d8;
-    font-size: 1.1rem;
-    max-width: 64ch;
+    font-size: 1.15rem;
+    max-width: 60ch;
   }
-  .hero-quick {
-    margin-top: 1.5rem;
-    padding-top: 1.5rem;
-    border-top: 1px solid rgba(255,255,255,.15);
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1rem;
-    font-size: 0.95rem;
-  }
-  .hero-quick a { color: #b8d4b8; text-decoration: none; border-bottom: 1px dotted rgba(184,212,184,.5); }
-  .hero-quick a:hover { color: #fff; border-bottom-color: #fff; }
-  .hero-quick-label { color: #8fa88f; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 0.15rem; }
 
-  /* ── Page container ── */
-  main { max-width: 820px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+  main { max-width: 740px; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; }
 
-  /* ── Table of contents ── */
   .toc {
     background: var(--bg-card);
     border: 1px solid var(--border);
@@ -94,11 +79,10 @@
   }
   .toc-title { font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-subtle); margin-bottom: 0.6rem; }
   .toc ul { margin: 0; padding: 0; list-style: none; columns: 2; column-gap: 1.5rem; }
-  .toc li { margin: 0.25rem 0; padding: 0; break-inside: avoid; }
+  .toc li { margin: 0.3rem 0; padding: 0; break-inside: avoid; }
   .toc a { color: var(--text); text-decoration: none; border-bottom: 1px dotted var(--border-strong); }
   .toc a:hover { color: var(--accent); border-bottom-color: var(--accent); }
 
-  /* ── Sections ── */
   section { margin-bottom: 3rem; }
   h2 {
     font-size: 1.4rem;
@@ -110,18 +94,17 @@
     letter-spacing: -0.01em;
   }
   h3 {
-    font-size: 1.05rem;
+    font-size: 1.1rem;
     color: var(--text);
     margin: 1.5rem 0 0.6rem;
     font-weight: 600;
   }
   p { margin: 0.7rem 0; }
   ul, ol { padding-left: 1.4rem; margin: 0.7rem 0; }
-  li { margin: 0.25rem 0; }
+  li { margin: 0.4rem 0; }
   a { color: var(--accent); text-decoration: none; border-bottom: 1px solid rgba(42,77,42,.3); }
   a:hover { border-bottom-color: var(--accent); }
 
-  /* ── Code ── */
   code, pre, kbd {
     font-family: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
     font-size: 0.875em;
@@ -142,19 +125,33 @@
     margin: 1rem 0;
     box-shadow: var(--shadow);
   }
-  pre code {
-    background: none;
-    padding: 0;
-    border-radius: 0;
-    color: var(--text);
-  }
+  pre code { background: none; padding: 0; border-radius: 0; color: var(--text); }
 
-  /* ── Callouts ── */
+  .feature-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1rem;
+    margin: 1.5rem 0;
+  }
+  .feature {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.25rem 1.4rem;
+    box-shadow: var(--shadow);
+  }
+  .feature h3 {
+    margin: 0 0 0.4rem;
+    font-size: 1rem;
+    color: var(--accent);
+  }
+  .feature p { margin: 0; font-size: 0.95rem; color: var(--text-muted); }
+
   .callout {
-    margin: 1.2rem 0;
-    padding: 0.9rem 1.2rem;
+    margin: 1.4rem 0;
+    padding: 1rem 1.3rem;
     border-radius: 6px;
-    border-left: 3px solid var(--text-subtle);
+    border-left: 4px solid var(--text-subtle);
     background: var(--bg-card);
     border: 1px solid var(--border);
   }
@@ -176,37 +173,18 @@
   .callout p:first-child { margin-top: 0; }
   .callout p:last-child { margin-bottom: 0; }
 
-  /* ── Tables ── */
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    margin: 1.2rem 0;
+  .qa {
     background: var(--bg-card);
     border: 1px solid var(--border);
-    border-radius: 6px;
-    overflow: hidden;
+    border-radius: 8px;
+    padding: 1.3rem 1.5rem;
+    margin-bottom: 1rem;
     box-shadow: var(--shadow);
   }
-  thead { background: var(--bg-hero); }
-  th {
-    color: #fff;
-    text-align: left;
-    padding: 0.65rem 0.9rem;
-    font-weight: 600;
-    font-size: 0.85rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-  td {
-    padding: 0.65rem 0.9rem;
-    border-top: 1px solid var(--border);
-    vertical-align: top;
-    font-size: 0.95rem;
-  }
-  tbody tr:nth-child(even) { background: rgba(0,0,0,.015); }
-  tbody tr:hover { background: rgba(91,138,91,.06); }
+  .qa-q { font-weight: 600; color: var(--accent); margin: 0 0 0.4rem; }
+  .qa p { margin: 0.4rem 0; }
+  .qa p:last-child { margin-bottom: 0; }
 
-  /* ── Footer ── */
   footer {
     border-top: 1px solid var(--border);
     margin-top: 4rem;
@@ -218,16 +196,14 @@
   footer a { color: var(--text-subtle); border-bottom-color: var(--border-strong); }
   footer a:hover { color: var(--accent); border-bottom-color: var(--accent); }
 
-  /* ── Scroll behavior ── */
   html { scroll-behavior: smooth; }
   h2 { scroll-margin-top: 1rem; }
 
   @media (max-width: 600px) {
     .hero { padding: 2rem 1.25rem 1.5rem; }
-    .hero h1 { font-size: 1.5rem; }
+    .hero h1 { font-size: 1.6rem; }
     .toc ul { columns: 1; }
     main { padding: 1.5rem 1.25rem 3rem; }
-    th, td { padding: 0.5rem 0.6rem; font-size: 0.88rem; }
   }
 </style>
 </head>
@@ -235,249 +211,202 @@
 
 <header class="hero">
   <div class="hero-inner">
-    <div class="hero-eyebrow">macOS Distribution Layer</div>
-    <h1>Project NOMAD — Help &amp; Recovery</h1>
-    <p>An offline-first AI + knowledge server, packaged for Apple Silicon. This guide covers what's running, why it's running, and how to fix things when they break.</p>
-    <div class="hero-quick">
-      <div>
-        <span class="hero-quick-label">Admin UI</span>
-        <a href="http://localhost:8080">localhost:8080</a>
-      </div>
-      <div>
-        <span class="hero-quick-label">Kiwix (you are here)</span>
-        <a href="http://localhost:8090">localhost:8090</a>
-      </div>
-      <div>
-        <span class="hero-quick-label">Native Ollama API</span>
-        <a href="http://localhost:11434">localhost:11434</a>
-      </div>
-    </div>
+    <div class="hero-eyebrow">Welcome to Project NOMAD</div>
+    <h1>Your offline knowledge library &amp; AI assistant</h1>
+    <p>This Mac is now an island of knowledge. Wikipedia, an AI you can chat with, maps, books, reference guides — all on this machine, all without an internet connection. Here's what you can do with it.</p>
   </div>
 </header>
 
 <main>
 
 <nav class="toc" aria-label="Table of contents">
-  <div class="toc-title">On this page</div>
+  <div class="toc-title">In this guide</div>
   <ul>
-    <li><a href="#what-this-adds">What this distribution adds</a></li>
-    <li><a href="#agents">The three LaunchAgents</a></li>
-    <li><a href="#counts">Why kiwix sometimes shows fewer ZIMs</a></li>
-    <li><a href="#commands">Common subcommands</a></li>
-    <li><a href="#storage">Storage layout</a></li>
-    <li><a href="#wizard">The Easy Setup wizard's AI Models step</a></li>
-    <li><a href="#recovery">Recovery flowchart</a></li>
-    <li><a href="#lineage">Lineage</a></li>
+    <li><a href="#what-you-have">What you have</a></li>
+    <li><a href="#getting-started">Getting started</a></li>
+    <li><a href="#chat">Chatting with the AI</a></li>
+    <li><a href="#library">Browsing the library</a></li>
+    <li><a href="#other-devices">Using it from other devices</a></li>
+    <li><a href="#more-content">Adding more content</a></li>
+    <li><a href="#privacy">Your privacy</a></li>
+    <li><a href="#troubleshooting">When something looks off</a></li>
   </ul>
 </nav>
 
-<section id="what-this-adds">
-  <h2>What this distribution adds</h2>
+<section id="what-you-have">
+  <h2>What you have</h2>
 
-  <p>Upstream <a href="https://github.com/Crosstalk-Solutions/project-nomad">Project NOMAD</a>'s installer is Linux-only and assumes NVIDIA GPU passthrough. This bundle is a distribution layer on top of <a href="https://github.com/snfettig/project-nomad-macos-arm64">snfettig's macOS port</a> and <a href="https://github.com/proximasan/project-nomad-silicon">proximasan's admin patches</a>. It adds:</p>
+  <p>Project NOMAD bundles several offline tools onto this Mac:</p>
+
+  <div class="feature-grid">
+    <div class="feature">
+      <h3>AI Assistant</h3>
+      <p>Chat with a real AI like ChatGPT, but running on this Mac. Ask anything — survival questions, recipe ideas, code help, life advice. It works without internet.</p>
+    </div>
+    <div class="feature">
+      <h3>Offline Wikipedia</h3>
+      <p>Search Wikipedia like normal, but from local files. Includes the full encyclopedia plus topic-focused versions like medicine and the top 100 most-read articles.</p>
+    </div>
+    <div class="feature">
+      <h3>Reference libraries</h3>
+      <p>Stack Exchange Q&amp;A on cooking, mechanics, gardening, woodworking, electronics, raspberry pi. Project Gutenberg books. iFixit repair guides. LibreTexts textbooks.</p>
+    </div>
+    <div class="feature">
+      <h3>Education</h3>
+      <p>Khan Academy, TED talks, freeCodeCamp, devdocs (Python, JavaScript, etc). Kolibri channels for structured learning.</p>
+    </div>
+    <div class="feature">
+      <h3>Preparedness content</h3>
+      <p>Canadian Prepper guides on bug-out concepts, food storage, winter prepping. Urban-prepper, FOSS cooking, military medicine references, NHS medicines reference.</p>
+    </div>
+    <div class="feature">
+      <h3>Maps and notes</h3>
+      <p>Offline maps you can browse zoomed in or out. A simple note-taking app for journaling, lists, or saving things you want to keep.</p>
+    </div>
+  </div>
+</section>
+
+<section id="getting-started">
+  <h2>Getting started</h2>
+
+  <p>Most things you'll do happen through your web browser. Open Safari (or any browser) and visit either of these:</p>
 
   <ul>
-    <li><strong>Single-file <code>nomad</code> CLI</strong> with subcommand-based lifecycle (install / check / up / down / restart / logs / models / benchmark / fix-kiwix / install-field-desk / and more).</li>
-    <li><strong>Native Metal Ollama via Homebrew + LaunchAgent</strong> on port 11434. Verified <strong>~8× faster</strong> than container Rosetta on Apple Silicon (20.76 tok/s vs 2.56 tok/s on Mac mini M4).</li>
-    <li><strong>Split storage for unplug-resilience</strong> — mysql + redis on internal disk; ZIMs / models / maps on a configurable external drive that can be safely unplugged.</li>
-    <li><strong>OrbStack VM auto-tune</strong> to ~80% of host RAM (proportional, scales 8 GB Air → 192 GB Studio).</li>
-    <li><strong>Three LaunchAgents</strong> running in the background — see below.</li>
-    <li><strong>Portable <code>quick-chat.html</code></strong> dropped on the data drive — plug into any Mac and have LLM chat without a NOMAD install.</li>
+    <li><a href="http://localhost:8080">localhost:8080</a> — the main control panel ("Command Center"). This is your home base.</li>
+    <li><a href="http://localhost:8090">localhost:8090</a> — the library you're browsing right now (Kiwix). All the Wikipedia and reference content lives here.</li>
+  </ul>
+
+  <p>Bookmark both. The Command Center is where you'll go to add new content, manage downloads, and chat with the AI. The library is where you go to read things.</p>
+</section>
+
+<section id="chat">
+  <h2>Chatting with the AI</h2>
+
+  <p>Open the Command Center (<a href="http://localhost:8080">localhost:8080</a>) and click on <strong>AI Assistant</strong> in the menu. You'll get a chat box. Type a question, hit send, get an answer.</p>
+
+  <p>Things to know about the AI:</p>
+
+  <ul>
+    <li>It runs entirely on this Mac. Nothing you ask leaves the device.</li>
+    <li>It's <em>fast</em> on Apple Silicon Macs because it uses Metal (the Mac's graphics chip) for AI work.</li>
+    <li>It doesn't know about events after its training cutoff (early 2025 for the most current models). It can't look things up online — that's the trade-off for being offline.</li>
+    <li>You can pick which model to use. Smaller models are faster but less detailed. Bigger models are slower but more capable. The default is a good balance.</li>
   </ul>
 
   <div class="callout ok">
-    <span class="callout-label">Quick orientation</span>
-    Crosstalk admin UI at <a href="http://localhost:8080">localhost:8080</a> · this kiwix server at <a href="http://localhost:8090">localhost:8090</a> · native Ollama API at <code>http://localhost:11434</code>.
+    <span class="callout-label">Try it</span>
+    Good first questions: "What can you help me with?" · "Explain how a sourdough starter works" · "Write a packing list for a 3-day camping trip with two kids" · "What are some signs of carbon monoxide poisoning?"
   </div>
 </section>
 
-<section id="agents">
-  <h2>The three LaunchAgents</h2>
+<section id="library">
+  <h2>Browsing the library</h2>
 
-  <p>These run automatically. You don't normally interact with them. Each writes only when it does work, so silent logs = healthy state.</p>
+  <p>The library at <a href="http://localhost:8090">localhost:8090</a> is where all the offline reference content lives. Each "book" is a separate collection — Wikipedia, Project Gutenberg, a specific Stack Exchange site, a TED talks archive.</p>
 
-  <table>
-    <thead>
-      <tr><th>Agent</th><th>What it does</th><th>Log location</th></tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td><code>com.projectnomad.ollama</code></td>
-        <td>Native Ollama daemon. Resolves the data drive at runtime so renamed mounts don't break it.</td>
-        <td>system console</td>
-      </tr>
-      <tr>
-        <td><code>com.projectnomad.benchmark-patcher</code></td>
-        <td>Every 30s. Backfills <code>cpu_model</code> / <code>gpu_model</code> on admin's <code>benchmark_results</code> rows so the upstream leaderboard sees the real Apple chip instead of "—".</td>
-        <td><code>~/Library/Logs/nomad-benchmark-patcher.{out,err}.log</code></td>
-      </tr>
-      <tr>
-        <td><code>com.projectnomad.kiwix-self-heal</code></td>
-        <td>Every 60s. Two jobs in one tick: (1) quarantine partial ZIMs that crash kiwix-serve to <code>storage/zim-inprogress/</code> · (2) auto-reload kiwix when new completed ZIMs appear in <code>/data</code> and the queue is empty.</td>
-        <td><code>~/Library/Logs/nomad-kiwix-self-heal.action.log</code></td>
-      </tr>
-    </tbody>
-  </table>
-</section>
+  <p>To search across everything, use the search bar at the top. To filter, use the dropdown on the left to narrow by language or category. Click any book to dive in.</p>
 
-<section id="counts">
-  <h2>Why kiwix sometimes shows fewer ZIMs than admin</h2>
-
-  <p>Two views of two different states — and both are correct in their own frame:</p>
+  <p>If you don't see something you expect, try:</p>
 
   <ul>
-    <li><strong>Admin's Content Manager</strong> = files admin's downloader has written to <code>/data</code>. Tracked in admin's DB regardless of kiwix's state.</li>
-    <li><strong>Kiwix's catalog</strong> = files kiwix-serve loaded at its <em>last startup</em>. Kiwix-serve doesn't watch <code>/data</code> for new files — once it's running, its in-memory library is fixed.</li>
+    <li>Clearing the category filter (it might be set to "Wikipedia" by default — change it to show all categories)</li>
+    <li>Waiting a moment if you've recently added new content — see <a href="#troubleshooting">When something looks off</a> below</li>
   </ul>
-
-  <p>If admin shows 88 ZIMs and kiwix shows 61, the <code>com.projectnomad.kiwix-self-heal</code> agent is likely waiting for the download queue to empty before triggering a kiwix restart. The auto-reload's gate logic:</p>
-
-  <pre><code>fs_count &gt; catalog_count  AND  active_zim_downloads == 0  →  restart kiwix</code></pre>
-
-  <p>Once active downloads hit 0, the next 60s tick restarts kiwix and the catalog catches up. To check the agent's current decision:</p>
-
-  <pre><code>~/.config/project-nomad/kiwix-self-heal.sh
-tail -10 ~/Library/Logs/nomad-kiwix-self-heal.action.log</code></pre>
-
-  <div class="callout warn">
-    <span class="callout-label">Don't force-reload kiwix while downloads are active</span>
-    A manual <code>docker restart nomad_kiwix_server</code> mid-write will crash kiwix on the partial ZIM, the self-heal will quarantine it, and admin's BullMQ writer will lose the file. Wait for the queue to empty, or use <code>nomad fix-kiwix</code> which respects the gate.
-  </div>
 </section>
 
-<section id="commands">
-  <h2>Common subcommands</h2>
+<section id="other-devices">
+  <h2>Using it from other devices</h2>
 
-  <table>
-    <thead>
-      <tr><th style="width: 38%;">Command</th><th>Purpose</th></tr>
-    </thead>
-    <tbody>
-      <tr><td><code>nomad check</code></td><td>Full diagnostic of system + stack. Read-only. Writes a timestamped log file to the bundle folder.</td></tr>
-      <tr><td><code>nomad up</code> / <code>nomad down</code></td><td>Start / stop the compose stack. Native Ollama LaunchAgent is unaffected.</td></tr>
-      <tr><td><code>nomad restart [SERVICE]</code></td><td>Restart any compose service OR any admin-spawned container (kiwix, kolibri, cyberchef, etc). Default: admin.</td></tr>
-      <tr><td><code>nomad logs [SERVICE]</code></td><td>Tail logs (default: admin).</td></tr>
-      <tr><td><code>nomad models list</code></td><td>List installed Ollama models with per-Mac fits-this-Mac verdict.</td></tr>
-      <tr><td><code>nomad models pull TIER</code></td><td>Pull a tier preset (tiny / small / medium / large / xl / dreamy). Auto-detected from RAM by default.</td></tr>
-      <tr><td><code>nomad benchmark</code></td><td>Native Metal vs container Rosetta tokens/sec on llama3.1:8b. Captures the Apple chip via the auto-patcher LaunchAgent.</td></tr>
-      <tr><td><code>nomad fix-kiwix</code></td><td>Manual trigger of the kiwix self-heal pass. Verbose output. Use when you want immediate recovery instead of waiting for the next 60s tick.</td></tr>
-      <tr><td><code>nomad install-field-desk</code></td><td>Install <a href="https://github.com/SysAdminDoc/project-nomad-desktop">SysAdminDoc's NOMAD Field Desk</a> alongside admin on a non-conflicting port. Default :8081, shares native Ollama on :11434.</td></tr>
-      <tr><td><code>nomad orbstack-tune [GB]</code></td><td>Tune OrbStack VM RAM. No arg = 80% of host. Restarts the VM (~10s).</td></tr>
-      <tr><td><code>nomad reset-ollama</code></td><td>Recover from stuck LaunchAgent state ("bootstrap failed: 5: Input/output error").</td></tr>
-      <tr><td><code>nomad reinstall</code></td><td>Full uninstall + install in one shot. One confirmation up front, fully unattended after.</td></tr>
-      <tr><td><code>nomad uninstall</code></td><td>Clean wipe — containers, LaunchAgents, secrets. Optionally wipes data drive (separate confirm).</td></tr>
-      <tr><td><code>nomad help</code></td><td>Short usage. <code>man nomad</code> for the full reference.</td></tr>
-    </tbody>
-  </table>
-</section>
+  <p>NOMAD is set up so other devices on your home WiFi can use it too — phones, tablets, laptops, anyone connected to the same network. They don't need their own copy. They just need a browser.</p>
 
-<section id="storage">
-  <h2>Storage layout</h2>
+  <p>To find this Mac's address on the network, open Terminal on this Mac and type:</p>
 
-  <h3>Internal — always available, hot state</h3>
+  <pre><code>ipconfig getifaddr en0</code></pre>
 
-  <pre><code>~/.config/project-nomad/state/mysql/      mysql data dir
-~/.config/project-nomad/state/redis/      redis data
-~/.config/project-nomad/.env              secrets (chmod 600, off-iCloud)
-~/.config/project-nomad/kiwix-self-heal.sh
-~/.config/project-nomad/benchmark-patcher.sh
-~/.config/project-nomad/ollama-launcher.sh
-~/Library/LaunchAgents/com.projectnomad.*.plist</code></pre>
+  <p>You'll get something like <code>192.168.1.42</code>. From any other device on the same WiFi, open a browser and visit:</p>
 
-  <h3>Configurable — typically external, cold content</h3>
-
-  <pre><code>${NOMAD_DATA_ROOT}/storage/zim/             kiwix's ZIM library
-${NOMAD_DATA_ROOT}/storage/zim-inprogress/  partial ZIMs quarantined by self-heal
-${NOMAD_DATA_ROOT}/storage/maps/            ProtoMaps PMTiles
-${NOMAD_DATA_ROOT}/storage/kolibri/         Kolibri channels
-${NOMAD_DATA_ROOT}/ollama-models/           model weights
-${NOMAD_DATA_ROOT}/quick-chat.html          portable browser chat UI
-${NOMAD_DATA_ROOT}/quick-chat.sh            companion bootstrap script</code></pre>
+  <ul>
+    <li><code>http://192.168.1.42:8080</code> for the Command Center (replace with the actual address)</li>
+    <li><code>http://192.168.1.42:8090</code> for the library</li>
+  </ul>
 
   <div class="callout ok">
-    <span class="callout-label">Drive-eject is safe</span>
-    mysql + redis stay running because their data is on internal disk. Admin keeps responding. Content services pause until the drive returns. Native Ollama keeps any already-loaded model in RAM via <code>OLLAMA_KEEP_ALIVE=30m</code>. After replug: <code>nomad up</code>.
+    <span class="callout-label">Use case</span>
+    Set this Mac up in your house, off-grid cabin, or RV. Family members can pull up Wikipedia or chat with the AI from their own devices without anyone else needing internet.
   </div>
 </section>
 
-<section id="wizard">
-  <h2>The Easy Setup wizard's "AI Models" step</h2>
+<section id="more-content">
+  <h2>Adding more content</h2>
 
-  <p>Admin's onboarding wizard at <a href="http://localhost:8080/easy-setup">/easy-setup</a> offers a hardcoded "recommended models" trio (llama3.1, deepseek-r1, nomic-embed-text). <strong>Skip the AI Models step.</strong> Your models are already pulled via native Ollama by <code>nomad install</code>; selecting them in the wizard would queue duplicate downloads through admin's BullMQ queue.</p>
+  <p>The Command Center has a section called <strong>Content Manager</strong> (and another called <strong>Maps Manager</strong>). That's where you go to add more reference material — extra Wikipedia variants, additional Stack Exchange sites, more Khan Academy channels, regional offline maps.</p>
 
-  <p>The home page's wizard highlight is suppressed by default (we set <code>kv_store.ui.hasVisitedEasySetup = true</code> at install time), so there's no visual nudge. The wizard remains accessible if you actively want it for the Wikipedia / Maps / Content steps.</p>
+  <p>When you queue something to download, NOMAD does it in the background. You can keep using everything else while downloads run. New content appears in the library within a minute or two of finishing.</p>
 
   <div class="callout warn">
-    <span class="callout-label">Why this matters</span>
-    Selecting AI Models in the wizard queues admin BullMQ jobs that try to spawn admin-managed Ollama downloads. They overlap with what we already pulled via native Ollama and either duplicate work or fail outright. This is an upstream UX issue worth filing — the wizard should query Ollama for already-installed models before offering downloads.
+    <span class="callout-label">Heads up</span>
+    Some downloads are huge. Full Wikipedia is about 95 GB. Downloads can take hours on a typical home connection. Plan ahead — start big downloads when you'll be near the Mac for a while.
   </div>
 </section>
 
-<section id="recovery">
-  <h2>Recovery flowchart</h2>
+<section id="privacy">
+  <h2>Your privacy</h2>
 
-  <table>
-    <thead>
-      <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td>Kiwix shows fewer ZIMs than admin's Content Manager</td>
-        <td>Auto-reload waiting for active downloads to finish</td>
-        <td>Wait. Check: <code>nomad downloads list</code></td>
-      </tr>
-      <tr>
-        <td>Kiwix container in restart loop</td>
-        <td>Partial ZIM in <code>/data</code></td>
-        <td><code>nomad fix-kiwix</code> (or wait 60s for auto)</td>
-      </tr>
-      <tr>
-        <td>AI Assistant shows no models</td>
-        <td><code>OLLAMA_HOST</code> env var missing on admin</td>
-        <td><code>docker exec nomad_admin printenv OLLAMA_HOST</code> — should be <code>http://host.docker.internal:11434</code>. If empty: <code>docker compose --env-file ~/.config/project-nomad/.env up -d --force-recreate admin</code></td>
-      </tr>
-      <tr>
-        <td>Ollama LaunchAgent stuck</td>
-        <td>"bootstrap failed: 5: Input/output error"</td>
-        <td><code>nomad reset-ollama</code></td>
-      </tr>
-      <tr>
-        <td>OrbStack memory wrong</td>
-        <td>Tune didn't run or default applied</td>
-        <td><code>nomad orbstack-tune</code> (no arg = 80% of host)</td>
-      </tr>
-      <tr>
-        <td>Anything weird overall</td>
-        <td>Mystery</td>
-        <td><code>nomad check</code> — 🟢🟡🔴 findings with auto-suggested fixes</td>
-      </tr>
-      <tr>
-        <td>Truly stuck</td>
-        <td>State drift / corrupt / who knows</td>
-        <td><code>nomad reinstall</code> — confirms once, then unattended</td>
-      </tr>
-    </tbody>
-  </table>
-</section>
-
-<section id="lineage">
-  <h2>Lineage</h2>
-
-  <p>The Apple Silicon admin patches that make Metal-aware benchmark reporting work are from the community fork series:</p>
+  <p>Everything runs on this Mac. Specifically:</p>
 
   <ul>
-    <li><a href="https://github.com/snfettig/project-nomad-macos-arm64">snfettig/project-nomad-macos-arm64</a> — original native-Ollama+Metal commit, current macOS focal point</li>
-    <li><a href="https://github.com/proximasan/project-nomad-silicon">proximasan/project-nomad-silicon</a> — <code>APPLE_CHIP_MODEL</code> fallback, <code>isNativeOllama()</code>, multi-arch GHCR images</li>
-    <li><a href="https://github.com/NoamanKhalil/project-nomad-MacOs">NoamanKhalil/project-nomad-MacOs</a> — foundational Phase 1-3 macOS port work</li>
-    <li><a href="https://github.com/Crosstalk-Solutions/project-nomad">Crosstalk-Solutions/project-nomad</a> — upstream</li>
+    <li>The AI Assistant runs locally. Your conversations never leave the device.</li>
+    <li>Wikipedia and other reference content is served from local files. Searches don't go to Google or anyone else.</li>
+    <li>No accounts, no logins, no usernames, no tracking.</li>
+    <li>Downloads (when you add new content) come from public archives like the Kiwix project — those connections are visible to your network, like any other download.</li>
   </ul>
 
-  <p>Sibling product worth knowing about (different architecture, not a fork): <a href="https://github.com/SysAdminDoc/project-nomad-desktop">SysAdminDoc/project-nomad-desktop</a> — NOMAD Field Desk, a Python+Electron preparedness command center. Coexists with admin via <code>nomad install-field-desk</code>.</p>
+  <p>This means you can chat openly with the AI about whatever you want — health questions, financial planning, things you're embarrassed to type into a search engine. Nobody else sees it.</p>
+</section>
+
+<section id="troubleshooting">
+  <h2>When something looks off</h2>
+
+  <div class="qa">
+    <p class="qa-q">I just downloaded a book but the library doesn't show it.</p>
+    <p>Wait a minute — NOMAD checks for new content every 60 seconds. New books appear after the next check.</p>
+    <p>If it's been more than a few minutes and you still don't see it, open Terminal and type <code>nomad fix-kiwix</code>. That refreshes the library immediately.</p>
+  </div>
+
+  <div class="qa">
+    <p class="qa-q">The AI Assistant says no models are available.</p>
+    <p>The AI engine probably lost its connection to the models. Open Terminal and type <code>nomad restart admin</code>, wait 15 seconds, then refresh the page.</p>
+  </div>
+
+  <div class="qa">
+    <p class="qa-q">A book downloaded but it's broken or empty.</p>
+    <p>The download may have been interrupted. Open the Command Center, go to Content Manager, find the broken book, click Delete, then re-add it from the wizard. NOMAD will redownload it from scratch.</p>
+  </div>
+
+  <div class="qa">
+    <p class="qa-q">Everything seems slow or stuck.</p>
+    <p>Open Terminal and type <code>nomad check</code>. It scans the whole system and tells you what's wrong, in plain language, with a suggested fix for each issue.</p>
+  </div>
+
+  <div class="qa">
+    <p class="qa-q">My external drive came unplugged. What now?</p>
+    <p>The basics keep running — the AI's main systems are on the internal Mac drive. Plug the drive back in, then in Terminal type <code>nomad up</code>. Everything resumes where it left off.</p>
+  </div>
+
+  <div class="qa">
+    <p class="qa-q">I want to start completely fresh.</p>
+    <p>In Terminal, <code>nomad reinstall</code>. It'll ask once if you're sure (because this wipes content), then handle everything. Takes 15-30 minutes plus however long the new downloads take.</p>
+  </div>
+
+  <div class="qa">
+    <p class="qa-q">Something else is weird and I can't tell what.</p>
+    <p>You can always close everything, restart the Mac, and turn things back on with <code>nomad up</code>. NOMAD is designed to recover from interruptions cleanly.</p>
+  </div>
 </section>
 
 <footer>
-  <p>macOS distribution layer maintained at <a href="https://github.com/caweis/project-nomad-macos-arm64">caweis/project-nomad-macos-arm64</a> · Apache-2.0</p>
-  <p style="margin-top: 0.4rem; font-size: 0.8rem; color: var(--text-subtle);">Generated at install time from <code>install/macos/help/index.html</code> via <code>zimwriterfs</code>.</p>
+  <p>Project NOMAD · macOS distribution layer</p>
+  <p style="margin-top: 0.4rem; font-size: 0.8rem;">For technical details, see the <a href="https://github.com/caweis/project-nomad-macos-arm64">project repository</a> or run <code>man nomad</code> in Terminal.</p>
 </footer>
 
 </main>
