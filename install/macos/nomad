@@ -2733,8 +2733,14 @@ cmd_uninstall() {
       docker ps -a --format '    {{.ID}}  {{.Names}}  {{.Status}}' 2>/dev/null \
         | grep -E "$(echo "$all_ids" | tr '\n' '|' | sed 's/|$//')" || true
 
-      # SIGKILL anything still running
-      local running_ids; running_ids="$(docker ps -q 2>/dev/null | grep -F -f <(echo "$all_ids") || true)"
+      # SIGKILL anything still running.
+      # Was: `docker ps -q | grep -F -f <(echo "$all_ids")` which is a
+      # substring (fixed-string) match — if docker's default ID truncation
+      # ever changes so the two sides return different-length IDs, a short
+      # ID could prefix-match an unrelated longer one and we'd kill the
+      # wrong container. comm -12 with sort -u gives exact set intersection.
+      local running_ids
+      running_ids="$(comm -12 <(echo "$all_ids") <(docker ps -q 2>/dev/null | sort -u))"
       if [[ -n "$running_ids" ]]; then
         log "SIGKILL on running containers"
         # shellcheck disable=SC2086
