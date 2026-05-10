@@ -2716,6 +2716,7 @@ cmd_install_field_desk() {
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      "")             shift ;;   # absorb empty placeholder from dispatcher's "${EXTRA_ARGS[@]:-}" defensive expansion
       --port)         port="$2"; shift 2 ;;
       --foreground)   foreground=1; shift ;;
       --force)        force=1; shift ;;
