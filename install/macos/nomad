@@ -1694,6 +1694,64 @@ EOF
   fi
 }
 
+# Build a ZIM file from install/macos/help/ HTML content + drop into the data
+# drive's kiwix storage. kiwix-serve picks it up on its next startup (or via
+# the kiwix-self-heal LaunchAgent's auto-reload pass). Result: distribution
+# help is browsable at http://localhost:8090 alongside Wikipedia / Stack
+# Exchange / etc. Same UI users are already in.
+#
+# Implementation: run `zimwriterfs` via the openzim/zim-tools docker image
+# (no host-side install of zim-tools required). Idempotent — re-runs of
+# install skip if the ZIM is already present. To regenerate: delete the
+# .zim and re-run nomad install.
+step_build_distro_help_zim() {
+  section "Distribution help ZIM"
+
+  local help_src="$HERE/help"
+  local zim_name="nomad-distro-help_en_2026-05.zim"
+  local zim_dir="$DATA_ROOT_RESOLVED/storage/zim"
+  local zim_out="$zim_dir/$zim_name"
+
+  if [[ ! -f "$help_src/index.html" ]]; then
+    warn "no help source at $help_src/index.html — skipping ZIM build"
+    return 0
+  fi
+
+  if [[ -f "$zim_out" ]]; then
+    ok "distro help ZIM already exists ($zim_out) — skipping (delete to rebuild)"
+    return 0
+  fi
+
+  ensure_docker_path
+  if ! docker version >/dev/null 2>&1; then
+    warn "docker not reachable — can't build distro help ZIM (non-fatal)"
+    return 0
+  fi
+
+  mkdir -p "$zim_dir"
+
+  log "building distro help ZIM via openzim/zim-tools (one-time, ~30s)…"
+  if docker run --rm \
+       -v "$help_src":/in:ro \
+       -v "$zim_dir":/out \
+       ghcr.io/openzim/zim-tools:latest \
+       zimwriterfs \
+       --welcome=index.html \
+       --favicon=favicon.png \
+       --language=eng \
+       --title="NOMAD Distribution Help" \
+       --description="Help and recovery guide for the macOS distribution layer of Project NOMAD." \
+       --creator="caweis" \
+       --publisher="caweis" \
+       --name="nomad-distro-help" \
+       /in "/out/$zim_name" >/dev/null 2>&1; then
+    ok "built: $zim_out (kiwix will pick it up on next reload)"
+  else
+    warn "ZIM build failed — distribution help won't appear in kiwix UI (non-fatal)"
+    warn "Manual retry: docker run --rm -v $help_src:/in -v $zim_dir:/out ghcr.io/openzim/zim-tools:latest zimwriterfs ..."
+  fi
+}
+
 # Wire admin → native Ollama via the admin's own API.
 # POST /api/ollama/configure-remote runs the full side-effect chain:
 #   • validates URL format
@@ -1769,6 +1827,7 @@ cmd_install() {
   step_configure_native_ollama
   step_install_benchmark_patcher   # background daemon that fixes leaderboard CPU/GPU automatically
   step_install_kiwix_self_heal     # background daemon that quarantines partial ZIMs so kiwix never crash-loops
+  step_build_distro_help_zim       # build distribution help ZIM, drop into kiwix's library so it's browsable in the UI
 
   # Admin is now usable. Print the URL banner BEFORE the long model pull so the
   # user can open the admin in a browser while models stream in.
