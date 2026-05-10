@@ -39,7 +39,16 @@
 set -euo pipefail
 
 # ─── constants ────────────────────────────────────────────────────────────────
-HERE="$(cd "$(dirname "$0")" && pwd)"
+# Resolve symlinks so HERE points at the real script location, not the symlink.
+# When invoked via $(brew --prefix)/bin/nomad (a symlink), $0 is the symlink path —
+# without this, COMPOSE_BASE ends up at /opt/homebrew/bin/compose.yaml (wrong).
+_NOMAD_SCRIPT="$0"
+while [[ -L "$_NOMAD_SCRIPT" ]]; do
+  _link="$(readlink "$_NOMAD_SCRIPT")"
+  if [[ "$_link" = /* ]]; then _NOMAD_SCRIPT="$_link"
+  else _NOMAD_SCRIPT="$(dirname "$_NOMAD_SCRIPT")/$_link"; fi
+done
+HERE="$(cd "$(dirname "$_NOMAD_SCRIPT")" && pwd)"
 COMPOSE_BASE="$HERE/compose.yaml"
 SECRETS_DIR="$HOME/.config/project-nomad"
 ENV_FILE="$SECRETS_DIR/.env"
