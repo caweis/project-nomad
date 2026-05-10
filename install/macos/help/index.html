@@ -319,7 +319,25 @@
 
   <p>NOMAD is set up so other devices on your home WiFi can use it too — phones, tablets, laptops, anyone connected to the same network. They don't need their own copy. They just need a browser.</p>
 
-  <p>To find this Mac's address on the network, the easiest way is from System Settings:</p>
+  <p>If you said "yes" to setting this Mac's network name during install, anyone on the same WiFi can simply visit:</p>
+
+  <ul>
+    <li><code>http://nomad.local:8080</code> — Command Center</li>
+    <li><code>http://nomad.local:8090</code> — Library (this site)</li>
+  </ul>
+
+  <p>That's the easy way. Type it into any browser on your phone, tablet, or another Mac on the same WiFi.</p>
+
+  <div class="callout ok">
+    <span class="callout-label">Use case</span>
+    Set this Mac up in your house, off-grid cabin, or RV. Family members type <code>nomad.local:8080</code> into their browsers and have the same access. No internet needed for any of them.
+  </div>
+
+  <h3>If <code>nomad.local</code> doesn't work</h3>
+
+  <p>Some networks (corporate WiFi, guest networks, certain mesh routers) block <code>.local</code> name resolution. In that case, find this Mac's IP address and use that instead.</p>
+
+  <p>Easiest way to find the IP — from System Settings on this Mac:</p>
 
   <ol>
     <li>Open <strong>System Settings</strong> (or System Preferences on older macOS)</li>
@@ -328,21 +346,18 @@
     <li>Look for <strong>IP Address</strong> — it'll be something like <code>192.168.1.42</code></li>
   </ol>
 
-  <p>If you prefer Terminal, run this — it works whether you're on WiFi or Ethernet:</p>
+  <p>Then from any other device on the same WiFi, visit <code>http://192.168.1.42:8080</code> (replace with the actual address you saw). Bookmark it once and you're set.</p>
 
-  <pre><code>ifconfig | awk '/inet / &amp;&amp; $2 != "127.0.0.1" {print $2; exit}'</code></pre>
+  <h3>Want to change <code>nomad.local</code> to something else?</h3>
 
-  <p>From any other device on the same WiFi, open a browser and visit:</p>
+  <p>You can rename this Mac's network name any time:</p>
 
   <ul>
-    <li><code>http://192.168.1.42:8080</code> for the Command Center (replace with the actual address)</li>
-    <li><code>http://192.168.1.42:8090</code> for the library</li>
+    <li>System Settings → General → About → click "Local hostname" → type whatever you want (e.g. <code>library</code>, <code>cabin</code>, <code>basecamp</code>)</li>
+    <li>Or in Terminal: <code>sudo scutil --set LocalHostName basecamp</code></li>
   </ul>
 
-  <div class="callout ok">
-    <span class="callout-label">Use case</span>
-    Set this Mac up in your house, off-grid cabin, or RV. Family members can pull up Wikipedia or chat with the AI from their own devices without anyone else needing internet.
-  </div>
+  <p>After that, devices visit <code>http://basecamp.local:8080</code>. Whatever you pick.</p>
 </section>
 
 <section id="more-content">
