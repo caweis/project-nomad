@@ -1709,9 +1709,21 @@ SQL="UPDATE benchmark_results
          gpu_model = '\$gpu_model'
      WHERE (cpu_model = '' OR cpu_model IS NULL OR cpu_model NOT LIKE 'Apple%');"
 
-# Run silently — log only if there's an error worth investigating
+# Run silently — log only if there's an error worth investigating.
+# Used to be `... || true` which absorbed the mysql rc entirely; a
+# perpetually-failing patcher (wrong password, container missing,
+# table renamed) would just write stderr lines with no clear
+# "what was the exit code" marker. Capture rc and surface it.
+LOG="\$HOME/Library/Logs/nomad-benchmark-patcher.err.log"
 echo "\$SQL" | docker exec -i -e MYSQL_PWD="\$DB_PASSWORD" nomad_mysql \
-  /usr/bin/mysql -u nomad_user nomad >/dev/null 2>>"\$HOME/Library/Logs/nomad-benchmark-patcher.err.log" || true
+  /usr/bin/mysql -u nomad_user nomad >/dev/null 2>>"\$LOG"
+rc=\$?
+if [[ \$rc -ne 0 ]]; then
+  echo "[\$(date '+%F %T')] mysql exec rc=\$rc" >> "\$LOG"
+fi
+# Always exit 0: launchd keeps the agent loaded across transient
+# mysql unavailability (e.g. compose-up restarts).
+exit 0
 PATCHER_EOF
   chmod 755 "$PATCHER_SCRIPT"
   ok "patcher script: $PATCHER_SCRIPT"
