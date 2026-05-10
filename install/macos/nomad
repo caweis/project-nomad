@@ -1731,13 +1731,15 @@ step_build_distro_help_zim() {
   mkdir -p "$zim_dir"
 
   log "building distro help ZIM via openzim/zim-tools (one-time, ~30s)…"
+  # Note: zim-tools image is linux/amd64 only; runs under emulation on arm64
+  # macOS hosts. Slow but works. Output ZIM is platform-independent.
   if docker run --rm \
        -v "$help_src":/in:ro \
        -v "$zim_dir":/out \
        ghcr.io/openzim/zim-tools:latest \
        zimwriterfs \
        --welcome=index.html \
-       --favicon=favicon.png \
+       --illustration=illustration.png \
        --language=eng \
        --title="NOMAD Distribution Help" \
        --description="Help and recovery guide for the macOS distribution layer of Project NOMAD." \
