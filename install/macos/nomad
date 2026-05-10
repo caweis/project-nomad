@@ -385,6 +385,9 @@ check_stack() {
   local state_root data_root
   state_root="$(grep '^NOMAD_STATE_ROOT=' "$ENV_FILE" 2>/dev/null | cut -d= -f2-)"
   data_root="$(grep '^NOMAD_DATA_ROOT=' "$ENV_FILE" 2>/dev/null | cut -d= -f2-)"
+  # Mirror check_install's defensive fallback: an empty state_root from a
+  # stale .env shouldn't report "(unset)" if the on-disk default exists.
+  [[ -z "$state_root" ]] && state_root="$NOMAD_STATE_ROOT_DEFAULT"
   echo
   echo "  Storage architecture:"
   if [[ -n "$state_root" && -d "$state_root" ]]; then
@@ -548,8 +551,21 @@ check_install() {
   fi
 
   if curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
-    local n_models; n_models="$(curl -fsS http://127.0.0.1:11434/api/tags | jq '.models | length' 2>/dev/null)"
-    inv_ok "Ollama API" "responding on :11434, ${n_models:-0} model(s)"
+    # Split capture from parse so a curl failure isn't reported as "0 models"
+    # — that's how the API-down case used to render, indistinguishable from a
+    # responsive API with no models installed.
+    local tags_json n_models
+    tags_json="$(curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags 2>/dev/null)"
+    if [[ -z "$tags_json" ]]; then
+      inv_broken "Ollama API" "/api/tags reachable then transient-failed — investigate"
+    else
+      n_models="$(jq '.models | length' 2>/dev/null <<<"$tags_json")"
+      if [[ -z "$n_models" || "$n_models" == "null" ]]; then
+        inv_broken "Ollama API" "/api/tags returned unparseable JSON"
+      else
+        inv_ok "Ollama API" "responding on :11434, ${n_models} model(s)"
+      fi
+    fi
   else
     inv_missing "Ollama API" "needs LaunchAgent running"
   fi
