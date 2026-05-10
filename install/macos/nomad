@@ -50,6 +50,33 @@ while [[ -L "$_NOMAD_SCRIPT" ]]; do
 done
 HERE="$(cd "$(dirname "$_NOMAD_SCRIPT")" && pwd)"
 COMPOSE_BASE="$HERE/compose.yaml"
+
+# Bundle integrity check — fail loud and early if HERE somehow resolved wrong
+# (stale or self-referential symlink, weird $0, etc). Without this, the script
+# limps for ~50 lines and dies with "compose.yaml not found" buried in a step.
+# Skip the check for help/usage so 'nomad help' still works from anywhere.
+_NOMAD_FIRST_ARG="${1:-help}"
+case "$_NOMAD_FIRST_ARG" in
+  help|--help|-h) ;;
+  *)
+    if [[ ! -f "$COMPOSE_BASE" ]]; then
+      printf '\n\033[0;31m✗ Bundle integrity check failed\033[0m\n\n' >&2
+      printf '  compose.yaml not found at: %s\n' "$COMPOSE_BASE" >&2
+      printf '  HERE resolved to:          %s\n' "$HERE" >&2
+      printf '  invocation $0:             %s\n' "$0" >&2
+      printf '  resolved script:           %s\n\n' "$_NOMAD_SCRIPT" >&2
+      printf '  Most likely cause: stale or self-referential symlink at\n' >&2
+      printf '  $(brew --prefix)/bin/nomad pointing at the wrong location.\n\n' >&2
+      printf '  Recovery (one paste):\n' >&2
+      printf '    rm -f "$(brew --prefix)/bin/nomad"\n' >&2
+      printf '    cd ~/Developer/project-nomad-macos-arm64\n' >&2
+      printf '    git fetch && git reset --hard origin/feat/macos-distribution-layer\n' >&2
+      printf '    bash install/macos/nomad install\n\n' >&2
+      exit 1
+    fi
+    ;;
+esac
+unset _NOMAD_FIRST_ARG
 SECRETS_DIR="$HOME/.config/project-nomad"
 ENV_FILE="$SECRETS_DIR/.env"
 # Hot state — always on internal disk, never on a detachable drive.
@@ -1098,6 +1125,18 @@ step_self_install_to_path() {
   # CLI symlink
   bindir="$prefix/bin"
   target="$bindir/nomad"
+
+  # Refuse to create a self-referential symlink. If HERE somehow resolved to
+  # brew's bin dir (legacy script without symlink resolution, or some other
+  # corruption), the symlink target equals the symlink itself — broken on
+  # next invocation. Better to skip and let the user fix the underlying issue.
+  if [[ "$HERE" == "$bindir" ]]; then
+    warn "skipping symlink — HERE ($HERE) equals \$(brew --prefix)/bin"
+    warn "would create self-referential link. Run install from the bundle dir instead:"
+    warn "  bash ~/Developer/project-nomad-macos-arm64/install/macos/nomad install"
+    return 0
+  fi
+
   if [[ -d "$bindir" && -w "$bindir" ]]; then
     if [[ -L "$target" && "$(readlink "$target")" == "$HERE/nomad" ]]; then
       :   # already linked
@@ -1555,6 +1594,14 @@ ${C_OK}── Admin is up ──${C_OFF}
 EOF
 
   step_pull_models     # foreground; user sees native ollama progress
+
+  # Final admin restart — flushes admin's Ollama model-list cache so the UI
+  # shows all pulled models on first load instead of the stale snapshot from
+  # before step_pull_models ran. Cheap (~5s); avoids the "models not showing"
+  # confusion that's otherwise fixable only by user-initiated 'nomad restart admin'.
+  log "refreshing admin's Ollama model cache"
+  dc restart admin >/dev/null 2>&1 || true
+  sleep 5
 
   cat <<EOF
 
