@@ -1822,7 +1822,35 @@ EOF
 # ─── lifecycle subcommands ────────────────────────────────────────────────────
 cmd_up()     { ensure_docker_path; dc up -d; }
 cmd_down()   { ensure_docker_path; dc down; }
-cmd_restart(){ ensure_docker_path; dc restart "${1:-admin}"; }
+cmd_restart(){
+  ensure_docker_path
+  local svc="${1:-admin}"
+  # Compose-managed services live in our compose.yaml; admin-spawned content
+  # services (kiwix/kolibri/cyberchef/flatnotes/etc) are launched by admin
+  # via the docker socket and aren't visible to docker compose. Detect by
+  # querying compose for the service list — if the requested name isn't there,
+  # fall through to plain `docker restart` against the matching container.
+  if dc config --services 2>/dev/null | grep -qx "$svc"; then
+    dc restart "$svc"
+    return $?
+  fi
+  # Try the literal name + the nomad_ prefix (so `nomad restart kiwix` works
+  # even though the actual container is `nomad_kiwix_server`).
+  local container=""
+  for candidate in "$svc" "nomad_$svc" "nomad_${svc}_server"; do
+    if docker inspect "$candidate" >/dev/null 2>&1; then
+      container="$candidate"
+      break
+    fi
+  done
+  if [[ -z "$container" ]]; then
+    die "no compose service or container matching: $svc
+Compose services: $(dc config --services 2>/dev/null | tr '\n' ' ')
+Try: docker ps --format '{{.Names}}' to see all running containers"
+  fi
+  log "restarting $container (admin-spawned container — not in compose.yaml)"
+  docker restart "$container"
+}
 cmd_logs() {
   ensure_docker_path
   # Default: snapshot last 100 lines of admin (no follow).
