@@ -5,154 +5,482 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Project NOMAD — macOS Distribution Help</title>
 <style>
-  body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1.5rem; line-height: 1.5; color: #1a1a1a; }
-  h1 { font-size: 1.6rem; margin-top: 0; border-bottom: 1px solid #ddd; padding-bottom: .5rem; }
-  h2 { margin-top: 2rem; font-size: 1.25rem; color: #2a4d2a; }
-  h3 { font-size: 1.05rem; margin-top: 1.2rem; }
-  code, pre { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.9em; }
-  code { background: #f3f3ee; padding: 1px 4px; border-radius: 3px; }
-  pre { background: #f3f3ee; padding: .8rem 1rem; border-radius: 4px; overflow-x: auto; line-height: 1.4; }
-  pre code { background: none; padding: 0; }
-  table { border-collapse: collapse; margin: .5rem 0; }
-  th, td { border: 1px solid #ddd; padding: .35rem .7rem; text-align: left; vertical-align: top; }
-  th { background: #f3f3ee; }
-  .note { background: #fffbe6; border-left: 3px solid #d4a000; padding: .6rem 1rem; margin: 1rem 0; }
-  .ok { background: #f0f8f0; border-left: 3px solid #2a8a2a; padding: .6rem 1rem; margin: 1rem 0; }
-  a { color: #1a5fb4; }
-  hr { border: none; border-top: 1px solid #ddd; margin: 2rem 0; }
+  :root {
+    --bg: #faf8f4;
+    --bg-card: #ffffff;
+    --bg-code: #f3f1ec;
+    --bg-hero: #243b1c;
+    --bg-hero-accent: #5b8a5b;
+    --text: #1a1a1a;
+    --text-muted: #555;
+    --text-subtle: #888;
+    --border: #e6e2d8;
+    --border-strong: #c8c2b0;
+    --accent: #2a4d2a;
+    --accent-light: #5b8a5b;
+    --warn: #b97a00;
+    --warn-bg: #fdf6e3;
+    --err: #a32d22;
+    --err-bg: #fbeae8;
+    --ok: #2a8a2a;
+    --ok-bg: #ecf5ec;
+    --shadow: 0 1px 2px rgba(0,0,0,.04), 0 2px 8px rgba(0,0,0,.04);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── Hero header ── */
+  .hero {
+    background: linear-gradient(135deg, var(--bg-hero) 0%, #2f4d24 100%);
+    color: #fff;
+    padding: 3rem 1.5rem 2.5rem;
+    border-bottom: 4px solid var(--bg-hero-accent);
+  }
+  .hero-inner { max-width: 820px; margin: 0 auto; }
+  .hero-eyebrow {
+    color: #b8d4b8;
+    font-size: 0.85rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 600;
+    margin-bottom: 0.4rem;
+  }
+  .hero h1 {
+    margin: 0 0 0.6rem;
+    font-size: 2rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+  }
+  .hero p {
+    margin: 0;
+    color: #d8e8d8;
+    font-size: 1.1rem;
+    max-width: 64ch;
+  }
+  .hero-quick {
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid rgba(255,255,255,.15);
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    font-size: 0.95rem;
+  }
+  .hero-quick a { color: #b8d4b8; text-decoration: none; border-bottom: 1px dotted rgba(184,212,184,.5); }
+  .hero-quick a:hover { color: #fff; border-bottom-color: #fff; }
+  .hero-quick-label { color: #8fa88f; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 0.15rem; }
+
+  /* ── Page container ── */
+  main { max-width: 820px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+
+  /* ── Table of contents ── */
+  .toc {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 2.5rem;
+    box-shadow: var(--shadow);
+  }
+  .toc-title { font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-subtle); margin-bottom: 0.6rem; }
+  .toc ul { margin: 0; padding: 0; list-style: none; columns: 2; column-gap: 1.5rem; }
+  .toc li { margin: 0.25rem 0; padding: 0; break-inside: avoid; }
+  .toc a { color: var(--text); text-decoration: none; border-bottom: 1px dotted var(--border-strong); }
+  .toc a:hover { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* ── Sections ── */
+  section { margin-bottom: 3rem; }
+  h2 {
+    font-size: 1.4rem;
+    color: var(--accent);
+    margin: 0 0 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid var(--border);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  h3 {
+    font-size: 1.05rem;
+    color: var(--text);
+    margin: 1.5rem 0 0.6rem;
+    font-weight: 600;
+  }
+  p { margin: 0.7rem 0; }
+  ul, ol { padding-left: 1.4rem; margin: 0.7rem 0; }
+  li { margin: 0.25rem 0; }
+  a { color: var(--accent); text-decoration: none; border-bottom: 1px solid rgba(42,77,42,.3); }
+  a:hover { border-bottom-color: var(--accent); }
+
+  /* ── Code ── */
+  code, pre, kbd {
+    font-family: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+    font-size: 0.875em;
+  }
+  code {
+    background: var(--bg-code);
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: #4a4a4a;
+  }
+  pre {
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.9rem 1.1rem;
+    overflow-x: auto;
+    line-height: 1.5;
+    margin: 1rem 0;
+    box-shadow: var(--shadow);
+  }
+  pre code {
+    background: none;
+    padding: 0;
+    border-radius: 0;
+    color: var(--text);
+  }
+
+  /* ── Callouts ── */
+  .callout {
+    margin: 1.2rem 0;
+    padding: 0.9rem 1.2rem;
+    border-radius: 6px;
+    border-left: 3px solid var(--text-subtle);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+  }
+  .callout.ok    { border-left-color: var(--ok);   background: var(--ok-bg); }
+  .callout.warn  { border-left-color: var(--warn); background: var(--warn-bg); }
+  .callout.err   { border-left-color: var(--err);  background: var(--err-bg); }
+  .callout-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-subtle);
+    display: block;
+    margin-bottom: 0.3rem;
+  }
+  .callout.ok    .callout-label { color: var(--ok); }
+  .callout.warn  .callout-label { color: var(--warn); }
+  .callout.err   .callout-label { color: var(--err); }
+  .callout p:first-child { margin-top: 0; }
+  .callout p:last-child { margin-bottom: 0; }
+
+  /* ── Tables ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.2rem 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+  }
+  thead { background: var(--bg-hero); }
+  th {
+    color: #fff;
+    text-align: left;
+    padding: 0.65rem 0.9rem;
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  td {
+    padding: 0.65rem 0.9rem;
+    border-top: 1px solid var(--border);
+    vertical-align: top;
+    font-size: 0.95rem;
+  }
+  tbody tr:nth-child(even) { background: rgba(0,0,0,.015); }
+  tbody tr:hover { background: rgba(91,138,91,.06); }
+
+  /* ── Footer ── */
+  footer {
+    border-top: 1px solid var(--border);
+    margin-top: 4rem;
+    padding-top: 1.5rem;
+    color: var(--text-subtle);
+    font-size: 0.85rem;
+    text-align: center;
+  }
+  footer a { color: var(--text-subtle); border-bottom-color: var(--border-strong); }
+  footer a:hover { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* ── Scroll behavior ── */
+  html { scroll-behavior: smooth; }
+  h2 { scroll-margin-top: 1rem; }
+
+  @media (max-width: 600px) {
+    .hero { padding: 2rem 1.25rem 1.5rem; }
+    .hero h1 { font-size: 1.5rem; }
+    .toc ul { columns: 1; }
+    main { padding: 1.5rem 1.25rem 3rem; }
+    th, td { padding: 0.5rem 0.6rem; font-size: 0.88rem; }
+  }
 </style>
 </head>
 <body>
 
-<h1>Project NOMAD — macOS Distribution Help</h1>
+<header class="hero">
+  <div class="hero-inner">
+    <div class="hero-eyebrow">macOS Distribution Layer</div>
+    <h1>Project NOMAD — Help &amp; Recovery</h1>
+    <p>An offline-first AI + knowledge server, packaged for Apple Silicon. This guide covers what's running, why it's running, and how to fix things when they break.</p>
+    <div class="hero-quick">
+      <div>
+        <span class="hero-quick-label">Admin UI</span>
+        <a href="http://localhost:8080">localhost:8080</a>
+      </div>
+      <div>
+        <span class="hero-quick-label">Kiwix (you are here)</span>
+        <a href="http://localhost:8090">localhost:8090</a>
+      </div>
+      <div>
+        <span class="hero-quick-label">Native Ollama API</span>
+        <a href="http://localhost:11434">localhost:11434</a>
+      </div>
+    </div>
+  </div>
+</header>
 
-<p>You're running the macOS distribution layer of <a href="https://github.com/Crosstalk-Solutions/project-nomad">Project NOMAD</a>. This page explains what's installed, how the pieces fit together, and how to recover when something looks off.</p>
+<main>
 
-<div class="ok">
-<strong>Quick orientation:</strong> the Crosstalk admin UI lives at <a href="http://localhost:8080">http://localhost:8080</a> · kiwix (Wikipedia, ZIMs) at <a href="http://localhost:8090">http://localhost:8090</a> · native Ollama at <code>http://localhost:11434</code>.
-</div>
+<nav class="toc" aria-label="Table of contents">
+  <div class="toc-title">On this page</div>
+  <ul>
+    <li><a href="#what-this-adds">What this distribution adds</a></li>
+    <li><a href="#agents">The three LaunchAgents</a></li>
+    <li><a href="#counts">Why kiwix sometimes shows fewer ZIMs</a></li>
+    <li><a href="#commands">Common subcommands</a></li>
+    <li><a href="#storage">Storage layout</a></li>
+    <li><a href="#wizard">The Easy Setup wizard's AI Models step</a></li>
+    <li><a href="#recovery">Recovery flowchart</a></li>
+    <li><a href="#lineage">Lineage</a></li>
+  </ul>
+</nav>
 
-<h2>What this distribution adds</h2>
+<section id="what-this-adds">
+  <h2>What this distribution adds</h2>
 
-<p>Upstream Project NOMAD's installer is Linux-only and assumes NVIDIA GPU passthrough. This bundle is a distribution layer on top of <a href="https://github.com/snfettig/project-nomad-macos-arm64">snfettig's macOS port</a> and <a href="https://github.com/proximasan/project-nomad-silicon">proximasan's admin patches</a>. It adds:</p>
+  <p>Upstream <a href="https://github.com/Crosstalk-Solutions/project-nomad">Project NOMAD</a>'s installer is Linux-only and assumes NVIDIA GPU passthrough. This bundle is a distribution layer on top of <a href="https://github.com/snfettig/project-nomad-macos-arm64">snfettig's macOS port</a> and <a href="https://github.com/proximasan/project-nomad-silicon">proximasan's admin patches</a>. It adds:</p>
 
-<ul>
-  <li><strong>Single-file <code>nomad</code> CLI</strong> with subcommand-based lifecycle (install / check / up / down / restart / logs / models / benchmark / fix-kiwix / install-field-desk / etc).</li>
-  <li><strong>Native Metal Ollama via Homebrew + LaunchAgent</strong> on port 11434, talking to admin via <code>host.docker.internal</code>. Verified ~8× faster than container Rosetta on Apple Silicon.</li>
-  <li><strong>Split storage for unplug-resilience</strong> — mysql + redis on internal disk; ZIMs / models / maps on a configurable external drive that can be safely unplugged.</li>
-  <li><strong>OrbStack VM auto-tune</strong> to ~80% of host RAM (proportional, scales 8 GB Air → 192 GB Studio).</li>
-  <li><strong>Three LaunchAgents</strong> running in the background — see below.</li>
-  <li><strong>Portable <code>quick-chat.html</code></strong> dropped on the data drive — plug into any Mac and have LLM chat without a NOMAD install.</li>
-</ul>
+  <ul>
+    <li><strong>Single-file <code>nomad</code> CLI</strong> with subcommand-based lifecycle (install / check / up / down / restart / logs / models / benchmark / fix-kiwix / install-field-desk / and more).</li>
+    <li><strong>Native Metal Ollama via Homebrew + LaunchAgent</strong> on port 11434. Verified <strong>~8× faster</strong> than container Rosetta on Apple Silicon (20.76 tok/s vs 2.56 tok/s on Mac mini M4).</li>
+    <li><strong>Split storage for unplug-resilience</strong> — mysql + redis on internal disk; ZIMs / models / maps on a configurable external drive that can be safely unplugged.</li>
+    <li><strong>OrbStack VM auto-tune</strong> to ~80% of host RAM (proportional, scales 8 GB Air → 192 GB Studio).</li>
+    <li><strong>Three LaunchAgents</strong> running in the background — see below.</li>
+    <li><strong>Portable <code>quick-chat.html</code></strong> dropped on the data drive — plug into any Mac and have LLM chat without a NOMAD install.</li>
+  </ul>
 
-<h2>The three LaunchAgents</h2>
+  <div class="callout ok">
+    <span class="callout-label">Quick orientation</span>
+    Crosstalk admin UI at <a href="http://localhost:8080">localhost:8080</a> · this kiwix server at <a href="http://localhost:8090">localhost:8090</a> · native Ollama API at <code>http://localhost:11434</code>.
+  </div>
+</section>
 
-<p>These run automatically. You don't normally interact with them. Each writes only when it does work, so silent logs = healthy state.</p>
+<section id="agents">
+  <h2>The three LaunchAgents</h2>
 
-<table>
-<tr><th>Agent</th><th>What it does</th><th>Log location</th></tr>
-<tr><td><code>com.projectnomad.ollama</code></td><td>Native Ollama daemon. Resolves the data drive at runtime so renamed mounts don't break it.</td><td>system console</td></tr>
-<tr><td><code>com.projectnomad.benchmark-patcher</code></td><td>Every 30s. Backfills <code>cpu_model</code> / <code>gpu_model</code> on admin's <code>benchmark_results</code> rows so the upstream leaderboard sees the real Apple chip instead of "-".</td><td><code>~/Library/Logs/nomad-benchmark-patcher.{out,err}.log</code></td></tr>
-<tr><td><code>com.projectnomad.kiwix-self-heal</code></td><td>Every 60s. Two jobs: (1) quarantine partial ZIMs that crash kiwix-serve to <code>storage/zim-inprogress/</code> · (2) auto-reload kiwix when new completed ZIMs appear in <code>/data</code> and the queue is empty.</td><td><code>~/Library/Logs/nomad-kiwix-self-heal.action.log</code></td></tr>
-</table>
+  <p>These run automatically. You don't normally interact with them. Each writes only when it does work, so silent logs = healthy state.</p>
 
-<h2>Why kiwix sometimes shows fewer ZIMs than admin</h2>
+  <table>
+    <thead>
+      <tr><th>Agent</th><th>What it does</th><th>Log location</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>com.projectnomad.ollama</code></td>
+        <td>Native Ollama daemon. Resolves the data drive at runtime so renamed mounts don't break it.</td>
+        <td>system console</td>
+      </tr>
+      <tr>
+        <td><code>com.projectnomad.benchmark-patcher</code></td>
+        <td>Every 30s. Backfills <code>cpu_model</code> / <code>gpu_model</code> on admin's <code>benchmark_results</code> rows so the upstream leaderboard sees the real Apple chip instead of "—".</td>
+        <td><code>~/Library/Logs/nomad-benchmark-patcher.{out,err}.log</code></td>
+      </tr>
+      <tr>
+        <td><code>com.projectnomad.kiwix-self-heal</code></td>
+        <td>Every 60s. Two jobs in one tick: (1) quarantine partial ZIMs that crash kiwix-serve to <code>storage/zim-inprogress/</code> · (2) auto-reload kiwix when new completed ZIMs appear in <code>/data</code> and the queue is empty.</td>
+        <td><code>~/Library/Logs/nomad-kiwix-self-heal.action.log</code></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
 
-<p>Two views of two different states:</p>
+<section id="counts">
+  <h2>Why kiwix sometimes shows fewer ZIMs than admin</h2>
 
-<ul>
-  <li><strong>admin's Content Manager</strong> = files admin's downloader has written to <code>/data</code>. Tracked in admin's DB regardless of kiwix's state.</li>
-  <li><strong>kiwix's catalog</strong> = files kiwix-serve loaded at its <em>last startup</em>. kiwix-serve doesn't watch <code>/data</code> for new files — once it's running, its in-memory library is fixed.</li>
-</ul>
+  <p>Two views of two different states — and both are correct in their own frame:</p>
 
-<p>If admin shows 88 ZIMs and kiwix shows 61, the <code>com.projectnomad.kiwix-self-heal</code> agent is likely waiting for the download queue to empty before triggering a kiwix restart. The auto-reload's gate logic:</p>
+  <ul>
+    <li><strong>Admin's Content Manager</strong> = files admin's downloader has written to <code>/data</code>. Tracked in admin's DB regardless of kiwix's state.</li>
+    <li><strong>Kiwix's catalog</strong> = files kiwix-serve loaded at its <em>last startup</em>. Kiwix-serve doesn't watch <code>/data</code> for new files — once it's running, its in-memory library is fixed.</li>
+  </ul>
 
-<pre>fs_count &gt; catalog_count  AND  active_zim_downloads == 0  →  restart kiwix</pre>
+  <p>If admin shows 88 ZIMs and kiwix shows 61, the <code>com.projectnomad.kiwix-self-heal</code> agent is likely waiting for the download queue to empty before triggering a kiwix restart. The auto-reload's gate logic:</p>
 
-<p>Once active downloads hit 0, the next 60s tick restarts kiwix and the catalog catches up. To check the agent's current decision:</p>
+  <pre><code>fs_count &gt; catalog_count  AND  active_zim_downloads == 0  →  restart kiwix</code></pre>
 
-<pre><code>~/.config/project-nomad/kiwix-self-heal.sh
+  <p>Once active downloads hit 0, the next 60s tick restarts kiwix and the catalog catches up. To check the agent's current decision:</p>
+
+  <pre><code>~/.config/project-nomad/kiwix-self-heal.sh
 tail -10 ~/Library/Logs/nomad-kiwix-self-heal.action.log</code></pre>
 
-<h2>Common subcommands</h2>
+  <div class="callout warn">
+    <span class="callout-label">Don't force-reload kiwix while downloads are active</span>
+    A manual <code>docker restart nomad_kiwix_server</code> mid-write will crash kiwix on the partial ZIM, the self-heal will quarantine it, and admin's BullMQ writer will lose the file. Wait for the queue to empty, or use <code>nomad fix-kiwix</code> which respects the gate.
+  </div>
+</section>
 
-<table>
-<tr><th>Command</th><th>Purpose</th></tr>
-<tr><td><code>nomad check</code></td><td>Full diagnostic of system + stack. Read-only. Writes a timestamped log file to the bundle folder.</td></tr>
-<tr><td><code>nomad up</code> / <code>nomad down</code></td><td>Start / stop the compose stack. Native Ollama LaunchAgent is unaffected.</td></tr>
-<tr><td><code>nomad restart [SERVICE]</code></td><td>Restart any compose service OR any admin-spawned container (kiwix, kolibri, cyberchef, etc). Default: admin.</td></tr>
-<tr><td><code>nomad logs [SERVICE]</code></td><td>Tail logs (default: admin).</td></tr>
-<tr><td><code>nomad models list</code></td><td>List installed Ollama models with per-Mac fits-this-Mac verdict.</td></tr>
-<tr><td><code>nomad models pull TIER</code></td><td>Pull a tier preset (tiny/small/medium/large/xl/dreamy). Auto-detected from RAM by default.</td></tr>
-<tr><td><code>nomad benchmark</code></td><td>Native Metal vs container Rosetta tokens/s on llama3.1:8b. Captures the Apple chip via the auto-patcher LaunchAgent.</td></tr>
-<tr><td><code>nomad fix-kiwix</code></td><td>Manual trigger of the kiwix self-heal pass. Verbose output. Use when you want immediate recovery instead of waiting for the next 60s tick.</td></tr>
-<tr><td><code>nomad install-field-desk</code></td><td>Install <a href="https://github.com/SysAdminDoc/project-nomad-desktop">SysAdminDoc's NOMAD Field Desk</a> alongside admin on a non-conflicting port. Default :8081, shares native Ollama on :11434.</td></tr>
-<tr><td><code>nomad orbstack-tune [GB]</code></td><td>Tune OrbStack VM RAM. No arg = 80% of host. Restarts the VM (~10s).</td></tr>
-<tr><td><code>nomad reset-ollama</code></td><td>Recover from stuck LaunchAgent state ("bootstrap failed: 5: Input/output error").</td></tr>
-<tr><td><code>nomad reinstall</code></td><td>Full uninstall + install in one shot. One confirmation up front, fully unattended after.</td></tr>
-<tr><td><code>nomad uninstall</code></td><td>Clean wipe — containers, LaunchAgents, secrets. Optionally wipes data drive (separate confirm).</td></tr>
-<tr><td><code>nomad help</code></td><td>Short usage. <code>man nomad</code> for the full reference.</td></tr>
-</table>
+<section id="commands">
+  <h2>Common subcommands</h2>
 
-<h2>Storage layout</h2>
+  <table>
+    <thead>
+      <tr><th style="width: 38%;">Command</th><th>Purpose</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>nomad check</code></td><td>Full diagnostic of system + stack. Read-only. Writes a timestamped log file to the bundle folder.</td></tr>
+      <tr><td><code>nomad up</code> / <code>nomad down</code></td><td>Start / stop the compose stack. Native Ollama LaunchAgent is unaffected.</td></tr>
+      <tr><td><code>nomad restart [SERVICE]</code></td><td>Restart any compose service OR any admin-spawned container (kiwix, kolibri, cyberchef, etc). Default: admin.</td></tr>
+      <tr><td><code>nomad logs [SERVICE]</code></td><td>Tail logs (default: admin).</td></tr>
+      <tr><td><code>nomad models list</code></td><td>List installed Ollama models with per-Mac fits-this-Mac verdict.</td></tr>
+      <tr><td><code>nomad models pull TIER</code></td><td>Pull a tier preset (tiny / small / medium / large / xl / dreamy). Auto-detected from RAM by default.</td></tr>
+      <tr><td><code>nomad benchmark</code></td><td>Native Metal vs container Rosetta tokens/sec on llama3.1:8b. Captures the Apple chip via the auto-patcher LaunchAgent.</td></tr>
+      <tr><td><code>nomad fix-kiwix</code></td><td>Manual trigger of the kiwix self-heal pass. Verbose output. Use when you want immediate recovery instead of waiting for the next 60s tick.</td></tr>
+      <tr><td><code>nomad install-field-desk</code></td><td>Install <a href="https://github.com/SysAdminDoc/project-nomad-desktop">SysAdminDoc's NOMAD Field Desk</a> alongside admin on a non-conflicting port. Default :8081, shares native Ollama on :11434.</td></tr>
+      <tr><td><code>nomad orbstack-tune [GB]</code></td><td>Tune OrbStack VM RAM. No arg = 80% of host. Restarts the VM (~10s).</td></tr>
+      <tr><td><code>nomad reset-ollama</code></td><td>Recover from stuck LaunchAgent state ("bootstrap failed: 5: Input/output error").</td></tr>
+      <tr><td><code>nomad reinstall</code></td><td>Full uninstall + install in one shot. One confirmation up front, fully unattended after.</td></tr>
+      <tr><td><code>nomad uninstall</code></td><td>Clean wipe — containers, LaunchAgents, secrets. Optionally wipes data drive (separate confirm).</td></tr>
+      <tr><td><code>nomad help</code></td><td>Short usage. <code>man nomad</code> for the full reference.</td></tr>
+    </tbody>
+  </table>
+</section>
 
-<pre>INTERNAL — always available, hot state
-  ~/.config/project-nomad/state/mysql/      mysql data dir
-  ~/.config/project-nomad/state/redis/      redis data
-  ~/.config/project-nomad/.env              secrets (chmod 600, off-iCloud)
-  ~/.config/project-nomad/kiwix-self-heal.sh
-  ~/.config/project-nomad/benchmark-patcher.sh
-  ~/.config/project-nomad/ollama-launcher.sh
-  ~/Library/LaunchAgents/com.projectnomad.*.plist
+<section id="storage">
+  <h2>Storage layout</h2>
 
-CONFIGURABLE — typically external, cold content
-  ${NOMAD_DATA_ROOT}/storage/zim/           kiwix's ZIM library
-  ${NOMAD_DATA_ROOT}/storage/zim-inprogress/  partial ZIMs quarantined by self-heal
-  ${NOMAD_DATA_ROOT}/storage/maps/          ProtoMaps PMTiles
-  ${NOMAD_DATA_ROOT}/storage/kolibri/       Kolibri channels
-  ${NOMAD_DATA_ROOT}/ollama-models/         model weights
-  ${NOMAD_DATA_ROOT}/quick-chat.html        portable browser chat UI
-  ${NOMAD_DATA_ROOT}/quick-chat.sh          companion bootstrap script</pre>
+  <h3>Internal — always available, hot state</h3>
 
-<div class="note">
-<strong>Drive-eject is safe.</strong> mysql + redis stay running because their data is on internal disk. Admin keeps responding. Content services pause until the drive returns. Native Ollama keeps any already-loaded model in RAM via <code>OLLAMA_KEEP_ALIVE=30m</code>. After replug: <code>nomad up</code>.
-</div>
+  <pre><code>~/.config/project-nomad/state/mysql/      mysql data dir
+~/.config/project-nomad/state/redis/      redis data
+~/.config/project-nomad/.env              secrets (chmod 600, off-iCloud)
+~/.config/project-nomad/kiwix-self-heal.sh
+~/.config/project-nomad/benchmark-patcher.sh
+~/.config/project-nomad/ollama-launcher.sh
+~/Library/LaunchAgents/com.projectnomad.*.plist</code></pre>
 
-<h2>The Easy Setup wizard's "AI Models" step</h2>
+  <h3>Configurable — typically external, cold content</h3>
 
-<p>Admin's onboarding wizard at <a href="http://localhost:8080/easy-setup">/easy-setup</a> offers a hardcoded "recommended models" trio (llama3.1, deepseek-r1, nomic-embed-text). <strong>Skip the AI Models step.</strong> Your models are already pulled via native Ollama by <code>nomad install</code>; selecting them in the wizard would queue duplicate downloads through admin's BullMQ queue.</p>
+  <pre><code>${NOMAD_DATA_ROOT}/storage/zim/             kiwix's ZIM library
+${NOMAD_DATA_ROOT}/storage/zim-inprogress/  partial ZIMs quarantined by self-heal
+${NOMAD_DATA_ROOT}/storage/maps/            ProtoMaps PMTiles
+${NOMAD_DATA_ROOT}/storage/kolibri/         Kolibri channels
+${NOMAD_DATA_ROOT}/ollama-models/           model weights
+${NOMAD_DATA_ROOT}/quick-chat.html          portable browser chat UI
+${NOMAD_DATA_ROOT}/quick-chat.sh            companion bootstrap script</code></pre>
 
-<p>The home page's wizard highlight is suppressed by default (we set <code>kv_store.ui.hasVisitedEasySetup = true</code> at install time), so there's no visual nudge to run it. The wizard remains accessible via the Easy Setup card if you actively want it.</p>
+  <div class="callout ok">
+    <span class="callout-label">Drive-eject is safe</span>
+    mysql + redis stay running because their data is on internal disk. Admin keeps responding. Content services pause until the drive returns. Native Ollama keeps any already-loaded model in RAM via <code>OLLAMA_KEEP_ALIVE=30m</code>. After replug: <code>nomad up</code>.
+  </div>
+</section>
 
-<h2>Recovery flowchart</h2>
+<section id="wizard">
+  <h2>The Easy Setup wizard's "AI Models" step</h2>
 
-<table>
-<tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
-<tr><td>kiwix shows fewer ZIMs than admin's Content Manager</td><td>Auto-reload waiting for active downloads to finish</td><td>Wait. Or check: <code>nomad downloads list</code></td></tr>
-<tr><td>kiwix container in restart loop</td><td>Partial ZIM in <code>/data</code></td><td><code>nomad fix-kiwix</code> (or wait 60s for auto)</td></tr>
-<tr><td>AI Assistant shows no models</td><td>OLLAMA_HOST env var missing on admin (regression?)</td><td><code>docker exec nomad_admin printenv OLLAMA_HOST</code> — should be <code>http://host.docker.internal:11434</code>. If empty, recreate admin: <code>nomad up</code> won't fix; need <code>docker compose --env-file ~/.config/project-nomad/.env up -d --force-recreate admin</code></td></tr>
-<tr><td>Ollama LaunchAgent stuck</td><td>"bootstrap failed: 5: Input/output error"</td><td><code>nomad reset-ollama</code></td></tr>
-<tr><td>OrbStack memory wrong</td><td>Tune didn't run or default applied</td><td><code>nomad orbstack-tune</code> (no arg = 80% of host)</td></tr>
-<tr><td>Anything weird overall</td><td>Mystery</td><td><code>nomad check</code> — 🟢🟡🔴 findings with auto-suggested fixes</td></tr>
-<tr><td>Truly stuck</td><td>State drift / corrupt / who knows</td><td><code>nomad reinstall</code> — confirms once, then unattended</td></tr>
-</table>
+  <p>Admin's onboarding wizard at <a href="http://localhost:8080/easy-setup">/easy-setup</a> offers a hardcoded "recommended models" trio (llama3.1, deepseek-r1, nomic-embed-text). <strong>Skip the AI Models step.</strong> Your models are already pulled via native Ollama by <code>nomad install</code>; selecting them in the wizard would queue duplicate downloads through admin's BullMQ queue.</p>
 
-<h2>Lineage</h2>
+  <p>The home page's wizard highlight is suppressed by default (we set <code>kv_store.ui.hasVisitedEasySetup = true</code> at install time), so there's no visual nudge. The wizard remains accessible if you actively want it for the Wikipedia / Maps / Content steps.</p>
 
-<p>The Apple Silicon admin patches that make Metal-aware benchmark reporting work are from the community fork series:</p>
+  <div class="callout warn">
+    <span class="callout-label">Why this matters</span>
+    Selecting AI Models in the wizard queues admin BullMQ jobs that try to spawn admin-managed Ollama downloads. They overlap with what we already pulled via native Ollama and either duplicate work or fail outright. This is an upstream UX issue worth filing — the wizard should query Ollama for already-installed models before offering downloads.
+  </div>
+</section>
 
-<ul>
-  <li><a href="https://github.com/snfettig/project-nomad-macos-arm64">snfettig/project-nomad-macos-arm64</a> — original native-Ollama+Metal commit, current macOS focal point</li>
-  <li><a href="https://github.com/proximasan/project-nomad-silicon">proximasan/project-nomad-silicon</a> — APPLE_CHIP_MODEL fallback, isNativeOllama(), multi-arch GHCR images. compose.yaml here references proximasan's images by default.</li>
-  <li><a href="https://github.com/NoamanKhalil/project-nomad-MacOs">NoamanKhalil/project-nomad-MacOs</a> — foundational Phase 1-3 macOS port work</li>
-  <li><a href="https://github.com/Crosstalk-Solutions/project-nomad">Crosstalk-Solutions/project-nomad</a> — upstream</li>
-</ul>
+<section id="recovery">
+  <h2>Recovery flowchart</h2>
 
-<p>Sibling project worth knowing about (different product, not a fork): <a href="https://github.com/SysAdminDoc/project-nomad-desktop">SysAdminDoc/project-nomad-desktop</a> — NOMAD Field Desk, Python+Electron preparedness command center. Coexists with admin via <code>nomad install-field-desk</code>.</p>
+  <table>
+    <thead>
+      <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Kiwix shows fewer ZIMs than admin's Content Manager</td>
+        <td>Auto-reload waiting for active downloads to finish</td>
+        <td>Wait. Check: <code>nomad downloads list</code></td>
+      </tr>
+      <tr>
+        <td>Kiwix container in restart loop</td>
+        <td>Partial ZIM in <code>/data</code></td>
+        <td><code>nomad fix-kiwix</code> (or wait 60s for auto)</td>
+      </tr>
+      <tr>
+        <td>AI Assistant shows no models</td>
+        <td><code>OLLAMA_HOST</code> env var missing on admin</td>
+        <td><code>docker exec nomad_admin printenv OLLAMA_HOST</code> — should be <code>http://host.docker.internal:11434</code>. If empty: <code>docker compose --env-file ~/.config/project-nomad/.env up -d --force-recreate admin</code></td>
+      </tr>
+      <tr>
+        <td>Ollama LaunchAgent stuck</td>
+        <td>"bootstrap failed: 5: Input/output error"</td>
+        <td><code>nomad reset-ollama</code></td>
+      </tr>
+      <tr>
+        <td>OrbStack memory wrong</td>
+        <td>Tune didn't run or default applied</td>
+        <td><code>nomad orbstack-tune</code> (no arg = 80% of host)</td>
+      </tr>
+      <tr>
+        <td>Anything weird overall</td>
+        <td>Mystery</td>
+        <td><code>nomad check</code> — 🟢🟡🔴 findings with auto-suggested fixes</td>
+      </tr>
+      <tr>
+        <td>Truly stuck</td>
+        <td>State drift / corrupt / who knows</td>
+        <td><code>nomad reinstall</code> — confirms once, then unattended</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
 
-<hr>
+<section id="lineage">
+  <h2>Lineage</h2>
 
-<p style="color: #666; font-size: 0.85em;">macOS distribution layer maintained at <a href="https://github.com/caweis/project-nomad-macos-arm64">caweis/project-nomad-macos-arm64</a>. Apache-2.0. Generated at install time from <code>install/macos/help/index.html</code> via <code>zimwriterfs</code>.</p>
+  <p>The Apple Silicon admin patches that make Metal-aware benchmark reporting work are from the community fork series:</p>
+
+  <ul>
+    <li><a href="https://github.com/snfettig/project-nomad-macos-arm64">snfettig/project-nomad-macos-arm64</a> — original native-Ollama+Metal commit, current macOS focal point</li>
+    <li><a href="https://github.com/proximasan/project-nomad-silicon">proximasan/project-nomad-silicon</a> — <code>APPLE_CHIP_MODEL</code> fallback, <code>isNativeOllama()</code>, multi-arch GHCR images</li>
+    <li><a href="https://github.com/NoamanKhalil/project-nomad-MacOs">NoamanKhalil/project-nomad-MacOs</a> — foundational Phase 1-3 macOS port work</li>
+    <li><a href="https://github.com/Crosstalk-Solutions/project-nomad">Crosstalk-Solutions/project-nomad</a> — upstream</li>
+  </ul>
+
+  <p>Sibling product worth knowing about (different architecture, not a fork): <a href="https://github.com/SysAdminDoc/project-nomad-desktop">SysAdminDoc/project-nomad-desktop</a> — NOMAD Field Desk, a Python+Electron preparedness command center. Coexists with admin via <code>nomad install-field-desk</code>.</p>
+</section>
+
+<footer>
+  <p>macOS distribution layer maintained at <a href="https://github.com/caweis/project-nomad-macos-arm64">caweis/project-nomad-macos-arm64</a> · Apache-2.0</p>
+  <p style="margin-top: 0.4rem; font-size: 0.8rem; color: var(--text-subtle);">Generated at install time from <code>install/macos/help/index.html</code> via <code>zimwriterfs</code>.</p>
+</footer>
+
+</main>
 
 </body>
 </html>
