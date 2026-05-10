@@ -1179,6 +1179,58 @@ step_self_install_to_path() {
   fi
 }
 
+# Set this Mac's Bonjour/mDNS local hostname to "nomad" (or NOMAD_HOSTNAME if
+# set), so any device on the same WiFi can hit the stack at:
+#   http://nomad.local:8080   Command Center
+#   http://nomad.local:8090   kiwix library
+#   http://nomad.local:11434  Ollama API
+# Without this, devices have to use the Mac's existing local hostname (often
+# the unwieldy default like "Chriss-Mac-mini.local") or the raw LAN IP.
+#
+# Side effect: the Mac shows up as the new name in other Macs' Finder sidebar.
+# Reversible later via System Settings → General → About → Local hostname.
+# Skip with --no-rename or NOMAD_HOSTNAME=skip. Default: prompt.
+step_set_local_hostname() {
+  local target="${NOMAD_HOSTNAME:-nomad}"
+  if [[ "$target" == "skip" || "$NOMAD_NO_RENAME" == "1" ]]; then
+    return 0
+  fi
+
+  section "Local network name (Bonjour/mDNS)"
+
+  local current
+  current="$(scutil --get LocalHostName 2>/dev/null || echo "")"
+
+  if [[ "$current" == "$target" ]]; then
+    ok "already set to '$target' — http://${target}.local:8080"
+    return 0
+  fi
+
+  cat <<INFO
+Currently this Mac is reachable on your network as:
+  http://${current:-?}.local:8080
+
+We can change it to '$target' so devices can reach NOMAD at:
+  http://${target}.local:8080   Command Center
+  http://${target}.local:8090   Library
+  http://${target}.local:11434  AI API
+
+Side effect: this Mac shows as '$target' in other Macs' Finder sidebar.
+Reversible later: System Settings → General → About → Local hostname.
+
+INFO
+
+  if confirm "Set local network name to '$target'?"; then
+    if sudo scutil --set LocalHostName "$target" 2>/dev/null; then
+      ok "local hostname set to '$target' — http://${target}.local:8080"
+    else
+      warn "couldn't set local hostname (sudo issue?). Manual: sudo scutil --set LocalHostName $target"
+    fi
+  else
+    ok "kept existing local hostname: $current"
+  fi
+}
+
 step_secrets() {
   section "Secrets (.env, off-iCloud) + state root (always-internal)"
   mkdir -p "$SECRETS_DIR" && chmod 700 "$SECRETS_DIR"
@@ -1839,6 +1891,7 @@ cmd_install() {
   step_orbstack_tune_quiet  # auto-bump VM RAM to 80% of host (proportional, no prompt during install)
   step_ollama_native
   step_self_install_to_path
+  step_set_local_hostname            # set Mac's Bonjour name to 'nomad' so devices reach http://nomad.local
   step_secrets
   step_compose_pull
   step_compose_up
@@ -1851,12 +1904,14 @@ cmd_install() {
 
   # Admin is now usable. Print the URL banner BEFORE the long model pull so the
   # user can open the admin in a browser while models stream in.
+  local _hostname; _hostname="$(scutil --get LocalHostName 2>/dev/null || echo localhost)"
   cat <<EOF
 
 ${C_OK}── Admin is up ──${C_OFF}
-  Admin UI ........ http://localhost:8080
-  Log viewer ...... http://localhost:9999  (Dozzle)
-  Native Ollama ... http://localhost:11434  (Metal-accelerated)
+  From this Mac:           From any device on this WiFi:
+    http://localhost:8080    http://${_hostname}.local:8080   (Command Center)
+    http://localhost:8090    http://${_hostname}.local:8090   (Library)
+    http://localhost:11434   http://${_hostname}.local:11434  (AI API)
 
   ${C_HEAD}You can open the admin in your browser now.${C_OFF}
   Models continue pulling below — the admin will see them as they finish.
@@ -1879,8 +1934,11 @@ ${C_OK}════════════════════════�
 ${C_OK}  Project NOMAD install complete.${C_OFF}
 ${C_OK}════════════════════════════════════════════════════════════${C_OFF}
 
-  Admin ........... http://localhost:8080
-  Native Ollama ... http://localhost:11434  (Metal-accelerated, $(ls "$NOMAD_DATA_ROOT/ollama-models/manifests/registry.ollama.ai/library/" 2>/dev/null | wc -l | tr -d ' ') models pulled)
+  This Mac:                          From any device on this WiFi:
+    Admin   http://localhost:8080      http://${_hostname}.local:8080
+    Library http://localhost:8090      http://${_hostname}.local:8090
+    Ollama  http://localhost:11434     http://${_hostname}.local:11434
+  Models pulled: $(ls "$NOMAD_DATA_ROOT/ollama-models/manifests/registry.ollama.ai/library/" 2>/dev/null | wc -l | tr -d ' ') (Metal-accelerated)
 
   ${C_HEAD}AI Assistant works directly — open admin and try it now.${C_OFF}
   ${C_WARN}IMPORTANT: if you visit the Easy Setup wizard at /easy-setup,${C_OFF}
