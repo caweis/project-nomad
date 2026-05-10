@@ -1587,13 +1587,21 @@ if [[ "\$status" == "running" ]]; then
     # /data — it only loads files at startup. Without this auto-reload,
     # users would have to manually 'docker restart nomad_kiwix_server' to
     # see anything they downloaded after the last kiwix start.
+    jq_bin=""
+    for j in /opt/homebrew/bin/jq /usr/local/bin/jq /usr/bin/jq; do
+      [[ -x "\$j" ]] && { jq_bin="\$j"; break; }
+    done
+
     catalog_count="\$(/usr/bin/curl -fsS --max-time 4 "http://localhost:\$port/catalog/v2/entries" 2>/dev/null \\
       | /usr/bin/grep -c '<entry>' || echo 0)"
     fs_count="\$(/bin/ls "\$ZIM_DIR"/*.zim 2>/dev/null | /usr/bin/wc -l | /usr/bin/tr -d ' ')"
-    active_downloads="\$(/usr/bin/curl -fsS --max-time 4 http://localhost:8080/api/downloads 2>/dev/null \\
-      | /usr/local/bin/jq -r '[.[] | select(.filetype==\"zim\" and .status==\"active\")] | length' 2>/dev/null \\
-      || /opt/homebrew/bin/jq -r '[.[] | select(.filetype==\"zim\" and .status==\"active\")] | length' 2>/dev/null \\
-      || echo unknown)"
+
+    active_downloads="unknown"
+    if [[ -n "\$jq_bin" ]]; then
+      active_downloads="\$(/usr/bin/curl -fsS --max-time 4 http://localhost:8080/api/downloads 2>/dev/null \\
+        | "\$jq_bin" -r '[.[] | select(.filetype==\"zim\" and .status==\"active\")] | length' 2>/dev/null \\
+        || echo unknown)"
+    fi
 
     if [[ "\$fs_count" -gt "\$catalog_count" && "\$active_downloads" == "0" ]]; then
       log "auto-reload: filesystem=\$fs_count vs catalog=\$catalog_count, queue empty → restarting kiwix to pick up new ZIMs"
