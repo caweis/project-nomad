@@ -1544,35 +1544,52 @@ step_pull_models() {
 step_compose_pull() {
   section "Compose pull"
   ensure_docker_path
-  if ! dc pull 2>&1 | tee /tmp/nomad-pull.log; then
+  # Inspect dc pull's exit code, not tee's. Without PIPESTATUS, a failing pull
+  # followed by a successful tee would mask the failure if pipefail were ever
+  # turned off — keep the guard explicit.
+  local pull_rc
+  dc pull 2>&1 | tee /tmp/nomad-pull.log
+  pull_rc=${PIPESTATUS[0]}
+  if [[ $pull_rc -ne 0 ]]; then
     # Layered fallback: caweis (default, multi-arch + atomic-rename) →
     # proximasan (multi-arch, pre-atomic-rename) → upstream crosstalk-solutions
     # (amd64-only, requires Rosetta). Each step rewrites .env so subsequent
     # dc commands inherit the override.
     if grep -qiE "caweis|manifest unknown|not found|denied|unauthorized" /tmp/nomad-pull.log; then
       warn "caweis image unreachable — trying proximasan fallback (multi-arch, native)"
-      grep -q "^NOMAD_ADMIN_IMAGE="   "$ENV_FILE" \
-        || echo "NOMAD_ADMIN_IMAGE=ghcr.io/proximasan/project-nomad:latest" >> "$ENV_FILE"
-      grep -q "^NOMAD_UPDATER_IMAGE=" "$ENV_FILE" \
-        || echo "NOMAD_UPDATER_IMAGE=ghcr.io/proximasan/project-nomad-sidecar-updater:latest" >> "$ENV_FILE"
-      if dc pull 2>&1 | tee /tmp/nomad-pull.log; then
+      _env_upsert NOMAD_ADMIN_IMAGE   "ghcr.io/proximasan/project-nomad:latest"
+      _env_upsert NOMAD_UPDATER_IMAGE "ghcr.io/proximasan/project-nomad-sidecar-updater:latest"
+      dc pull 2>&1 | tee /tmp/nomad-pull.log
+      pull_rc=${PIPESTATUS[0]}
+      if [[ $pull_rc -eq 0 ]]; then
         ok "compose images pulled (proximasan multi-arch — native)"
         return 0
       fi
       warn "proximasan also unreachable — falling back to upstream amd64 (Rosetta-emulated)"
-      # Replace the proximasan overrides with upstream
-      sed -i.bak '/^NOMAD_ADMIN_IMAGE=/d; /^NOMAD_UPDATER_IMAGE=/d' "$ENV_FILE"
-      echo "NOMAD_ADMIN_IMAGE=ghcr.io/crosstalk-solutions/project-nomad:latest"               >> "$ENV_FILE"
-      echo "NOMAD_UPDATER_IMAGE=ghcr.io/crosstalk-solutions/project-nomad-sidecar-updater:latest" >> "$ENV_FILE"
+      # Idempotent rewrite: replace value in place if present, append if absent.
+      # Previous code did `sed -d` then `echo >>` which deleted BOTH a prior
+      # caweis-fallback line AND the freshly-appended proximasan line on the
+      # second pass, then re-appended — fragile across re-runs.
+      _env_upsert NOMAD_ADMIN_IMAGE   "ghcr.io/crosstalk-solutions/project-nomad:latest"
+      _env_upsert NOMAD_UPDATER_IMAGE "ghcr.io/crosstalk-solutions/project-nomad-sidecar-updater:latest"
       # Re-add platform amd64 to the running compose (sed-injection if not already there)
       if ! grep -q "platform: linux/amd64" "$COMPOSE_BASE"; then
         cp "$COMPOSE_BASE" "$COMPOSE_BASE.bak"
         awk '/^services:/{p=1} p && /^  (admin|updater):/{print; print "    platform: linux/amd64  # nomad: amd64-fallback"; next} {print}' \
-          "$COMPOSE_BASE" > "$COMPOSE_BASE.tmp" && mv "$COMPOSE_BASE.tmp" "$COMPOSE_BASE"
+          "$COMPOSE_BASE" > "$COMPOSE_BASE.tmp"
+        # Guard: if awk produced nothing or a tiny file the compose format
+        # has shifted under us. Bail before destroying the working compose.
+        if [[ -s "$COMPOSE_BASE.tmp" ]] && [[ $(wc -c < "$COMPOSE_BASE.tmp") -gt 200 ]]; then
+          mv "$COMPOSE_BASE.tmp" "$COMPOSE_BASE"
+        else
+          rm -f "$COMPOSE_BASE.tmp"
+          die "amd64 platform-injection awk produced an empty/tiny file — compose.yaml format changed? .bak preserved at $COMPOSE_BASE.bak"
+        fi
       fi
       log "retrying pull with upstream + platform: linux/amd64"
-      dc pull 2>&1 | tee /tmp/nomad-pull.log \
-        || die "all three fallback images failed — see /tmp/nomad-pull.log"
+      dc pull 2>&1 | tee /tmp/nomad-pull.log
+      pull_rc=${PIPESTATUS[0]}
+      [[ $pull_rc -eq 0 ]] || die "all three fallback images failed — see /tmp/nomad-pull.log"
       ok "compose images pulled (upstream amd64 fallback)"
     else
       die "compose pull failed — see /tmp/nomad-pull.log
@@ -1580,6 +1597,22 @@ step_compose_pull() {
     fi
   else
     ok "compose images pulled (caweis multi-arch — native)"
+  fi
+}
+
+# In-place upsert of a KEY=VALUE pair in $ENV_FILE. Replaces the value if the
+# key already exists; appends otherwise. Idempotent across re-runs — safe to
+# call multiple times during fallback chains without leaving stale or
+# duplicate entries.
+_env_upsert() {
+  local key="$1" value="$2"
+  if grep -q "^${key}=" "$ENV_FILE"; then
+    # macOS sed needs the -i '' empty-suffix form; use a separator that won't
+    # collide with image paths.
+    sed -i.bak "s|^${key}=.*|${key}=${value}|" "$ENV_FILE"
+    rm -f "$ENV_FILE.bak"
+  else
+    echo "${key}=${value}" >> "$ENV_FILE"
   fi
 }
 
