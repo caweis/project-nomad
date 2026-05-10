@@ -2079,6 +2079,179 @@ cmd_models() {
   esac
 }
 
+# Software upgrade router. Three different upgrade paths exist on this stack:
+#   1. compose stack (admin/mysql/redis/dozzle/updater) — managed by docker compose
+#   2. native Ollama — installed via Homebrew, runs as LaunchAgent
+#   3. admin-spawned content services (kiwix/cyberchef/kolibri/flatnotes) — admin
+#      manages the lifecycle via Docker socket, but image pulls go through plain docker
+#
+# Each has its own pre-flight + apply pattern. This subcommand wraps them with
+# safety checks per service. The big footgun: admin's "AI Assistant" Update button
+# tries to update admin's container Ollama (which we don't use), would conflict
+# with our native daemon for :11434. Always use 'nomad upgrade ollama' instead.
+cmd_upgrade() {
+  local target="all"
+  local force=0
+  local check=0
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --force) force=1; shift ;;
+      --check) check=1; shift ;;
+      "")      shift ;;
+      *)       target="$1"; shift ;;
+    esac
+  done
+
+  ensure_docker_path
+
+  case "$target" in
+    all)
+      section "Upgrade — full stack (dry run: pass --check)"
+      log "1/3  compose stack (admin/mysql/redis/dozzle/updater)"
+      _upgrade_compose_stack "$check"
+      echo
+      log "2/3  native Ollama (Homebrew)"
+      _upgrade_native_ollama "$check"
+      echo
+      log "3/3  admin-spawned services"
+      cat <<NOTES
+  Use 'nomad upgrade <service>' for kiwix/cyberchef/kolibri/flatnotes — each
+  has service-specific safety checks. Or click Update in admin's Apps UI for
+  most services (but NOT AI Assistant — see warning below).
+
+  ${C_WARN}DO NOT click admin's "AI Assistant" Update button.${C_OFF}
+  That tries to update a container-Ollama we don't use. Run
+  'nomad upgrade ollama' instead — upgrades native Metal Ollama via brew.
+NOTES
+      ;;
+
+    ollama|nomad_ollama)
+      _upgrade_native_ollama "$check"
+      ;;
+
+    kiwix|nomad_kiwix|nomad_kiwix_server)
+      _upgrade_kiwix "$force" "$check"
+      ;;
+
+    admin|mysql|redis|dozzle|updater)
+      _upgrade_compose_one "$target" "$check"
+      ;;
+
+    *)
+      _upgrade_admin_spawned_one "$target" "$check"
+      ;;
+  esac
+}
+
+_upgrade_native_ollama() {
+  local check="$1"
+  if ! command -v brew >/dev/null 2>&1; then
+    warn "Homebrew not found — can't upgrade native Ollama"
+    return 1
+  fi
+  local current
+  current="$(brew list --versions ollama 2>/dev/null | awk '{print $2}')"
+  log "current native ollama: ${current:-not installed via brew}"
+  if [[ "$check" == "1" ]]; then
+    log "(pass --check off to apply: brew update + brew upgrade ollama + reset-ollama)"
+    return 0
+  fi
+  log "running brew update + brew upgrade ollama…"
+  brew update >/dev/null 2>&1
+  if brew upgrade ollama 2>&1 | tail -10; then
+    ok "ollama upgraded (or already at latest)"
+    log "restarting native Ollama LaunchAgent…"
+    cmd_reset_ollama
+    ok "native Ollama back up with current version: $(brew list --versions ollama 2>/dev/null | awk '{print $2}')"
+  else
+    warn "brew upgrade ollama exited non-zero"
+  fi
+}
+
+_upgrade_kiwix() {
+  local force="$1" check="$2"
+  if ! docker inspect nomad_kiwix_server >/dev/null 2>&1; then
+    warn "no kiwix container — admin spawns it once a ZIM download completes"
+    return 0
+  fi
+  local current_image
+  current_image="$(docker inspect nomad_kiwix_server --format '{{.Config.Image}}' 2>/dev/null)"
+  log "current kiwix image: $current_image"
+  if [[ "$check" == "1" ]]; then
+    log "(pass --check off to apply: pull + remove container — admin re-spawns)"
+    return 0
+  fi
+  # Safety check — don't restart kiwix mid-write
+  local active_zim
+  active_zim="$(curl -fsS --max-time 4 http://localhost:8080/api/downloads/jobs 2>/dev/null \
+    | jq -r '[.[]? | select(.filetype=="zim" and .status=="active")] | length' 2>/dev/null || echo unknown)"
+  if [[ "$active_zim" != "0" && "$force" != "1" ]]; then
+    warn "$active_zim active ZIM download(s) in admin's queue"
+    warn "Restarting kiwix mid-write would crash on the partial and break the download."
+    warn "Wait for queue to drain (nomad downloads list), or pass --force"
+    return 1
+  fi
+  log "pulling latest image…"
+  docker pull "$current_image" || { warn "pull failed"; return 1; }
+  log "removing old container; admin will re-spawn with new image…"
+  docker rm -f nomad_kiwix_server >/dev/null 2>&1 || true
+  ok "kiwix removed. Admin re-spawns within ~30s. Watch: docker ps --filter name=kiwix"
+}
+
+_upgrade_compose_one() {
+  local svc="$1" check="$2"
+  if [[ "$check" == "1" ]]; then
+    log "compose service: $svc (use 'dc pull $svc && dc up -d --force-recreate $svc' to apply)"
+    return 0
+  fi
+  log "pulling latest image for $svc…"
+  dc pull "$svc" || { warn "pull failed for $svc"; return 1; }
+  log "recreating $svc with new image…"
+  dc up -d --force-recreate "$svc"
+  ok "$svc upgraded"
+}
+
+_upgrade_compose_stack() {
+  local check="$1"
+  if [[ "$check" == "1" ]]; then
+    log "compose services: $(dc config --services 2>/dev/null | tr '\n' ' ')"
+    log "(pass --check off to apply: dc pull + dc up -d)"
+    return 0
+  fi
+  log "pulling latest compose images…"
+  dc pull || { warn "compose pull failed"; return 1; }
+  log "recreating containers with new images…"
+  dc up -d
+  ok "compose stack upgraded"
+}
+
+_upgrade_admin_spawned_one() {
+  local svc="$1" check="$2"
+  local container=""
+  for candidate in "$svc" "nomad_$svc" "nomad_${svc}_server"; do
+    if docker inspect "$candidate" >/dev/null 2>&1; then
+      container="$candidate"
+      break
+    fi
+  done
+  [[ -z "$container" ]] && die "no compose service or admin-spawned container matching: $svc
+Try one of: ollama | kiwix | admin | mysql | redis | dozzle | updater | cyberchef | kolibri | flatnotes
+Or 'nomad upgrade --check' to see what's available."
+  local current_image
+  current_image="$(docker inspect "$container" --format '{{.Config.Image}}' 2>/dev/null)"
+  log "$container current image: $current_image"
+  if [[ "$check" == "1" ]]; then
+    log "(pass --check off to apply: pull + remove container — admin re-spawns)"
+    return 0
+  fi
+  log "pulling latest image…"
+  docker pull "$current_image" || { warn "pull failed"; return 1; }
+  log "removing $container; admin will re-spawn…"
+  docker rm -f "$container" >/dev/null 2>&1 || true
+  ok "$container removed — admin re-spawns with the new image"
+}
+
 cmd_upgrade_models() {
   if ! curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
     die "native Ollama not responding"
@@ -3064,6 +3237,7 @@ case "$CMD" in
   restart)         cmd_restart "${EXTRA_ARGS[0]:-admin}" ;;
   logs)            cmd_logs    "${EXTRA_ARGS[0]:-admin}" ;;
   models)          cmd_models   "${EXTRA_ARGS[@]}" ;;
+  upgrade)         cmd_upgrade "${EXTRA_ARGS[@]}" ;;
   upgrade-models)  cmd_upgrade_models ;;
   downloads)       cmd_downloads "${EXTRA_ARGS[@]:-list}" ;;
   zim)             cmd_zim       "${EXTRA_ARGS[@]:-list}" ;;
