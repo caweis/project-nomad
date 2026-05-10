@@ -17,7 +17,7 @@ Idempotent. Re-run is repair. Everything else (Homebrew, Xcode CLT, Rosetta, Orb
 | File | Purpose |
 |---|---|
 | `nomad` | Single-file bash CLI. Subcommands: `install`, `check`, `up`, `down`, `restart`, `logs`, `models pull <tier>`, `benchmark`, `downloads`, `zim`, `services`, `system`, `api`, `orbstack-tune`, `reset-ollama`, `reinstall`, `uninstall`, `upgrade-models`. Self-symlinks to `$(brew --prefix)/bin/nomad` at install time. |
-| `compose.yaml` | macOS-tuned compose file. References proximasan's multi-arch GHCR images by default with graceful fallback to upstream amd64 under Rosetta. Split-storage: mysql + redis on `${NOMAD_STATE_ROOT}` (always internal), admin storage on `${NOMAD_DATA_ROOT}` (configurable, can be external drive). |
+| `compose.yaml` | macOS-tuned compose file. Default admin image is `ghcr.io/caweis/project-nomad-macos-arm64:edge` (multi-arch, built from this repo's `admin/` tree). Layered fallback at install time: caweis → proximasan (multi-arch) → upstream amd64 under Rosetta. Split-storage: mysql + redis on `${NOMAD_STATE_ROOT}` (always internal), admin storage on `${NOMAD_DATA_ROOT}` (configurable, can be external drive). |
 | `quick-chat.html` | Self-contained portable chat UI. Single file, ~670 lines. Boot overlay polls Ollama on `:11434`, shows copy-pasteable bootstrap command if not running, transitions to streaming chat once available. Drops onto the data drive at install — plug the drive into any other Mac, open the file, get LLM chat with no NOMAD install needed. |
 | `quick-chat.sh` | Companion script for `quick-chat.html`. Auto-installs Ollama via Homebrew if missing, sets `OLLAMA_MODELS` to point at the drive's model cache, starts the daemon, opens the HTML. |
 | `nomad.1` | mdoc-format manpage. Installed at `$(brew --prefix)/share/man/man1/nomad.1` so `man nomad` works after install. |
@@ -79,7 +79,7 @@ Default OrbStack VM allocation is too small for NOMAD's full stack on machines w
 
 Three layers of defense for the leaderboard CPU/GPU surfacing:
 
-1. **proximasan's `APPLE_CHIP_MODEL` patch** in admin reads the env var as an `si.cpu()` fallback. compose.yaml passes both `APPLE_CHIP_MODEL` and `APPLE_GPU_MODEL` from .env.
+1. **`APPLE_CHIP_MODEL` / `APPLE_GPU_MODEL` env-var fallback in admin** — patches in `admin/app/services/system_service.ts` read these vars when `si.cpu()` returns empty/generic chip info inside Docker. (Pattern adapted from proximasan's fork, extended to also override `APPLE_GPU_MODEL`.) compose.yaml passes both vars from .env.
 2. **Install-time host probe** captures the chip via `system_profiler SPHardwareDataType` / `SPDisplaysDataType` and writes both vars into `~/.config/project-nomad/.env`.
 3. **Auto-patcher LaunchAgent** (`~/.config/project-nomad/benchmark-patcher.sh`) runs every 30s and backfills `cpu_model` / `gpu_model` on benchmark_results rows in case admin's container-side detection misses them. Manual: `nomad benchmark patch-host`.
 
@@ -143,7 +143,7 @@ This subdirectory's `nomad install` is an alternative entry point — not a repl
 The Apple Silicon admin patches that make Metal-aware benchmark reporting work are from this repo and the related fork series:
 
 - **snfettig/project-nomad-macos-arm64** — this repo. Original native-Ollama+Metal commit, current macOS focal point.
-- **proximasan/project-nomad-silicon** — `APPLE_CHIP_MODEL` env-var fallback, `isNativeOllama()` / `getNativeOllamaURL()`, multi-arch GHCR images. compose.yaml here references proximasan's images by default.
+- **proximasan/project-nomad-silicon** — originated the `APPLE_CHIP_MODEL` env-var fallback, `isNativeOllama()` / `getNativeOllamaURL()`, multi-arch GHCR images. This repo's `admin/` carries forward-ported versions of those patches (plus `APPLE_GPU_MODEL` and atomic-rename ZIM downloads) and rebuilds the image as `ghcr.io/caweis/project-nomad-macos-arm64` so the macOS distribution stays evergreen. proximasan's GHCR image remains the first fallback at install time.
 - **NoamanKhalil/project-nomad-MacOs** — foundational Phase 1-3 macOS port work.
 - **Crosstalk-Solutions/project-nomad** — upstream.
 

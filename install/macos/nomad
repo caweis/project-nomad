@@ -1238,8 +1238,9 @@ step_secrets() {
   ok "state root: $NOMAD_STATE_ROOT_DEFAULT  (mysql+redis go here)"
 
   # Capture host hardware ONCE so admin can identify the real Apple chip via
-  # APPLE_CHIP_MODEL / APPLE_GPU_MODEL env vars (proximasan's fork reads these
-  # in si.cpu() / si.graphics() fallback paths)
+  # APPLE_CHIP_MODEL / APPLE_GPU_MODEL env vars. The caweis admin image reads
+  # these in si.cpu() / si.graphics() fallback paths (proximasan's image too,
+  # for CHIP_MODEL only; GPU_MODEL is caweis-image-only).
   local apple_chip apple_gpu
   apple_chip="$(/usr/sbin/system_profiler SPHardwareDataType 2>/dev/null \
     | /usr/bin/awk -F': *' '/Chip|Processor Name/{print $2; exit}' | xargs)"
@@ -1439,14 +1440,25 @@ step_compose_pull() {
   section "Compose pull"
   ensure_docker_path
   if ! dc pull 2>&1 | tee /tmp/nomad-pull.log; then
-    # Did proximasan's images fail? Fall back to upstream amd64 (slower, Rosetta-emulated)
-    if grep -qiE "proximasan|manifest unknown|not found|denied" /tmp/nomad-pull.log; then
-      warn "proximasan's images unreachable — falling back to upstream amd64 (Rosetta-emulated)"
-      # Append fallback overrides to .env so subsequent dc commands inherit them
+    # Layered fallback: caweis (default, multi-arch + atomic-rename) →
+    # proximasan (multi-arch, pre-atomic-rename) → upstream crosstalk-solutions
+    # (amd64-only, requires Rosetta). Each step rewrites .env so subsequent
+    # dc commands inherit the override.
+    if grep -qiE "caweis|manifest unknown|not found|denied|unauthorized" /tmp/nomad-pull.log; then
+      warn "caweis image unreachable — trying proximasan fallback (multi-arch, native)"
       grep -q "^NOMAD_ADMIN_IMAGE="   "$ENV_FILE" \
-        || echo "NOMAD_ADMIN_IMAGE=ghcr.io/crosstalk-solutions/project-nomad:latest" >> "$ENV_FILE"
+        || echo "NOMAD_ADMIN_IMAGE=ghcr.io/proximasan/project-nomad:latest" >> "$ENV_FILE"
       grep -q "^NOMAD_UPDATER_IMAGE=" "$ENV_FILE" \
-        || echo "NOMAD_UPDATER_IMAGE=ghcr.io/crosstalk-solutions/project-nomad-sidecar-updater:latest" >> "$ENV_FILE"
+        || echo "NOMAD_UPDATER_IMAGE=ghcr.io/proximasan/project-nomad-sidecar-updater:latest" >> "$ENV_FILE"
+      if dc pull 2>&1 | tee /tmp/nomad-pull.log; then
+        ok "compose images pulled (proximasan multi-arch — native)"
+        return 0
+      fi
+      warn "proximasan also unreachable — falling back to upstream amd64 (Rosetta-emulated)"
+      # Replace the proximasan overrides with upstream
+      sed -i.bak '/^NOMAD_ADMIN_IMAGE=/d; /^NOMAD_UPDATER_IMAGE=/d' "$ENV_FILE"
+      echo "NOMAD_ADMIN_IMAGE=ghcr.io/crosstalk-solutions/project-nomad:latest"               >> "$ENV_FILE"
+      echo "NOMAD_UPDATER_IMAGE=ghcr.io/crosstalk-solutions/project-nomad-sidecar-updater:latest" >> "$ENV_FILE"
       # Re-add platform amd64 to the running compose (sed-injection if not already there)
       if ! grep -q "platform: linux/amd64" "$COMPOSE_BASE"; then
         cp "$COMPOSE_BASE" "$COMPOSE_BASE.bak"
@@ -1455,14 +1467,14 @@ step_compose_pull() {
       fi
       log "retrying pull with upstream + platform: linux/amd64"
       dc pull 2>&1 | tee /tmp/nomad-pull.log \
-        || die "fallback pull also failed — see /tmp/nomad-pull.log"
+        || die "all three fallback images failed — see /tmp/nomad-pull.log"
       ok "compose images pulled (upstream amd64 fallback)"
     else
       die "compose pull failed — see /tmp/nomad-pull.log
 (common causes: no network, GHCR rate limit, auth issue)"
     fi
   else
-    ok "compose images pulled (proximasan multi-arch — native)"
+    ok "compose images pulled (caweis multi-arch — native)"
   fi
 }
 

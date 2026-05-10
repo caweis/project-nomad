@@ -1,14 +1,21 @@
 # Project NOMAD — macOS base compose file.
-# Built on proximasan/project-nomad-silicon's multi-arch images and admin patches
-# (lineage: snfettig → NoamanKhalil → proximasan). Their fork supplies:
+# Default admin image is ghcr.io/caweis/project-nomad-macos-arm64:edge, built
+# from this repo's admin/ tree by .github/workflows/build-nomad-macos-image.yml
+# (multi-arch linux/amd64,linux/arm64). It carries the Apple-Silicon patches
+# originally from proximasan/project-nomad-silicon, ported and extended:
 #   • Native arm64 + amd64 GHCR images (no Rosetta on Apple Silicon)
-#   • Admin patches to read APPLE_CHIP_MODEL env var as a si.cpu() fallback
-#     (containers can't see the host's Apple chip — env-var override fixes
-#     the "GPU: -" / "CPU: -" issue on the upstream benchmark leaderboard)
+#   • Admin patches read APPLE_CHIP_MODEL + APPLE_GPU_MODEL env vars as
+#     si.cpu() / si.graphics() fallbacks. Containers can't see the host's
+#     Apple chip, so env-var overrides fix the "GPU: -" / "CPU: -" issue
+#     on the upstream benchmark leaderboard.
 #   • isNativeOllama() / getNativeOllamaURL() in admin for first-class
 #     native-Ollama support (admin no longer tries to spawn nomad_ollama
-#     when remote Ollama is configured)
-#   • GPU type 'apple' with Metal health-status surfacing
+#     when remote Ollama is configured).
+#   • GPU type 'apple' with Metal health-status surfacing.
+#   • Atomic-rename ZIM downloader (writes <name>.zim.tmp → rename on
+#     completion). Fixes kiwix's partial-ZIM crash loop on download stalls.
+# Layered fallback at install time if caweis image is unreachable:
+# caweis → proximasan (pre-atomic-rename) → upstream amd64 under Rosetta.
 #
 # Differences from upstream `install/management_compose.yaml`:
 #   • SPLIT STORAGE for unplug-resilience:
@@ -16,15 +23,19 @@
 #     - ${NOMAD_DATA_ROOT}   → admin's storage volume (Wikipedia ZIMs, models, maps)
 #   • disk-collector service removed — incompatible with macOS Docker file sharing
 #   • Secrets sourced from .env via --env-file (off-iCloud)
-#   • APPLE_CHIP_MODEL injected from install-time host probe
+#   • APPLE_CHIP_MODEL + APPLE_GPU_MODEL injected from install-time host probe
 
 name: project-nomad
 
 services:
   admin:
-    # proximasan's fork — multi-arch (linux/amd64,linux/arm64), patched for Apple Silicon.
-    # Override at install time via NOMAD_ADMIN_IMAGE if you need upstream's image instead.
-    image: ${NOMAD_ADMIN_IMAGE:-ghcr.io/proximasan/project-nomad:latest}
+    # caweis/project-nomad-macos-arm64 — multi-arch (linux/amd64,linux/arm64),
+    # built from the admin/ source in this branch with proximasan's Apple Silicon
+    # patches (isNativeOllama, APPLE_CHIP_MODEL/APPLE_GPU_MODEL env-var reading)
+    # AND the upstream atomic-rename ZIM downloader (Crosstalk PR landed after
+    # proximasan's image was last tagged). Override at install time via
+    # NOMAD_ADMIN_IMAGE to fall back to proximasan's image or upstream.
+    image: ${NOMAD_ADMIN_IMAGE:-ghcr.io/caweis/project-nomad-macos-arm64:edge}
     pull_policy: always
     container_name: nomad_admin
     restart: unless-stopped
