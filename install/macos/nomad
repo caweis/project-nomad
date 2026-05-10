@@ -1558,6 +1558,16 @@ ON DUPLICATE KEY UPDATE
   updated_at = NOW();
 UPDATE services SET installed = 1, installation_status = "idle", updated_at = NOW()
 WHERE service_name = "nomad_ollama" AND installed = 0;
+-- Suppress the home-page "Use the setup wizard!" highlight. The wizard is
+-- tuned for upstream Linux installs and would re-queue downloads for models
+-- we already pulled via native Ollama. The card stays accessible at
+-- /easy-setup if someone explicitly wants it; we just stop nudging users
+-- toward it on a fresh install. Ref: admin/inertia/pages/home.tsx line 97-100.
+INSERT INTO kv_store (`key`, value, created_at, updated_at)
+VALUES ("ui.hasVisitedEasySetup", "true", NOW(), NOW()) AS new
+ON DUPLICATE KEY UPDATE
+  value      = IF(kv_store.value IS NULL OR kv_store.value = "", new.value, kv_store.value),
+  updated_at = NOW();
 ' | dc exec -T -e MYSQL_PWD="$db_pw" mysql mysql -u nomad_user nomad >/dev/null 2>&1 \
   && { ok "seeded via SQL fallback"; dc restart admin >/dev/null; sleep 5; return 0; } \
   || warn "both API and SQL paths failed — manually set Settings → Models → Remote Ollama URL"
