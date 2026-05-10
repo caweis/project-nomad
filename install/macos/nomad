@@ -1598,8 +1598,11 @@ if [[ "\$status" == "running" ]]; then
 
     active_downloads="unknown"
     if [[ -n "\$jq_bin" ]]; then
-      active_downloads="\$(/usr/bin/curl -fsS --max-time 4 http://localhost:8080/api/downloads 2>/dev/null \\
-        | "\$jq_bin" -r '[.[] | select(.filetype==\"zim\" and .status==\"active\")] | length' 2>/dev/null \\
+      # Endpoint is /api/downloads/jobs — /api/downloads (no /jobs) returns
+      # admin's SPA HTML shell, not JSON. Response is an object with arrays
+      # for active/waiting/delayed/failed/completed; we count the active ZIMs.
+      active_downloads="\$(/usr/bin/curl -fsS --max-time 4 http://localhost:8080/api/downloads/jobs 2>/dev/null \\
+        | "\$jq_bin" -r '[.active[]? | select(.filetype==\"zim\")] | length' 2>/dev/null \\
         || echo unknown)"
     fi
 
