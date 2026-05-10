@@ -109,9 +109,6 @@ nomad fix-kiwix         Manual trigger of kiwix self-heal pass
 nomad reinstall         Full uninstall + install (one confirm prompt up front)
 nomad uninstall         Remove containers, LaunchAgents, secrets, (with confirm) data
 nomad upgrade-models    Re-pull installed models at latest tags
-nomad install-field-desk [--port N] [--foreground] [--force]
-                        Install SysAdminDoc Field Desk alongside admin
-                        (default :8081, shares Ollama on :11434, SHA-256 verified)
 ```
 
 Install options:
@@ -139,7 +136,6 @@ This subdirectory's `nomad install` is an alternative entry point — not a repl
 | | Pre-flight inventory (`nomad check install`) before touching anything |
 | | Portable `quick-chat.html` + `quick-chat.sh` on the data drive |
 | | mdoc manpage (`man nomad`) installed at `$(brew --prefix)/share/man/man1/` |
-| | `nomad install-field-desk` — wraps SysAdminDoc/project-nomad-desktop side-by-side install (port-config + SHA-256 verify) |
 | | `nomad fix-kiwix` + LaunchAgent — transparent self-heal for kiwix's partial-ZIM crash loop (60s polling, reactive based on kiwix's own error log) |
 
 ## Lineage credit
@@ -152,10 +148,6 @@ The Apple Silicon admin patches that make Metal-aware benchmark reporting work a
 - **Crosstalk-Solutions/project-nomad** — upstream.
 
 This subdirectory stands on those shoulders for the admin layer; the contribution here is the installer/lifecycle layer above it.
-
-Sibling project worth knowing about (different product, not part of the lineage):
-
-- **[SysAdminDoc/project-nomad-desktop](https://github.com/SysAdminDoc/project-nomad-desktop)** — NOMAD Field Desk, a separate Python+Electron preparedness command center (Situation Room, Loadout, NukeMap, broader survival domain). Runs side-by-side with the Crosstalk admin via `nomad install-field-desk` — different UX, different scope, single shared Metal Ollama daemon.
 
 ## License
 
