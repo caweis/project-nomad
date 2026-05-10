@@ -1610,8 +1610,26 @@ if [[ "\$status" == "running" ]]; then
         || echo unknown)"
     fi
 
-    if [[ "\$fs_count" -gt "\$catalog_count" && "\$active_downloads" == "0" ]]; then
-      log "auto-reload: filesystem=\$fs_count vs catalog=\$catalog_count, queue empty → restarting kiwix to pick up new ZIMs"
+    # Two reasons to auto-reload:
+    #  (a) more files on disk than kiwix is serving — new ZIMs completed
+    #  (b) any ZIM file is newer than kiwix's container start time —
+    #      same filename + new bytes (e.g., regenerated help ZIM, ZIM
+    #      manually replaced). Count check (a) misses this case because
+    #      the count is unchanged but the content is different.
+    container_start_epoch="\$(docker inspect nomad_kiwix_server --format '{{.State.StartedAt}}' 2>/dev/null \\
+      | xargs -I{} date -j -f '%Y-%m-%dT%H:%M:%S' '{}' +%s 2>/dev/null || echo 0)"
+    newest_zim_epoch="\$(/usr/bin/find "\$ZIM_DIR" -name '*.zim' -type f -exec /bin/stat -f '%m' {} + 2>/dev/null \\
+      | /usr/bin/sort -rn | /usr/bin/head -1 || echo 0)"
+
+    reason=""
+    if [[ "\$fs_count" -gt "\$catalog_count" ]]; then
+      reason="new ZIMs completed (fs=\$fs_count vs catalog=\$catalog_count)"
+    elif [[ "\$container_start_epoch" -gt 0 && "\$newest_zim_epoch" -gt "\$container_start_epoch" ]]; then
+      reason="ZIM content updated (newest ZIM mtime newer than kiwix start time)"
+    fi
+
+    if [[ -n "\$reason" && "\$active_downloads" == "0" ]]; then
+      log "auto-reload: \$reason, queue empty → restarting kiwix"
       docker restart nomad_kiwix_server >/dev/null 2>&1 || true
       sleep 5
       log "auto-reload: kiwix restarted"
