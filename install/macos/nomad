@@ -1582,6 +1582,25 @@ port="\$(docker port nomad_kiwix_server 8080 2>/dev/null | /usr/bin/awk -F: '{pr
 
 if [[ "\$status" == "running" ]]; then
   if [[ -n "\$port" ]] && /usr/bin/curl -fsS --max-time 4 "http://localhost:\$port/" -o /dev/null 2>/dev/null; then
+    # Kiwix is healthy. Now check whether new completed ZIMs have appeared
+    # since kiwix loaded its library at startup. kiwix-serve doesn't watch
+    # /data — it only loads files at startup. Without this auto-reload,
+    # users would have to manually 'docker restart nomad_kiwix_server' to
+    # see anything they downloaded after the last kiwix start.
+    catalog_count="\$(/usr/bin/curl -fsS --max-time 4 "http://localhost:\$port/catalog/v2/entries" 2>/dev/null \\
+      | /usr/bin/grep -c '<entry>' || echo 0)"
+    fs_count="\$(/bin/ls "\$ZIM_DIR"/*.zim 2>/dev/null | /usr/bin/wc -l | /usr/bin/tr -d ' ')"
+    active_downloads="\$(/usr/bin/curl -fsS --max-time 4 http://localhost:8080/api/downloads 2>/dev/null \\
+      | /usr/local/bin/jq -r '[.[] | select(.filetype==\"zim\" and .status==\"active\")] | length' 2>/dev/null \\
+      || /opt/homebrew/bin/jq -r '[.[] | select(.filetype==\"zim\" and .status==\"active\")] | length' 2>/dev/null \\
+      || echo unknown)"
+
+    if [[ "\$fs_count" -gt "\$catalog_count" && "\$active_downloads" == "0" ]]; then
+      log "auto-reload: filesystem=\$fs_count vs catalog=\$catalog_count, queue empty → restarting kiwix to pick up new ZIMs"
+      docker restart nomad_kiwix_server >/dev/null 2>&1 || true
+      sleep 5
+      log "auto-reload: kiwix restarted"
+    fi
     exit 0
   fi
 fi
