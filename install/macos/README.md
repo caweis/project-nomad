@@ -104,6 +104,8 @@ nomad system info       Admin's view of host
 nomad api PATH [BODY]   Raw admin API call — generic escape hatch
 nomad orbstack-tune     Tune OrbStack VM RAM (auto = 80% of host)
 nomad reset-ollama      Recover from stuck LaunchAgent state
+nomad fix-kiwix         Manual trigger of kiwix self-heal pass
+                        (the kiwix-self-heal LaunchAgent runs same logic every 60s)
 nomad reinstall         Full uninstall + install (one confirm prompt up front)
 nomad uninstall         Remove containers, LaunchAgents, secrets, (with confirm) data
 nomad upgrade-models    Re-pull installed models at latest tags
@@ -138,6 +140,7 @@ This subdirectory's `nomad install` is an alternative entry point — not a repl
 | | Portable `quick-chat.html` + `quick-chat.sh` on the data drive |
 | | mdoc manpage (`man nomad`) installed at `$(brew --prefix)/share/man/man1/` |
 | | `nomad install-field-desk` — wraps SysAdminDoc/project-nomad-desktop side-by-side install (port-config + SHA-256 verify) |
+| | `nomad fix-kiwix` + LaunchAgent — transparent self-heal for kiwix's partial-ZIM crash loop (60s polling, reactive based on kiwix's own error log) |
 
 ## Lineage credit
 

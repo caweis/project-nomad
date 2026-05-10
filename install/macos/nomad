@@ -28,6 +28,8 @@
 #                                            # admin's latest benchmark row before Submit
 #   bash nomad orbstack-tune [GB]            # bump OrbStack VM RAM (default: 80% of host)
 #   bash nomad reset-ollama                  # recover from stuck LaunchAgent state
+#   bash nomad fix-kiwix                     # manual trigger of kiwix self-heal
+#                                            # (LaunchAgent runs same logic every 60s)
 #   bash nomad uninstall                     # clean wipe (containers, agent, .env, opt. data)
 #   bash nomad reinstall                     # nuclear: wipe everything + reinstall in one shot
 #   bash nomad install-field-desk [--port N] [--foreground] [--force]
@@ -2597,6 +2599,75 @@ cmd_system() {
 }
 
 # ─── Field Desk coexistence install ───────────────────────────────────────────
+# Manual trigger of the kiwix self-heal pass (the LaunchAgent runs this every
+# 60s automatically; this command does the same work immediately + verbosely).
+# Useful for: quick fix when you don't want to wait for the next 60s tick;
+# diagnostic output to confirm what was quarantined and why kiwix was failing.
+# Also reads the action log so you can see prior auto-runs.
+cmd_fix_kiwix() {
+  section "Kiwix self-heal — manual trigger"
+
+  if [[ ! -x "$KIWIX_SELF_HEAL_SCRIPT" ]]; then
+    die "self-heal script not installed: $KIWIX_SELF_HEAL_SCRIPT
+Run 'nomad install' to install the LaunchAgent + script, or run the
+one-shot installer at ~/Desktop/Project Nomad/install-kiwix-self-heal.command"
+  fi
+
+  ensure_docker_path
+  if ! docker inspect nomad_kiwix_server >/dev/null 2>&1; then
+    die "no nomad_kiwix_server container. Bring the stack up with 'nomad up' first,
+or wait for admin to spawn kiwix once a ZIM finishes downloading."
+  fi
+
+  # Show current state before acting
+  log "current kiwix state:"
+  docker ps -a --filter name=nomad_kiwix --format '  {{.Names}}\t{{.Status}}'
+  echo
+
+  # Trigger the self-heal script. The script is silent when kiwix is healthy
+  # and only acts/logs when there's a partial-ZIM problem.
+  log "running self-heal pass (silent if kiwix is already healthy)…"
+  "$KIWIX_SELF_HEAL_SCRIPT"
+  echo
+
+  # Show what got logged this run + last few prior runs
+  local action_log="$HOME/Library/Logs/nomad-kiwix-self-heal.action.log"
+  if [[ -f "$action_log" ]]; then
+    log "recent action-log entries (last 30 lines):"
+    tail -30 "$action_log" | sed 's/^/  /'
+  else
+    ok "no action log yet — kiwix has been healthy on every check"
+  fi
+  echo
+
+  # Confirm final state
+  log "final kiwix state:"
+  docker ps -a --filter name=nomad_kiwix --format '  {{.Names}}\t{{.Status}}'
+  local port
+  port="$(docker port nomad_kiwix_server 8080 2>/dev/null | awk -F: '{print $2}' | head -1)"
+  if [[ -n "$port" ]] && curl -fsS --max-time 4 "http://localhost:$port/" -o /dev/null 2>/dev/null; then
+    ok "kiwix HTTP responding on http://localhost:$port"
+  else
+    warn "kiwix HTTP not responding. The 60s LaunchAgent will keep trying;"
+    warn "if the issue persists, inspect: docker logs nomad_kiwix_server --tail 50"
+  fi
+  echo
+
+  # Show the quarantine state so user knows what's been moved aside
+  local env_file="$HOME/.config/project-nomad/.env"
+  if [[ -f "$env_file" ]]; then
+    local data_root
+    data_root="$(grep '^NOMAD_DATA_ROOT=' "$env_file" | cut -d= -f2-)"
+    local quarantine="$data_root/storage/zim-inprogress"
+    if [[ -d "$quarantine" ]]; then
+      local count
+      count="$(ls "$quarantine"/*.zim 2>/dev/null | wc -l | tr -d ' ')"
+      log "quarantine: $quarantine ($count file(s))"
+      [[ "$count" -gt 0 ]] && ls -1 "$quarantine"/*.zim 2>/dev/null | xargs -n1 basename | sed 's/^/  /'
+    fi
+  fi
+}
+
 # SysAdminDoc/project-nomad-desktop is a separate product (NOMAD Field Desk) —
 # different architecture, broader survival-domain features. Coexists cleanly:
 # both apps default to :8080 but Field Desk respects NOMAD_PORT, and both want
@@ -2734,11 +2805,12 @@ case "$CMD" in
   benchmark)       cmd_benchmark "${EXTRA_ARGS[@]}" ;;
   orbstack-tune)   cmd_orbstack_tune "${EXTRA_ARGS[@]}" ;;
   reset-ollama)    cmd_reset_ollama ;;
+  fix-kiwix)       cmd_fix_kiwix ;;
   uninstall)       cmd_uninstall ;;
   reinstall)       cmd_reinstall ;;
   install-field-desk) cmd_install_field_desk "${EXTRA_ARGS[@]}" ;;
   help|--help|-h)
-    sed -n '2,36p' "$0" | sed 's/^# //; s/^#//'
+    sed -n '2,38p' "$0" | sed 's/^# //; s/^#//'
     ;;
   *) die "unknown command: $CMD
 Run 'nomad help' for usage." ;;

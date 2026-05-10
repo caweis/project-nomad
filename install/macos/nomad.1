@@ -57,6 +57,8 @@
 .Nm
 .Cm reset-ollama
 .Nm
+.Cm fix-kiwix
+.Nm
 .Cm reinstall
 .Nm
 .Cm uninstall
@@ -168,6 +170,39 @@ install automatically; this is the manual entry point for re-tuning.
 .It Cm reset-ollama
 Recover from stuck LaunchAgent state ("bootstrap failed: 5: Input/output
 error"). Bootouts existing agent, kills orphan ollama serves, re-bootstraps.
+.It Cm fix-kiwix
+Manual trigger of the kiwix self-heal pass. Background: admin's downloader
+writes ZIM files directly to
+.Pa /data/ Ns Ar name Ns .zim
+with no
+.Pa .tmp
+suffix during download. kiwix-serve is launched with the shell glob
+.Cm *.zim
+which expands to ALL files in
+.Pa /data
+including in-progress ones. Partial files have valid filenames and invalid
+libzim headers, so kiwix-serve crashes on the first one it encounters and
+the
+.Cm unless-stopped
+restart policy puts it in a crash loop.
+.Pp
+Self-heal reads kiwix's own log for the line
+.Dq Unable to add the ZIM file 'X' to the internal library.\& ,
+moves
+.Pa X
+to
+.Pa storage/zim-inprogress/ ,
+restarts kiwix, repeats up to 5 passes per run. The
+.Cm com.projectnomad.kiwix-self-heal
+LaunchAgent runs the same logic every 60 seconds automatically — this
+subcommand triggers an immediate run plus verbose output (current state,
+recent action-log entries, final state, quarantine listing). Useful for:
+fixing kiwix without waiting for the next 60s tick; understanding what
+prior auto-runs did. The action log is at
+.Pa ~/Library/Logs/nomad-kiwix-self-heal.action.log .
+Upstream fix worth filing: admin's downloader should write
+.Pa name.zim.downloading
+and rename atomically on completion.
 .It Cm reinstall
 Nuclear path: full
 .Cm uninstall
