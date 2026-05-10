@@ -2395,11 +2395,24 @@ _upgrade_kiwix() {
     log "(pass --check off to apply: pull + remove container — admin re-spawns)"
     return 0
   fi
-  # Safety check — don't restart kiwix mid-write
+  # Safety check — don't restart kiwix mid-write.
+  # Previously: a curl/jq failure produced active_zim=unknown which was then
+  # treated as ">0 active downloads, block upgrade" — indistinguishable from
+  # an actual full queue. Now: surface "couldn't query admin" explicitly and
+  # tell the user to pass --force if they accept the risk.
   local active_zim
   active_zim="$(curl -fsS --max-time 4 http://localhost:8080/api/downloads/jobs 2>/dev/null \
     | jq -r '[.[]? | select(.filetype=="zim" and .status=="active")] | length' 2>/dev/null || echo unknown)"
-  if [[ "$active_zim" != "0" && "$force" != "1" ]]; then
+  if [[ "$active_zim" == "unknown" ]]; then
+    if [[ "$force" == "1" ]]; then
+      warn "couldn't reach admin's queue API — proceeding anyway (--force)"
+    else
+      warn "couldn't reach admin's queue API at :8080/api/downloads/jobs"
+      warn "Can't verify whether a ZIM is mid-write — refusing to restart kiwix blind."
+      warn "If admin is down or unreachable and no ZIM download is active, pass --force."
+      return 1
+    fi
+  elif [[ "$active_zim" != "0" && "$force" != "1" ]]; then
     warn "$active_zim active ZIM download(s) in admin's queue"
     warn "Restarting kiwix mid-write would crash on the partial and break the download."
     warn "Wait for queue to drain (nomad downloads list), or pass --force"
