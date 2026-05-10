@@ -1200,6 +1200,54 @@ step_self_install_to_path() {
   fi
 }
 
+# Drop discoverable extras onto ~/Desktop/Project Nomad/ so the user finds them
+# without spelunking the bundle dir. Two files today:
+#   • wipe-and-pave.command   — double-click nuke (Desktop-droppable, .command
+#                                runs in Terminal automatically)
+#   • admin-same-tab.user.js  — Tampermonkey/Userscripts/Violentmonkey userscript
+#                                that strips target="_blank" from admin links
+# Symlinks (not copies) so subsequent bundle updates flow through automatically.
+# Falls back to cp if symlinks are blocked (e.g., iCloud Drive-mounted Desktop).
+step_drop_desktop_tools() {
+  local desk="$HOME/Desktop/Project Nomad"
+  mkdir -p "$desk" 2>/dev/null || return 0   # locked-down Desktop — skip silently
+
+  # wipe-and-pave.command
+  local wipe_src="$HERE/scripts/wipe-and-pave.command"
+  local wipe_dst="$desk/wipe-and-pave.command"
+  if [[ -f "$wipe_src" ]]; then
+    if [[ -L "$wipe_dst" && "$(readlink "$wipe_dst")" == "$wipe_src" ]]; then
+      :  # already linked through
+    elif ln -sf "$wipe_src" "$wipe_dst" 2>/dev/null \
+      || cp "$wipe_src" "$wipe_dst" 2>/dev/null; then
+      chmod +x "$wipe_dst" 2>/dev/null
+      ok "Desktop: $wipe_dst  (double-click to wipe install before re-testing)"
+    fi
+  fi
+
+  # admin-same-tab.user.js + its README
+  local us_src="$HERE/userscripts/admin-same-tab.user.js"
+  local us_dst="$desk/admin-same-tab.user.js"
+  if [[ -f "$us_src" ]]; then
+    if [[ -L "$us_dst" && "$(readlink "$us_dst")" == "$us_src" ]]; then
+      :
+    elif ln -sf "$us_src" "$us_dst" 2>/dev/null \
+      || cp "$us_src" "$us_dst" 2>/dev/null; then
+      ok "Desktop: $us_dst  (drag into Tampermonkey/Userscripts to install)"
+    fi
+  fi
+  local us_readme_src="$HERE/userscripts/README.md"
+  local us_readme_dst="$desk/userscripts-README.md"
+  if [[ -f "$us_readme_src" ]]; then
+    if [[ -L "$us_readme_dst" && "$(readlink "$us_readme_dst")" == "$us_readme_src" ]]; then
+      :
+    elif ln -sf "$us_readme_src" "$us_readme_dst" 2>/dev/null \
+      || cp "$us_readme_src" "$us_readme_dst" 2>/dev/null; then
+      :
+    fi
+  fi
+}
+
 # Set this Mac's Bonjour/mDNS local hostname to "nomad" (or NOMAD_HOSTNAME if
 # set), so any device on the same WiFi can hit the stack at:
 #   http://nomad.local:8080   Command Center
@@ -1967,6 +2015,7 @@ cmd_install() {
   step_orbstack_tune_quiet  # auto-bump VM RAM to 80% of host (proportional, no prompt during install)
   step_ollama_native
   step_self_install_to_path
+  step_drop_desktop_tools            # symlink wipe-and-pave + userscript to ~/Desktop/Project Nomad/
   step_set_local_hostname            # set Mac's Bonjour name to 'nomad' so devices reach http://nomad.local
   step_secrets
   step_compose_pull
