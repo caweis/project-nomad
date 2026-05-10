@@ -475,17 +475,35 @@ async function loadModels() {
       els.status.className = 'err';
       return;
     }
-    // Sort smallest first (better for first-load speed on a fresh drive)
-    data.models.sort((a, b) => (a.size || 0) - (b.size || 0));
-    data.models.forEach(m => {
+    // Filter out embedding models — they don't support /api/chat (they're for
+    // vector embeddings used in RAG, not text generation). Same heuristic admin
+    // uses internally (OllamaService.getModels filters name.includes('embed')).
+    const chatModels = data.models.filter(m => !/embed|bge-/i.test(m.name));
+    const embedCount = data.models.length - chatModels.length;
+    if (chatModels.length === 0) {
+      els.model.innerHTML = '<option>only embedding models found — pull a chat model (e.g. llama3.1:8b)</option>';
+      els.status.textContent = 'no chat models';
+      els.status.className = 'err';
+      return;
+    }
+    // Sort smallest first among chat models (faster first-load), but prefer
+    // models 1 GB+ as the default since sub-GB chat models are rare and usually
+    // toy quants. Pick the smallest model >= 1 GB; fall back to smallest overall.
+    chatModels.sort((a, b) => (a.size || 0) - (b.size || 0));
+    const defaultModel = chatModels.find(m => (m.size || 0) >= 1e9) || chatModels[0];
+    chatModels.forEach(m => {
       const opt = document.createElement('option');
       opt.value = m.name;
       const sizeGB = (m.size / 1e9).toFixed(1);
       opt.textContent = `${m.name}  (${sizeGB} GB)`;
+      if (m.name === defaultModel.name) opt.selected = true;
       els.model.appendChild(opt);
     });
     els.model.disabled = false;
-    els.status.textContent = `connected · ${data.models.length} model${data.models.length === 1 ? '' : 's'}`;
+    const summary = embedCount > 0
+      ? `${chatModels.length} chat${chatModels.length === 1 ? '' : 's'} (${embedCount} embedding hidden)`
+      : `${chatModels.length} model${chatModels.length === 1 ? '' : 's'}`;
+    els.status.textContent = `connected · ${summary}`;
     els.status.className = 'ok';
   } catch (e) {
     els.model.innerHTML = '<option>offline</option>';
