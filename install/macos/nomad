@@ -1625,8 +1625,14 @@ ${C_OK}════════════════════════�
 ${C_OK}  Project NOMAD install complete.${C_OFF}
 ${C_OK}════════════════════════════════════════════════════════════${C_OFF}
 
-  Admin ........... http://localhost:8080  (open + complete onboarding)
-  Native Ollama is already wired into admin — easy-setup defaults to it.
+  Admin ........... http://localhost:8080
+  Native Ollama ... http://localhost:11434  (Metal-accelerated, $(ls "$NOMAD_DATA_ROOT/ollama-models/manifests/registry.ollama.ai/library/" 2>/dev/null | wc -l | tr -d ' ') models pulled)
+
+  ${C_HEAD}AI Assistant works directly — open admin and try it now.${C_OFF}
+  ${C_WARN}IMPORTANT: if you visit the Easy Setup wizard at /easy-setup,${C_OFF}
+  ${C_WARN}skip the "AI Models" step. Your models are already installed via${C_OFF}
+  ${C_WARN}native Ollama. Selecting them in the wizard would queue duplicate${C_OFF}
+  ${C_WARN}downloads through admin's BullMQ job system.${C_OFF}
 
   Lifecycle:
     nomad up | down | restart        # stack
