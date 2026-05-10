@@ -68,6 +68,15 @@ services:
       - APPLE_CHIP_MODEL=${APPLE_CHIP_MODEL:-}
       - APPLE_GPU_MODEL=${APPLE_GPU_MODEL:-}
       - HOST_PLATFORM=${HOST_PLATFORM:-darwin}
+      # CRITICAL for native Ollama integration. proximasan's admin patch reads
+      # OLLAMA_HOST in DockerService.isNativeOllama() / getNativeOllamaURL().
+      # When non-empty, getServiceURL(OLLAMA) short-circuits to this URL instead
+      # of trying to find a nomad_ollama container (which doesn't exist in our
+      # native-Ollama setup). Without it: AI Assistant + benchmark + chat all
+      # show empty / "Ollama service is not installed or running."
+      # Verified by reading /app/app/services/docker_service.js inside the
+      # running proximasan image (2026-05-09).
+      - OLLAMA_HOST=http://host.docker.internal:11434
     depends_on:
       mysql: { condition: service_healthy }
       redis: { condition: service_healthy }
