@@ -1592,7 +1592,11 @@ if [[ "\$status" == "running" ]]; then
       [[ -x "\$j" ]] && { jq_bin="\$j"; break; }
     done
 
-    catalog_count="\$(/usr/bin/curl -fsS --max-time 4 "http://localhost:\$port/catalog/v2/entries" 2>/dev/null \\
+    # NB: count=-1 disables OPDS pagination. Without it, catalog_count caps
+    # at 10 (the default page size) regardless of actual loaded count, which
+    # would cause fs_count > catalog_count to be always-true once there are
+    # >10 ZIMs — the agent would loop-restart kiwix every 60s after queue empty.
+    catalog_count="\$(/usr/bin/curl -fsS --max-time 4 "http://localhost:\$port/catalog/v2/entries?count=-1" 2>/dev/null \\
       | /usr/bin/grep -c '<entry>' || echo 0)"
     fs_count="\$(/bin/ls "\$ZIM_DIR"/*.zim 2>/dev/null | /usr/bin/wc -l | /usr/bin/tr -d ' ')"
 
