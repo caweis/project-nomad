@@ -30,6 +30,10 @@
 #   bash nomad reset-ollama                  # recover from stuck LaunchAgent state
 #   bash nomad fix-kiwix                     # manual trigger of kiwix self-heal
 #                                            # (LaunchAgent runs same logic every 60s)
+#   bash nomad clean [--apply]               # safe cleanup: /tmp logs, dangling
+#                                            # Docker images, builder cache, stopped
+#                                            # admin-spawned containers, quarantined
+#                                            # partial ZIMs. Dry-run unless --apply.
 #   bash nomad uninstall                     # clean wipe (containers, agent, .env, opt. data)
 #   bash nomad reinstall                     # nuclear: wipe everything + reinstall in one shot
 #
@@ -196,6 +200,11 @@ confirm() {
   read -r -p "$1 [y/N] " a; [[ "$a" =~ ^[Yy]$ ]]
 }
 
+# Non-fatal install degradations — install completed but a feature is missing.
+# Steps that hit this push a one-line description; the final summary banner
+# surfaces them so the green "complete" message doesn't hide real gaps.
+NOMAD_INSTALL_DEGRADED=()
+
 # ─── admin API client ─────────────────────────────────────────────────────────
 # All admin routes are unauthenticated (single-user appliance design — see
 # admin/start/kernel.ts). We hit them directly. jq required for parsing.
@@ -262,6 +271,21 @@ sudo_bootstrap() {
   sudo -v || die "sudo authentication failed"
   ( while true; do sudo -n true 2>/dev/null || exit 0; sleep 50; kill -0 $$ 2>/dev/null || exit 0; done ) &
   trap 'kill $! 2>/dev/null || true' EXIT INT TERM
+}
+
+# ─── sleep prevention ─────────────────────────────────────────────────────────
+# A full install can run 30–90 minutes (model pulls of 80 GB+ on slower
+# connections). If the Mac sleeps mid-stream, downloads stall, kiwix
+# crash-loops, and the user comes back to a broken install. caffeinate
+# blocks idle/disk/system sleep for as long as our shell PID is alive
+# (-w $$); when the install exits, caffeinate exits with it. No-op if
+# caffeinate isn't on PATH (rare — it's a macOS built-in).
+prevent_sleep() {
+  command -v caffeinate >/dev/null 2>&1 || return 0
+  # Already running for this PID? Don't stack instances.
+  pgrep -f "caffeinate.*-w $$" >/dev/null 2>&1 && return 0
+  caffeinate -i -m -s -w $$ >/dev/null 2>&1 &
+  disown 2>/dev/null || true
 }
 
 # ─── system check ─────────────────────────────────────────────────────────────
@@ -1313,16 +1337,32 @@ pull_one_model() {
     else printf '%ds' "$s"; fi
   }
 
+  # Capture curl's exit status out of the process substitution. The substitution
+  # runs curl, then echoes its exit code into a tmp file; the while loop reads
+  # the streamed JSON-lines from curl's stdout. When curl exits, the substitution
+  # closes and the loop ends; the rc file is written by then.
+  local rc_file; rc_file="$(mktemp -t nomad-pull-rc.XXXXXX)"
+  local stderr_file; stderr_file="$(mktemp -t nomad-pull-err.XXXXXX)"
+  local saw_progress=0
+
   while IFS= read -r line; do
     [[ -z "$line" ]] && continue
-    local fields status total_b done_b
-    fields="$(echo "$line" | jq -r '"\(.status // "")|\(.total // 0)|\(.completed // 0)|\(.error // "")"' 2>/dev/null || echo "||0|0|")"
+    saw_progress=1
+    local fields status total_b done_b err
+    if ! fields="$(echo "$line" | jq -r '"\(.status // "")|\(.total // 0)|\(.completed // 0)|\(.error // "")"' 2>/dev/null)"; then
+      # jq couldn't parse this frame — surface it instead of silently pretending it was a no-op.
+      printf "\n"
+      warn "pull stream parse error for $m: ${line:0:120}"
+      rm -f "$rc_file" "$stderr_file"
+      return 1
+    fi
     IFS='|' read -r status total_b done_b err <<<"$fields"
     [[ ! "$total_b" =~ ^[0-9]+$ ]] && total_b=0
     [[ ! "$done_b"  =~ ^[0-9]+$ ]] && done_b=0
     if [[ -n "$err" ]]; then
       printf "\n"
       warn "API error for $m: $err"
+      rm -f "$rc_file" "$stderr_file"
       return 1
     fi
 
@@ -1344,11 +1384,28 @@ pull_one_model() {
         "$(fmt_dur $elapsed)"
       last_status="$status"
     fi
-  done < <(curl -fsSN -X POST http://127.0.0.1:11434/api/pull \
-              -H 'Content-Type: application/json' \
-              -d "{\"name\":\"$m\",\"stream\":true}" 2>/dev/null)
+  done < <(
+    curl -fsSN -X POST http://127.0.0.1:11434/api/pull \
+      -H 'Content-Type: application/json' \
+      -d "{\"name\":\"$m\",\"stream\":true}" 2>"$stderr_file"
+    echo $? > "$rc_file"
+  )
+
+  local curl_rc=0
+  [[ -s "$rc_file" ]] && curl_rc="$(cat "$rc_file")"
+  local stderr_blob=""
+  [[ -s "$stderr_file" ]] && stderr_blob="$(head -c 200 "$stderr_file")"
+  rm -f "$rc_file" "$stderr_file"
 
   printf "\n"
+  if [[ "$curl_rc" -ne 0 ]]; then
+    warn "pull failed for $m (curl rc=$curl_rc${stderr_blob:+, stderr: ${stderr_blob}})"
+    return 1
+  fi
+  if [[ "$saw_progress" -eq 0 ]]; then
+    warn "pull for $m completed with no progress frames — likely empty response"
+    return 1
+  fi
   return 0
 }
 
@@ -1691,9 +1748,12 @@ if [[ "\$status" == "running" ]]; then
 
     if [[ -n "\$reason" && "\$active_downloads" == "0" ]]; then
       log "auto-reload: \$reason, queue empty → restarting kiwix"
-      docker restart nomad_kiwix_server >/dev/null 2>&1 || true
-      sleep 5
-      log "auto-reload: kiwix restarted"
+      if docker restart nomad_kiwix_server >/dev/null 2>&1; then
+        sleep 5
+        log "auto-reload: kiwix restarted"
+      else
+        log "auto-reload: docker restart FAILED — kiwix may be stale (next pass will retry)"
+      fi
     fi
     exit 0
   fi
@@ -1882,12 +1942,19 @@ ON DUPLICATE KEY UPDATE
   value      = IF(kv_store.value IS NULL OR kv_store.value = "", new.value, kv_store.value),
   updated_at = NOW();
 ' | dc exec -T -e MYSQL_PWD="$db_pw" mysql mysql -u nomad_user nomad >/dev/null 2>&1 \
-  && { ok "seeded via SQL fallback"; dc restart admin >/dev/null; sleep 5; return 0; } \
-  || warn "both API and SQL paths failed — manually set Settings → Models → Remote Ollama URL"
+  && { ok "seeded via SQL fallback"; dc restart admin >/dev/null; sleep 5; return 0; }
+
+  # Both API and SQL failed — admin's AI Assistant will not work until the user
+  # manually sets the Remote Ollama URL. Track this for the install summary
+  # so the green "complete" banner doesn't paper over a real degradation.
+  warn "both API and SQL paths failed — manually set Settings → Models → Remote Ollama URL"
+  NOMAD_INSTALL_DEGRADED+=("admin → native Ollama not wired (Settings → Models → Remote Ollama URL)")
+  return 1
 }
 
 cmd_install() {
   sudo_bootstrap
+  prevent_sleep
   log "Project NOMAD — macOS install (target: $(uname -m), $(sw_vers -productVersion))"
 
   # If user picked a tier larger than auto-detected, warn explicitly about
@@ -1906,7 +1973,7 @@ cmd_install() {
   step_compose_up
   step_wait_admin
   step_pull_embedding_quick    # ~270 MB, ~30s — admin's RAG works the moment we wire
-  step_configure_native_ollama
+  step_configure_native_ollama || true   # non-fatal; degradation surfaces in summary
   step_install_benchmark_patcher   # background daemon that fixes leaderboard CPU/GPU automatically
   step_install_kiwix_self_heal     # background daemon that quarantines partial ZIMs so kiwix never crash-loops
   step_build_distro_help_zim       # build distribution help ZIM, drop into kiwix's library so it's browsable in the UI
@@ -1937,17 +2004,32 @@ EOF
   dc restart admin >/dev/null 2>&1 || true
   sleep 5
 
+  # Resolve data root for the summary banner. $NOMAD_DATA_ROOT is only in .env,
+  # not exported to our shell, so $(ls "$NOMAD_DATA_ROOT/...") would always
+  # show 0 if we didn't grep it back out here.
+  local _data_root
+  _data_root="$(grep '^NOMAD_DATA_ROOT=' "$ENV_FILE" 2>/dev/null | cut -d= -f2-)"
+  local _models_count="?"
+  if [[ -n "$_data_root" && -d "$_data_root/ollama-models/manifests/registry.ollama.ai/library" ]]; then
+    _models_count="$(ls "$_data_root/ollama-models/manifests/registry.ollama.ai/library/" 2>/dev/null | wc -l | tr -d ' ')"
+  fi
+
+  local _completion_banner="Project NOMAD install complete."
+  if (( ${#NOMAD_INSTALL_DEGRADED[@]} > 0 )); then
+    _completion_banner="Project NOMAD install complete (with degradations — see below)."
+  fi
+
   cat <<EOF
 
 ${C_OK}════════════════════════════════════════════════════════════${C_OFF}
-${C_OK}  Project NOMAD install complete.${C_OFF}
+${C_OK}  ${_completion_banner}${C_OFF}
 ${C_OK}════════════════════════════════════════════════════════════${C_OFF}
 
   This Mac:                          From any device on this WiFi:
     Admin   http://localhost:8080      http://${_hostname}.local:8080
     Library http://localhost:8090      http://${_hostname}.local:8090
     Ollama  http://localhost:11434     http://${_hostname}.local:11434
-  Models pulled: $(ls "$NOMAD_DATA_ROOT/ollama-models/manifests/registry.ollama.ai/library/" 2>/dev/null | wc -l | tr -d ' ') (Metal-accelerated)
+  Models pulled: ${_models_count} (Metal-accelerated)
 
   ${C_HEAD}AI Assistant works directly — open admin and try it now.${C_OFF}
   ${C_WARN}IMPORTANT: if you visit the Easy Setup wizard at /easy-setup,${C_OFF}
@@ -1963,6 +2045,13 @@ ${C_OK}════════════════════════�
     nomad models pull <tier|names>   # pull more models
 
 EOF
+  if (( ${#NOMAD_INSTALL_DEGRADED[@]} > 0 )); then
+    printf "%sDegradations to fix manually:%s\n" "$C_WARN" "$C_OFF"
+    for issue in "${NOMAD_INSTALL_DEGRADED[@]}"; do
+      printf "  %s•%s %s\n" "$C_WARN" "$C_OFF" "$issue"
+    done
+    printf "\n"
+  fi
 }
 
 # ─── lifecycle subcommands ────────────────────────────────────────────────────
@@ -2052,6 +2141,7 @@ cmd_models() {
       if ! curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
         die "native Ollama not responding — run 'nomad reset-ollama'"
       fi
+      prevent_sleep  # 80 GB+ pulls can run an hour — don't let the Mac sleep
       # Args: nothing (use --tier or auto), tier name, or specific model names
       local to_pull
       if [[ $# -eq 0 ]]; then
@@ -2113,6 +2203,10 @@ cmd_upgrade() {
   done
 
   ensure_docker_path
+  # Compose pulls can run several GB; native-Ollama upgrades trigger a brew
+  # bottle download; admin-spawned image pulls (kiwix, etc.) are similar.
+  # Don't let the Mac sleep mid-stream.
+  [[ "$check" -eq 0 ]] && prevent_sleep
 
   case "$target" in
     all)
@@ -2265,15 +2359,35 @@ cmd_upgrade_models() {
   if ! curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
     die "native Ollama not responding"
   fi
-  local installed
-  installed="$(curl -fsS http://127.0.0.1:11434/api/tags | jq -r '.models[]?.name')"
+  prevent_sleep
+  # Capture curl + jq exit status separately so we can tell "no models" apart
+  # from "API/jq failed" — those mean very different things to the user.
+  local tags_json installed
+  if ! tags_json="$(curl -fsS http://127.0.0.1:11434/api/tags 2>/dev/null)"; then
+    die "couldn't read Ollama /api/tags — daemon up but request failed"
+  fi
+  if ! installed="$(echo "$tags_json" | jq -r '.models[]?.name' 2>/dev/null)"; then
+    die "couldn't parse Ollama /api/tags response — got: ${tags_json:0:120}"
+  fi
   [[ -z "$installed" ]] && { warn "no models installed — pull some first"; return 0; }
   log "upgrading installed models (re-pull = latest tag of same family):"
+  local ok_count=0 fail_count=0 failed_models=()
   for m in $installed; do
     log "  $m"
-    ollama pull "$m"
+    if ollama pull "$m"; then
+      ok_count=$((ok_count+1))
+    else
+      fail_count=$((fail_count+1))
+      failed_models+=("$m")
+      warn "  refresh failed: $m"
+    fi
   done
-  ok "all installed models refreshed"
+  if [[ "$fail_count" -eq 0 ]]; then
+    ok "all $ok_count model(s) refreshed"
+    return 0
+  fi
+  warn "$ok_count refreshed, $fail_count failed: ${failed_models[*]}"
+  return 1
 }
 
 # ─── API-backed subcommands ───────────────────────────────────────────────────
@@ -3048,6 +3162,125 @@ or wait for admin to spawn kiwix once a ZIM finishes downloading."
   fi
 }
 
+# Free disk space and clean up install-generated detritus without touching any
+# of the data or state the user wants to keep. Removes:
+#   • /tmp/nomad-*.log  (compose pull logs, bootstrap logs, etc.)
+#   • $COMPOSE_BASE.bak (sed-injection backups from amd64 fallback path)
+#   • quarantined partial ZIMs in $DATA_ROOT/storage/zim-inprogress/
+#   • dangling Docker images + builder cache (only the dangling ones — never
+#     a running image)
+#   • stopped (non-running) admin-spawned content containers
+# Does NOT touch: ollama models, downloaded ZIMs, mysql/redis data, .env,
+# LaunchAgents, or any container that's currently running.
+#
+# Subcommands:
+#   nomad clean         show what would be cleaned, no action (dry run)
+#   nomad clean --apply actually clean
+cmd_clean() {
+  local apply=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --apply|--yes|-y) apply=1; shift ;;
+      "") shift ;;  # tolerate the empty-arg shim from the dispatcher
+      *) die "unknown arg: $1   (use --apply to act, otherwise it's a dry run)" ;;
+    esac
+  done
+  section "Clean — $( ((apply)) && echo 'applying' || echo 'dry run (pass --apply to act)')"
+
+  local total_freed=0
+  local action_prefix; ((apply)) && action_prefix="removed" || action_prefix="would remove"
+
+  # 1. /tmp logs
+  local tmp_logs
+  tmp_logs="$(ls /tmp/nomad-*.log 2>/dev/null || true)"
+  if [[ -n "$tmp_logs" ]]; then
+    local tmp_count tmp_size
+    tmp_count="$(echo "$tmp_logs" | wc -l | tr -d ' ')"
+    tmp_size="$(echo "$tmp_logs" | xargs -I{} du -k {} 2>/dev/null | awk '{s+=$1} END {print s}')"
+    log "$action_prefix $tmp_count /tmp/nomad-*.log file(s) (~${tmp_size:-0} KB)"
+    ((apply)) && rm -f /tmp/nomad-*.log
+    total_freed=$(( total_freed + ${tmp_size:-0} ))
+  else
+    dim "  no /tmp/nomad-*.log files"
+  fi
+
+  # 2. compose.yaml.bak from sed-injection fallback
+  if [[ -f "$COMPOSE_BASE.bak" ]]; then
+    local bak_size
+    bak_size="$(du -k "$COMPOSE_BASE.bak" 2>/dev/null | awk '{print $1}')"
+    log "$action_prefix $COMPOSE_BASE.bak (~${bak_size:-0} KB)"
+    ((apply)) && rm -f "$COMPOSE_BASE.bak"
+    total_freed=$(( total_freed + ${bak_size:-0} ))
+  else
+    dim "  no $COMPOSE_BASE.bak"
+  fi
+
+  # 3. Quarantined partial ZIMs (kiwix-self-heal moves these aside; they're
+  # broken downloads that the user can either redownload or delete)
+  if [[ -f "$ENV_FILE" ]]; then
+    local data_root quarantine
+    data_root="$(grep '^NOMAD_DATA_ROOT=' "$ENV_FILE" 2>/dev/null | cut -d= -f2-)"
+    quarantine="$data_root/storage/zim-inprogress"
+    if [[ -d "$quarantine" ]]; then
+      local q_count q_size
+      q_count="$(ls "$quarantine"/*.zim 2>/dev/null | wc -l | tr -d ' ')"
+      if [[ "$q_count" -gt 0 ]]; then
+        q_size="$(du -sk "$quarantine" 2>/dev/null | awk '{print $1}')"
+        log "$action_prefix $q_count quarantined partial ZIM(s) in $quarantine (~$((${q_size:-0} / 1024)) MB)"
+        ((apply)) && rm -f "$quarantine"/*.zim
+        total_freed=$(( total_freed + ${q_size:-0} ))
+      else
+        dim "  no quarantined ZIMs"
+      fi
+    fi
+  fi
+
+  # 4. Dangling Docker images + builder cache. Skip if docker isn't reachable.
+  if ensure_docker_path && docker version >/dev/null 2>&1; then
+    local img_count
+    img_count="$(docker images --filter "dangling=true" -q 2>/dev/null | wc -l | tr -d ' ')"
+    if [[ "$img_count" -gt 0 ]]; then
+      log "$action_prefix $img_count dangling Docker image(s)"
+      ((apply)) && docker image prune -f >/dev/null 2>&1
+    else
+      dim "  no dangling Docker images"
+    fi
+    local builder_size
+    builder_size="$(docker builder du 2>/dev/null | awk 'NR==2{print $2}')"
+    if [[ -n "$builder_size" && "$builder_size" != "0B" ]]; then
+      log "$action_prefix Docker builder cache ($builder_size)"
+      ((apply)) && docker builder prune -f >/dev/null 2>&1
+    else
+      dim "  no builder cache"
+    fi
+
+    # 5. Stopped admin-spawned content containers (kiwix_*, kolibri, flatnotes,
+    # cyberchef — admin re-spawns these on demand, stopped ones are fossilized
+    # from past sessions and just hold image refs)
+    local stopped_admin_containers
+    stopped_admin_containers="$(docker ps -a --format '{{.Names}}\t{{.State}}' 2>/dev/null \
+      | awk -F'\t' '$2!="running" && /^(nomad_kiwix|nomad_kolibri|nomad_cyberchef|nomad_flatnotes|kiwix_server_)/ {print $1}')"
+    if [[ -n "$stopped_admin_containers" ]]; then
+      local sc_count
+      sc_count="$(echo "$stopped_admin_containers" | wc -l | tr -d ' ')"
+      log "$action_prefix $sc_count stopped admin-spawned container(s):"
+      echo "$stopped_admin_containers" | sed 's/^/    /'
+      ((apply)) && echo "$stopped_admin_containers" | xargs -I{} docker rm {} >/dev/null 2>&1
+    else
+      dim "  no stopped admin-spawned containers"
+    fi
+  else
+    dim "  Docker not reachable — skipping image/container cleanup"
+  fi
+
+  echo
+  if ((apply)); then
+    ok "clean complete (~$((total_freed / 1024)) MB freed; Docker cache freed separately)"
+  else
+    log "dry run — pass --apply to actually clean. ~$((total_freed / 1024)) MB on disk + Docker cache."
+  fi
+}
+
 # ─── arg parsing + dispatch ───────────────────────────────────────────────────
 DATA_ROOT_ARG=""
 TIER="auto"            # auto | tiny | small | medium | large | xl | dreamy
@@ -3093,10 +3326,11 @@ case "$CMD" in
   orbstack-tune)   cmd_orbstack_tune "${EXTRA_ARGS[@]}" ;;
   reset-ollama)    cmd_reset_ollama ;;
   fix-kiwix)       cmd_fix_kiwix ;;
+  clean)           cmd_clean "${EXTRA_ARGS[@]}" ;;
   uninstall)       cmd_uninstall ;;
   reinstall)       cmd_reinstall ;;
   help|--help|-h)
-    sed -n '2,35p' "$0" | sed 's/^# //; s/^#//'
+    sed -n '2,39p' "$0" | sed 's/^# //; s/^#//'
     ;;
   *) die "unknown command: $CMD
 Run 'nomad help' for usage." ;;
