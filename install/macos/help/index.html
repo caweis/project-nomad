@@ -319,11 +319,20 @@
 
   <p>NOMAD is set up so other devices on your home WiFi can use it too — phones, tablets, laptops, anyone connected to the same network. They don't need their own copy. They just need a browser.</p>
 
-  <p>To find this Mac's address on the network, open Terminal on this Mac and type:</p>
+  <p>To find this Mac's address on the network, the easiest way is from System Settings:</p>
 
-  <pre><code>ipconfig getifaddr en0</code></pre>
+  <ol>
+    <li>Open <strong>System Settings</strong> (or System Preferences on older macOS)</li>
+    <li>Click <strong>Wi-Fi</strong> in the sidebar</li>
+    <li>Click <strong>Details</strong> next to your connected network</li>
+    <li>Look for <strong>IP Address</strong> — it'll be something like <code>192.168.1.42</code></li>
+  </ol>
 
-  <p>You'll get something like <code>192.168.1.42</code>. From any other device on the same WiFi, open a browser and visit:</p>
+  <p>If you prefer Terminal, run this — it works whether you're on WiFi or Ethernet:</p>
+
+  <pre><code>ifconfig | awk '/inet / &amp;&amp; $2 != "127.0.0.1" {print $2; exit}'</code></pre>
+
+  <p>From any other device on the same WiFi, open a browser and visit:</p>
 
   <ul>
     <li><code>http://192.168.1.42:8080</code> for the Command Center (replace with the actual address)</li>
