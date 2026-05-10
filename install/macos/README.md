@@ -16,11 +16,13 @@ Idempotent. Re-run is repair. Everything else (Homebrew, Xcode CLT, Rosetta, Orb
 
 | File | Purpose |
 |---|---|
-| `nomad` | Single-file bash CLI. Subcommands: `install`, `check`, `up`, `down`, `restart`, `logs`, `models pull <tier>`, `benchmark`, `downloads`, `zim`, `services`, `system`, `api`, `orbstack-tune`, `reset-ollama`, `reinstall`, `uninstall`, `upgrade-models`. Self-symlinks to `$(brew --prefix)/bin/nomad` at install time. |
+| `nomad` | Single-file bash CLI. Subcommands: `install`, `check`, `up`, `down`, `restart`, `logs`, `models pull <tier>`, `upgrade`, `upgrade-models`, `benchmark`, `downloads`, `zim`, `services`, `system`, `api`, `orbstack-tune`, `reset-ollama`, `fix-kiwix`, `clean`, `reinstall`, `uninstall`. Self-symlinks to `$(brew --prefix)/bin/nomad` at install time. |
 | `compose.yaml` | macOS-tuned compose file. Default admin image is `ghcr.io/caweis/project-nomad-macos-arm64:edge` (multi-arch, built from this repo's `admin/` tree). Layered fallback at install time: caweis → proximasan (multi-arch) → upstream amd64 under Rosetta. Split-storage: mysql + redis on `${NOMAD_STATE_ROOT}` (always internal), admin storage on `${NOMAD_DATA_ROOT}` (configurable, can be external drive). |
 | `quick-chat.html` | Self-contained portable chat UI. Single file, ~670 lines. Boot overlay polls Ollama on `:11434`, shows copy-pasteable bootstrap command if not running, transitions to streaming chat once available. Drops onto the data drive at install — plug the drive into any other Mac, open the file, get LLM chat with no NOMAD install needed. |
 | `quick-chat.sh` | Companion script for `quick-chat.html`. Auto-installs Ollama via Homebrew if missing, sets `OLLAMA_MODELS` to point at the drive's model cache, starts the daemon, opens the HTML. |
 | `nomad.1` | mdoc-format manpage. Installed at `$(brew --prefix)/share/man/man1/nomad.1` so `man nomad` works after install. |
+| `userscripts/` | Browser userscripts (Tampermonkey / Userscripts / Violentmonkey). `admin-same-tab.user.js` strips `target="_blank"` from admin links so service tiles open in the same tab. See `userscripts/README.md` for install instructions and the upstream issue we're patching around. |
+| `scripts/wipe-and-pave.command` | Double-clickable Desktop-droppable script for "I'm testing a new admin image and want zero cached state to mask the result." Runs `nomad uninstall --yes`, removes cached admin Docker images (caweis, proximasan, crosstalk-solutions), clears residual logs. Preserves Homebrew, OrbStack, Ollama binaries, the bundle itself. |
 | `LICENSE` | Apache-2.0 — matches the parent repo's license. |
 
 ## Storage architecture (unplug-resilient)
@@ -106,9 +108,32 @@ nomad orbstack-tune     Tune OrbStack VM RAM (auto = 80% of host)
 nomad reset-ollama      Recover from stuck LaunchAgent state
 nomad fix-kiwix         Manual trigger of kiwix self-heal pass
                         (the kiwix-self-heal LaunchAgent runs same logic every 60s)
+nomad clean [--apply]   Safe disk cleanup. Dry-run by default. Removes /tmp/nomad-*.log,
+                        $COMPOSE_BASE.bak, quarantined partial ZIMs, dangling Docker
+                        images + builder cache, stopped admin-spawned containers.
+                        Never touches running containers, models, or kept data.
+nomad upgrade [svc]     Software upgrade router — compose stack, native Ollama,
+                        admin-spawned containers. --check for dry-run.
+nomad upgrade-models    Re-pull installed models at latest tags
 nomad reinstall         Full uninstall + install (one confirm prompt up front)
 nomad uninstall         Remove containers, LaunchAgents, secrets, (with confirm) data
-nomad upgrade-models    Re-pull installed models at latest tags
+```
+
+Other entry points:
+
+```
+install/macos/userscripts/admin-same-tab.user.js
+                        Browser userscript (Tampermonkey / Userscripts / Violentmonkey)
+                        that strips target="_blank" from admin links so service tiles
+                        open in the same tab. Workaround for upstream issue #866.
+                        See userscripts/README.md for install steps.
+
+install/macos/scripts/wipe-and-pave.command
+                        Double-clickable Desktop-droppable. For "I'm testing a new
+                        admin image — clean every cached state before reinstall."
+                        Uninstalls NOMAD, removes cached admin images (caweis,
+                        proximasan, crosstalk), clears /tmp + Library/Logs residue.
+                        Preserves Homebrew, OrbStack, Ollama, the bundle itself.
 ```
 
 Install options:
