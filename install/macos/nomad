@@ -2814,6 +2814,74 @@ or wait for admin to spawn kiwix once a ZIM finishes downloading."
 # both apps default to :8080 but Field Desk respects NOMAD_PORT, and both want
 # Ollama on :11434 (good — single Metal daemon serves both). Pattern at
 # SysAdminDoc/project-nomad-desktop#3.
+cmd_uninstall_field_desk() {
+  section "Uninstall NOMAD Field Desk"
+
+  local target="$HOME/Applications/NOMADFieldDesk-macOS"
+  local removed_anything=0
+
+  # 1. Stop the process if it's running
+  if pgrep -f "NOMADFieldDesk-macOS" >/dev/null 2>&1; then
+    log "stopping running Field Desk process"
+    pkill -f "NOMADFieldDesk-macOS" 2>/dev/null || true
+    sleep 1
+    removed_anything=1
+    ok "Field Desk process stopped"
+  else
+    ok "no running Field Desk process"
+  fi
+
+  # 2. Remove the binary
+  if [[ -f "$target" ]]; then
+    rm -f "$target" && { ok "removed binary: $target"; removed_anything=1; }
+  else
+    ok "no binary at $target"
+  fi
+
+  # 3. Surface (but don't auto-remove) Field Desk's own data dirs.
+  # Field Desk stores its SQLite DB + caches somewhere under the user's
+  # home dir. Names vary across Field Desk versions; we report what's
+  # there and let the user decide. We do NOT touch ~/.config/project-nomad
+  # (that's our install) or any Obsidian/Topo vault.
+  local found=()
+  for path in \
+      "$HOME/Library/Application Support/NOMAD" \
+      "$HOME/Library/Application Support/NOMAD Field Desk" \
+      "$HOME/Library/Application Support/NOMADFieldDesk" \
+      "$HOME/Library/Application Support/project-nomad-desktop" \
+      "$HOME/Library/Caches/NOMAD" \
+      "$HOME/Library/Caches/NOMADFieldDesk" \
+      "$HOME/Library/Logs/NOMAD" \
+      "$HOME/Library/Logs/NOMADFieldDesk" \
+      "$HOME/.nomad" \
+      "$HOME/.nomadfielddesk"; do
+    [[ -e "$path" ]] && found+=("$path")
+  done
+
+  if [[ ${#found[@]} -gt 0 ]]; then
+    echo
+    warn "Found data dirs that COULD belong to Field Desk:"
+    for p in "${found[@]}"; do
+      local size; size="$(du -sh "$p" 2>/dev/null | awk '{print $1}')"
+      echo "  $size  $p"
+    done
+    echo
+    warn "Inspect each before removing — Field Desk's storage layout varies"
+    warn "by version, and these names overlap with other potential apps."
+    warn "Manual remove: rm -rf <path>"
+  else
+    ok "no Field Desk data dirs detected at standard paths"
+  fi
+
+  echo
+  if [[ $removed_anything -eq 1 ]]; then
+    ok "Field Desk uninstalled. Native Ollama on :11434 untouched (still"
+    ok "serves the Crosstalk admin and any other consumer)."
+  else
+    ok "nothing to uninstall — Field Desk wasn't installed."
+  fi
+}
+
 cmd_install_field_desk() {
   local port="${NOMAD_FIELD_DESK_PORT:-8081}"
   local target="$HOME/Applications/NOMADFieldDesk-macOS"
@@ -2950,7 +3018,8 @@ case "$CMD" in
   fix-kiwix)       cmd_fix_kiwix ;;
   uninstall)       cmd_uninstall ;;
   reinstall)       cmd_reinstall ;;
-  install-field-desk) cmd_install_field_desk "${EXTRA_ARGS[@]}" ;;
+  install-field-desk)   cmd_install_field_desk "${EXTRA_ARGS[@]}" ;;
+  uninstall-field-desk) cmd_uninstall_field_desk ;;
   help|--help|-h)
     sed -n '2,38p' "$0" | sed 's/^# //; s/^#//'
     ;;
