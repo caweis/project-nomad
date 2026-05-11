@@ -26,25 +26,22 @@ function extractTag(containerImage: string): string {
 }
 
 /**
- * Upgrade Ollama button for the Native (Metal) row.
- *
- * Admin runs in Docker and can't call Homebrew directly. The
- * com.projectnomad.host-command-bridge LaunchAgent (installed by
- * nomad install) polls a directory on the bind-mounted storage for
- * marker files; admin POSTs /api/host-commands/upgrade-ollama, the
- * bridge runs `nomad upgrade ollama` on the host and writes a result
- * file. This component polls the status endpoint every 2s while the
- * command is in flight, surfaces success/failure inline.
+ * Update button for the Native (Metal) Ollama row. Matches the standard
+ * project-nomad Update button pattern (IconArrowUp + "Update" + primary
+ * variant) used on every other service row. The only difference is the
+ * action endpoint: instead of POSTing to /api/system/services/update
+ * (which goes through DockerService and refuses for native installs),
+ * this routes through /api/host-commands/upgrade-ollama, which the
+ * host-command-bridge LaunchAgent picks up and runs as `nomad upgrade
+ * ollama` on the host.
  */
-function UpgradeOllamaButton() {
+function UpgradeOllamaButton({ disabled }: { disabled?: boolean }) {
   const [status, setStatus] = useState<'idle' | 'pending' | 'in-progress' | 'completed'>('idle')
-  const [result, setResult] = useState<{ exit_code: number; output: string; duration_seconds: number } | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [result, setResult] = useState<{ exit_code: number; duration_seconds: number } | null>(null)
 
   const isBusy = status === 'pending' || status === 'in-progress'
 
   const onClick = async () => {
-    setError(null)
     setResult(null)
     setStatus('pending')
     try {
@@ -53,9 +50,8 @@ function UpgradeOllamaButton() {
         const body = await res.json().catch(() => ({}))
         throw new Error(body.error || `Server returned ${res.status}`)
       }
-    } catch (err) {
+    } catch {
       setStatus('idle')
-      setError(err instanceof Error ? err.message : String(err))
     }
   }
 
@@ -67,51 +63,36 @@ function UpgradeOllamaButton() {
         if (!res.ok) return
         const body = await res.json()
         if (body.status === 'completed') {
-          setResult({ exit_code: body.exit_code, output: body.output, duration_seconds: body.duration_seconds })
+          setResult({ exit_code: body.exit_code, duration_seconds: body.duration_seconds })
           setStatus('completed')
         } else if (body.status === 'in-progress' && status !== 'in-progress') {
           setStatus('in-progress')
         }
       } catch {
-        // transient network error, keep polling
+        // transient — keep polling
       }
     }, 2000)
     return () => clearInterval(interval)
   }, [isBusy, status])
 
   return (
-    <div className="flex flex-col gap-1">
-      <div className="flex flex-wrap items-center gap-2">
-        <StyledButton
-          icon="IconArrowUp"
-          variant="secondary"
-          onClick={onClick}
-          disabled={isBusy}
-          loading={isBusy}
-        >
-          {status === 'pending' && 'Queued…'}
-          {status === 'in-progress' && 'Upgrading…'}
-          {status === 'completed' && result?.exit_code === 0 && 'Upgrade Ollama'}
-          {(status === 'idle' || (status === 'completed' && result?.exit_code !== 0)) && 'Upgrade Ollama'}
-        </StyledButton>
-        {status === 'completed' && result && result.exit_code === 0 && (
-          <span className="text-xs text-emerald-700">
-            ✓ Upgraded in {result.duration_seconds}s
-          </span>
-        )}
-        {status === 'completed' && result && result.exit_code !== 0 && (
-          <span className="text-xs text-red-700">
-            ✗ Failed (exit {result.exit_code}) — see output below
-          </span>
-        )}
-        {error && <span className="text-xs text-red-700">✗ {error}</span>}
-      </div>
-      {status === 'completed' && result?.output && (
-        <pre className="mt-2 max-w-2xl overflow-auto rounded bg-gray-100 p-2 text-[10px] leading-snug font-mono text-gray-700">
-          {result.output}
-        </pre>
+    <>
+      <StyledButton
+        icon="IconArrowUp"
+        variant="primary"
+        onClick={onClick}
+        disabled={disabled || isBusy}
+        loading={isBusy}
+      >
+        Update
+      </StyledButton>
+      {status === 'completed' && result && result.exit_code === 0 && (
+        <span className="text-xs text-emerald-700">✓ Updated in {result.duration_seconds}s</span>
       )}
-    </div>
+      {status === 'completed' && result && result.exit_code !== 0 && (
+        <span className="text-xs text-red-700">✗ Update failed (exit {result.exit_code})</span>
+      )}
+    </>
   )
 }
 
@@ -347,7 +328,7 @@ export default function SettingsPage(props: {
           >
             Native (Metal)
           </span>
-          <UpgradeOllamaButton />
+          <UpgradeOllamaButton disabled={!isOnline} />
         </div>
       )
     }
