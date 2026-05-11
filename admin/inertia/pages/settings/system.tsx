@@ -17,6 +17,12 @@ import { IconCpu, IconDatabase, IconServer, IconDeviceDesktop, IconComponents } 
 
 export default function SettingsPage(props: {
   system: { info: SystemInformationResponse | undefined }
+  // True when admin is configured to talk to a native (Homebrew) Ollama at
+  // OLLAMA_HOST instead of managing the Docker container. Set by
+  // settings_controller.ts from DockerService.isNativeOllama(). On native
+  // installs the GPU-passthrough-failed banner can't fire (Metal access
+  // is direct) and the Reinstall button would hit a useless code path.
+  isNativeOllama: boolean
 }) {
   const { data: info } = useSystemInfo({
     initialData: props.system.info,
@@ -237,7 +243,11 @@ export default function SettingsPage(props: {
                   },
                 ]}
               />
-              {info?.gpuHealth?.status === 'passthrough_failed' && !gpuBannerDismissed && (
+              {/* Native Ollama on macOS uses Apple Silicon Metal directly —
+                  no Docker passthrough, no GPU "fix" needed. The Reinstall
+                  button on this banner short-circuits with a CLI-only error
+                  on native installs anyway, so suppress entirely. */}
+              {!props.isNativeOllama && info?.gpuHealth?.status === 'passthrough_failed' && !gpuBannerDismissed && (
                 <div className="lg:col-span-2">
                   <Alert
                     type="warning"
