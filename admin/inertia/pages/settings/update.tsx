@@ -223,7 +223,15 @@ function ContentUpdatesSection() {
   )
 }
 
-export default function SystemUpdatePage(props: { system: Props }) {
+export default function SystemUpdatePage(props: {
+  system: Props
+  // True when admin is configured for native (Homebrew) Ollama, which on this
+  // distro is shorthand for "we're on the macOS distro." The built-in update
+  // mechanism doesn't work for our compose.yaml (uses caweis image, not
+  // crosstalk-solutions), so the Start Update button is replaced with a
+  // host-CLI hint card pointing at `nomad upgrade compose`.
+  isNativeOllama: boolean
+}) {
   const { addNotification } = useNotifications()
 
   const [isUpdating, setIsUpdating] = useState(false)
@@ -399,7 +407,11 @@ export default function SystemUpdatePage(props: { system: Props }) {
             </p>
           </div>
 
-          {error && (
+          {/* Suppress "Update Failed" errors on the macOS distro — admin's
+              built-in self-update is replaced entirely by the host-CLI hint
+              card below. Surfacing its compose.yaml-rewrite failure is
+              noise for users who shouldn't be touching that path. */}
+          {error && !props.isNativeOllama && (
             <div className="mb-6">
               <Alert
                 type="error"
@@ -431,6 +443,52 @@ export default function SystemUpdatePage(props: { system: Props }) {
               />
             </div>
           )}
+          {/* macOS distro: admin's built-in self-update doesn't work because
+              compose.yaml uses ghcr.io/caweis/* image tags and admin's
+              updater only knows the ghcr.io/crosstalk-solutions/* pattern.
+              Replace the entire update mechanism with a host-CLI hint. */}
+          {props.isNativeOllama ? (
+            <div className="bg-white rounded-lg border-2 border-desert-green shadow-md overflow-hidden">
+              <div className="p-8">
+                <h2 className="text-2xl font-bold text-desert-green mb-3">
+                  Updates via host CLI on macOS
+                </h2>
+                <p className="text-desert-stone-dark mb-4">
+                  On the macOS distribution, admin's container is updated from the host with the
+                  <code className="bg-gray-100 px-1.5 py-0.5 mx-1 rounded font-mono text-sm">nomad upgrade</code>
+                  command. The in-admin self-update button doesn't apply here — it rewrites
+                  compose.yaml image tags using a pattern that doesn't match our image
+                  (<code className="bg-gray-100 px-1.5 py-0.5 mx-1 rounded font-mono text-sm">ghcr.io/caweis/project-nomad-macos-arm64</code>).
+                </p>
+                <div className="bg-gray-50 border border-gray-200 rounded p-4 mb-4">
+                  <p className="text-sm font-semibold text-gray-700 mb-2">From Terminal on this Mac:</p>
+                  <pre className="text-sm text-gray-900 overflow-x-auto"><code>nomad upgrade compose      <span className="text-gray-500"># admin + mysql + redis + updater</span>
+nomad upgrade ollama       <span className="text-gray-500"># native Ollama via Homebrew</span>
+nomad upgrade all          <span className="text-gray-500"># everything in one pass</span>
+nomad upgrade --check      <span className="text-gray-500"># dry-run, no changes</span></code></pre>
+                </div>
+                <div className="flex justify-center gap-8 text-center">
+                  <div>
+                    <p className="text-sm text-desert-stone mb-1">Current Version</p>
+                    <p className="text-xl font-bold text-desert-green">{versionInfo.currentVersion}</p>
+                  </div>
+                  {versionInfo.updateAvailable && (
+                    <div>
+                      <p className="text-sm text-desert-stone mb-1">Latest Upstream</p>
+                      <p className="text-xl font-bold text-desert-olive">{versionInfo.latestVersion}</p>
+                    </div>
+                  )}
+                </div>
+                {versionInfo.updateAvailable && (
+                  <p className="text-xs text-desert-stone text-center mt-3">
+                    Note: latest-upstream check tracks Crosstalk's published version. Our caweis fork tags
+                    independently as <code className="bg-gray-100 px-1 rounded font-mono">:edge</code> and
+                    <code className="bg-gray-100 px-1 rounded font-mono ml-1">:sha-XXXXXXX</code>.
+                  </p>
+                )}
+              </div>
+            </div>
+          ) : (
           <div className="bg-white rounded-lg border shadow-md overflow-hidden">
             <div className="p-8 text-center">
               <div className="flex justify-center mb-4">{getStatusIcon()}</div>
@@ -581,6 +639,7 @@ export default function SystemUpdatePage(props: { system: Props }) {
               )}
             </div>
           </div>
+          )}
           <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
             <Alert
               type="info"

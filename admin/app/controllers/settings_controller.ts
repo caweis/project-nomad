@@ -89,7 +89,15 @@ export default class SettingsController {
                 updateAvailable: updateInfo.updateAvailable,
                 latestVersion: updateInfo.latestVersion,
                 currentVersion: updateInfo.currentVersion
-            }
+            },
+            // Frontend uses this to hide the self-update Start button on the
+            // macOS distro. Admin's built-in update path tries to rewrite
+            // compose.yaml image tags but only knows the
+            // ghcr.io/crosstalk-solutions/* tag pattern — it can't update
+            // caweis/* images, so it silently fails ("Failed to update
+            // compose.yml image tag — check logs"). The right path on the
+            // macOS distro is `nomad upgrade compose` on the host.
+            isNativeOllama: DockerService.isNativeOllama(),
         });
     }
 
