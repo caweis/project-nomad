@@ -1,5 +1,9 @@
 # Your data drive
 
+{% callout type="info" title="This page is for external-drive installs" %}
+If you chose an external drive (SSD or HDD) as your data root during install, everything below applies. If you installed N.O.M.A.D. onto your Mac's internal disk, the unplug / replug / move-the-drive-to-another-Mac behavior on this page isn't relevant — your data goes wherever the Mac goes. The "What's NOT on the drive" table and the backup guidance at the bottom still apply (those describe internal-disk paths that exist regardless).
+{% /callout %}
+
 On the Mac edition, N.O.M.A.D. is designed so you can unplug the data drive and take it with you — across town, across the country, between Macs. The drive carries the content and models; the Mac itself only carries the database and your secrets.
 
 If a laptop dies, you can plug the drive into another Mac and bring up N.O.M.A.D. with the same content and models. The install code is also on the drive, so the bootstrap doesn't need internet for the install itself (Homebrew, Ollama, and OrbStack still pull their own installers the first time).
