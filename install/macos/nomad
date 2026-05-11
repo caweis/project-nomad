@@ -943,6 +943,22 @@ Make sure your external drive is mounted, or pick another path."
   # before any quarantine has happened.
   mkdir -p "$picked"/{storage,storage/logs,storage/zim-inprogress,ollama-models}
 
+  # Workshop's STL library lives at storage/stl-library/<category>/. The admin
+  # Workshop page reports "data drive holding the STL library is not mounted"
+  # when /app/storage/stl-library is missing — pre-creating the 7 canonical
+  # category dirs (from admin/types/stl_library.ts STL_CATEGORIES) makes the
+  # Workshop page show an empty-but-functional library out of the box instead
+  # of a scary "unavailable" banner. Caught on Chris's 2026-05-11 install
+  # where Workshop showed unavailable despite the drive being mounted.
+  mkdir -p \
+    "$picked"/storage/stl-library/medical \
+    "$picked"/storage/stl-library/tools \
+    "$picked"/storage/stl-library/household \
+    "$picked"/storage/stl-library/replacement-parts \
+    "$picked"/storage/stl-library/agriculture \
+    "$picked"/storage/stl-library/firearm-accessories \
+    "$picked"/storage/stl-library/other
+
   # Drop the portable HTML chat UI on the drive (alongside quick-chat.sh).
   # The shell script launches Ollama, then opens this page in the default browser.
   if [[ -f "$HERE/quick-chat.html" ]]; then
