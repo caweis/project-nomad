@@ -1,5 +1,9 @@
 # Frequently Asked Questions
 
+<!-- MAC-EDITION-LINK — remove this block to sever the macOS-edition pointers throughout this FAQ -->
+> **On macOS?** Several sections below apply differently on the Mac edition — particularly the GPU acceleration sections (Mac uses Apple's Metal GPU automatically; no NVIDIA toolkit), the command-line maintenance section (Mac has its own `nomad` CLI), and the update section (`nomad upgrade` instead of the in-Command-Center button). See [N.O.M.A.D. on Mac](/docs/mac-overview) for the macOS-specific overview. Inline pointers throughout call out the Mac path where the answer differs.
+<!-- /MAC-EDITION-LINK -->
+
 ## General Questions
 
 ### What is N.O.M.A.D.?
@@ -12,13 +16,17 @@ No — that's the whole point. Once your content is downloaded, everything works
 - Sync the latest versions of Wikipedia, maps, etc.
 
 ### What hardware do I need?
-N.O.M.A.D. is designed for capable hardware, especially if you want to use the AI features. Recommended:
+N.O.M.A.D. needs capable hardware, especially for AI features. General targets:
 - Modern multi-core CPU
-- 16GB+ RAM (32GB+ for best AI performance)
-- SSD storage (size depends on content — 500GB minimum, 2TB+ recommended)
-- NVIDIA or AMD GPU recommended for faster AI responses
+- 16GB+ RAM (32GB+ helps with larger AI models)
+- SSD storage. 500GB covers a minimal install; more if you want full Wikipedia, larger AI models, or extensive map regions.
+- A GPU helps for AI inference. On Linux: NVIDIA or AMD with appropriate drivers. On Mac: the built-in Apple Silicon GPU is used automatically via Metal — no separate GPU needed.
 
-**For detailed build recommendations at three price points ($200–$800+), see the [Hardware Guide](https://www.projectnomad.us/hardware).**
+**For detailed build recommendations at three price points ($200–$800+) for Linux installs, see the upstream [Hardware Guide](https://www.projectnomad.us/hardware).**
+
+<!-- MAC-EDITION-LINK — remove this block to sever the macOS hardware note -->
+> **On Mac:** The Mac edition runs on Apple Silicon (M1 / M2 / M3 / M4 or later) with macOS 14 (Sonoma) or newer. The Apple Silicon GPU is used automatically — no NVIDIA Container Toolkit, no driver install. See [Installing N.O.M.A.D. on your Mac](/docs/mac-install) for the Mac-specific prerequisites.
+<!-- /MAC-EDITION-LINK -->
 
 ### How much storage do I need?
 It depends on what you download:
@@ -122,7 +130,15 @@ Local AI requires significant computing power. To improve speed:
 - Ensure adequate cooling (overheating causes throttling)
 - Consider using a smaller/faster AI model if available
 
+<!-- MAC-EDITION-LINK — remove this block to sever the macOS AI-speed note -->
+> **On Mac:** The Mac edition uses native Ollama with Metal GPU access automatically — there's no NVIDIA toolkit or container setup. If AI feels slow on Mac, see [AI Assistant on Mac](/docs/mac-ai-assistant) for tier/model picks, and try `nomad reset-ollama` from Terminal (described in [The `nomad` command](/docs/mac-nomad-cli)) before assuming it's a hardware issue.
+<!-- /MAC-EDITION-LINK -->
+
 ### How do I enable GPU acceleration for AI?
+
+<!-- MAC-EDITION-LINK — remove this block to sever the macOS GPU-acceleration note -->
+> **On Mac:** GPU acceleration is automatic on Apple Silicon — there are no setup steps. The NVIDIA-specific instructions below are for Linux installs. See [AI Assistant on Mac](/docs/mac-ai-assistant) for what Metal GPU access gives you (and what to expect tier-by-tier).
+<!-- /MAC-EDITION-LINK -->
 
 N.O.M.A.D. automatically detects NVIDIA GPUs when the NVIDIA Container Toolkit is installed on the host system. To set up GPU acceleration:
 
@@ -214,6 +230,10 @@ Kolibri passwords are managed separately:
 3. The system will download updates and restart automatically
 4. This typically takes 2-5 minutes
 
+<!-- MAC-EDITION-LINK — remove this block to sever the macOS update note -->
+> **On Mac:** The in-Command-Center update button is disabled on the Mac edition because it's designed for the upstream Docker-based Linux install and doesn't fit the Mac edition's mix of native and containerized software. Use `nomad upgrade` from Terminal instead — see [Updating](/docs/mac-updates) for the full flow (`nomad self-update`, `nomad upgrade`, per-service upgrades).
+<!-- /MAC-EDITION-LINK -->
+
 ### Should I update regularly?
 Yes, while you have internet access. Updates include:
 - Bug fixes
@@ -236,6 +256,10 @@ The system is designed to recover gracefully. If an update fails:
 3. Check Settings → System for error messages
 
 ### Command-Line Maintenance
+
+<!-- MAC-EDITION-LINK — remove this block to sever the macOS CLI note -->
+> **On Mac:** The Mac edition uses its own `nomad` CLI installed at `$(brew --prefix)/bin/nomad` — `nomad up`, `nomad down`, `nomad restart`, `nomad upgrade`, `nomad uninstall`, `nomad check`, `nomad self-update`, and more. The `/opt/project-nomad/*.sh` scripts described below are for upstream Linux installs and don't exist on the Mac edition. See [The `nomad` command](/docs/mac-nomad-cli) for the full reference.
+<!-- /MAC-EDITION-LINK -->
 
 For advanced troubleshooting or when you can't access the web interface, N.O.M.A.D. includes helper scripts in `/opt/project-nomad`:
 
