@@ -71,4 +71,10 @@ Full reference: [`install/macos/README.md`](./install/macos/README.md).
 
 Active work is on [`feat/macos-distribution-layer`](https://github.com/caweis/project-nomad/tree/feat/macos-distribution-layer). Validated end-to-end on a Mac mini M4 with 32 GB. Weekly upstream-diff reports land in [Issues](https://github.com/caweis/project-nomad/issues?q=label%3Aupstream-tracking).
 
+## Versioning
+
+This fork uses an independent SemVer scheme with a `-macos` pre-release suffix. The label in `package.json` (and the admin About panel) reflects fork releases, **not** upstream's `1.x.x` line.
+
+Our merge-base with upstream is commit [`c668396`](https://github.com/Crosstalk-Solutions/project-nomad/commit/c668396) (October 2025). Upstream changes from `v1.29.1` → `v1.31.1` (and now `v1.32.0-rc`) are forward-ported commit-by-commit when applicable; the fork's version label is bumped on its own cadence rather than tracking upstream's numbers. This makes the fork status explicit instead of implying a feature parity the code may not have.
+
 Apache-2.0.
