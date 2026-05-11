@@ -5,6 +5,7 @@ import StyledTable from '~/components/StyledTable'
 import StyledSectionHeader from '~/components/StyledSectionHeader'
 import ActiveDownloads from '~/components/ActiveDownloads'
 import Alert from '~/components/Alert'
+import HostCommandButton from '~/components/HostCommandButton'
 import { useEffect, useState } from 'react'
 import { IconAlertCircle, IconArrowBigUpLines, IconCheck, IconCircleCheck, IconReload } from '@tabler/icons-react'
 import { SystemUpdateStatus } from '../../../types/system'
@@ -461,11 +462,18 @@ export default function SystemUpdatePage(props: {
                   (<code className="bg-gray-100 px-1.5 py-0.5 mx-1 rounded font-mono text-sm">ghcr.io/caweis/project-nomad-macos-arm64</code>).
                 </p>
                 <div className="bg-gray-50 border border-gray-200 rounded p-4 mb-4">
-                  <p className="text-sm font-semibold text-gray-700 mb-2">From Terminal on this Mac:</p>
-                  <pre className="text-sm text-gray-900 overflow-x-auto"><code>nomad upgrade admin        <span className="text-gray-500"># just the Command Center container</span>
-nomad upgrade ollama       <span className="text-gray-500"># native Ollama via Homebrew</span>
-nomad upgrade              <span className="text-gray-500"># everything in one pass (admin + ollama + content services)</span>
-nomad upgrade --check      <span className="text-gray-500"># dry-run, no changes</span></code></pre>
+                  <p className="text-sm font-semibold text-gray-700 mb-3">Run an update:</p>
+                  <div className="flex flex-wrap items-center gap-3 mb-3">
+                    <HostCommandButton cmd="upgrade-admin" label="Update Command Center" />
+                    <HostCommandButton cmd="upgrade-ollama" label="Update AI Assistant" />
+                    <HostCommandButton cmd="upgrade-all" label="Update Everything" />
+                  </div>
+                  <p className="text-xs text-gray-600">
+                    Each button dispatches the matching <code className="bg-gray-100 px-1 rounded font-mono">nomad upgrade</code> command on the host
+                    via the host-command-bridge LaunchAgent. From a Terminal on this Mac you can also run
+                    <code className="bg-gray-100 px-1.5 py-0.5 mx-1 rounded font-mono">nomad upgrade --check</code>
+                    for a dry-run preview without applying changes.
+                  </p>
                 </div>
                 <div className="flex justify-center gap-8 text-center">
                   <div>

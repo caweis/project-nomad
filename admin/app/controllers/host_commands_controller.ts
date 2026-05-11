@@ -39,6 +39,7 @@ export default class HostCommandsController {
   private static readonly ALLOWED_COMMANDS = new Set([
     'upgrade-ollama',
     'upgrade-admin',
+    'upgrade-all',
     'reset-ollama',
     'fix-kiwix',
     'self-update',
@@ -82,6 +83,15 @@ export default class HostCommandsController {
     }
   }
 
+  /**
+   * Max age (seconds) of a .pending marker before we declare the host-side
+   * LaunchAgent is missing / hung. The bridge polls every 2s; even with worst-
+   * case scheduling jitter and a slow first run, a .pending file should
+   * transition to .in-progress within ~30s. Anything older = nothing is
+   * listening, and we should tell the user instead of spinning forever.
+   */
+  private static readonly PENDING_STALE_AFTER_SECONDS = 30
+
   public async status({ params, response }: HttpContext) {
     const cmd = params.cmd as string
     if (!HostCommandsController.ALLOWED_COMMANDS.has(cmd)) {
@@ -97,6 +107,29 @@ export default class HostCommandsController {
       return response.json({ status: 'in-progress', cmd })
     }
     if (await this.exists(pendingPath)) {
+      // If the .pending file has sat there longer than the bridge's polling
+      // window, the host-side LaunchAgent isn't installed (or isn't running).
+      // Return a clear error instead of letting the UI spin forever.
+      try {
+        const stat = await fs.stat(pendingPath)
+        const ageSeconds = (Date.now() - stat.mtimeMs) / 1000
+        if (ageSeconds > HostCommandsController.PENDING_STALE_AFTER_SECONDS) {
+          logger.warn(
+            { cmd, ageSeconds, pendingPath },
+            '[HostCommands] pending marker is stale — host-command-bridge LaunchAgent appears not to be running'
+          )
+          // Clean up the stale marker so a future click can retry cleanly
+          await fs.unlink(pendingPath).catch(() => {})
+          return response.json({
+            status: 'bridge-not-installed',
+            cmd,
+            help: 'The host-side command bridge is not running on this Mac. From Terminal, run `nomad install-bridge` to install the LaunchAgent. Or run `nomad upgrade ollama` (and similar commands) directly from Terminal — that path always works.',
+          })
+        }
+      } catch {
+        // If we can't stat the file (race with the LaunchAgent picking it up),
+        // fall through to reporting pending and let the next poll resolve it
+      }
       return response.json({ status: 'pending', cmd })
     }
     if (await this.exists(resultPath)) {

@@ -6,6 +6,7 @@ import { NomadOllamaModel } from '../../../types/ollama'
 import StyledButton from '~/components/StyledButton'
 import useServiceInstalledStatus from '~/hooks/useServiceInstalledStatus'
 import Alert from '~/components/Alert'
+import HostCommandButton from '~/components/HostCommandButton'
 import { useNotifications } from '~/context/NotificationContext'
 import api from '~/lib/api'
 import { useModals } from '~/context/ModalContext'
@@ -251,16 +252,19 @@ export default function ModelsPage(props: {
           {/* Positive banner replaces the GPU-passthrough warnings on native
               Ollama — the macOS distro runs Ollama as a Homebrew LaunchAgent
               with direct Metal access; there's no Docker passthrough to fail.
-              Upgrade path is `nomad upgrade ollama` on the host, not the
-              admin UI. */}
+              Update path goes through host-command-bridge — admin posts to
+              /api/host-commands/upgrade-ollama, the LaunchAgent runs
+              `nomad upgrade ollama` on the host. */}
           {props.isNativeOllama && (
             <Alert
               type="success"
               variant="bordered"
               title="Native Ollama — Metal-accelerated"
-              message={`${aiAssistantName} is running natively on this Mac's Homebrew Ollama and using Apple Silicon's GPU directly (Metal). To upgrade Ollama itself, run \`nomad upgrade ollama\` on the host — the admin UI's Update button only manages Docker-container installs.`}
+              message={`${aiAssistantName} is running natively on this Mac's Homebrew Ollama and using Apple Silicon's GPU directly (Metal). Update via the button below — it runs \`nomad upgrade ollama\` on the host.`}
               className="!mt-6"
-            />
+            >
+              <HostCommandButton cmd="upgrade-ollama" label="Update Ollama" />
+            </Alert>
           )}
           {/* GPU-passthrough-failed banner only makes sense on container
               Ollama. Native installs always pass through to Metal — the

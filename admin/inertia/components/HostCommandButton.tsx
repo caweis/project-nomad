@@ -10,6 +10,7 @@ import { DynamicIconName } from './DynamicIcon'
 export type HostCommandName =
   | 'upgrade-ollama'
   | 'upgrade-admin'
+  | 'upgrade-all'
   | 'reset-ollama'
   | 'fix-kiwix'
   | 'self-update'
@@ -17,7 +18,7 @@ export type HostCommandName =
 export interface HostCommandButtonProps {
   cmd: HostCommandName
   label: string
-  /** Override default success message. Default: `✓ Done in {duration_seconds}s` */
+  /** Override default success message. Default: `✓ Updated in {duration_seconds}s` */
   successLabel?: string
   disabled?: boolean
   icon?: DynamicIconName
@@ -45,13 +46,15 @@ export default function HostCommandButton({
   variant = 'primary',
   size,
 }: HostCommandButtonProps) {
-  const [status, setStatus] = useState<'idle' | 'pending' | 'in-progress' | 'completed'>('idle')
+  const [status, setStatus] = useState<'idle' | 'pending' | 'in-progress' | 'completed' | 'bridge-not-installed'>('idle')
   const [result, setResult] = useState<{ exit_code: number; duration_seconds: number } | null>(null)
+  const [bridgeHelp, setBridgeHelp] = useState<string | null>(null)
 
   const isBusy = status === 'pending' || status === 'in-progress'
 
   const onClick = async () => {
     setResult(null)
+    setBridgeHelp(null)
     setStatus('pending')
     try {
       const res = await fetch(`/api/host-commands/${cmd}`, { method: 'POST' })
@@ -76,6 +79,12 @@ export default function HostCommandButton({
           setStatus('completed')
         } else if (body.status === 'in-progress' && status !== 'in-progress') {
           setStatus('in-progress')
+        } else if (body.status === 'bridge-not-installed') {
+          // The host-side LaunchAgent isn't running — clicking does nothing
+          // unless the user installs it. Surface the help message inline so
+          // the button doesn't spin forever.
+          setBridgeHelp(body.help || 'Run `nomad install-bridge` on the host to enable this button.')
+          setStatus('bridge-not-installed')
         }
       } catch {
         // transient — keep polling
@@ -98,11 +107,16 @@ export default function HostCommandButton({
       </StyledButton>
       {status === 'completed' && result && result.exit_code === 0 && (
         <span className="text-xs text-emerald-700">
-          {successLabel ?? `✓ Done in ${result.duration_seconds}s`}
+          {successLabel ?? `✓ Updated in ${result.duration_seconds}s`}
         </span>
       )}
       {status === 'completed' && result && result.exit_code !== 0 && (
         <span className="text-xs text-red-700">✗ Failed (exit {result.exit_code})</span>
+      )}
+      {status === 'bridge-not-installed' && bridgeHelp && (
+        <span className="text-xs text-amber-800 max-w-md">
+          ⚠ Host-command bridge not running. {bridgeHelp}
+        </span>
       )}
     </div>
   )

@@ -26,77 +26,6 @@ function extractTag(containerImage: string): string {
   return parts.length > 1 ? parts[parts.length - 1] : 'latest'
 }
 
-/**
- * Update button for the Native (Metal) Ollama row. Matches the standard
- * project-nomad Update button pattern (IconArrowUp + "Update" + primary
- * variant) used on every other service row. The only difference is the
- * action endpoint: instead of POSTing to /api/system/services/update
- * (which goes through DockerService and refuses for native installs),
- * this routes through /api/host-commands/upgrade-ollama, which the
- * host-command-bridge LaunchAgent picks up and runs as `nomad upgrade
- * ollama` on the host.
- */
-function UpgradeOllamaButton({ disabled }: { disabled?: boolean }) {
-  const [status, setStatus] = useState<'idle' | 'pending' | 'in-progress' | 'completed'>('idle')
-  const [result, setResult] = useState<{ exit_code: number; duration_seconds: number } | null>(null)
-
-  const isBusy = status === 'pending' || status === 'in-progress'
-
-  const onClick = async () => {
-    setResult(null)
-    setStatus('pending')
-    try {
-      const res = await fetch('/api/host-commands/upgrade-ollama', { method: 'POST' })
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
-        throw new Error(body.error || `Server returned ${res.status}`)
-      }
-    } catch {
-      setStatus('idle')
-    }
-  }
-
-  useEffect(() => {
-    if (!isBusy) return
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch('/api/host-commands/upgrade-ollama')
-        if (!res.ok) return
-        const body = await res.json()
-        if (body.status === 'completed') {
-          setResult({ exit_code: body.exit_code, duration_seconds: body.duration_seconds })
-          setStatus('completed')
-        } else if (body.status === 'in-progress' && status !== 'in-progress') {
-          setStatus('in-progress')
-        }
-      } catch {
-        // transient — keep polling
-      }
-    }, 2000)
-    return () => clearInterval(interval)
-  }, [isBusy, status])
-
-  return (
-    <>
-      <StyledButton
-        icon="IconArrowUp"
-        variant="primary"
-        onClick={onClick}
-        disabled={disabled || isBusy}
-        loading={isBusy}
-      >
-        Update
-      </StyledButton>
-      {status === 'completed' && result && result.exit_code === 0 && (
-        <span className="text-xs text-emerald-700">✓ Updated in {result.duration_seconds}s</span>
-      )}
-      {status === 'completed' && result && result.exit_code !== 0 && (
-        <span className="text-xs text-red-700">✗ Update failed (exit {result.exit_code})</span>
-      )}
-    </>
-  )
-}
-
 export default function SettingsPage(props: {
   system: { services: ServiceSlim[] }
   // True when admin is configured to talk to a native (Homebrew) Ollama at
@@ -329,7 +258,7 @@ export default function SettingsPage(props: {
           >
             Native (Metal)
           </span>
-          <UpgradeOllamaButton disabled={!isOnline} />
+          <HostCommandButton cmd="upgrade-ollama" label="Update" disabled={!isOnline} />
         </div>
       )
     }
