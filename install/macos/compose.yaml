@@ -97,6 +97,53 @@ services:
       timeout: 10s
       retries: 3
 
+  # admin's BullMQ workers — separate container so the HTTP server doesn't
+  # block on long-running jobs (ZIM downloads, model pulls, benchmark runs,
+  # RAG embedding jobs). Uses the same admin image but runs `queue:work
+  # --all` instead of the HTTP server. Without this container, jobs queue
+  # to Redis and never get consumed — Easy Setup downloads stuck at 0%,
+  # model downloads never start, benchmarks never run.
+  #
+  # Discovered missing on Chris's mini install 2026-05-10: he picked
+  # content in the wizard and everything stayed at 0% indefinitely.
+  # Likely also missing in upstream Crosstalk's published compose but
+  # masked because their `easy-setup` flow happens to no-op cleanly.
+  admin-worker:
+    image: ${NOMAD_ADMIN_IMAGE:-ghcr.io/caweis/project-nomad-macos-arm64:edge}
+    pull_policy: always
+    container_name: nomad_admin_worker
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ${NOMAD_DATA_ROOT}/storage:/app/storage
+      - /var/run/docker.sock:/var/run/docker.sock
+      - nomad-update-shared:/app/update-shared
+    environment:
+      - NODE_ENV=production
+      - LOG_LEVEL=info
+      - APP_KEY=${APP_KEY}
+      - URL=${URL}
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_DATABASE=nomad
+      - DB_USER=nomad_user
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=nomad
+      - DB_SSL=false
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - NOMAD_STORAGE_PATH=${NOMAD_DATA_ROOT}/storage
+      - APPLE_CHIP_MODEL=${APPLE_CHIP_MODEL:-}
+      - APPLE_GPU_MODEL=${APPLE_GPU_MODEL:-}
+      - HOST_PLATFORM=${HOST_PLATFORM:-darwin}
+      - OLLAMA_HOST=http://host.docker.internal:11434
+    depends_on:
+      mysql: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      admin: { condition: service_started }   # let migrations run first
+    command: ["node", "ace", "queue:work", "--all"]
+
   dozzle:
     image: amir20/dozzle:v10.0
     container_name: nomad_dozzle
