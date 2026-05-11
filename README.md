@@ -7,7 +7,7 @@
 
 A fork of [Crosstalk-Solutions/project-nomad](https://github.com/Crosstalk-Solutions/project-nomad) targeting macOS on Apple Silicon. NOMAD is an offline-first knowledge server — Wikipedia, regional maps, AI chat, Khan Academy, reference libraries — running on hardware you own.
 
-NOMAD upstream is built for Linux with NVIDIA GPUs. Getting it onto Macs has been years of work by people who did the hard parts — NoamanKhalil ported the foundation, proximasan added the Apple Silicon admin patches, snfettig wired native Ollama to Metal. This repo is one more step in that line: a multi-arch rebuild of the admin image, install-pipeline fixes for things fresh Macs were hitting, and a `nomad` command that bundles install, upgrades, and lifecycle into one place from the Terminal. Standing on a lot of shoulders.
+NOMAD upstream is built for Linux with NVIDIA GPUs. The macOS port came together over the last few months — NoamanKhalil ported the foundation, proximasan added the Apple Silicon admin patches, snfettig wired native Ollama to Metal. This repo is one more step in that line: a multi-arch rebuild of the admin image, install-pipeline fixes for things fresh Macs were hitting, and a `nomad` command that bundles install, upgrades, and lifecycle into one place from the Terminal. Standing on a lot of shoulders.
 
 Useful for people who want their own offline knowledge node: preppers, homeschoolers, off-grid setups, classroom labs, family servers.
 
@@ -37,7 +37,7 @@ The admin home page has tiles for:
 - **Notes** — local-only notebook.
 - **Data Tools** — CyberChef for encoding / encryption / data conversion.
 
-Reachable from other devices on the same network. The data drive can be unplugged for travel and the management plane keeps running; plug back in to restore content.
+Reachable from other devices on the same network. The data drive can be unplugged for travel and the management plane keeps running; plug back in to restore content. Plug the drive into any other Apple Silicon Mac and double-click `install-nomad.command` at the drive root to set up NOMAD there from the bundled installer (no internet needed for the install code itself).
 
 ## What's different from upstream
 
