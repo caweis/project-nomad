@@ -20,6 +20,12 @@
 #   bash nomad downloads [list|cancel ID|remove ID]   # admin's job queue
 #   bash nomad zim wikipedia [state|select VARIANT]   # Wikipedia download state
 #   bash nomad zim [list|remote]
+#   bash nomad stl [list|scan|import DIR [CAT]|path]  # Workshop STL library:
+#                                            # list = admin's catalog;
+#                                            # scan = rescan disk → index;
+#                                            # import = copy files into the
+#                                            # library + auto-rescan;
+#                                            # path = print the library root
 #   bash nomad services [list|install NAME|affect ACTION NAME]
 #   bash nomad system [info|debug|internet]
 #   bash nomad api PATH [JSON_BODY]          # raw admin API call (escape hatch)
@@ -3560,6 +3566,96 @@ or wait for admin to spawn kiwix once a ZIM finishes downloading."
   fi
 }
 
+# Workshop / Offline STL Library — host-side CLI.
+# Subcommands:
+#   nomad stl scan                   Trigger an admin-side rescan of the library.
+#                                    Same code path as the UI's Rescan button.
+#   nomad stl import <DIR> [CAT]     Copy every .stl/.3mf from <DIR> into
+#                                    ${NOMAD_DATA_ROOT}/storage/stl-library/<CAT>/
+#                                    and trigger a rescan. CAT defaults to 'other'.
+#   nomad stl list                   Show what's indexed (calls admin API).
+#   nomad stl path                   Print the absolute library root on the host.
+cmd_stl() {
+  local sub="${1:-list}"
+  shift || true
+
+  # Resolve the host-side library root from .env (NOMAD_DATA_ROOT). The
+  # subcommands need this for file copies + path display.
+  local data_root library_root
+  if [[ -f "$ENV_FILE" ]]; then
+    data_root="$(grep '^NOMAD_DATA_ROOT=' "$ENV_FILE" 2>/dev/null | cut -d= -f2-)"
+  fi
+  if [[ -z "${data_root:-}" ]]; then
+    die "NOMAD_DATA_ROOT not set in $ENV_FILE — run 'nomad install' first"
+  fi
+  library_root="$data_root/storage/stl-library"
+
+  case "$sub" in
+    path)
+      echo "$library_root"
+      ;;
+    list)
+      api_check_up
+      api_get /api/workshop?per_page=200 | jq '.files // .' 2>/dev/null || true
+      ;;
+    scan)
+      api_check_up
+      log "triggering Workshop rescan…"
+      local result
+      result="$(api_post /api/workshop/scan '' 2>&1)"
+      echo "$result" | jq . 2>/dev/null || echo "$result"
+      ;;
+    import)
+      local src_dir="${1:-}"
+      local category="${2:-other}"
+      [[ -z "$src_dir" ]] && die "usage: nomad stl import <DIR> [CATEGORY]
+Categories: medical | tools | household | replacement-parts | agriculture | firearm-accessories | other"
+      [[ ! -d "$src_dir" ]] && die "not a directory: $src_dir"
+
+      # Validate category against the seven known values. Falls back to 'other'
+      # with a warning rather than aborting — the user can fix it in the UI.
+      case "$category" in
+        medical|tools|household|replacement-parts|agriculture|firearm-accessories|other)
+          : ;;
+        *)
+          warn "unknown category '$category' — using 'other'. Edit in Workshop UI to recategorize."
+          category="other"
+          ;;
+      esac
+
+      local dest_dir="$library_root/$category"
+      mkdir -p "$dest_dir" || die "couldn't create $dest_dir — is the data drive mounted?"
+
+      # Walk src_dir for .stl/.3mf and copy into category subdir.
+      # Using cp -n (no-clobber) so re-running import doesn't overwrite existing
+      # files in the library — manual fix is to delete from Workshop UI first.
+      local count=0 skipped=0
+      while IFS= read -r src; do
+        local base; base="$(basename "$src")"
+        if [[ -e "$dest_dir/$base" ]]; then
+          warn "skipping $base — already exists in $category/"
+          skipped=$((skipped + 1))
+          continue
+        fi
+        cp "$src" "$dest_dir/$base" && count=$((count + 1))
+      done < <(find "$src_dir" -type f \( -iname '*.stl' -o -iname '*.3mf' \) 2>/dev/null)
+
+      ok "imported $count file(s) → $dest_dir  (skipped $skipped existing)"
+
+      # Trigger rescan if admin is up; otherwise tell the user how to run it.
+      if curl -fsS --max-time 2 http://127.0.0.1:8080/api/health >/dev/null 2>&1; then
+        log "triggering Workshop rescan…"
+        api_post /api/workshop/scan '' | jq . 2>/dev/null || true
+      else
+        warn "admin not running — rescan will happen on next 'nomad up' + UI visit"
+      fi
+      ;;
+    *)
+      die "unknown subcommand: $sub
+usage: nomad stl [scan|import DIR [CATEGORY]|list|path]" ;;
+  esac
+}
+
 # Free disk space and clean up install-generated detritus without touching any
 # of the data or state the user wants to keep. Removes:
 #   • /tmp/nomad-*.log  (compose pull logs, bootstrap logs, etc.)
@@ -3724,6 +3820,7 @@ case "$CMD" in
   upgrade-models)  cmd_upgrade_models ;;
   downloads)       cmd_downloads "${EXTRA_ARGS[@]:-list}" ;;
   zim)             cmd_zim       "${EXTRA_ARGS[@]:-list}" ;;
+  stl)             cmd_stl       "${EXTRA_ARGS[@]:-list}" ;;
   services)        cmd_services  "${EXTRA_ARGS[@]:-list}" ;;
   system)          cmd_system    "${EXTRA_ARGS[@]:-info}" ;;
   api)             cmd_api       "${EXTRA_ARGS[@]}" ;;
@@ -3735,7 +3832,7 @@ case "$CMD" in
   uninstall)       cmd_uninstall ;;
   reinstall)       cmd_reinstall ;;
   help|--help|-h)
-    sed -n '2,39p' "$0" | sed 's/^# //; s/^#//'
+    sed -n '2,45p' "$0" | sed 's/^# //; s/^#//'
     ;;
   *) die "unknown command: $CMD
 Run 'nomad help' for usage." ;;
