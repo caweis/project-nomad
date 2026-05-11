@@ -2506,15 +2506,43 @@ _upgrade_native_ollama() {
     return 0
   fi
   log "running brew update + brew upgrade ollama…"
-  brew update >/dev/null 2>&1
-  if brew upgrade ollama 2>&1 | tail -10; then
-    ok "ollama upgraded (or already at latest)"
-    log "restarting native Ollama LaunchAgent…"
-    cmd_reset_ollama
-    ok "native Ollama back up with current version: $(brew list --versions ollama 2>/dev/null | awk '{print $2}')"
-  else
+  brew update >/dev/null 2>&1 || warn "brew update returned non-zero (network? formula tap?) — continuing with cached formulas"
+  if ! brew upgrade ollama 2>&1 | tail -10; then
     warn "brew upgrade ollama exited non-zero"
+    return 1
   fi
+  ok "ollama upgraded (or already at latest)"
+  log "restarting native Ollama LaunchAgent…"
+  cmd_reset_ollama
+
+  # Don't claim success until Ollama's actually responding. The LaunchAgent
+  # comes up async — between `launchctl bootstrap` returning and Ollama
+  # binding :11434 there's typically 2-8 seconds of nothing. Without this
+  # wait, the next `nomad models` or admin API call may hit ECONNREFUSED.
+  log "waiting up to 30s for Ollama API on :11434…"
+  local waited=0
+  while [[ "$waited" -lt 30 ]]; do
+    if curl -fsS --max-time 2 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+      ok "native Ollama back up with current version: $(brew list --versions ollama 2>/dev/null | awk '{print $2}')"
+      return 0
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+
+  # Never came back. Dump diagnostic state so the user can see WHY before
+  # they ssh in and start poking around.
+  warn "Ollama API didn't respond within 30s after upgrade — daemon may have failed to start"
+  local plist_label="com.projectnomad.ollama"
+  log "launchctl state for $plist_label:"
+  launchctl list 2>/dev/null | awk -v label="$plist_label" '$3==label {print "  PID="$1" rc="$2" label="$3}' | sed 's/^/  /'
+  local err_log="$HOME/Library/Logs/nomad-ollama.err.log"
+  if [[ -s "$err_log" ]]; then
+    log "tail of $err_log:"
+    tail -20 "$err_log" | sed 's/^/  /'
+  fi
+  log "recovery: try 'nomad reset-ollama', or 'tail -f $err_log' to watch the daemon retry"
+  return 1
 }
 
 _upgrade_kiwix() {
