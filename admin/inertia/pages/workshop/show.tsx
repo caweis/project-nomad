@@ -85,12 +85,29 @@ export default function WorkshopShow(props: PageProps) {
         throw new Error(body.message || `HTTP ${res.status}`)
       }
       const data = await res.json()
-      setMessage({
-        kind: 'ok',
-        text: data.metadata_pending
-          ? 'Saved — still missing required metadata (name, material, print time, difficulty)'
-          : 'Saved — file is fully cataloged',
-      })
+      // Compute which required fields are still missing so the toast can
+      // tell the user the truth (the previous hardcoded message listed all
+      // four required fields even when three were filled — looked like the
+      // save hadn't persisted anything). Logic mirrors
+      // StlFile.isMetadataComplete on the server.
+      const missing: string[] = []
+      if (!form.name || !form.name.trim()) missing.push('name')
+      if (!form.material) missing.push('material')
+      if (form.print_time_minutes === '' || Number(form.print_time_minutes) <= 0) {
+        missing.push('print time')
+      }
+      if (!form.difficulty) missing.push('difficulty')
+
+      let text: string
+      if (!data.metadata_pending) {
+        text = 'Saved — file is fully cataloged'
+      } else if (missing.length > 0) {
+        text = `Saved — still missing required metadata: ${missing.join(', ')}`
+      } else {
+        // Client/server logic mismatch fallback — shouldn't normally hit this.
+        text = 'Saved — still missing required metadata'
+      }
+      setMessage({ kind: 'ok', text })
       // Refresh the file prop so the rest of the page mirrors the new state.
       router.reload({ only: ['file'] })
     } catch (err) {
