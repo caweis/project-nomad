@@ -49,17 +49,17 @@ Optional fields:
 - **Infill %** — your typical infill setting.
 - **Description** — print notes, source notes, anything useful.
 - **Source URL** — where you got the file. Helpful when you want to find updates or related files later.
-- **License** — freeform. CC0, CC-BY, "my own work", whatever you know. There's no enforced format — see the rights modal explanation below.
+- **License** — freeform. CC0, CC-BY, "my own work", whatever you know. There's no enforced format — see the rights acknowledgment below.
 
 ---
 
-## The rights modal
+## The rights acknowledgment
 
-The first time you open Workshop, you'll see a modal explaining that you're responsible for ensuring you have the right to store every file you put in the library. Workshop doesn't check licenses, doesn't enforce anything, doesn't talk to external services. What you put in your private library is your call, and your liability.
+The first time you open Workshop, you'll see a one-time acknowledgment titled "Use at your own peril" — it explains that you're responsible for ensuring you have the right to store every file you put in the library. Workshop doesn't check licenses, doesn't enforce anything, doesn't talk to external services. What you put in your private library is your call, and your liability.
 
 If you're unsure about a file, leave it out. The optional `license` field per file is there for tracking — write down what you know about the file's terms so you remember later. But Workshop won't refuse to show you anything based on that field.
 
-You only see the modal once. Click "I understand" and it stays dismissed.
+You only see this once. Click "I understand — let me into Workshop" and it stays dismissed for all future visits.
 
 ---
 
