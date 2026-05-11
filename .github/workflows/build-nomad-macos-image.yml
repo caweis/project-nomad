@@ -19,6 +19,7 @@ on:
     paths:
       - 'admin/**'
       - 'Dockerfile'
+      - 'package.json'
       - '.github/workflows/build-nomad-macos-image.yml'
     tags:
       - 'v*'
