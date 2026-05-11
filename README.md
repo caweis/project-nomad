@@ -37,7 +37,7 @@ The admin home page has tiles for:
 - **Notes** — local-only notebook.
 - **Data Tools** — CyberChef for encoding / encryption / data conversion.
 
-Reachable from other devices on the same network. The data drive can be unplugged for travel and the management plane keeps running; plug back in to restore content.
+Reachable from other devices on the same network. The data drive can be unplugged for travel and the management plane keeps running; plug back in to restore content. Plug the drive into any other Apple Silicon Mac and double-click `install-nomad.command` at the drive root to set up NOMAD there from the bundled installer (no internet needed for the install code itself).
 
 ## What's different from upstream
 

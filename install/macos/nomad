@@ -986,8 +986,134 @@ QUICK_CHAT_EOF
   chmod +x "$picked/quick-chat.sh"
   ok "quick-chat.sh deployed to $picked/quick-chat.sh  (portable across Macs)"
 
+  # Mirror the install/macos/ bundle to the drive so that plugging this
+  # drive into ANY other Apple Silicon Mac is enough to bootstrap a full
+  # NOMAD install on that Mac — no need to download the bundle from
+  # GitHub first. quick-chat.sh handles the LLM-chat-only path; this is
+  # the full-install path.
+  local bundle_dst="$picked/install-bundle"
+  rm -rf "$bundle_dst"
+  mkdir -p "$bundle_dst"
+  # cp -R "$HERE/." copies the CONTENTS of HERE, not HERE itself.
+  # Exclude obvious junk that would only confuse a future install.
+  cp -R "$HERE/." "$bundle_dst/" 2>/dev/null || cp -R "$HERE/" "$bundle_dst/"
+  rm -f "$bundle_dst"/*.bak "$bundle_dst"/*-latest.log "$bundle_dst"/nomad-check-*.log 2>/dev/null || true
+  chmod +x "$bundle_dst/nomad" 2>/dev/null || true
+  ok "install bundle mirrored to $bundle_dst  (offline-bootstrap on any other Mac)"
+
+  # Drop the bootstrap entry-point at the drive's nomad root so a user
+  # plugging the drive into a fresh Mac sees one obvious thing to
+  # double-click. The script self-detects existing installs and either
+  # opens admin in browser, runs check, or kicks off a fresh install
+  # from the bundle next to it.
+  cat > "$picked/install-nomad.command" <<INSTALL_NOMAD_EOF
+#!/usr/bin/env bash
+# install-nomad.command — Project NOMAD bootstrap from the data drive.
+#
+# Double-click this from any Apple Silicon Mac that has the NOMAD data
+# drive plugged in. The script:
+#   1. Detects whether NOMAD is already installed on this Mac
+#   2. If yes: shows status + offers to open admin or run \`nomad check\`
+#   3. If no: confirms with the user, then runs the installer from
+#      the bundle on this drive — no internet fetch required for the
+#      install code itself (Homebrew/Ollama/Docker still need network
+#      for first-time downloads)
+#
+# Logs to install-nomad-<timestamp>.log next to this file for any
+# post-mortem reading you might want later.
+
+set -uo pipefail
+
+HERE="\$( cd "\$(dirname "\$0")" && pwd -P )"
+LOG="\$HERE/install-nomad-\$(date +%Y%m%d-%H%M%S).log"
+exec > >(tee -a "\$LOG") 2>&1
+
+cat <<BANNER
+═══════════════════════════════════════════════════════════
+  Project NOMAD — drive bootstrap
+  \$(date)
+  log: \$LOG
+═══════════════════════════════════════════════════════════
+BANNER
+
+# Detect existing install (CLI symlink + active .env)
+NOMAD_BIN=""
+NOMAD_ENV=""
+if command -v nomad >/dev/null 2>&1; then
+  NOMAD_BIN="\$(command -v nomad)"
+fi
+if [[ -f "\$HOME/.config/project-nomad/.env" ]]; then
+  NOMAD_ENV="\$HOME/.config/project-nomad/.env"
+fi
+
+if [[ -n "\$NOMAD_BIN" && -n "\$NOMAD_ENV" ]]; then
+  echo "NOMAD is already installed on this Mac:"
+  echo "  CLI:   \$NOMAD_BIN"
+  echo "  .env:  \$NOMAD_ENV"
+  echo
+  echo "What would you like to do?"
+  echo "  [1] Open admin in browser (http://localhost:8080)"
+  echo "  [2] Run 'nomad check' to diagnose"
+  echo "  [3] Reinstall from this drive's bundle"
+  echo "  [Q] Quit"
+  echo
+  read -r -p "Choice [1]: " choice
+  case "\${choice:-1}" in
+    1)
+      /usr/bin/open "http://localhost:8080"
+      ;;
+    2)
+      "\$NOMAD_BIN" check
+      ;;
+    3)
+      echo
+      echo "Running fresh install from this drive's bundle..."
+      bash "\$HERE/install-bundle/nomad" install
+      ;;
+    *)
+      echo "Bye."
+      ;;
+  esac
+  exit 0
+fi
+
+# Not installed — confirm + run
+echo "NOMAD is not installed on this Mac."
+echo
+echo "This will install:"
+echo "  • Homebrew (if missing), Xcode CLT, Rosetta 2"
+echo "  • OrbStack (Docker for macOS)"
+echo "  • Native Ollama via Homebrew (Metal-accelerated chat)"
+echo "  • The Project NOMAD container stack"
+echo "  • Background LaunchAgents (kiwix self-heal, benchmark patcher)"
+echo
+echo "When the installer asks where to store data, pick this drive."
+echo "(It's offered as option [1] External in the prompt.)"
+echo
+read -r -p "Proceed with install? [y/N] " yn
+if [[ ! "\$yn" =~ ^[Yy]\$ ]]; then
+  echo "Aborted — nothing touched."
+  exit 0
+fi
+
+# Run the installer from the bundle next to this script. Falls back to
+# GitHub if the bundle is missing (drive was set up by an older NOMAD
+# version that didn't ship the bundle, or someone deleted it).
+if [[ -x "\$HERE/install-bundle/nomad" ]]; then
+  bash "\$HERE/install-bundle/nomad" install
+else
+  echo "install-bundle missing from this drive — fetching from GitHub instead…"
+  mkdir -p "\$HOME/Developer"
+  cd "\$HOME/Developer"
+  curl -fsSL https://github.com/caweis/project-nomad-macos-arm64/archive/refs/heads/feat/macos-distribution-layer.tar.gz | tar xz
+  bash project-nomad-feat-macos-distribution-layer/install/macos/nomad install
+fi
+INSTALL_NOMAD_EOF
+  chmod +x "$picked/install-nomad.command"
+  ok "install-nomad.command deployed to $picked/install-nomad.command  (double-click to bootstrap a new Mac)"
+
   DATA_ROOT_RESOLVED="$picked"
-  ok "data tree ready under $picked  (storage + ollama-models + quick-chat.sh)"
+  ok "data tree ready under $picked  (storage + ollama-models + quick-chat.sh + install-bundle + install-nomad.command)"
 }
 
 step_orbstack() {

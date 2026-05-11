@@ -46,17 +46,22 @@ Drive renames are safe too. The Ollama LaunchAgent runs through a wrapper script
 
 `nomad check stack` reports the live mount state — `data drive disconnected` shows up clearly when it's unplugged.
 
-## Cross-Mac drive portability — `quick-chat.sh`
+## Cross-Mac drive portability
 
-Every install drops a self-contained portable script onto the data drive at `<drive>/project-nomad/quick-chat.sh`. Plug the drive into ANY Mac (one without NOMAD installed, or even without Homebrew) and run:
+Every install drops three things onto the data drive at `<drive>/project-nomad/`:
 
-```bash
-bash /Volumes/<drive>/project-nomad/quick-chat.sh
-```
+| File | What it does |
+|---|---|
+| `quick-chat.sh` | LLM-chat-only bootstrap. Auto-installs Ollama via Homebrew if missing, sets `OLLAMA_MODELS` to the drive's cache, starts the daemon, opens `quick-chat.html` in the browser. No Docker, no admin UI — just chat. |
+| `install-nomad.command` | Full-stack bootstrap. Double-click from Finder; detects whether NOMAD is already installed on this Mac, and if not, runs the installer from the bundle that lives on the drive. No internet fetch needed for the install code itself. |
+| `install-bundle/` | Mirror of the `install/macos/` tree from this repo. The installer reads from here when the user double-clicks `install-nomad.command`. Refreshed on every `nomad install` so the drive always carries the latest installer with it. |
 
-Native Ollama starts, all the drive's cached models are immediately available, browser chat UI opens. Auto-installs Ollama via Homebrew if missing, sets `OLLAMA_MODELS` to point at the drive, starts the daemon. No NOMAD install required, no Docker, no admin UI — just the LLM chat layer.
+Plug the drive into any other Apple Silicon Mac:
 
-For the full NOMAD experience on the second Mac, run the regular install path.
+- Want chat only? `bash /Volumes/<drive>/project-nomad/quick-chat.sh`
+- Want full stack? Double-click `/Volumes/<drive>/project-nomad/install-nomad.command`
+
+Both work without internet for the part that lives on the drive. Homebrew, OrbStack, and Ollama still need network access for first-time downloads if they're not already installed on the target Mac.
 
 ## Tier-based model pulls — RAM-aware
 
