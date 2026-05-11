@@ -169,6 +169,54 @@ self_update_nomad() {
   exec "$HERE/nomad" "${ORIGINAL_ARGS[@]}"
 }
 
+# Refresh compose.yaml from the repo. Same safe-skip rules as
+# self_update_nomad. Called as a sibling step during self-update so the
+# CLI script and compose.yaml stay in sync — many features land in both
+# files together (e.g., the port-80 dual-binding from 1bea9ca which set
+# the compose port mapping and added install-step assumptions to the
+# CLI).
+self_update_compose() {
+  [[ -n "${NOMAD_NO_SELF_UPDATE:-}" ]] && return 0
+
+  if [[ -d "$HERE/.git" || -d "$HERE/../.git" ]]; then
+    return 0
+  fi
+
+  if ! /usr/bin/curl -fsS --max-time 5 https://api.github.com >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local branch="${NOMAD_BRANCH:-feat/macos-distribution-layer}"
+  local raw_url="https://raw.githubusercontent.com/caweis/project-nomad-macos-arm64/$branch/install/macos/compose.yaml"
+  local tmp
+  tmp="$(/usr/bin/mktemp)" || return 0
+  local target="$HERE/compose.yaml"
+
+  if ! /usr/bin/curl -fsSL --max-time 30 "$raw_url" -o "$tmp"; then
+    /bin/rm -f "$tmp"
+    return 0
+  fi
+
+  # Sanity: must look like a docker-compose file
+  if ! /usr/bin/head -5 "$tmp" | /usr/bin/grep -qE '^(name|services|version):'; then
+    /bin/rm -f "$tmp"
+    return 0
+  fi
+
+  # If identical, no-op (silent)
+  if [[ -f "$target" ]] && /usr/bin/cmp -s "$target" "$tmp"; then
+    /bin/rm -f "$tmp"
+    return 0
+  fi
+
+  if ! /bin/mv "$tmp" "$target" 2>/dev/null; then
+    warn "self-update: couldn't write to $target — keeping current version"
+    /bin/rm -f "$tmp"
+    return 0
+  fi
+  ok "self-update: refreshed $target from $branch (run 'nomad down && nomad up' to apply new port/env bindings)"
+}
+
 SECRETS_DIR="$HOME/.config/project-nomad"
 ENV_FILE="$SECRETS_DIR/.env"
 # Hot state — always on internal disk, never on a detachable drive.
@@ -4519,7 +4567,8 @@ EXTRA_ARGS=("${EXTRA_ARGS[@]:-}")
 # For everything else (check, up, restart, upgrade, etc.), we skip the
 # 30s round-trip and use the local script as-is.
 case "$CMD" in
-  install|reinstall|self-update) self_update_nomad ;;
+  install|reinstall|self-update) self_update_nomad; self_update_compose ;;
+  refresh-compose) self_update_compose ;;
 esac
 
 case "$CMD" in
@@ -4552,6 +4601,12 @@ case "$CMD" in
     # pick up a newly-added LaunchAgent. Idempotent.
     sudo_bootstrap >/dev/null 2>&1 || true
     step_install_host_command_bridge
+    ;;
+  refresh-compose)
+    # Already handled by the self-update gate above (which dispatched
+    # self_update_compose). This case is just so dispatch doesn't fall
+    # through to the unknown-command die().
+    ok "compose.yaml refresh complete (run 'nomad down && nomad up' to apply)"
     ;;
   help|--help|-h)
     sed -n '2,45p' "$0" | sed 's/^# //; s/^#//'
