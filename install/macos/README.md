@@ -1,10 +1,10 @@
 # install/macos — distribution layer (installer CLI + portable chat + dual-disk state)
 
-Optional alternative to the existing `install/install_nomad_macos.sh` flow. This subdirectory is a **distribution layer**: a single-file bash CLI (`nomad`) that wraps the macOS install path with subcommand-based lifecycle UX, plus a portable browser-chat UI that drops onto the user's data drive, plus a compose variant with split-storage so the data drive can be safely unplugged.
-
-Doesn't touch any of snfettig's existing scripts or the admin tree. Three decoupled pieces — could be merged together or split into separate PRs if that fits the review better.
+The macOS install path for this fork. A single-file bash CLI (`nomad`) that handles install, upgrades, repair, and lifecycle from the Terminal; a portable browser-chat UI that drops onto the user's data drive; a compose variant with split-storage so the data drive can be safely unplugged.
 
 ## TL;DR
+
+From a fresh clone or extracted tarball:
 
 ```bash
 bash install/macos/nomad install
@@ -184,33 +184,29 @@ Install options:
 --yes / -y              Auto-confirm prompts (for unattended runs)
 ```
 
-## Differences from `install/install_nomad_macos.sh`
+## Capabilities
 
-This subdirectory's `nomad install` is an alternative entry point — not a replacement. The existing `install_nomad_macos.sh` script remains untouched. Differences:
-
-| `install_nomad_macos.sh` | `install/macos/nomad install` |
-|---|---|
-| Linear script, single run | Lifecycle CLI (`up/down/restart/logs/check/...`) installed to PATH |
-| Clones repo, runs from repo dir | Standalone bundle — runs from any directory |
-| Single data root | Split: `${NOMAD_STATE_ROOT}` (internal) + `${NOMAD_DATA_ROOT}` (configurable) |
-| | Dual-disk unplug-resilience (mysql/redis stay up when data drive ejects) |
-| | RAM-aware tier presets (tiny → dreamy) auto-detected |
-| | OrbStack auto-tune to 80% of host RAM |
-| | Pre-flight inventory (`nomad check install`) before touching anything |
-| | Portable `quick-chat.html` + `quick-chat.sh` on the data drive |
-| | mdoc manpage (`man nomad`) installed at `$(brew --prefix)/share/man/man1/` |
-| | `nomad fix-kiwix` + LaunchAgent — transparent self-heal for kiwix's partial-ZIM crash loop (60s polling, reactive based on kiwix's own error log) |
+- Lifecycle CLI (`install`, `up`, `down`, `restart`, `logs`, `check`, `upgrade`, `self-update`, `reinstall`, `uninstall`, …) installed to PATH at `$(brew --prefix)/bin/nomad`.
+- Standalone bundle — runs from any directory.
+- Split storage: `${NOMAD_STATE_ROOT}` (internal disk, always-available) + `${NOMAD_DATA_ROOT}` (configurable, can be external drive).
+- Dual-disk unplug-resilience: MySQL and Redis stay up when the data drive ejects.
+- RAM-aware tier presets (tiny → dreamy) auto-detected from `sysctl hw.memsize`.
+- OrbStack auto-tune to 80% of host RAM.
+- Pre-flight inventory (`nomad check install`) before touching anything.
+- Portable `quick-chat.html` + `quick-chat.sh` on the data drive so any other Mac can chat with the cached models without a full install.
+- mdoc manpage (`man nomad`) installed at `$(brew --prefix)/share/man/man1/`.
+- `nomad fix-kiwix` + LaunchAgent — transparent self-heal for the partial-ZIM crash loop (60s polling, reactive on kiwix's own error log).
 
 ## Lineage credit
 
-The Apple Silicon admin patches that make Metal-aware benchmark reporting work are from this repo and the related fork series:
+The Apple Silicon admin patches that make Metal-aware benchmark reporting work come from a fork series, each fork building on the prior:
 
-- **snfettig/project-nomad-macos-arm64** — this repo. Original native-Ollama+Metal commit, current macOS focal point.
-- **proximasan/project-nomad-silicon** — originated the `APPLE_CHIP_MODEL` env-var fallback, `isNativeOllama()` / `getNativeOllamaURL()`, multi-arch GHCR images. This repo's `admin/` carries forward-ported versions of those patches (plus `APPLE_GPU_MODEL` and atomic-rename ZIM downloads) and rebuilds the image as `ghcr.io/caweis/project-nomad-macos-arm64` so the macOS distribution stays evergreen. proximasan's GHCR image remains the first fallback at install time.
-- **NoamanKhalil/project-nomad-MacOs** — foundational Phase 1-3 macOS port work.
 - **Crosstalk-Solutions/project-nomad** — upstream.
+- **NoamanKhalil/project-nomad-MacOs** — foundational Phase 1-3 macOS port work.
+- **proximasan/project-nomad-silicon** — originated the `APPLE_CHIP_MODEL` env-var fallback, `isNativeOllama()` / `getNativeOllamaURL()`, multi-arch GHCR images.
+- **snfettig/project-nomad-macos-arm64** — native Ollama on Metal.
 
-This subdirectory stands on those shoulders for the admin layer; the contribution here is the installer/lifecycle layer above it.
+This repo carries forward-ported versions of the proximasan patches (plus `APPLE_GPU_MODEL` and atomic-rename ZIM downloads), rebuilds the admin image as `ghcr.io/caweis/project-nomad-macos-arm64` for a `linux/amd64,linux/arm64` multi-arch, and adds the installer/lifecycle layer above the admin tree. proximasan's GHCR image remains the first fallback at install time.
 
 ## License
 
