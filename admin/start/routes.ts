@@ -19,6 +19,7 @@ import SettingsController from '#controllers/settings_controller'
 import SystemController from '#controllers/system_controller'
 import CollectionUpdatesController from '#controllers/collection_updates_controller'
 import ZimController from '#controllers/zim_controller'
+import WorkshopController from '#controllers/workshop_controller'
 import router from '@adonisjs/core/services/router'
 import transmit from '@adonisjs/transmit/services/main'
 
@@ -29,6 +30,18 @@ router.get('/home', [HomeController, 'home'])
 router.on('/about').renderInertia('about')
 router.get('/chat', [ChatsController, 'inertia'])
 router.get('/maps', [MapsController, 'index'])
+router.get('/workshop', [WorkshopController, 'index'])
+router.get('/workshop/:id', [WorkshopController, 'show'])
+router
+  .group(() => {
+    router.patch('/files/:id', [WorkshopController, 'update'])
+    router.delete('/files/:id', [WorkshopController, 'destroy'])
+    router.get('/files/:id/download', [WorkshopController, 'download'])
+    router.get('/files/:id/thumbnail', [WorkshopController, 'thumbnail'])
+    router.post('/scan', [WorkshopController, 'scan'])
+    router.post('/acknowledge-rights', [WorkshopController, 'acknowledgeRights'])
+  })
+  .prefix('/api/workshop')
 router.on('/knowledge-base').redirectToPath('/chat?knowledge_base=true') // redirect for legacy knowledge-base links
 
 router.get('/easy-setup', [EasySetupController, 'index'])
