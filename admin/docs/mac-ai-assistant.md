@@ -93,6 +93,6 @@ A few things people sometimes ask about:
 
 - **The "Reinstall AI Assistant" button** that appears in upstream N.O.M.A.D. on some pages tries to recreate the AI Assistant container. On the Mac edition there is no container to recreate, so that button is hidden. To restart the AI Assistant, use `nomad reset-ollama` from Terminal.
 
-- **The "Update Available" message** in admin's Settings → Updates page refers to the Command Center itself, not Ollama. To update Ollama, use `nomad upgrade ollama` as above. To update the Command Center, use `nomad upgrade compose` (see [Updating](/docs/mac-updates)).
+- **The "Update Available" message** in admin's Settings → Updates page refers to the Command Center itself, not Ollama. To update Ollama, use `nomad upgrade ollama` as above. To update the Command Center, use `nomad upgrade admin` (see [Updating](/docs/mac-updates)).
 
 - **There's no GPU passthrough config to manage.** Ollama uses the GPU automatically on Apple Silicon. If your Mac has a GPU (every M-series chip does), the AI Assistant uses it.

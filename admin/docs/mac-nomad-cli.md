@@ -89,9 +89,9 @@ Keeping things running over time.
 nomad self-update           Refresh the `nomad` CLI script from the repo.
 
 nomad upgrade               Upgrade everything (admin stack + Ollama + content services).
-nomad upgrade compose       Just the Docker stack (admin, mysql, redis).
+nomad upgrade admin         Just the Command Center container (also: mysql, redis, dozzle, updater).
 nomad upgrade ollama        Just the AI Assistant runtime (Homebrew upgrade).
-nomad upgrade SVC           A specific service (kiwix, kolibri, etc.).
+nomad upgrade SVC           A specific service (kiwix, kolibri, cyberchef, flatnotes, etc.).
 nomad upgrade --check       Dry run — show what would change, change nothing.
 
 nomad orbstack-tune [GB]    Adjust OrbStack's RAM allocation. Default is 80% of host.

@@ -40,13 +40,15 @@ Total time is usually 1–5 minutes depending on how big the new images are. Whi
 
 ## Just the Command Center
 
-If you only want to update the admin interface and its database/cache (not Ollama, not content services):
+If you only want to update the admin interface (not Ollama, not content services):
 
 ```
-nomad upgrade compose
+nomad upgrade admin
 ```
 
 This is the most common upgrade. The Command Center is the most actively developed piece, so it gets new features and bug fixes more often than the content services.
+
+Each compose service has its own subcommand — `nomad upgrade admin`, `nomad upgrade mysql`, `nomad upgrade redis`, `nomad upgrade dozzle`, `nomad upgrade updater`. Run `nomad upgrade --check` to see what would happen without applying it.
 
 ---
 
@@ -104,7 +106,7 @@ The `--check` flag shows current versions, what's available, and what the upgrad
 
 On the Mac edition, the in-Command-Center update mechanism is disabled in favor of the `nomad upgrade` path described above. The Settings → Updates page shows a card with the host-CLI commands you should use, and the "Start Update" button is hidden.
 
-If you somehow see the old "Update Failed" message anyway, it's the upstream self-updater complaining about not being able to rewrite a Docker image tag that doesn't match its expected pattern. That's expected on the Mac edition — ignore the message and use `nomad upgrade compose` instead.
+If you somehow see the old "Update Failed" message anyway, it's the upstream self-updater complaining about not being able to rewrite a Docker image tag that doesn't match its expected pattern. That's expected on the Mac edition — ignore the message and use `nomad upgrade admin` instead.
 
 ---
 
