@@ -1660,6 +1660,28 @@ step_wait_admin() {
   die "investigate: nomad logs admin"
 }
 
+# Run AdonisJS migrations inside the admin container. Admin's server.ts does
+# NOT auto-run migrations on boot — it just starts the HTTP server. /api/health
+# returns {status:'ok'} without touching the DB, so a "healthy" admin can still
+# have zero tables. The user only discovers this when the first DB-backed page
+# (home / settings / anything reading kv_store) renders an exception.
+#
+# Idempotent: Adonis's migration tracker keeps state in the migrations table,
+# so re-runs no-op cleanly when nothing's pending.
+#
+# --force is required because NODE_ENV=production in the container; Adonis
+# guards production migrations behind that flag.
+step_run_admin_migrations() {
+  section "Admin migrations"
+  if dc exec -T admin node ace migration:run --force 2>&1 | tee /tmp/nomad-migrations.log; then
+    ok "migrations up to date"
+  else
+    warn "migration:run exited non-zero — admin pages may render exceptions"
+    warn "tail: $(tail -5 /tmp/nomad-migrations.log | tr '\n' ' | ')"
+    NOMAD_INSTALL_DEGRADED+=("admin migrations didn't apply cleanly — see /tmp/nomad-migrations.log")
+  fi
+}
+
 # Install a background LaunchAgent that polls admin's benchmark_results table
 # every 30 seconds and patches any unpatched rows with this Mac's real Apple
 # chip + Metal GPU. Means the upstream leaderboard never sees "-" for our
@@ -2131,6 +2153,7 @@ cmd_install() {
   step_compose_pull
   step_compose_up
   step_wait_admin
+  step_run_admin_migrations    # MUST happen before any DB-touching call (configure-remote, etc.)
   step_pull_embedding_quick    # ~270 MB, ~30s — admin's RAG works the moment we wire
   step_configure_native_ollama || true   # non-fatal; degradation surfaces in summary
   step_install_benchmark_patcher   # background daemon that fixes leaderboard CPU/GPU automatically
