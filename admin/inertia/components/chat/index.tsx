@@ -59,6 +59,7 @@ export default function Chat({
     queryFn: () => api.getInstalledModels(),
     enabled,
     select: (data) => data || [],
+    refetchInterval: 10_000,
   })
 
   const { data: chatSuggestions, isLoading: chatSuggestionsLoading } = useQuery<string[]>({

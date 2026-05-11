@@ -759,7 +759,7 @@ check_install() {
     elif [[ "$cfg" == "true" ]]; then
       inv_broken "Admin → Ollama wiring" "configured but admin can't reach Ollama"
     else
-      inv_missing "Admin → Ollama wiring" "POST /api/ollama/configure-remote"
+      inv_missing "Admin → Ollama wiring" "run 'nomad install' (seeds via SQL)"
     fi
   else
     inv_missing "Admin API" "needs containers running"
@@ -2686,81 +2686,33 @@ step_build_distro_help_zim() {
   fi
 }
 
-# Wire admin → native Ollama via the admin's own API.
-# POST /api/ollama/configure-remote runs the full side-effect chain:
-#   • validates URL format
-#   • tests connectivity to the remote /v1/models endpoint
-#   • sets KV ai.remoteOllamaUrl
-#   • marks services.nomad_ollama installed=1
-#   • stops local nomad_ollama container if running
-#   • triggers Qdrant preflight install (for RAG embeddings)
-#   • sets chat.suggestionsEnabled=false
-#   • triggers RAG docs discovery
-# Idempotent — safe to re-run.
-step_configure_native_ollama() {
-  section "Wire admin → native Ollama"
+# Seed admin → native Ollama state directly via SQL.
+#
+# Upstream / proximasan admin builds expose POST /api/ollama/configure-remote,
+# which validates the URL, sets KV ai.remoteOllamaUrl, flips services.nomad_ollama
+# to installed=1, spawns the Qdrant container, and triggers RAG discovery.
+# That endpoint doesn't exist on this fork — the route group at
+# admin/start/routes.ts:114-122 has chat, models, installed-models only.
+# Rather than carry a dead API call (which produced confusing 404 warnings
+# on every install), seed the canonical state directly:
+#
+#   • kv_store.ai.remoteOllamaUrl  →  http://host.docker.internal:11434
+#   • services.nomad_ollama         →  installed=1, installation_status=idle
+#   • kv_store.ui.hasVisitedEasySetup → true  (suppress the home-page wizard nudge —
+#     the wizard would re-queue downloads for models we already pulled native)
+#
+# Qdrant install happens in a separate step (step_install_qdrant_for_rag) via
+# the admin's canonical service-install endpoint — that's the path the Apps UI
+# uses, and it survives admin builds drifting away from the configure-remote
+# side-effect chain.
+#
+# Idempotent — re-running on an already-seeded install is a no-op for kv_store
+# (IF guard preserves user-edited values) and a no-op for services (WHERE
+# installed = 0 filters out the already-flipped row).
+step_seed_native_ollama_state() {
+  section "Seed admin → native Ollama state"
   api_check_up
 
-  local body='{"remoteUrl":"http://host.docker.internal:11434"}'
-
-  # Try admin's /api/ollama/configure-remote first. The endpoint exists on
-  # proximasan's admin (and some upstream versions) and runs a fuller chain
-  # — validates the URL, tests connectivity, sets kv_store, flips the
-  # services flag, triggers Qdrant preflight. On our caweis admin build
-  # the endpoint doesn't exist (route group at routes.ts:114-122 has chat,
-  # models, installed-models — no configure-remote). When the endpoint
-  # is missing, we fall through to the SQL path immediately.
-  #
-  # Retry policy:
-  #   - 200 success → done
-  #   - 404 (endpoint missing on this admin build) → short-circuit to SQL,
-  #     no retries — the endpoint isn't going to materialize
-  #   - 5xx / 000 / other → retry up to 3 times (DNS warmup, transient
-  #     network, admin still booting past /api/health). Admin's
-  #     configureRemote validates the URL by making an outbound request
-  #     to host.docker.internal:11434, and container networking takes a
-  #     few seconds to stabilize after compose-up.
-  local attempt resp http_code endpoint_missing=0
-  for attempt in 1 2 3; do
-    # Capture body and HTTP code separately so 5xx surfaces the server's
-    # actual message instead of curl's generic error string.
-    local out_file; out_file="$(mktemp)"
-    http_code="$(curl -sS --max-time 30 -o "$out_file" -w '%{http_code}' \
-      -H 'Content-Type: application/json' -X POST -d "$body" \
-      "$ADMIN_BASE/api/ollama/configure-remote" 2>/dev/null || echo "000")"
-    resp="$(cat "$out_file")"
-    rm -f "$out_file"
-
-    if [[ "$http_code" == "200" ]] && echo "$resp" | jq -e '.success == true' >/dev/null 2>&1; then
-      ok "configured: $(echo "$resp" | jq -r '.message // "Remote Ollama configured."')"
-      return 0
-    fi
-
-    # 404 is deterministic — endpoint doesn't exist on this admin build.
-    # Don't retry; skip straight to SQL with a clean info line.
-    if [[ "$http_code" == "404" ]]; then
-      endpoint_missing=1
-      break
-    fi
-
-    if [[ "$attempt" -lt 3 ]]; then
-      log "attempt $attempt: admin returned HTTP $http_code — retrying in $((attempt * 3))s"
-      sleep $((attempt * 3))
-    else
-      warn "POST /api/ollama/configure-remote HTTP $http_code after 3 attempts. Response: ${resp:0:300}"
-    fi
-  done
-
-  # Two paths into the SQL seed below:
-  #   (a) endpoint_missing=1 — admin returned 404; this fork's admin doesn't
-  #       have the endpoint. Quiet info log, no warn.
-  #   (b) endpoint exists but all retries failed (5xx, network). Loud warn,
-  #       fall through anyway as a recovery.
-  if [[ "$endpoint_missing" -eq 1 ]]; then
-    log "admin build lacks /api/ollama/configure-remote — seeding state via SQL"
-  else
-    warn "API path failed all retries — falling back to direct SQL seed"
-  fi
   local db_pw; db_pw="$(grep '^DB_PASSWORD=' "$ENV_FILE" | cut -d= -f2-)"
   local sql_err; sql_err="$(mktemp)"
   if echo '
@@ -2783,24 +2735,96 @@ ON DUPLICATE KEY UPDATE
   updated_at = NOW();
 ' | dc exec -T -e MYSQL_PWD="$db_pw" mysql mysql -u nomad_user nomad >/dev/null 2>"$sql_err"; then
     rm -f "$sql_err"
-    ok "seeded via SQL fallback"
+    ok "seeded kv_store + services.nomad_ollama"
     dc restart admin >/dev/null
     sleep 5
     return 0
   fi
 
-  # Surface what mysql actually said before falling through to the degraded
-  # path — previously this was 2>&1 to /dev/null, which made the "both paths
-  # failed" warning useless for debugging.
+  # Surface what mysql actually said before pushing the degradation.
   local sql_err_body=""; [[ -s "$sql_err" ]] && sql_err_body="$(head -c 300 "$sql_err")"
   rm -f "$sql_err"
 
-  # Both API and SQL failed — admin's AI Assistant will not work until the user
-  # manually sets the Remote Ollama URL. Track this for the install summary
-  # so the green "complete" banner doesn't paper over a real degradation.
-  warn "both API and SQL paths failed — manually set Settings → Models → Remote Ollama URL"
+  warn "SQL seed failed — manually set Settings → Models → Remote Ollama URL"
   [[ -n "$sql_err_body" ]] && warn "mysql said: $sql_err_body"
   NOMAD_INSTALL_DEGRADED+=("admin → native Ollama not wired (Settings → Models → Remote Ollama URL)")
+  return 1
+}
+
+# Install Qdrant via admin's canonical service-install endpoint.
+#
+# Background: on upstream / proximasan, POST /api/ollama/configure-remote
+# transitively spawned the Qdrant container as part of its side-effect chain.
+# That endpoint doesn't exist on this fork, so without this step Knowledge
+# Base / RAG would show "service not installed" until the user manually
+# clicked Install in Settings → Apps. Install reported green but RAG wasn't
+# actually wired.
+#
+# We POST to /api/system/services/install (admin/start/routes.ts:155, the
+# same endpoint the Apps UI uses) which calls DockerService.createContainerPreflight.
+# The preflight returns 200 immediately and creates the container async —
+# we then poll docker + the qdrant /healthz endpoint until it's actually up.
+#
+# Non-fatal: if it fails, we surface it as a degradation. The user can still
+# install Qdrant via Settings → Apps; the install just won't have RAG ready
+# out of the box.
+#
+# Idempotent: if the service is already installed (re-running install), the
+# preflight returns 400 "already installed". We treat that as success and
+# skip straight to the readiness check.
+step_install_qdrant_for_rag() {
+  section "Install Qdrant for Knowledge Base / RAG"
+  api_check_up
+
+  local body='{"service_name":"nomad_qdrant"}'
+  local out_file; out_file="$(mktemp)"
+  local http_code
+  http_code="$(curl -sS --max-time 30 -o "$out_file" -w '%{http_code}' \
+    -H 'Content-Type: application/json' -X POST -d "$body" \
+    "$ADMIN_BASE/api/system/services/install" 2>/dev/null || echo "000")"
+  local resp; resp="$(cat "$out_file")"
+  rm -f "$out_file"
+
+  case "$http_code" in
+    200)
+      log "preflight accepted — $(echo "$resp" | jq -r '.message // "install initiated"' 2>/dev/null)"
+      ;;
+    400)
+      # Two known idempotent cases bubble up as 400:
+      #   - "already installed"        → service flipped on a prior run; container should be up
+      #   - "already in progress"      → another caller kicked it off; just wait
+      local err_msg; err_msg="$(echo "$resp" | jq -r '.error // ""' 2>/dev/null)"
+      if [[ "$err_msg" == *"already installed"* || "$err_msg" == *"already in progress"* ]]; then
+        log "qdrant install already initiated: $err_msg"
+      else
+        warn "POST /api/system/services/install returned 400: ${err_msg:0:300}"
+        NOMAD_INSTALL_DEGRADED+=("Knowledge Base / Qdrant not installed (Settings → Apps → Qdrant → Install)")
+        return 1
+      fi
+      ;;
+    *)
+      warn "POST /api/system/services/install HTTP $http_code — response: ${resp:0:300}"
+      NOMAD_INSTALL_DEGRADED+=("Knowledge Base / Qdrant not installed (Settings → Apps → Qdrant → Install)")
+      return 1
+      ;;
+  esac
+
+  # Poll up to 60s for the container to be running AND qdrant to answer /healthz.
+  # Docker startup + qdrant boot is usually 5-15s on Mac mini; budget 60s for
+  # slower disks / first-run image pull.
+  log "waiting for nomad_qdrant container to come up (up to 60s)"
+  local deadline=$(( SECONDS + 60 ))
+  while (( SECONDS < deadline )); do
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'nomad_qdrant' \
+       && curl -fsS --max-time 3 http://localhost:6333/healthz >/dev/null 2>&1; then
+      ok "qdrant is up — Knowledge Base ready"
+      return 0
+    fi
+    sleep 2
+  done
+
+  warn "qdrant didn't come up within 60s — check 'docker logs nomad_qdrant' and 'nomad logs admin'"
+  NOMAD_INSTALL_DEGRADED+=("Knowledge Base / Qdrant install initiated but container not healthy within 60s (Settings → Apps → Qdrant)")
   return 1
 }
 
@@ -2832,11 +2856,12 @@ cmd_install() {
   step_compose_pull
   step_compose_up
   step_wait_admin
-  step_run_admin_migrations    # MUST happen before any DB-touching call (configure-remote, etc.)
-  step_seed_admin_services     # populate services catalog so /settings/apps + Easy Setup work
+  step_run_admin_migrations    # MUST happen before any DB-touching call (native Ollama SQL seed, services catalog)
+  step_seed_admin_services     # populate services catalog so /settings/apps + Easy Setup work (also required before Qdrant install — preflight looks up services.nomad_qdrant)
   step_refresh_service_versions # bump seeded image tags to latest published semver (registry query)
   step_pull_embedding_quick    # ~270 MB, ~30s — admin's RAG works the moment we wire
-  step_configure_native_ollama || true   # non-fatal; degradation surfaces in summary
+  step_seed_native_ollama_state || true   # non-fatal; degradation surfaces in summary
+  step_install_qdrant_for_rag  || true   # non-fatal; RAG can be installed later via Apps UI
   step_install_benchmark_patcher   # background daemon that fixes leaderboard CPU/GPU automatically
   step_install_kiwix_self_heal     # background daemon that quarantines partial ZIMs so kiwix never crash-loops
   step_install_bonjour_advertise   # advertise admin via mDNS so other devices find it in Safari Bonjour menu
@@ -3299,7 +3324,7 @@ cmd_upgrade_models() {
 
 # Generic escape hatch for any admin endpoint. Pretty-prints JSON via jq.
 # Usage: nomad api /api/system/info
-#        nomad api /api/ollama/configure-remote '{"remoteUrl":"http://..."}'
+#        nomad api /api/system/services/install '{"service_name":"nomad_qdrant"}'
 #        nomad api /api/downloads/jobs/zim
 cmd_api() {
   api_check_up
