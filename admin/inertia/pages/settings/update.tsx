@@ -229,7 +229,7 @@ export default function SystemUpdatePage(props: {
   // distro is shorthand for "we're on the macOS distro." The built-in update
   // mechanism doesn't work for our compose.yaml (uses caweis image, not
   // crosstalk-solutions), so the Start Update button is replaced with a
-  // host-CLI hint card pointing at `nomad upgrade compose`.
+  // host-CLI hint card pointing at `nomad upgrade admin`.
   isNativeOllama: boolean
 }) {
   const { addNotification } = useNotifications()
@@ -462,9 +462,9 @@ export default function SystemUpdatePage(props: {
                 </p>
                 <div className="bg-gray-50 border border-gray-200 rounded p-4 mb-4">
                   <p className="text-sm font-semibold text-gray-700 mb-2">From Terminal on this Mac:</p>
-                  <pre className="text-sm text-gray-900 overflow-x-auto"><code>nomad upgrade compose      <span className="text-gray-500"># admin + mysql + redis + updater</span>
+                  <pre className="text-sm text-gray-900 overflow-x-auto"><code>nomad upgrade admin        <span className="text-gray-500"># just the Command Center container</span>
 nomad upgrade ollama       <span className="text-gray-500"># native Ollama via Homebrew</span>
-nomad upgrade all          <span className="text-gray-500"># everything in one pass</span>
+nomad upgrade              <span className="text-gray-500"># everything in one pass (admin + ollama + content services)</span>
 nomad upgrade --check      <span className="text-gray-500"># dry-run, no changes</span></code></pre>
                 </div>
                 <div className="flex justify-center gap-8 text-center">
