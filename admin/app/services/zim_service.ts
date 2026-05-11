@@ -249,7 +249,11 @@ export class ZimService {
     return downloadFilenames.length > 0 ? downloadFilenames : null
   }
 
-  async downloadRemoteSuccessCallback(urls: string[], restart = true) {
+  async downloadRemoteSuccessCallback(
+    urls: string[],
+    restart = true,
+    currentJobId?: string | number
+  ) {
     // Check if any URL is a Wikipedia download and handle it
     for (const url of urls) {
       if (url.includes('wikipedia_en_')) {
@@ -269,15 +273,27 @@ export class ZimService {
         queue.getWaiting(),
       ])
 
-      // Filter out completed jobs (progress === 100) to avoid race condition
-      // where this job itself is still in the active queue
+      // Exclude the just-completed job from the "is anything else pending"
+      // check. The caller passes the current job's id; if not provided we
+      // fall back to filtering by `progress < 100` — but that fallback is
+      // racy because BullMQ's job.updateProgress(100) typically runs AFTER
+      // this callback returns, so the current job's progress is still less
+      // than 100 here. Without the explicit id-based exclusion, this
+      // function used to always see "itself" as a pending ZIM job and skip
+      // the Kiwix restart forever (the bug behind "Kiwix doesn't reload
+      // after a download finishes via the admin UI").
       const activeIncompleteJobs = activeJobs.filter((job) => {
+        if (currentJobId !== undefined && String(job.id) === String(currentJobId)) return false
         const progress = typeof job.progress === 'number' ? job.progress : 0
         return progress < 100
       })
 
       // Check if any remaining incomplete jobs are ZIM downloads
-      const allJobs = [...activeIncompleteJobs, ...waitingJobs]
+      const waitingIncompleteJobs = waitingJobs.filter((job) => {
+        if (currentJobId !== undefined && String(job.id) === String(currentJobId)) return false
+        return true
+      })
+      const allJobs = [...activeIncompleteJobs, ...waitingIncompleteJobs]
       const hasRemainingZimJobs = allJobs.some((job) => job.data.filetype === 'zim')
 
       if (hasRemainingZimJobs) {
