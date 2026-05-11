@@ -42,6 +42,10 @@
 .Cm zim
 .Op Cm list | wikipedia | remote
 .Nm
+.Cm stl
+.Op Cm list | scan | import | path
+.Op Ar DIR Op Ar CATEGORY
+.Nm
 .Cm services
 .Op Cm list | install | affect
 .Nm
@@ -198,6 +202,42 @@ prior auto-runs did. The action log is at
 Upstream fix worth filing: admin's downloader should write
 .Pa name.zim.downloading
 and rename atomically on completion.
+.It Cm stl Op Cm list | scan | import | path Op Ar DIR Op Ar CATEGORY
+Workshop / Offline STL Library — host-side ops for the 3D-printable file
+catalog at
+.Pa ${NOMAD_DATA_ROOT}/storage/stl-library/ .
+.Pp
+.Cm list
+calls
+.Pa /api/workshop?per_page=200
+and pretty-prints the admin's catalog.
+.Cm scan
+triggers a server-side rescan (same code path as the UI's Rescan button) —
+walks the library tree, upserts the
+.Cm stl_files
+index, removes orphan rows for deleted files, generates missing
+thumbnails via
+.Xr stl-thumb 1 .
+.Cm import Ar DIR Op Ar CATEGORY
+copies every
+.Pa *.stl
+and
+.Pa *.3mf
+under
+.Ar DIR
+into
+.Pa storage/stl-library/<CATEGORY>/
+(default
+.Cm other )
+and triggers a rescan. Existing files in the library are not overwritten;
+re-running
+.Cm import
+just skips them.
+.Cm path
+prints the absolute library root on the host (useful for shell scripting).
+Categories:
+.Cm medical , tools , household , replacement-parts , agriculture ,
+.Cm firearm-accessories , other .
 .It Cm reinstall
 Nuclear path: full
 .Cm uninstall
