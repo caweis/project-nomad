@@ -3,7 +3,6 @@ import {
   DownloadRemoteSuccessCallback,
   FileEntry,
 } from '../../types/files.js'
-import { assertNotPrivateUrl } from '../validators/common.js'
 import { doResumableDownloadWithRetry } from '../utils/downloads.js'
 import { extract } from 'tar'
 import env from '#start/env'
