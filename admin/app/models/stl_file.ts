@@ -37,11 +37,23 @@ export default class StlFile extends BaseModel {
    * arrays/objects via prepare/consume — declared with a `prepare` and
    * `consume` so callers always see/set a string[] (or null), never a
    * stringified JSON blob.
+   *
+   * Consume tolerates empty strings + invalid JSON: some rows ended up with
+   * tags='' (empty string) instead of NULL, which would crash JSON.parse
+   * and 500 the entire /workshop page on read. Defensive consume returns
+   * null on any non-array result so a single bad row can't break the list.
    */
   @column({
     prepare: (value: string[] | null) => (value === null ? null : JSON.stringify(value)),
-    consume: (value: string | null) =>
-      value === null ? null : (JSON.parse(value) as string[]),
+    consume: (value: string | null) => {
+      if (value === null || value === '') return null
+      try {
+        const parsed = JSON.parse(value)
+        return Array.isArray(parsed) ? (parsed as string[]) : null
+      } catch {
+        return null
+      }
+    },
   })
   declare tags: string[] | null
 
