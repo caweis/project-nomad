@@ -824,7 +824,7 @@ step_deps() {
   if ! /usr/bin/xcode-select -p >/dev/null 2>&1; then
     log "installing Xcode Command Line Tools (system dialog will appear)"
     /usr/bin/xcode-select --install 2>/dev/null || true
-    log "waiting for CLT install (5–20 min)…"
+    log "waiting for CLT install (5–20 min)..."
     while ! /usr/bin/xcode-select -p >/dev/null 2>&1; do sleep 10; printf "."; done
     echo; ok "Xcode CLT installed"
   else
@@ -1227,7 +1227,7 @@ fi
 if [[ -x "\$HERE/install-bundle/nomad" ]]; then
   bash "\$HERE/install-bundle/nomad" install
 else
-  echo "install-bundle missing from this drive — fetching from GitHub instead…"
+  echo "install-bundle missing from this drive — fetching from GitHub instead..."
   mkdir -p "\$HOME/Developer"
   cd "\$HOME/Developer"
   curl -fsSL https://github.com/caweis/project-nomad-macos-arm64/archive/refs/heads/feat/macos-distribution-layer.tar.gz | tar xz
@@ -1260,7 +1260,7 @@ step_orbstack() {
 
   /usr/bin/pgrep -x OrbStack >/dev/null 2>&1 || { log "launching OrbStack — accept any prompts"; open -a OrbStack; }
 
-  log "waiting up to 3 min for docker daemon…"
+  log "waiting up to 3 min for docker daemon..."
   local deadline=$(( $(date +%s) + 180 ))
   while [[ $(date +%s) -lt $deadline ]]; do
     if ensure_docker_path && docker version >/dev/null 2>&1; then
@@ -1442,7 +1442,7 @@ Manual recovery:
   launchctl bootstrap $LA_TARGET $LA_PLIST"
   fi
 
-  log "waiting for Ollama API on :11434…"
+  log "waiting for Ollama API on :11434..."
   local deadline=$(( $(date +%s) + 30 ))
   while [[ $(date +%s) -lt $deadline ]]; do
     curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1 && { ok "Ollama API responding"; return 0; }
@@ -2662,7 +2662,7 @@ step_build_distro_help_zim() {
 
   mkdir -p "$zim_dir"
 
-  log "building distro help ZIM via openzim/zim-tools (one-time, ~30s)…"
+  log "building distro help ZIM via openzim/zim-tools (one-time, ~30s)..."
   # Note: zim-tools image is linux/amd64 only; runs under emulation on arm64
   # macOS hosts. Slow but works. Output ZIM is platform-independent.
   if docker run --rm \
@@ -3149,21 +3149,21 @@ _upgrade_native_ollama() {
     log "(pass --check off to apply: brew update + brew upgrade ollama + reset-ollama)"
     return 0
   fi
-  log "running brew update + brew upgrade ollama…"
+  log "running brew update + brew upgrade ollama..."
   brew update >/dev/null 2>&1 || warn "brew update returned non-zero (network? formula tap?) — continuing with cached formulas"
   if ! brew upgrade ollama 2>&1 | tail -10; then
     warn "brew upgrade ollama exited non-zero"
     return 1
   fi
   ok "ollama upgraded (or already at latest)"
-  log "restarting native Ollama LaunchAgent…"
+  log "restarting native Ollama LaunchAgent..."
   cmd_reset_ollama
 
   # Don't claim success until Ollama's actually responding. The LaunchAgent
   # comes up async — between `launchctl bootstrap` returning and Ollama
   # binding :11434 there's typically 2-8 seconds of nothing. Without this
   # wait, the next `nomad models` or admin API call may hit ECONNREFUSED.
-  log "waiting up to 30s for Ollama API on :11434…"
+  log "waiting up to 30s for Ollama API on :11434..."
   local waited=0
   while [[ "$waited" -lt 30 ]]; do
     if curl -fsS --max-time 2 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
@@ -3225,9 +3225,9 @@ _upgrade_kiwix() {
     warn "Wait for queue to drain (nomad downloads list), or pass --force"
     return 1
   fi
-  log "pulling latest image…"
+  log "pulling latest image..."
   docker pull "$current_image" || { warn "pull failed"; return 1; }
-  log "removing old container; admin will re-spawn with new image…"
+  log "removing old container; admin will re-spawn with new image..."
   docker rm -f nomad_kiwix_server >/dev/null 2>&1 || true
   ok "kiwix removed. Admin re-spawns within ~30s. Watch: docker ps --filter name=kiwix"
 }
@@ -3238,9 +3238,9 @@ _upgrade_compose_one() {
     log "compose service: $svc (use 'dc pull $svc && dc up -d --force-recreate $svc' to apply)"
     return 0
   fi
-  log "pulling latest image for $svc…"
+  log "pulling latest image for $svc..."
   dc pull "$svc" || { warn "pull failed for $svc"; return 1; }
-  log "recreating $svc with new image…"
+  log "recreating $svc with new image..."
   dc up -d --force-recreate "$svc"
   ok "$svc upgraded"
 }
@@ -3252,9 +3252,9 @@ _upgrade_compose_stack() {
     log "(pass --check off to apply: dc pull + dc up -d)"
     return 0
   fi
-  log "pulling latest compose images…"
+  log "pulling latest compose images..."
   dc pull || { warn "compose pull failed"; return 1; }
-  log "recreating containers with new images…"
+  log "recreating containers with new images..."
   dc up -d
   ok "compose stack upgraded"
 }
@@ -3278,9 +3278,9 @@ Or 'nomad upgrade --check' to see what's available."
     log "(pass --check off to apply: pull + remove container — admin re-spawns)"
     return 0
   fi
-  log "pulling latest image…"
+  log "pulling latest image..."
   docker pull "$current_image" || { warn "pull failed"; return 1; }
-  log "removing $container; admin will re-spawn…"
+  log "removing $container; admin will re-spawn..."
   docker rm -f "$container" >/dev/null 2>&1 || true
   ok "$container removed — admin re-spawns with the new image"
 }
@@ -3486,7 +3486,7 @@ cmd_reinstall() {
   rm -f /tmp/nomad-*.log /tmp/nomad-*.result /tmp/nomad-pull.log /tmp/nomad-bootstrap.log 2>/dev/null || true
 
   echo
-  log "starting fresh install in 3 seconds (Ctrl-C to abort)…"
+  log "starting fresh install in 3 seconds (Ctrl-C to abort)..."
   sleep 3
 
   # Reuse the same drive — install won't re-prompt
@@ -3526,7 +3526,7 @@ cmd_uninstall() {
   # 'project-nomad-management' (admin-spawned content containers OrbStack
   # groups separately). Also use -a so stopped containers are caught.
   if ensure_docker_path && docker version >/dev/null 2>&1; then
-    log "discovering all NOMAD containers (running + stopped)…"
+    log "discovering all NOMAD containers (running + stopped)..."
     # Find every container with 'nomad' in name OR labeled by our compose projects
     local all_ids
     all_ids="$( {
@@ -3696,7 +3696,7 @@ step_orbstack_tune_quiet() {
     set_ok=1
   fi
   if [[ $set_ok -eq 1 ]]; then
-    log "restarting OrbStack VM (~10s)…"
+    log "restarting OrbStack VM (~10s)..."
     orb stop  >/dev/null 2>&1 || true
     sleep 2
     orb start >/dev/null 2>&1 || true
@@ -3780,7 +3780,7 @@ cmd_orbstack_tune() {
     fi
   fi
 
-  log "restarting OrbStack to apply (~10–15s)…"
+  log "restarting OrbStack to apply (~10–15s)..."
   orb stop  >/dev/null 2>&1 || true
   sleep 2
   orb start >/dev/null 2>&1 || true
@@ -3855,7 +3855,7 @@ Reboot the Mac and try again — this clears all launchd transient state."
   ok "LaunchAgent loaded"
 
   # 6. Wait for API to come back up
-  log "waiting for Ollama API on :11434…"
+  log "waiting for Ollama API on :11434..."
   local deadline=$(( $(date +%s) + 30 ))
   while [[ $(date +%s) -lt $deadline ]]; do
     if curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
@@ -3916,7 +3916,7 @@ cmd_benchmark_patch_host() {
     die "no benchmark_results in admin DB — run a benchmark from admin UI first (Settings → Benchmark)"
   fi
 
-  log "patching latest of $row_count benchmark row(s) with host hardware…"
+  log "patching latest of $row_count benchmark row(s) with host hardware..."
   # Single-quote the values for SQL safety (chip names are stable strings)
   local sql
   sql="UPDATE benchmark_results
@@ -3965,7 +3965,7 @@ cmd_benchmark() {
   # ---- NATIVE ----
   log "[1/2] native Ollama (Metal)"
   if ! ollama list 2>/dev/null | awk '{print $1}' | grep -qE "^${model}$"; then
-    log "pulling $model into native Ollama (~5 GB)…"
+    log "pulling $model into native Ollama (~5 GB)..."
     ollama pull "$model"
   fi
   local native_log; native_log="$(mktemp)"
@@ -3979,20 +3979,20 @@ cmd_benchmark() {
   log "[2/2] container Ollama (linux/amd64 via Rosetta)"
   local cname=nomad_bench_ollama
   docker rm -f "$cname" >/dev/null 2>&1 || true
-  log "starting $cname (forced platform=linux/amd64)…"
+  log "starting $cname (forced platform=linux/amd64)..."
   docker run -d --rm --name "$cname" \
     --platform linux/amd64 \
     -p 11435:11434 \
     -v "/tmp/nomad-bench-models:/root/.ollama" \
     ollama/ollama:latest >/dev/null
   # Wait for the container's Ollama API
-  log "waiting for container Ollama to come up (slow under Rosetta)…"
+  log "waiting for container Ollama to come up (slow under Rosetta)..."
   local d=$(( $(date +%s) + 60 ))
   while [[ $(date +%s) -lt $d ]]; do
     docker exec "$cname" curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1 && break
     sleep 2
   done
-  log "pulling $model into container Ollama (~5 GB, slow under Rosetta)…"
+  log "pulling $model into container Ollama (~5 GB, slow under Rosetta)..."
   docker exec "$cname" ollama pull "$model"
   local container_log; container_log="$(mktemp)"
   docker exec -i "$cname" sh -c "echo '$prompt' | ollama run --verbose $model" >"$container_log" 2>&1
@@ -4064,7 +4064,7 @@ or wait for admin to spawn kiwix once a ZIM finishes downloading."
 
   # Trigger the self-heal script. The script is silent when kiwix is healthy
   # and only acts/logs when there's a partial-ZIM problem.
-  log "running self-heal pass (silent if kiwix is already healthy)…"
+  log "running self-heal pass (silent if kiwix is already healthy)..."
   "$KIWIX_SELF_HEAL_SCRIPT"
   echo
 
@@ -4140,7 +4140,7 @@ cmd_stl() {
       ;;
     scan)
       api_check_up
-      log "triggering Workshop rescan…"
+      log "triggering Workshop rescan..."
       local result
       result="$(api_post /api/workshop/scan '' 2>&1)"
       echo "$result" | jq . 2>/dev/null || echo "$result"
@@ -4184,7 +4184,7 @@ Categories: medical | tools | household | replacement-parts | agriculture | fire
 
       # Trigger rescan if admin is up; otherwise tell the user how to run it.
       if curl -fsS --max-time 2 http://127.0.0.1:8080/api/health >/dev/null 2>&1; then
-        log "triggering Workshop rescan…"
+        log "triggering Workshop rescan..."
         api_post /api/workshop/scan '' | jq . 2>/dev/null || true
       else
         warn "admin not running — rescan will happen on next 'nomad up' + UI visit"
