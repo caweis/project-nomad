@@ -1,5 +1,6 @@
 import {
   IconBolt,
+  IconBox,
   IconHelp,
   IconMapRoute,
   IconPlus,
@@ -25,6 +26,18 @@ const MAPS_ITEM = {
   icon: <IconMapRoute size={48} />,
   installed: true,
   displayOrder: 4,
+  poweredBy: null,
+}
+
+// Workshop — offline 3D-printable STL catalog (Core Capability)
+const WORKSHOP_ITEM = {
+  label: 'Workshop',
+  to: '/workshop',
+  target: '',
+  description: 'Offline catalog of 3D-printable STL files',
+  icon: <IconBox size={48} />,
+  installed: true,
+  displayOrder: 5,
   poweredBy: null,
 }
 
@@ -124,6 +137,11 @@ export default function Home(props: {
 
   // Add Maps as a Core Capability
   items.push(MAPS_ITEM)
+
+  // Add Workshop as a Core Capability (caweis macOS-distribution port of
+  // SysAdminDoc §50 — offline STL library at ${NOMAD_DATA_ROOT}/storage/
+  // stl-library/)
+  items.push(WORKSHOP_ITEM)
 
   // Add system items
   items.push(...SYSTEM_ITEMS)
