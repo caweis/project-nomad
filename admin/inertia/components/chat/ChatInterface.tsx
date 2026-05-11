@@ -188,14 +188,13 @@ export default function ChatInterface({
         </form>
         {!rewriteModelAvailable && (
           <div className="text-sm text-gray-500 mt-2">
-            The {DEFAULT_QUERY_REWRITE_MODEL} model is not installed. Consider{' '}
+            {DEFAULT_QUERY_REWRITE_MODEL} isn't installed. It helps the AI find more relevant passages from your uploaded documents.{' '}
             <button
               onClick={() => setDownloadDialogOpen(true)}
               className="text-desert-green underline hover:text-desert-green/80 cursor-pointer"
             >
-              downloading it
-            </button>{' '}
-            for improved retrieval-augmented generation (RAG) performance.
+              Download it
+            </button>
           </div>
         )}
         <StyledModal
@@ -211,9 +210,8 @@ export default function ChatInterface({
           onClose={() => setDownloadDialogOpen(false)}
         >
           <p className="text-gray-700">
-            This will dispatch a background download job for{' '}
-            <span className="font-mono font-medium">{DEFAULT_QUERY_REWRITE_MODEL}</span> and may take some time to complete. The model
-            will be used to rewrite queries for improved RAG retrieval performance.
+            The download runs in the background and may take a while. Once installed,{' '}
+            <span className="font-mono font-medium">{DEFAULT_QUERY_REWRITE_MODEL}</span> helps the AI find more relevant passages in your uploaded documents.
           </p>
         </StyledModal>
       </div>
