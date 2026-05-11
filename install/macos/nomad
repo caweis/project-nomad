@@ -4545,6 +4545,13 @@ case "$CMD" in
   uninstall)       cmd_uninstall ;;
   reinstall)       cmd_reinstall ;;
   self-update)     ok "nomad script is up to date" ;;
+  install-bridge)
+    # Targeted install of just the host-command-bridge LaunchAgent —
+    # for users who don't want to do a full `nomad reinstall` just to
+    # pick up a newly-added LaunchAgent. Idempotent.
+    sudo_bootstrap >/dev/null 2>&1 || true
+    step_install_host_command_bridge
+    ;;
   help|--help|-h)
     sed -n '2,45p' "$0" | sed 's/^# //; s/^#//'
     ;;
