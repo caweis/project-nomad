@@ -31,10 +31,20 @@ const execFileAsync = promisify(execFile)
  */
 export class StlScannerService {
   /**
-   * Library root inside the admin container — maps via the compose volume
-   * mount to ${NOMAD_DATA_ROOT}/storage/stl-library/ on the host's data drive.
+   * Library root inside the admin container.
+   *
+   * Compose mounts `${NOMAD_DATA_ROOT}/storage:/app/storage` (see
+   * install/macos/compose.yaml line 47). So the in-container path for the
+   * STL library is `/app/storage/stl-library`, NOT `/storage/stl-library`.
+   *
+   * Earlier versions of this constant were `/storage/stl-library` and
+   * caused the controller's drive-detect to fail with "Workshop unavailable"
+   * even when the data drive WAS mounted and the directory existed on the
+   * host. Chris caught this 2026-05-11 — Workshop page showed the
+   * unavailable panel right after a fresh install where the install step
+   * had already created the directory under ${NOMAD_DATA_ROOT}/storage/.
    */
-  public static readonly LIBRARY_ROOT = '/storage/stl-library'
+  public static readonly LIBRARY_ROOT = '/app/storage/stl-library'
 
   /**
    * Subdirectory inside the library root where generated PNG thumbnails live.
