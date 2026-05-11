@@ -1695,10 +1695,12 @@ step_run_admin_migrations() {
 # Idempotent: BaseSeeder's updateOrCreateMany upserts by service_name, so
 # re-runs are safe and harmless.
 #
-# --force same reason as migration:run — NODE_ENV=production guard.
+# NB: `db:seed` does NOT accept --force (unlike `migration:run`). Seeders
+# run unconditionally regardless of NODE_ENV. Don't add --force here or
+# Adonis will reject the flag and the seed step will silently no-op.
 step_seed_admin_services() {
   section "Admin services seed"
-  if dc exec -T admin node ace db:seed --force 2>&1 | tee /tmp/nomad-seed.log; then
+  if dc exec -T admin node ace db:seed 2>&1 | tee /tmp/nomad-seed.log; then
     ok "services catalog seeded (Kiwix, Kolibri, FlatNotes, CyberChef, Qdrant)"
   else
     warn "db:seed exited non-zero — Apps catalog may be empty in admin"
