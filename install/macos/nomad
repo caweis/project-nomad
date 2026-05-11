@@ -1997,6 +1997,144 @@ step_seed_admin_services() {
   fi
 }
 
+# Given an image repo (e.g., `ghcr.io/kiwix/kiwix-serve` or `dullage/flatnotes`)
+# and a current tag (used to detect prefix conventions like `v`), query the
+# appropriate container registry for the newest semver tag. Echos the latest
+# tag string to stdout, or nothing if no semver-shaped tag is found.
+#
+# Handles three registry conventions:
+#   - GHCR        ghcr.io/<owner>/<repo>           anonymous token-based pull
+#   - DockerHub   <user>/<repo>                    public hub.docker.com v2 API
+#   - DockerHub   <name> (library/<name>)          official images
+_query_latest_tag() {
+  local repo="$1" current_tag="$2"
+  local tags=""
+
+  if [[ "$repo" == ghcr.io/* ]]; then
+    local repo_path="${repo#ghcr.io/}"
+    local token
+    token="$(curl -fsSL --max-time 10 "https://ghcr.io/token?service=ghcr.io&scope=repository:${repo_path}:pull" 2>/dev/null | jq -r '.token // empty' 2>/dev/null)"
+    [[ -z "$token" ]] && return 1
+    tags="$(curl -fsSL --max-time 10 -H "Authorization: Bearer ${token}" "https://ghcr.io/v2/${repo_path}/tags/list" 2>/dev/null | jq -r '.tags[]?' 2>/dev/null)"
+  elif [[ "$repo" == */* ]]; then
+    tags="$(curl -fsSL --max-time 10 "https://hub.docker.com/v2/repositories/${repo}/tags/?page_size=100" 2>/dev/null | jq -r '.results[]?.name' 2>/dev/null)"
+  else
+    tags="$(curl -fsSL --max-time 10 "https://hub.docker.com/v2/repositories/library/${repo}/tags/?page_size=100" 2>/dev/null | jq -r '.results[]?.name' 2>/dev/null)"
+  fi
+
+  [[ -z "$tags" ]] && return 1
+
+  # Match current-tag prefix convention. `v5.5.4` style stays with `v`;
+  # `3.8.1` style stays prefix-less. Avoids accidentally jumping from
+  # `v5.5.4` to bare `5.5.5` if some registry has both forms.
+  local prefix=""
+  [[ "$current_tag" =~ ^v[0-9] ]] && prefix="v"
+
+  # Constrain to the SAME MAJOR version. The upstream seeder pins a specific
+  # major intentionally (admin UI integration tested against that major,
+  # breaking changes in newer majors not yet validated). Auto-bumping point
+  # and minor versions is safe; auto-bumping major is not. Example: CyberChef
+  # 10.19.4 → 10.22.1 yes, 10.19.4 → 11.0.0 no. Major bumps need a human
+  # in the loop and go through `nomad upgrade` after the user reviews
+  # whatever release notes matter to them.
+  local current_major
+  current_major="$(echo "$current_tag" | sed -E "s/^${prefix}([0-9]+).*/\1/")"
+
+  # Filter to pure semver MATCHING current major (X.Y.Z with optional `-N`).
+  # Excludes floating tags like `latest`, `develop`, `v5`, `v5.5`. Sort
+  # descending, take the highest. `sort -V` handles 3.8.10 > 3.8.9 correctly.
+  echo "$tags" | grep -E "^${prefix}${current_major}\.[0-9]+\.[0-9]+(-[0-9]+)?$" | sort -V -r | head -1
+}
+
+# Right after services are seeded with pinned versions, check each registry
+# for newer semver tags and bump the services.container_image column in-place.
+# Bypasses admin's own /api/system/services/check-updates worker — that worker
+# returns null even when newer tags exist (filed for later fix). Direct
+# registry queries side-step the issue and get the install onto the freshest
+# pin before the user installs anything from the Apps catalog.
+#
+# Skipped services:
+#   - nomad_ollama — native install via Homebrew; no Docker image to track.
+#   - Floating-version tags (mysql:8.0, redis:7-alpine) — pinned to majors
+#     intentionally by upstream; bumping to point releases of 8.0.x adds risk
+#     without value.
+#
+# Non-fatal on network errors — install continues even if registry queries
+# fail. The user gets the seeded pins as a fallback, which still works.
+step_refresh_service_versions() {
+  section "Service version refresh"
+  local db_pw; db_pw="$(grep '^DB_PASSWORD=' "$ENV_FILE" | cut -d= -f2-)"
+
+  # Pull the catalog of services with admin-spawned Docker images. Tab-separated
+  # output. --batch suppresses the column headers and box drawing.
+  local services_tsv
+  services_tsv="$(docker exec -i -e MYSQL_PWD="$db_pw" nomad_mysql \
+    mysql -unomad_user nomad --batch --raw \
+    -e 'SELECT service_name, container_image FROM services ORDER BY display_order;' 2>/dev/null \
+    | tail -n +2)"
+
+  if [[ -z "$services_tsv" ]]; then
+    warn "couldn't read services catalog — skipping version refresh"
+    return 0
+  fi
+
+  local checked=0 bumped=0 skipped=0 failed=0
+  while IFS=$'\t' read -r svc_name img; do
+    [[ -z "$svc_name" || -z "$img" ]] && continue
+    checked=$((checked + 1))
+
+    # Skip the special-case rows that don't map to a tracked Docker tag.
+    if [[ "$svc_name" == "nomad_ollama" ]]; then
+      dim "  $svc_name: native (Homebrew) — skipped"
+      skipped=$((skipped + 1))
+      continue
+    fi
+
+    local repo tag
+    repo="${img%:*}"
+    tag="${img##*:}"
+
+    local latest
+    if ! latest="$(_query_latest_tag "$repo" "$tag")"; then
+      warn "  $svc_name: registry query failed for $repo (network? rate limit?)"
+      failed=$((failed + 1))
+      continue
+    fi
+
+    if [[ -z "$latest" ]]; then
+      dim "  $svc_name: $tag (registry returned no semver tags — staying pinned)"
+      continue
+    fi
+
+    if [[ "$latest" == "$tag" ]]; then
+      dim "  $svc_name: $tag (latest)"
+      continue
+    fi
+
+    # Different — bump. UPDATE the row so when the user installs this service
+    # later (via wizard or Apps page), admin pulls the newer image.
+    log "  $svc_name: $tag → $latest"
+    local new_img="${repo}:${latest}"
+    if docker exec -i -e MYSQL_PWD="$db_pw" nomad_mysql \
+        mysql -unomad_user nomad \
+        -e "UPDATE services SET container_image='${new_img}', updated_at=NOW() WHERE service_name='${svc_name}';" \
+        >/dev/null 2>&1; then
+      bumped=$((bumped + 1))
+    else
+      warn "    UPDATE failed for $svc_name"
+      failed=$((failed + 1))
+    fi
+  done <<< "$services_tsv"
+
+  if [[ "$bumped" -eq 0 && "$failed" -eq 0 ]]; then
+    ok "all $checked service(s) at latest pinned version"
+  elif [[ "$failed" -eq 0 ]]; then
+    ok "$bumped of $checked service(s) bumped to latest (others already current)"
+  else
+    warn "$bumped bumped, $failed registry queries failed, $((checked - bumped - failed - skipped)) unchanged"
+  fi
+}
+
 # Install a background LaunchAgent that polls admin's benchmark_results table
 # every 30 seconds and patches any unpatched rows with this Mac's real Apple
 # chip + Metal GPU. Means the upstream leaderboard never sees "-" for our
@@ -2477,6 +2615,7 @@ cmd_install() {
   step_wait_admin
   step_run_admin_migrations    # MUST happen before any DB-touching call (configure-remote, etc.)
   step_seed_admin_services     # populate services catalog so /settings/apps + Easy Setup work
+  step_refresh_service_versions # bump seeded image tags to latest published semver (registry query)
   step_pull_embedding_quick    # ~270 MB, ~30s — admin's RAG works the moment we wire
   step_configure_native_ollama || true   # non-fatal; degradation surfaces in summary
   step_install_benchmark_patcher   # background daemon that fixes leaderboard CPU/GPU automatically
