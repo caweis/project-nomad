@@ -42,6 +42,13 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
+      # Map BOTH 80 and 8080 to the admin's internal :8080. Port 80 means
+      # users can hit `http://nomad.local/` (no port suffix) from any
+      # device — much friendlier than `http://nomad.local:8080/`. The
+      # 8080 binding stays for backward compatibility (existing docs,
+      # bookmarks, scripts) and to allow other web services on the host
+      # to take port 80 without breaking NOMAD admin access.
+      - "80:8080"
       - "8080:8080"
     volumes:
       - ${NOMAD_DATA_ROOT}/storage:/app/storage

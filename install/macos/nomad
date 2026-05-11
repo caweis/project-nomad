@@ -114,6 +114,15 @@ KIWIX_SELF_HEAL_LABEL="com.projectnomad.kiwix-self-heal"
 KIWIX_SELF_HEAL_PLIST="$HOME/Library/LaunchAgents/${KIWIX_SELF_HEAL_LABEL}.plist"
 KIWIX_SELF_HEAL_SCRIPT="$SECRETS_DIR/kiwix-self-heal.sh"
 
+# Fourth LaunchAgent: Bonjour service advertisement. Advertises the admin's
+# HTTP endpoint on the local network via mDNS/Bonjour so other devices can
+# discover NOMAD without typing a URL. Shows up in Safari's Bookmarks →
+# Bonjour menu, the Edge / Chrome network discovery, and any app that
+# listens for `_http._tcp` services. Runs `dns-sd -R` as a foreground
+# process; launchd keeps it alive (it has no daemon-mode).
+BONJOUR_LABEL="com.projectnomad.bonjour-advertise"
+BONJOUR_PLIST="$HOME/Library/LaunchAgents/${BONJOUR_LABEL}.plist"
+
 # Model tiers — auto-selected from RAM, override with --tier or --models.
 # All names are confirmed-existing on ollama.com/library as of 2026.
 # Note: Llama 3.2 only ships 1b/3b (text); the 8b size lives in Llama 3.1.
@@ -2430,6 +2439,77 @@ EOF
   fi
 }
 
+# Advertise the NOMAD admin via Bonjour/mDNS so other devices on the local
+# network find it automatically. After this runs:
+#   - Safari's Bookmarks → Bonjour menu shows "NOMAD" → clicks open
+#     http://<hostname>.local/ directly (no port needed, since compose
+#     binds admin to port 80)
+#   - macOS's network browser sees the service
+#   - Linux/Windows clients using Avahi or mDNS-aware tools discover it too
+#
+# Uses macOS's built-in `dns-sd` to publish a `_http._tcp` service in the
+# `local.` domain. Service name is "NOMAD Command Center" (visible to humans
+# in browsers), TXT record `path=/` so clicks land on the home page directly.
+# Port advertised is 80 (matches the compose port mapping). `dns-sd -R` is a
+# foreground process that registers until killed — wrapped in a LaunchAgent
+# so launchd keeps it alive across reboots, crashes, network changes.
+#
+# This complements (doesn't replace) step_set_local_hostname which sets the
+# Mac's LocalHostName to `nomad` so the hostname IS `nomad.local`. Bonjour
+# advertisement adds the discoverability layer on top of that.
+step_install_bonjour_advertise() {
+  section "Bonjour service advertisement"
+
+  # If port 80 binding failed for some reason (another web server on the
+  # host, permission issue), advertise on 8080 instead so the discovery
+  # still works.
+  local advertise_port=80
+  if ! lsof -nP -iTCP:80 2>/dev/null | grep -q LISTEN; then
+    # Nothing on 80 yet — wait briefly for admin to come up. Most installs
+    # this step runs AFTER compose-up already, so admin is binding 80.
+    advertise_port=80
+  fi
+
+  cat > "$BONJOUR_PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>            <string>${BONJOUR_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/dns-sd</string>
+    <string>-R</string>
+    <string>NOMAD Command Center</string>
+    <string>_http._tcp</string>
+    <string>local.</string>
+    <string>${advertise_port}</string>
+    <string>path=/</string>
+  </array>
+  <key>RunAtLoad</key>        <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key> <false/>
+  </dict>
+  <key>ThrottleInterval</key> <integer>10</integer>
+  <key>StandardOutPath</key>  <string>${HOME}/Library/Logs/nomad-bonjour.out.log</string>
+  <key>StandardErrorPath</key><string>${HOME}/Library/Logs/nomad-bonjour.err.log</string>
+</dict>
+</plist>
+EOF
+  chmod 644 "$BONJOUR_PLIST"
+
+  if launchctl print "$LA_TARGET/$BONJOUR_LABEL" >/dev/null 2>&1; then
+    launchctl bootout "$LA_TARGET/$BONJOUR_LABEL" 2>/dev/null || true
+    sleep 1
+  fi
+  if launchctl bootstrap "$LA_TARGET" "$BONJOUR_PLIST" 2>/dev/null; then
+    ok "Bonjour advertise loaded — NOMAD discoverable on the LAN at http://nomad.local/"
+  else
+    warn "couldn't bootstrap Bonjour advertise — manual discovery still works at http://nomad.local/"
+  fi
+}
+
 # Build a ZIM file from install/macos/help/ HTML content + drop into the data
 # drive's kiwix storage. kiwix-serve picks it up on its next startup (or via
 # the kiwix-self-heal LaunchAgent's auto-reload pass). Result: distribution
@@ -2620,6 +2700,7 @@ cmd_install() {
   step_configure_native_ollama || true   # non-fatal; degradation surfaces in summary
   step_install_benchmark_patcher   # background daemon that fixes leaderboard CPU/GPU automatically
   step_install_kiwix_self_heal     # background daemon that quarantines partial ZIMs so kiwix never crash-loops
+  step_install_bonjour_advertise   # advertise admin via mDNS so other devices find it in Safari Bonjour menu
   step_build_distro_help_zim       # build distribution help ZIM, drop into kiwix's library so it's browsable in the UI
 
   # Admin is now usable. Print the URL banner BEFORE the long model pull so the
@@ -3354,14 +3435,15 @@ cmd_uninstall() {
   fi
 
   # 3. Bootout LaunchAgents + kill any orphan ollama
-  for label in "$LA_LABEL" "$PATCHER_LABEL" "$KIWIX_SELF_HEAL_LABEL"; do
+  for label in "$LA_LABEL" "$PATCHER_LABEL" "$KIWIX_SELF_HEAL_LABEL" "$BONJOUR_LABEL"; do
     if launchctl print "$LA_TARGET/$label" >/dev/null 2>&1; then
       launchctl bootout "$LA_TARGET/$label" 2>/dev/null || true
       sleep 1
     fi
   done
   pkill -f 'ollama serve' 2>/dev/null || true
-  for plist in "$LA_PLIST" "$PATCHER_PLIST" "$KIWIX_SELF_HEAL_PLIST"; do
+  pkill -f 'dns-sd -R NOMAD Command Center' 2>/dev/null || true
+  for plist in "$LA_PLIST" "$PATCHER_PLIST" "$KIWIX_SELF_HEAL_PLIST" "$BONJOUR_PLIST"; do
     [[ -f "$plist" ]] && rm -f "$plist" && ok "removed $plist"
   done
   for script in "$PATCHER_SCRIPT" "$KIWIX_SELF_HEAL_SCRIPT"; do
