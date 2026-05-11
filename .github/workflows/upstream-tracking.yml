@@ -1,0 +1,170 @@
+name: Upstream tracking
+
+# Weekly check on what's changed in the upstream repos this fork tracks.
+# Posts a structured report as a GitHub issue (creates one if none exists,
+# updates the same issue otherwise — single source of truth, doesn't spam).
+#
+# Tracked upstreams:
+#   - Crosstalk-Solutions/project-nomad  (admin source-of-truth)
+#   - proximasan/project-nomad-silicon   (Apple Silicon patches we ported)
+#
+# Comparison is against this repo's admin/ tree. The report distinguishes:
+#   - "files we've forked AND upstream changed" (manual review needed)
+#   - "files unchanged on our side" (clean cherry-pick candidates)
+#
+# Runs Monday 14:00 UTC = early morning Central time. Can also be triggered
+# manually via `gh workflow run upstream-tracking.yml` or the Actions tab.
+
+on:
+  schedule:
+    - cron: '0 14 * * 1'
+  workflow_dispatch:
+
+jobs:
+  diff-and-report:
+    name: Diff upstream + open/update tracking issue
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout this repo with full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Add upstream remotes
+        run: |
+          git remote add crosstalk https://github.com/Crosstalk-Solutions/project-nomad.git || true
+          git remote add proximasan https://github.com/proximasan/project-nomad-silicon.git || true
+          git fetch --quiet crosstalk main
+          git fetch --quiet --tags crosstalk
+          git fetch --quiet proximasan main || true
+
+      - name: Generate report
+        id: report
+        env:
+          BASE_BRANCH: feat/macos-distribution-layer
+        run: |
+          set -euo pipefail
+          REPORT=/tmp/report.md
+          : > "$REPORT"
+
+          echo "_Auto-generated weekly by [.github/workflows/upstream-tracking.yml](../blob/feat/macos-distribution-layer/.github/workflows/upstream-tracking.yml)._  Run date: $(date -u '+%Y-%m-%d %H:%M UTC')." >> "$REPORT"
+          echo "" >> "$REPORT"
+
+          # ─── Crosstalk-Solutions/project-nomad ──────────────────────────────
+          echo "## Crosstalk-Solutions/project-nomad (admin source of truth)" >> "$REPORT"
+          echo "" >> "$REPORT"
+
+          # Latest release tag + a short note
+          LATEST_TAG="$(git tag -l --sort=-version:refname | grep '^v[0-9]' | head -1 || echo "(none yet)")"
+          CROSSTALK_HEAD="$(git rev-parse --short crosstalk/main)"
+          CROSSTALK_DATE="$(git log -1 --format='%cd' --date=short crosstalk/main)"
+          echo "- Crosstalk main HEAD: \`$CROSSTALK_HEAD\` ($CROSSTALK_DATE)" >> "$REPORT"
+          echo "- Latest release tag in repo: \`$LATEST_TAG\`" >> "$REPORT"
+          echo "" >> "$REPORT"
+
+          # Commits behind in admin/ specifically
+          BEHIND="$(git rev-list --count "${BASE_BRANCH}".."crosstalk/main" -- admin/ 2>/dev/null || echo "?")"
+          AHEAD="$(git rev-list --count "crosstalk/main".."${BASE_BRANCH}" -- admin/ 2>/dev/null || echo "?")"
+          echo "**admin/ delta:** ${BEHIND} commits behind, ${AHEAD} commits ahead (our patches)." >> "$REPORT"
+          echo "" >> "$REPORT"
+
+          if [[ "$BEHIND" != "0" && "$BEHIND" != "?" ]]; then
+            # Files we've touched AND upstream changed (manual review needed)
+            OUR_CHANGED=$(git diff --name-only "crosstalk/main"..."${BASE_BRANCH}" -- admin/ | sort -u)
+            UPSTREAM_CHANGED=$(git diff --name-only "${BASE_BRANCH}".."crosstalk/main" -- admin/ | sort -u)
+            CONFLICTS=$(comm -12 <(echo "$OUR_CHANGED") <(echo "$UPSTREAM_CHANGED") || true)
+            CLEAN_PICKS=$(comm -23 <(echo "$UPSTREAM_CHANGED") <(echo "$OUR_CHANGED") || true)
+
+            if [[ -n "$CONFLICTS" ]]; then
+              echo "### ⚠️ Files we forked AND upstream changed (manual review)" >> "$REPORT"
+              echo "" >> "$REPORT"
+              echo '```' >> "$REPORT"
+              echo "$CONFLICTS" >> "$REPORT"
+              echo '```' >> "$REPORT"
+              echo "" >> "$REPORT"
+            fi
+
+            if [[ -n "$CLEAN_PICKS" ]]; then
+              echo "### ✅ Files unchanged on our side (clean cherry-pick candidates)" >> "$REPORT"
+              echo "" >> "$REPORT"
+              echo '```' >> "$REPORT"
+              echo "$CLEAN_PICKS" >> "$REPORT"
+              echo '```' >> "$REPORT"
+              echo "" >> "$REPORT"
+            fi
+
+            echo "### Recent upstream commits touching admin/" >> "$REPORT"
+            echo "" >> "$REPORT"
+            echo '```' >> "$REPORT"
+            git log --oneline --no-merges -20 "${BASE_BRANCH}".."crosstalk/main" -- admin/ >> "$REPORT" || true
+            echo '```' >> "$REPORT"
+            echo "" >> "$REPORT"
+          else
+            echo "✅ No new commits in admin/ since last sync." >> "$REPORT"
+            echo "" >> "$REPORT"
+          fi
+
+          # ─── proximasan/project-nomad-silicon ──────────────────────────────
+          echo "## proximasan/project-nomad-silicon (Apple Silicon patches)" >> "$REPORT"
+          echo "" >> "$REPORT"
+          if git rev-parse proximasan/main >/dev/null 2>&1; then
+            PROX_HEAD="$(git rev-parse --short proximasan/main)"
+            PROX_DATE="$(git log -1 --format='%cd' --date=short proximasan/main)"
+            echo "- proximasan main HEAD: \`$PROX_HEAD\` ($PROX_DATE)" >> "$REPORT"
+            PROX_BEHIND="$(git rev-list --count "${BASE_BRANCH}".."proximasan/main" -- admin/ 2>/dev/null || echo "?")"
+            echo "- admin/ delta: ${PROX_BEHIND} commits behind" >> "$REPORT"
+            echo "" >> "$REPORT"
+            if [[ "$PROX_BEHIND" != "0" && "$PROX_BEHIND" != "?" ]]; then
+              echo "### Recent proximasan commits touching admin/" >> "$REPORT"
+              echo "" >> "$REPORT"
+              echo '```' >> "$REPORT"
+              git log --oneline --no-merges -10 "${BASE_BRANCH}".."proximasan/main" -- admin/ >> "$REPORT" || true
+              echo '```' >> "$REPORT"
+              echo "" >> "$REPORT"
+            else
+              echo "✅ No new commits in admin/ since last sync." >> "$REPORT"
+              echo "" >> "$REPORT"
+            fi
+          else
+            echo "⚠️ proximasan remote unreachable — skipping (repo private, deleted, or rate limited)." >> "$REPORT"
+            echo "" >> "$REPORT"
+          fi
+
+          # ─── Footer ────────────────────────────────────────────────────────
+          echo "---" >> "$REPORT"
+          echo "_To skip a week: edit the cron in \`.github/workflows/upstream-tracking.yml\` or close this issue (a new one will open on the next run)._" >> "$REPORT"
+
+          # Output for the create-or-update step
+          {
+            echo "report<<EOF"
+            cat "$REPORT"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open or update tracking issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BODY: ${{ steps.report.outputs.report }}
+        run: |
+          set -euo pipefail
+          TITLE="📡 Upstream tracking — $(date -u '+%Y-%m-%d')"
+          LABEL="upstream-tracking"
+
+          # Ensure the label exists (idempotent)
+          gh label create "$LABEL" --description "Weekly upstream-diff reports" --color "1f6feb" 2>/dev/null || true
+
+          # Find an existing open issue with the label
+          EXISTING="$(gh issue list --label "$LABEL" --state open --json number --jq '.[0].number' || echo "")"
+
+          if [[ -n "$EXISTING" ]]; then
+            echo "Updating existing issue #$EXISTING"
+            printf '%s' "$BODY" > /tmp/issue-body.md
+            gh issue edit "$EXISTING" --title "$TITLE" --body-file /tmp/issue-body.md
+          else
+            echo "Creating new issue"
+            printf '%s' "$BODY" > /tmp/issue-body.md
+            gh issue create --label "$LABEL" --title "$TITLE" --body-file /tmp/issue-body.md
+          fi
