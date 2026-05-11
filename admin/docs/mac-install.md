@@ -11,7 +11,7 @@ You'll want:
 - **An Apple Silicon Mac** (M1, M2, M3, M4, or later). macOS 14 (Sonoma) or newer.
 - **At least 16 GB of RAM.** N.O.M.A.D. works on 8 GB but you'll be limited to the smallest AI models. 32 GB or more lets you run the larger, more capable models.
 - **A few hundred GB of free disk space.** AI models alone can run 10–200 GB depending on which ones you pick. Wikipedia is another 50 MB to 96 GB depending on the size you choose.
-- **An external drive (recommended).** N.O.M.A.D. is designed to put content on a fast external SSD so you can unplug it for travel or move it between Macs. A 1 TB drive is comfortable; 2 TB is generous. APFS-formatted.
+- **(Optional) An external drive.** The installer supports putting your data on an external drive (SSD or HDD) instead of your Mac's internal disk. Picks vary — some users want AI models and ZIM libraries off internal storage, some want the drive to travel between Macs, others install entirely on internal disk and never touch this option. If you do use one, a 1 TB drive holds most install tiers; 2 TB covers the largest. APFS-formatted. See [Your data drive](/docs/mac-drive-portability) for the differences between the two paths.
 - **An internet connection for the install.** Once everything's downloaded, N.O.M.A.D. works offline.
 
 You don't need to install Docker, Homebrew, Ollama, or anything else first. The installer handles all of it.
