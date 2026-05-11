@@ -835,7 +835,15 @@ Make sure your external drive is mounted, or pick another path."
   # mysql + redis NO LONGER live here — they're on the internal state root.
   # Only content (Wikipedia, models, maps, etc.) goes on the data drive so
   # the drive can be safely unplugged without crashing the management plane.
-  mkdir -p "$picked"/{storage,ollama-models}
+  #
+  # storage/logs MUST exist before admin starts — Pino's ThreadStream opens
+  # /app/storage/logs/admin.log eagerly on boot and crash-loops the container
+  # if the host-mounted parent dir is missing. (Hit on a fresh-drive install
+  # 2026-05-10 — admin restart-looped 11 times with ENOENT before we caught it.)
+  # storage/zim-inprogress is created by the kiwix-self-heal LaunchAgent at
+  # runtime, but pre-creating costs nothing and makes the layout discoverable
+  # before any quarantine has happened.
+  mkdir -p "$picked"/{storage,storage/logs,storage/zim-inprogress,ollama-models}
 
   # Drop the portable HTML chat UI on the drive (alongside quick-chat.sh).
   # The shell script launches Ollama, then opens this page in the default browser.
