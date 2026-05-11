@@ -2698,21 +2698,32 @@ step_build_distro_help_zim() {
 #   • triggers RAG docs discovery
 # Idempotent — safe to re-run.
 step_configure_native_ollama() {
-  section "Wire admin → native Ollama (via admin API)"
+  section "Wire admin → native Ollama"
   api_check_up
 
   local body='{"remoteUrl":"http://host.docker.internal:11434"}'
 
-  # Retry the API call up to 3 times. Admin frequently returns 500 on the
-  # FIRST call right after compose-up — its controller validates the URL by
-  # making an outbound request to host.docker.internal:11434, and the
-  # container's DNS / outbound networking takes a few seconds to stabilize
-  # past the /api/health endpoint coming up. By attempt 2 or 3, the
-  # configure endpoint succeeds.
-  local attempt resp http_code
+  # Try admin's /api/ollama/configure-remote first. The endpoint exists on
+  # proximasan's admin (and some upstream versions) and runs a fuller chain
+  # — validates the URL, tests connectivity, sets kv_store, flips the
+  # services flag, triggers Qdrant preflight. On our caweis admin build
+  # the endpoint doesn't exist (route group at routes.ts:114-122 has chat,
+  # models, installed-models — no configure-remote). When the endpoint
+  # is missing, we fall through to the SQL path immediately.
+  #
+  # Retry policy:
+  #   - 200 success → done
+  #   - 404 (endpoint missing on this admin build) → short-circuit to SQL,
+  #     no retries — the endpoint isn't going to materialize
+  #   - 5xx / 000 / other → retry up to 3 times (DNS warmup, transient
+  #     network, admin still booting past /api/health). Admin's
+  #     configureRemote validates the URL by making an outbound request
+  #     to host.docker.internal:11434, and container networking takes a
+  #     few seconds to stabilize after compose-up.
+  local attempt resp http_code endpoint_missing=0
   for attempt in 1 2 3; do
-    # Capture both body and HTTP code so a 5xx surfaces the actual server
-    # message instead of just curl's "(22) URL returned error 500" string.
+    # Capture body and HTTP code separately so 5xx surfaces the server's
+    # actual message instead of curl's generic error string.
     local out_file; out_file="$(mktemp)"
     http_code="$(curl -sS --max-time 30 -o "$out_file" -w '%{http_code}' \
       -H 'Content-Type: application/json' -X POST -d "$body" \
@@ -2725,6 +2736,13 @@ step_configure_native_ollama() {
       return 0
     fi
 
+    # 404 is deterministic — endpoint doesn't exist on this admin build.
+    # Don't retry; skip straight to SQL with a clean info line.
+    if [[ "$http_code" == "404" ]]; then
+      endpoint_missing=1
+      break
+    fi
+
     if [[ "$attempt" -lt 3 ]]; then
       log "attempt $attempt: admin returned HTTP $http_code — retrying in $((attempt * 3))s"
       sleep $((attempt * 3))
@@ -2733,11 +2751,16 @@ step_configure_native_ollama() {
     fi
   done
 
-  # Defensive fallback for the rare case admin's API is up but configureRemote
-  # can't reach native Ollama (DNS for host.docker.internal not resolving
-  # inside the admin container, network timeout, etc.). Direct SQL bypasses
-  # admin's connectivity test entirely.
-  warn "falling back to direct SQL seed"
+  # Two paths into the SQL seed below:
+  #   (a) endpoint_missing=1 — admin returned 404; this fork's admin doesn't
+  #       have the endpoint. Quiet info log, no warn.
+  #   (b) endpoint exists but all retries failed (5xx, network). Loud warn,
+  #       fall through anyway as a recovery.
+  if [[ "$endpoint_missing" -eq 1 ]]; then
+    log "admin build lacks /api/ollama/configure-remote — seeding state via SQL"
+  else
+    warn "API path failed all retries — falling back to direct SQL seed"
+  fi
   local db_pw; db_pw="$(grep '^DB_PASSWORD=' "$ENV_FILE" | cut -d= -f2-)"
   local sql_err; sql_err="$(mktemp)"
   if echo '
