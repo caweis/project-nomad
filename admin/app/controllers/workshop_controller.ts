@@ -1,17 +1,22 @@
 import { existsSync, createReadStream } from 'node:fs'
 import { promises as fs } from 'node:fs'
-import { join, extname } from 'node:path'
+import { join, extname, basename } from 'node:path'
+import { randomBytes } from 'node:crypto'
 import type { HttpContext } from '@adonisjs/core/http'
 import logger from '@adonisjs/core/services/logger'
 import StlFile from '#models/stl_file'
 import KVStore from '#models/kv_store'
 import { StlScannerService } from '#services/stl_scanner_service'
+import { isLocalNetworkRequest } from '#middleware/local_network_only_middleware'
+import { listStlFilesValidator, updateStlFileValidator } from '#validators/stl_library'
 import {
-  listStlFilesValidator,
-  updateStlFileValidator,
-} from '#validators/stl_library'
-import { CATEGORY_LABELS, STL_CATEGORIES, STL_DIFFICULTIES, STL_MATERIALS } from '../../types/stl_library.js'
-import type { StlFileSlim } from '../../types/stl_library.js'
+  CATEGORY_LABELS,
+  STL_CATEGORIES,
+  STL_DIFFICULTIES,
+  STL_MATERIALS,
+} from '../../types/stl_library.js'
+import type { StlCategory, StlFileSlim } from '../../types/stl_library.js'
+import { sanitizeFilename } from '../utils/fs.js'
 
 /**
  * Workshop / Offline STL Library — HTTP boundary.
@@ -34,6 +39,8 @@ export default class WorkshopController {
   async index({ inertia, request }: HttpContext) {
     const filters = await request.validateUsing(listStlFilesValidator)
 
+    const uploadCheck = isLocalNetworkRequest(request)
+
     if (!existsSync(StlScannerService.LIBRARY_ROOT)) {
       return inertia.render('workshop/index', {
         unavailable: {
@@ -46,6 +53,8 @@ export default class WorkshopController {
         filters,
         enums: this.enumsForUi(),
         rights_acknowledged: await this.rightsAcknowledged(),
+        upload_permitted: uploadCheck.permitted,
+        upload_permitted_reason: uploadCheck.reason ?? null,
       })
     }
 
@@ -99,6 +108,8 @@ export default class WorkshopController {
       filters,
       enums: this.enumsForUi(),
       rights_acknowledged: await this.rightsAcknowledged(),
+      upload_permitted: uploadCheck.permitted,
+      upload_permitted_reason: uploadCheck.reason ?? null,
     })
   }
 
@@ -164,7 +175,8 @@ export default class WorkshopController {
     if (payload.category !== undefined) row.category = payload.category
     if (payload.tags !== undefined) row.tags = payload.tags
     if (payload.material !== undefined) row.material = payload.material
-    if (payload.print_time_minutes !== undefined) row.print_time_minutes = payload.print_time_minutes
+    if (payload.print_time_minutes !== undefined)
+      row.print_time_minutes = payload.print_time_minutes
     if (payload.infill_pct !== undefined) row.infill_pct = payload.infill_pct
     if (payload.difficulty !== undefined) row.difficulty = payload.difficulty
     if (payload.description !== undefined) row.description = payload.description
@@ -285,6 +297,132 @@ export default class WorkshopController {
     response.header('Content-Type', 'image/png')
     response.header('Cache-Control', 'private, max-age=3600')
     return response.stream(createReadStream(abs))
+  }
+
+  /**
+   * GET /api/workshop/upload-permitted — the Workshop page calls this on load
+   * to decide whether to render the upload drop zone or a "LAN-only" note.
+   * Returns the same shape the named middleware uses for its reject body so
+   * the UI can show a consistent reason string.
+   */
+  async uploadPermitted({ request }: HttpContext) {
+    const check = isLocalNetworkRequest(request)
+    return {
+      permitted: check.permitted,
+      reason: check.reason,
+      observed_ip: check.observed_ip,
+    }
+  }
+
+  /**
+   * POST /api/workshop/upload — accept one or more STL/3MF files via multipart
+   * form-data and write them under `${LIBRARY_ROOT}/<category>/`. After all
+   * moves complete, a scoped scan indexes just the uploaded files (upserts +
+   * thumbnails) so they appear in the library without sweeping the whole tree.
+   *
+   * Network gating is handled by the `localNetworkOnly` named middleware
+   * registered on the route — this method assumes the request has already
+   * cleared that gate.
+   *
+   * Returns `{ uploaded: [...], rejected: [...], scan_result }` so the UI can
+   * report per-file success/failure. A 503 means the data drive isn't mounted.
+   */
+  async upload({ request, response }: HttpContext) {
+    if (!existsSync(StlScannerService.LIBRARY_ROOT)) {
+      return response.serviceUnavailable({
+        error: 'Data drive is not mounted — reconnect the drive and try again.',
+      })
+    }
+
+    const rawCategory = String(request.input('category', 'other'))
+    if (!(STL_CATEGORIES as readonly string[]).includes(rawCategory)) {
+      return response.badRequest({
+        error: `Invalid category. Must be one of: ${STL_CATEGORIES.join(', ')}`,
+      })
+    }
+    const category = rawCategory as StlCategory
+
+    const files = request.files('files', {
+      extnames: ['stl', '3mf'],
+      size: '200mb',
+    })
+
+    if (files.length === 0) {
+      return response.badRequest({ error: 'No files uploaded.' })
+    }
+
+    const categoryDir = join(StlScannerService.LIBRARY_ROOT, category)
+    await fs.mkdir(categoryDir, { recursive: true })
+
+    const uploaded: { filename: string; path: string; size_bytes: number }[] = []
+    const rejected: { filename: string; reason: string }[] = []
+    const movedAbsPaths: string[] = []
+
+    for (const file of files) {
+      if (!file.isValid) {
+        const reason =
+          file.errors.length > 0
+            ? file.errors.map((e) => e.message).join('; ')
+            : 'File rejected by upload validator'
+        rejected.push({ filename: file.clientName, reason })
+        continue
+      }
+
+      const ext = (file.extname ?? '').toLowerCase()
+      if (ext !== 'stl' && ext !== '3mf') {
+        rejected.push({
+          filename: file.clientName,
+          reason: `Only .stl and .3mf files are accepted (got .${ext || 'unknown'}).`,
+        })
+        continue
+      }
+
+      // Use Adonis's verified extname (lowercased) and sanitize the basename.
+      // Never trust the user-provided clientName for the on-disk filename.
+      const rawBase = basename(file.clientName, extname(file.clientName)) || 'upload'
+      const sanitizedBase = sanitizeFilename(rawBase)
+      let targetName = `${sanitizedBase}.${ext}`
+      let targetAbs = join(categoryDir, targetName)
+
+      // Avoid clobbering an existing file — never silently overwrite.
+      if (existsSync(targetAbs)) {
+        const suffix = randomBytes(4).toString('hex')
+        targetName = `${sanitizedBase}-${suffix}.${ext}`
+        targetAbs = join(categoryDir, targetName)
+      }
+
+      try {
+        await file.move(categoryDir, { name: targetName, overwrite: false })
+        uploaded.push({
+          filename: targetName,
+          path: join(category, targetName),
+          size_bytes: file.size,
+        })
+        movedAbsPaths.push(targetAbs)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        logger.warn(`[WorkshopController] move failed for ${file.clientName}: ${msg}`)
+        rejected.push({
+          filename: file.clientName,
+          reason: `Could not save file (drive may have disconnected): ${msg}`,
+        })
+      }
+    }
+
+    let scanResult = null
+    if (movedAbsPaths.length > 0) {
+      try {
+        const scanner = new StlScannerService()
+        scanResult = await scanner.scanPaths(movedAbsPaths)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        logger.warn(`[WorkshopController] scanPaths failed: ${msg}`)
+      }
+    }
+
+    // JSON contract uses snake_case (matches the existing /api/workshop/scan
+    // shape) so the React UI can read scan_result.added/updated consistently.
+    return { uploaded, rejected, scan_result: scanResult }
   }
 
   /**

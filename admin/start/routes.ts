@@ -23,6 +23,7 @@ import ZimController from '#controllers/zim_controller'
 import WorkshopController from '#controllers/workshop_controller'
 import router from '@adonisjs/core/services/router'
 import transmit from '@adonisjs/transmit/services/main'
+import { middleware } from './kernel.js'
 
 transmit.registerRoutes()
 
@@ -41,6 +42,13 @@ router
     router.get('/files/:id/thumbnail', [WorkshopController, 'thumbnail'])
     router.post('/scan', [WorkshopController, 'scan'])
     router.post('/acknowledge-rights', [WorkshopController, 'acknowledgeRights'])
+    // Permission probe is intentionally NOT gated — the UI calls it from any
+    // origin so it can render either the drop zone or the LAN-only note.
+    router.get('/upload-permitted', [WorkshopController, 'uploadPermitted'])
+    // The actual upload IS gated. The middleware enforces the same policy
+    // the UI uses to decide whether to show the drop zone, so a client that
+    // bypasses the UI still hits a 403 here.
+    router.post('/upload', [WorkshopController, 'upload']).use(middleware.localNetworkOnly())
   })
   .prefix('/api/workshop')
 router.on('/knowledge-base').redirectToPath('/chat?knowledge_base=true') // redirect for legacy knowledge-base links

@@ -17,6 +17,7 @@ import { useTransmit } from 'react-adonis-transmit'
 import { BROADCAST_CHANNELS } from '../../../constants/broadcast'
 import { IconArrowUp, IconCheck, IconDownload } from '@tabler/icons-react'
 import UpdateServiceModal from '~/components/UpdateServiceModal'
+import HostCommandButton from '~/components/HostCommandButton'
 import { SERVICE_NAMES } from '../../../constants/service_names'
 
 function extractTag(containerImage: string): string {

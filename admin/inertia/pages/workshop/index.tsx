@@ -4,8 +4,9 @@ import AppLayout from '~/layouts/AppLayout'
 import StlCard from '~/components/workshop/StlCard'
 import WorkshopFilters from '~/components/workshop/WorkshopFilters'
 import WorkshopRightsModal from '~/components/workshop/WorkshopRightsModal'
+import UploadDropZone from '~/components/workshop/UploadDropZone'
 import StyledButton from '~/components/StyledButton'
-import { IconRefresh, IconAlertTriangle, IconBox } from '@tabler/icons-react'
+import { IconAlertTriangle, IconBox, IconNetworkOff } from '@tabler/icons-react'
 import type {
   StlCategory,
   StlDifficulty,
@@ -33,6 +34,8 @@ interface PageProps {
     difficulties: StlDifficulty[]
   }
   rights_acknowledged: boolean
+  upload_permitted: boolean
+  upload_permitted_reason: string | null
 }
 
 export default function WorkshopIndex(props: PageProps) {
@@ -64,6 +67,10 @@ export default function WorkshopIndex(props: PageProps) {
     }
   }
 
+  const reloadFiles = () => {
+    router.reload({ only: ['files', 'pagination'] })
+  }
+
   return (
     <AppLayout>
       <Head title="Workshop" />
@@ -80,9 +87,10 @@ export default function WorkshopIndex(props: PageProps) {
               <IconBox size={32} /> Workshop
             </h1>
             <p className="text-sm text-gray-600 mt-1">
-              Offline catalog of 3D-printable files. Drop STLs into{' '}
+              Offline catalog of 3D-printable files. Drop STL/3MF files below, or
+              copy them into{' '}
               <code className="bg-gray-100 px-1 rounded">storage/stl-library/&lt;category&gt;/</code>{' '}
-              on your data drive, then run a scan.
+              on your data drive and run a scan.
             </p>
           </div>
           <StyledButton variant="primary" icon="IconRefresh" loading={scanning} onClick={runScan}>
@@ -99,32 +107,60 @@ export default function WorkshopIndex(props: PageProps) {
         {props.unavailable ? (
           <UnavailablePanel info={props.unavailable} />
         ) : (
-          <div className="flex flex-col md:flex-row gap-4">
-            <WorkshopFilters
-              filters={props.filters}
-              enums={props.enums}
-              total={props.pagination?.total ?? 0}
-            />
-            <div className="flex-1">
-              {props.files.length === 0 ? (
-                <EmptyState filters={props.filters} />
-              ) : (
-                <>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                    {props.files.map((f) => (
-                      <StlCard key={f.id} file={f} />
-                    ))}
-                  </div>
-                  {props.pagination && props.pagination.last_page > 1 && (
-                    <Pager pagination={props.pagination} filters={props.filters} />
-                  )}
-                </>
-              )}
+          <>
+            {props.upload_permitted ? (
+              <UploadDropZone categories={props.enums.categories} onComplete={reloadFiles} />
+            ) : (
+              <LanOnlyNotice reason={props.upload_permitted_reason} />
+            )}
+
+            <div className="flex flex-col md:flex-row gap-4">
+              <WorkshopFilters
+                filters={props.filters}
+                enums={props.enums}
+                total={props.pagination?.total ?? 0}
+              />
+              <div className="flex-1">
+                {props.files.length === 0 ? (
+                  <EmptyState filters={props.filters} uploadPermitted={props.upload_permitted} />
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                      {props.files.map((f) => (
+                        <StlCard key={f.id} file={f} />
+                      ))}
+                    </div>
+                    {props.pagination && props.pagination.last_page > 1 && (
+                      <Pager pagination={props.pagination} filters={props.filters} />
+                    )}
+                  </>
+                )}
+              </div>
             </div>
-          </div>
+          </>
         )}
       </div>
     </AppLayout>
+  )
+}
+
+function LanOnlyNotice({ reason }: { reason: string | null }) {
+  return (
+    <div className="mb-6 flex items-start gap-3 rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+      <IconNetworkOff size={20} className="shrink-0 mt-0.5 text-amber-600" aria-hidden="true" />
+      <div>
+        <p className="font-medium">
+          {reason ?? 'Upload is enabled only from devices on your local network.'}
+        </p>
+        <p className="mt-1 text-amber-800">
+          Drop files into{' '}
+          <code className="bg-white px-1 rounded border border-amber-200">
+            storage/stl-library/&lt;category&gt;/
+          </code>{' '}
+          on your data drive, then use <strong>Rescan library</strong>.
+        </p>
+      </div>
+    </div>
   )
 }
 
@@ -146,7 +182,13 @@ function UnavailablePanel({ info }: { info: StlLibraryUnavailable }) {
   )
 }
 
-function EmptyState({ filters }: { filters: StlListFilters }) {
+function EmptyState({
+  filters,
+  uploadPermitted,
+}: {
+  filters: StlListFilters
+  uploadPermitted: boolean
+}) {
   const filtered =
     !!filters.category ||
     !!filters.material ||
@@ -164,19 +206,21 @@ function EmptyState({ filters }: { filters: StlListFilters }) {
     )
   }
   return (
-    <div className="rounded-lg border-2 border-dashed border-gray-300 bg-white p-12 text-center text-gray-600">
+    <div className="rounded-lg border border-gray-200 bg-white p-12 text-center text-gray-600">
       <IconBox size={48} className="mx-auto text-gray-300 mb-3" />
       <p className="font-medium mb-1">Library is empty</p>
-      <p className="text-sm mb-3">
-        Drop <code className="bg-gray-100 px-1 rounded">.stl</code> or{' '}
-        <code className="bg-gray-100 px-1 rounded">.3mf</code> files into{' '}
-        <code className="bg-gray-100 px-1 rounded">storage/stl-library/</code> under
-        your data drive, organized into subfolders like{' '}
-        <code className="bg-gray-100 px-1 rounded">medical/</code>,{' '}
-        <code className="bg-gray-100 px-1 rounded">tools/</code>,{' '}
-        <code className="bg-gray-100 px-1 rounded">household/</code>.
+      <p className="text-sm">
+        {uploadPermitted ? (
+          <>Drop files into the upload zone above to get started.</>
+        ) : (
+          <>
+            Drop <code className="bg-gray-100 px-1 rounded">.stl</code> or{' '}
+            <code className="bg-gray-100 px-1 rounded">.3mf</code> files into{' '}
+            <code className="bg-gray-100 px-1 rounded">storage/stl-library/&lt;category&gt;/</code>{' '}
+            on your data drive, then click <strong>Rescan library</strong>.
+          </>
+        )}
       </p>
-      <p className="text-sm">Then click <strong>Rescan library</strong> above.</p>
     </div>
   )
 }

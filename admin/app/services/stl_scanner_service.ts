@@ -123,6 +123,72 @@ export class StlScannerService {
   }
 
   /**
+   * Targeted scan for a specific set of absolute paths — used by the Workshop
+   * upload flow, which just wrote the files to disk and wants them indexed
+   * with thumbnails without walking the entire library or sweeping orphans.
+   *
+   * Returns a ScanResult shaped like `scan()` for caller convenience; `orphaned`
+   * is always 0 because this path does not own the orphan-detection contract.
+   *
+   * Any input path that doesn't live under LIBRARY_ROOT is silently dropped
+   * (defense in depth — the caller already builds these paths inside the
+   * library, but we never want to index something outside the root).
+   */
+  async scanPaths(absPaths: string[]): Promise<ScanResult> {
+    if (!existsSync(StlScannerService.LIBRARY_ROOT)) {
+      return {
+        available: false,
+        added: 0,
+        updated: 0,
+        unchanged: 0,
+        orphaned: 0,
+        thumbnails_generated: 0,
+        thumbnails_failed: 0,
+      }
+    }
+
+    await fs.mkdir(join(StlScannerService.LIBRARY_ROOT, StlScannerService.THUMBNAIL_DIR), {
+      recursive: true,
+    })
+
+    const rootWithSep = StlScannerService.LIBRARY_ROOT.endsWith('/')
+      ? StlScannerService.LIBRARY_ROOT
+      : StlScannerService.LIBRARY_ROOT + '/'
+
+    let added = 0
+    let updated = 0
+    let unchanged = 0
+
+    for (const absPath of absPaths) {
+      if (!absPath.startsWith(rootWithSep)) {
+        logger.warn(`[StlScannerService] scanPaths skipped non-library path: ${absPath}`)
+        continue
+      }
+      if (!existsSync(absPath)) {
+        logger.warn(`[StlScannerService] scanPaths skipped missing path: ${absPath}`)
+        continue
+      }
+      const relPath = relative(StlScannerService.LIBRARY_ROOT, absPath)
+      const result = await this.upsertOne(absPath, relPath)
+      if (result === 'added') added++
+      else if (result === 'updated') updated++
+      else unchanged++
+    }
+
+    const { generated, failed } = await this.generateThumbnails()
+
+    return {
+      available: true,
+      added,
+      updated,
+      unchanged,
+      orphaned: 0,
+      thumbnails_generated: generated,
+      thumbnails_failed: failed,
+    }
+  }
+
+  /**
    * Walk the library tree returning absolute paths of every indexable file.
    * Skips the `.thumbnails/` dir and any hidden subdirs.
    */
@@ -184,7 +250,10 @@ export class StlScannerService {
   /**
    * Insert a row, update a row that changed, or no-op for an unchanged file.
    */
-  private async upsertOne(absPath: string, relPath: string): Promise<'added' | 'updated' | 'unchanged'> {
+  private async upsertOne(
+    absPath: string,
+    relPath: string
+  ): Promise<'added' | 'updated' | 'unchanged'> {
     const existing = await StlFile.findBy('path', relPath)
     const stat = await fs.stat(absPath)
 
