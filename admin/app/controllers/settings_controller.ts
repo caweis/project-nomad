@@ -36,7 +36,13 @@ export default class SettingsController {
         return inertia.render('settings/apps', {
             system: {
                 services
-            }
+            },
+            // Frontend uses this to gate ALL row actions for nomad_ollama
+            // (Start / Stop / Restart / Force Reinstall / Update). Each one
+            // routes through DockerService.affectService or updateService,
+            // both of which refuse with a "manage via CLI" error on native
+            // Ollama. Hiding the buttons skips the dead-end UX entirely.
+            isNativeOllama: DockerService.isNativeOllama(),
         });
     }
     

@@ -17,6 +17,7 @@ import { useTransmit } from 'react-adonis-transmit'
 import { BROADCAST_CHANNELS } from '../../../constants/broadcast'
 import { IconArrowUp, IconCheck, IconDownload } from '@tabler/icons-react'
 import UpdateServiceModal from '~/components/UpdateServiceModal'
+import { SERVICE_NAMES } from '../../../constants/service_names'
 
 function extractTag(containerImage: string): string {
   if (!containerImage) return ''
@@ -24,7 +25,15 @@ function extractTag(containerImage: string): string {
   return parts.length > 1 ? parts[parts.length - 1] : 'latest'
 }
 
-export default function SettingsPage(props: { system: { services: ServiceSlim[] } }) {
+export default function SettingsPage(props: {
+  system: { services: ServiceSlim[] }
+  // True when admin is configured to talk to a native (Homebrew) Ollama at
+  // OLLAMA_HOST instead of the bundled Docker container. Set by
+  // settings_controller.ts from DockerService.isNativeOllama(). When true,
+  // the nomad_ollama service row replaces its Start/Stop/Restart/Force
+  // Reinstall/Update buttons with a "Native — manage via CLI" pill.
+  isNativeOllama: boolean
+}) {
   const { openModal, closeAllModals } = useModals()
   const { showError } = useErrorNotification()
   const { isOnline } = useInternetStatus()
@@ -231,6 +240,29 @@ export default function SettingsPage(props: { system: { services: ServiceSlim[] 
     )
 
     if (!record) return null
+
+    // Native Ollama: every Docker-side action (Start / Stop / Restart / Force
+    // Reinstall / Update) routes through DockerService which refuses with a
+    // "manage via CLI" error. Hide the action buttons; show a pill explaining
+    // the actual upgrade path. The user can still see the row exists and that
+    // it's installed — they just can't click anything that would dead-end.
+    if (props.isNativeOllama && record.service_name === SERVICE_NAMES.OLLAMA) {
+      return (
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800"
+            title="Ollama is running natively on this Mac (Metal-accelerated). Container actions don't apply."
+          >
+            Native (Metal)
+          </span>
+          <span className="text-xs text-gray-500">
+            Upgrade with{' '}
+            <code className="bg-gray-100 px-1 rounded font-mono">nomad upgrade ollama</code> on the host
+          </span>
+        </div>
+      )
+    }
+
     if (!record.installed) {
       return (
         <div className="flex flex-wrap gap-2">
