@@ -20,25 +20,13 @@ import { SERVICE_NAMES } from '../../constants/service_names'
 
 // AI Assistant — Core Capability tile on the macOS distro (display_order: 3).
 //
-// Upstream's home page only renders Ollama as a tile when its `services` row
-// has `installed=true AND ui_location='/chat'`. But `_syncContainersWithDatabase`
-// in system_service.ts flips `installed=false` whenever NO `nomad_ollama`
-// container is found on the Docker socket. That's a tautology on the macOS
-// distro where Ollama runs NATIVELY via Homebrew at :11434 — no container
-// exists, so every page render flips the bit back to false, so the tile
-// disappears even though the daemon is healthy and answering on host
-// .docker.internal:11434.
-//
-// system_service has a guard: `if (service_name === OLLAMA &&
-// DockerService.isNativeOllama()) continue;` — but that depends on
-// OLLAMA_HOST being readable inside admin AND the sync running AFTER the
-// services prop is built for THIS render. The race-y state is exactly what
-// Chris hit on the mini: sidebar shows "AI Assistant" but home grid doesn't.
-//
-// Rather than play chase-the-race-condition, we hardcode the AI Assistant as
-// a Core Capability tile on the macOS distro. Native Ollama is part of the
-// install path; if it's missing, `nomad install` is the fix, not a UI absence
-// signal. This mirrors how Maps and Workshop are handled.
+// Rendered only when the `nomad_ollama` services row has installed=true.
+// `_syncContainersWithDatabase` in system_service.ts skips the OLLAMA row
+// when DockerService.isNativeOllama() is true (OLLAMA_HOST env set), so the
+// installed flag is preserved across renders for the macOS distro's native
+// install path. On a fresh install the row starts at installed=false and
+// the wizard flips it to true once Ollama is set up — at which point this
+// tile appears.
 function buildAIAssistantItem(aiAssistantName: string) {
   return {
     label: aiAssistantName || 'AI Assistant',
@@ -149,10 +137,9 @@ export default function Home(props: {
 
   // Add installed services (non-dependency services only).
   //
-  // Skip the OLLAMA row here — we always render the AI Assistant as a Core
-  // Capability tile below regardless of the services-table state. Including
-  // both paths would produce a duplicate tile when the services row IS in
-  // installed=true state.
+  // Skip the OLLAMA row here — the AI Assistant tile is rendered separately
+  // below (with a custom label, icon, and description). Without this filter
+  // an installed OLLAMA row would produce a duplicate tile.
   props.system.services
     .filter((service) =>
       service.installed &&
@@ -178,9 +165,15 @@ export default function Home(props: {
       })
     })
 
-  // AI Assistant — always-present Core Capability on the macOS distro.
-  // See buildAIAssistantItem() for the rationale.
-  items.push(buildAIAssistantItem(aiAssistantName))
+  // AI Assistant — Core Capability tile, gated on the nomad_ollama services
+  // row being installed=true. See buildAIAssistantItem() for the rationale.
+  const aiAssistantInstalled = props.system.services.some(
+    (service) =>
+      service.service_name === SERVICE_NAMES.OLLAMA && service.installed
+  )
+  if (aiAssistantInstalled) {
+    items.push(buildAIAssistantItem(aiAssistantName))
+  }
 
   // Add Maps as a Core Capability
   items.push(MAPS_ITEM)
