@@ -1,5 +1,6 @@
 import KVStore from '#models/kv_store';
 import { BenchmarkService } from '#services/benchmark_service';
+import { DockerService } from '#services/docker_service';
 import { MapService } from '#services/map_service';
 import { OllamaService } from '#services/ollama_service';
 import { SystemService } from '#services/system_service';
@@ -22,7 +23,11 @@ export default class SettingsController {
         return inertia.render('settings/system', {
             system: {
                 info: systemInfo
-            }
+            },
+            // Frontend uses this to hide container-management buttons that
+            // wouldn't work against a native Homebrew Ollama install
+            // (configured via the OLLAMA_HOST env var on the macOS distro).
+            isNativeOllama: DockerService.isNativeOllama(),
         });
     }
 
@@ -63,7 +68,11 @@ export default class SettingsController {
                     chatSuggestionsEnabled: chatSuggestionsEnabled ?? false,
                     aiAssistantCustomName: aiAssistantCustomName ?? '',
                 }
-            }
+            },
+            // Frontend uses this to hide the GPU-passthrough-failed "Reinstall
+            // AI Assistant" banner + button. Forcing a Docker reinstall against
+            // a native Homebrew Ollama install just produces a misleading error.
+            isNativeOllama: DockerService.isNativeOllama(),
         });
     }
 
