@@ -2813,8 +2813,8 @@ step_install_qdrant_for_rag() {
   # Docker startup + qdrant boot is usually 5-15s on Mac mini; budget 60s for
   # slower disks / first-run image pull.
   log "waiting for nomad_qdrant container to come up (up to 60s)"
-  local deadline=$(( SECONDS + 60 ))
-  while (( SECONDS < deadline )); do
+  local deadline=$(( $(date +%s) + 60 ))
+  while [[ $(date +%s) -lt $deadline ]]; do
     if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'nomad_qdrant' \
        && curl -fsS --max-time 3 http://localhost:6333/healthz >/dev/null 2>&1; then
       ok "qdrant is up — Knowledge Base ready"
