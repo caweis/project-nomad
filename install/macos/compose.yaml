@@ -121,6 +121,15 @@ services:
       - nomad-update-shared:/app/update-shared
     environment:
       - NODE_ENV=production
+      # PORT + HOST are required by admin's start/env.ts validator even
+      # though the worker doesn't actually serve HTTP. Without them the
+      # worker exits 1 with "EnvValidationException: Missing environment
+      # variable PORT/HOST" and crash-loops, leaving every queued job
+      # (downloads, model pulls, benchmarks, check-service-updates)
+      # silently unprocessed. Dummy values are fine — the worker never
+      # binds them.
+      - PORT=8080
+      - HOST=0.0.0.0
       - LOG_LEVEL=info
       - APP_KEY=${APP_KEY}
       - URL=${URL}
