@@ -1682,6 +1682,31 @@ step_run_admin_migrations() {
   fi
 }
 
+# Seed the services catalog. Migrations create the tables but the
+# `services` table starts empty — the seeder upserts the canonical rows
+# (Kiwix, Kolibri, FlatNotes, CyberChef, Qdrant) so they appear in
+# admin's UI for installation. Without this:
+#   - Easy Setup wizard's Apps step shows ZERO capabilities (everything's
+#     filtered out by capabilityExists())
+#   - /settings/apps is empty
+#   - "I can't pick anything to install" — exact symptom seen on Chris's
+#     mini after a fresh install.
+#
+# Idempotent: BaseSeeder's updateOrCreateMany upserts by service_name, so
+# re-runs are safe and harmless.
+#
+# --force same reason as migration:run — NODE_ENV=production guard.
+step_seed_admin_services() {
+  section "Admin services seed"
+  if dc exec -T admin node ace db:seed --force 2>&1 | tee /tmp/nomad-seed.log; then
+    ok "services catalog seeded (Kiwix, Kolibri, FlatNotes, CyberChef, Qdrant)"
+  else
+    warn "db:seed exited non-zero — Apps catalog may be empty in admin"
+    warn "tail: $(tail -5 /tmp/nomad-seed.log | tr '\n' ' | ')"
+    NOMAD_INSTALL_DEGRADED+=("admin services catalog empty — Apps page won't list installable services")
+  fi
+}
+
 # Install a background LaunchAgent that polls admin's benchmark_results table
 # every 30 seconds and patches any unpatched rows with this Mac's real Apple
 # chip + Metal GPU. Means the upstream leaderboard never sees "-" for our
@@ -2154,6 +2179,7 @@ cmd_install() {
   step_compose_up
   step_wait_admin
   step_run_admin_migrations    # MUST happen before any DB-touching call (configure-remote, etc.)
+  step_seed_admin_services     # populate services catalog so /settings/apps + Easy Setup work
   step_pull_embedding_quick    # ~270 MB, ~30s — admin's RAG works the moment we wire
   step_configure_native_ollama || true   # non-fatal; degradation surfaces in summary
   step_install_benchmark_patcher   # background daemon that fixes leaderboard CPU/GPU automatically
