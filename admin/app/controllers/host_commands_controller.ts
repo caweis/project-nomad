@@ -85,12 +85,24 @@ export default class HostCommandsController {
 
   /**
    * Max age (seconds) of a .pending marker before we declare the host-side
-   * LaunchAgent is missing / hung. The bridge polls every 2s; even with worst-
-   * case scheduling jitter and a slow first run, a .pending file should
-   * transition to .in-progress within ~30s. Anything older = nothing is
-   * listening, and we should tell the user instead of spinning forever.
+   * LaunchAgent is missing / hung. The bridge polls every 2s, but the
+   * command it then runs (e.g. `nomad upgrade admin`) can take 30-60+
+   * seconds — `docker pull` + container recreate alone is regularly that
+   * long. The original 30s threshold tripped during legitimate in-flight
+   * commands and falsely told the user the bridge wasn't installed.
+   *
+   * Bumped to 300s (5 min): long enough to cover the slowest known
+   * allow-listed command (`upgrade-all` can run several minutes when
+   * multiple images pull), still short enough that a truly hung / missing
+   * bridge surfaces a clear error within a reasonable window.
+   *
+   * Note: the bridge atomically renames .pending → .in-progress when it
+   * picks up the marker, so the .pending lifetime is just "queue waiting
+   * for the bridge's next 2s poll." In practice this should be sub-2s.
+   * The 300s is a safety net for the case where the bridge daemon is
+   * actually wedged.
    */
-  private static readonly PENDING_STALE_AFTER_SECONDS = 30
+  private static readonly PENDING_STALE_AFTER_SECONDS = 300
 
   public async status({ params, response }: HttpContext) {
     const cmd = params.cmd as string
