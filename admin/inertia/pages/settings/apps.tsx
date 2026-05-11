@@ -259,6 +259,13 @@ export default function SettingsPage(props: {
             Native (Metal)
           </span>
           <HostCommandButton cmd="upgrade-ollama" label="Update" disabled={!isOnline} />
+          <HostCommandButton
+            cmd="reset-ollama"
+            label="Reset"
+            icon="IconRefresh"
+            variant="action"
+            successLabel="✓ Reset complete"
+          />
         </div>
       )
     }

@@ -2704,6 +2704,7 @@ run_cmd() {
   case "$cmd" in
     upgrade-ollama)  "$NOMAD_BIN" upgrade ollama ;;
     upgrade-admin)   "$NOMAD_BIN" upgrade admin ;;
+    upgrade-all)     "$NOMAD_BIN" upgrade ;;
     reset-ollama)    "$NOMAD_BIN" reset-ollama ;;
     fix-kiwix)       "$NOMAD_BIN" fix-kiwix ;;
     self-update)     "$NOMAD_BIN" self-update ;;
