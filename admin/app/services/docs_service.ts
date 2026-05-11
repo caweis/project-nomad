@@ -15,6 +15,15 @@ export class DocsService {
     'faq': 4,
     'about': 5,
     'release-notes': 6,
+    // MAC-EDITION pages — slotted after release-notes so upstream page
+    // ordering is preserved. Remove these entries to sever cleanly.
+    'mac-overview': 10,
+    'mac-install': 11,
+    'mac-nomad-cli': 12,
+    'mac-ai-assistant': 13,
+    'mac-workshop': 14,
+    'mac-updates': 15,
+    'mac-drive-portability': 16,
   }
 
   async getDocs() {

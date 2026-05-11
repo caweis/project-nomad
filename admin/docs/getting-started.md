@@ -2,6 +2,10 @@
 
 This guide will help you get the most out of your N.O.M.A.D. server.
 
+<!-- MAC-EDITION-LINK — remove this block to sever the macOS-edition additions -->
+> **On macOS?** Before working through this guide, see [Installing N.O.M.A.D. on your Mac](/docs/mac-install) for the macOS-specific install path. Once that's done, everything below still applies.
+<!-- /MAC-EDITION-LINK -->
+
 ---
 
 ## Easy Setup Wizard

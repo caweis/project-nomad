@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Project NOMAD — Welcome</title>
+<title>Project N.O.M.A.D. — Offline backup help</title>
 <style>
   :root {
     --bg: #faf8f4;
@@ -41,7 +41,7 @@
   .hero {
     background: linear-gradient(135deg, var(--bg-hero) 0%, #2f4d24 100%);
     color: #fff;
-    padding: 3rem 1.5rem 2.5rem;
+    padding: 2.5rem 1.5rem 2rem;
     border-bottom: 4px solid var(--bg-hero-accent);
   }
   .hero-inner { max-width: 740px; margin: 0 auto; }
@@ -55,7 +55,7 @@
   }
   .hero h1 {
     margin: 0 0 0.6rem;
-    font-size: 2rem;
+    font-size: 1.8rem;
     font-weight: 700;
     letter-spacing: -0.02em;
     line-height: 1.2;
@@ -63,41 +63,21 @@
   .hero p {
     margin: 0;
     color: #d8e8d8;
-    font-size: 1.15rem;
+    font-size: 1.05rem;
     max-width: 60ch;
   }
 
   main { max-width: 740px; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; }
 
-  .toc {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 1.25rem 1.5rem;
-    margin-bottom: 2.5rem;
-    box-shadow: var(--shadow);
-  }
-  .toc-title { font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-subtle); margin-bottom: 0.6rem; }
-  .toc ul { margin: 0; padding: 0; list-style: none; columns: 2; column-gap: 1.5rem; }
-  .toc li { margin: 0.3rem 0; padding: 0; break-inside: avoid; }
-  .toc a { color: var(--text); text-decoration: none; border-bottom: 1px dotted var(--border-strong); }
-  .toc a:hover { color: var(--accent); border-bottom-color: var(--accent); }
-
-  section { margin-bottom: 3rem; }
+  section { margin-bottom: 2.5rem; }
   h2 {
-    font-size: 1.4rem;
+    font-size: 1.3rem;
     color: var(--accent);
     margin: 0 0 1rem;
     padding-bottom: 0.5rem;
     border-bottom: 2px solid var(--border);
     font-weight: 700;
     letter-spacing: -0.01em;
-  }
-  h3 {
-    font-size: 1.1rem;
-    color: var(--text);
-    margin: 1.5rem 0 0.6rem;
-    font-weight: 600;
   }
   p { margin: 0.7rem 0; }
   ul, ol { padding-left: 1.4rem; margin: 0.7rem 0; }
@@ -127,25 +107,37 @@
   }
   pre code { background: none; padding: 0; border-radius: 0; color: var(--text); }
 
-  .feature-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 1rem;
-    margin: 1.5rem 0;
-  }
-  .feature {
+  .primary-link {
+    display: block;
     background: var(--bg-card);
     border: 1px solid var(--border);
+    border-left: 4px solid var(--accent);
     border-radius: 8px;
-    padding: 1.25rem 1.4rem;
+    padding: 1.3rem 1.5rem;
+    margin: 1.5rem 0;
     box-shadow: var(--shadow);
+    text-decoration: none;
+    color: inherit;
   }
-  .feature h3 {
-    margin: 0 0 0.4rem;
-    font-size: 1rem;
+  .primary-link:hover {
+    border-left-color: var(--accent-light);
+    border-bottom: 1px solid var(--border);
+  }
+  .primary-link-eyebrow {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
     color: var(--accent);
+    margin-bottom: 0.3rem;
   }
-  .feature p { margin: 0; font-size: 0.95rem; color: var(--text-muted); }
+  .primary-link-title {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--text);
+    margin: 0 0 0.3rem;
+  }
+  .primary-link-desc { margin: 0; color: var(--text-muted); font-size: 0.95rem; }
 
   .callout {
     margin: 1.4rem 0;
@@ -177,8 +169,8 @@
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: 8px;
-    padding: 1.3rem 1.5rem;
-    margin-bottom: 1rem;
+    padding: 1.1rem 1.4rem;
+    margin-bottom: 0.9rem;
     box-shadow: var(--shadow);
   }
   .qa-q { font-weight: 600; color: var(--accent); margin: 0 0 0.4rem; }
@@ -187,7 +179,7 @@
 
   footer {
     border-top: 1px solid var(--border);
-    margin-top: 4rem;
+    margin-top: 3rem;
     padding-top: 1.5rem;
     color: var(--text-subtle);
     font-size: 0.85rem;
@@ -196,13 +188,9 @@
   footer a { color: var(--text-subtle); border-bottom-color: var(--border-strong); }
   footer a:hover { color: var(--accent); border-bottom-color: var(--accent); }
 
-  html { scroll-behavior: smooth; }
-  h2 { scroll-margin-top: 1rem; }
-
   @media (max-width: 600px) {
     .hero { padding: 2rem 1.25rem 1.5rem; }
-    .hero h1 { font-size: 1.6rem; }
-    .toc ul { columns: 1; }
+    .hero h1 { font-size: 1.5rem; }
     main { padding: 1.5rem 1.25rem 3rem; }
   }
 </style>
@@ -211,230 +199,105 @@
 
 <header class="hero">
   <div class="hero-inner">
-    <div class="hero-eyebrow">Welcome to Project NOMAD</div>
-    <h1>Your offline knowledge library &amp; AI assistant</h1>
-    <p>This Mac is now an island of knowledge. Wikipedia, an AI you can chat with, maps, books, reference guides — all on this machine, all without an internet connection. Here's what you can do with it.</p>
+    <div class="hero-eyebrow">Offline backup help</div>
+    <h1>You're reading this because the Command Center isn't responding</h1>
+    <p>This is the offline fallback page that lives on your data drive. The real docs are inside the Command Center — when it's up. Below is what to do when it's not.</p>
   </div>
 </header>
 
 <main>
 
-<nav class="toc" aria-label="Table of contents">
-  <div class="toc-title">In this guide</div>
+<section id="real-docs">
+  <h2>Where the real docs live</h2>
+
+  <p>The full N.O.M.A.D. documentation — including everything specific to the Mac edition — is served by the Command Center on this Mac. Once it's running, open:</p>
+
+  <a class="primary-link" href="http://nomad.local/docs/home">
+    <div class="primary-link-eyebrow">Full documentation</div>
+    <div class="primary-link-title">http://nomad.local/docs/home</div>
+    <p class="primary-link-desc">From any device on the same Wi-Fi. From this Mac specifically, <code>http://localhost</code> also works.</p>
+  </a>
+
+  <p>Pages worth bookmarking once you're in:</p>
+
   <ul>
-    <li><a href="#what-you-have">What you have</a></li>
-    <li><a href="#getting-started">Getting started</a></li>
-    <li><a href="#chat">Chatting with the AI</a></li>
-    <li><a href="#library">Browsing the library</a></li>
-    <li><a href="#other-devices">Using it from other devices</a></li>
-    <li><a href="#more-content">Adding more content</a></li>
-    <li><a href="#privacy">Your privacy</a></li>
-    <li><a href="#troubleshooting">When something looks off</a></li>
+    <li><a href="http://nomad.local/docs/mac-overview">N.O.M.A.D. on Mac</a> — landing page for the Mac edition</li>
+    <li><a href="http://nomad.local/docs/mac-nomad-cli">The <code>nomad</code> command</a> — terminal reference</li>
+    <li><a href="http://nomad.local/docs/mac-drive-portability">Your data drive</a> — what's on it and how to move it</li>
+    <li><a href="http://nomad.local/docs/mac-updates">Updating</a> — the <code>nomad upgrade</code> flow</li>
   </ul>
-</nav>
+</section>
 
-<section id="what-you-have">
-  <h2>What you have</h2>
+<section id="recovery">
+  <h2>If the Command Center isn't responding</h2>
 
-  <p>Project NOMAD bundles several offline tools onto this Mac:</p>
+  <p>From Terminal, in roughly increasing severity:</p>
 
-  <div class="feature-grid">
-    <div class="feature">
-      <h3>AI Assistant</h3>
-      <p>Chat with a real AI like ChatGPT, but running on this Mac. Ask anything — survival questions, recipe ideas, code help, life advice. It works without internet.</p>
-    </div>
-    <div class="feature">
-      <h3>Offline Wikipedia</h3>
-      <p>Search Wikipedia like normal, but from local files. Includes the full encyclopedia plus topic-focused versions like medicine and the top 100 most-read articles.</p>
-    </div>
-    <div class="feature">
-      <h3>Reference libraries</h3>
-      <p>Stack Exchange Q&amp;A on cooking, mechanics, gardening, woodworking, electronics, raspberry pi. Project Gutenberg books. iFixit repair guides. LibreTexts textbooks.</p>
-    </div>
-    <div class="feature">
-      <h3>Education</h3>
-      <p>Khan Academy, TED talks, freeCodeCamp, devdocs (Python, JavaScript, etc). Kolibri channels for structured learning.</p>
-    </div>
-    <div class="feature">
-      <h3>Preparedness content</h3>
-      <p>Canadian Prepper guides on bug-out concepts, food storage, winter prepping. Urban-prepper, FOSS cooking, military medicine references, NHS medicines reference.</p>
-    </div>
-    <div class="feature">
-      <h3>Maps and notes</h3>
-      <p>Offline maps you can browse zoomed in or out. A simple note-taking app for journaling, lists, or saving things you want to keep.</p>
-    </div>
-    <div class="feature">
-      <h3>Workshop &mdash; 3D print library</h3>
-      <p>An offline catalog of 3D-printable files (STL and 3MF). Drop files into folders on your data drive organized by category &mdash; medical, tools, household, replacement parts, agriculture &mdash; and they show up in the Command Center with thumbnails, material info, and print times. If something breaks and you have a printer, this is your parts bin.</p>
-    </div>
+  <div class="qa">
+    <p class="qa-q">First, see what's actually wrong</p>
+    <pre><code>nomad check</code></pre>
+    <p>This scans the whole stack and tells you what's broken in plain language, with the suggested fix for each issue.</p>
+  </div>
+
+  <div class="qa">
+    <p class="qa-q">Restart the admin interface</p>
+    <pre><code>nomad restart admin</code></pre>
+    <p>Wait 15–30 seconds, then refresh <a href="http://nomad.local">nomad.local</a>. Most "page won't load" problems are solved here.</p>
+  </div>
+
+  <div class="qa">
+    <p class="qa-q">Restart everything cleanly</p>
+    <pre><code>nomad down
+nomad up</code></pre>
+    <p>Stops every service and brings them all back up. Slower but more thorough than the targeted restart above.</p>
+  </div>
+
+  <div class="qa">
+    <p class="qa-q">The drive was unplugged — reconnect</p>
+    <p>Plug the drive back in, then:</p>
+    <pre><code>nomad up</code></pre>
+    <p>This re-runs the bring-up pass and reconnects services to the drive's content.</p>
+  </div>
+
+  <div class="qa">
+    <p class="qa-q">Reset just the AI Assistant</p>
+    <pre><code>nomad reset-ollama</code></pre>
+    <p>Use this if the AI is the only thing broken — your models stay, but the runtime gets a clean restart.</p>
+  </div>
+
+  <div class="qa">
+    <p class="qa-q">Nothing else works — full reinstall</p>
+    <pre><code>nomad reinstall</code></pre>
+    <p>Takes 15–30 minutes plus content download time. Your data on the drive is preserved; the application stack gets rebuilt.</p>
   </div>
 </section>
 
-<section id="getting-started">
-  <h2>Getting started</h2>
+<section id="ai-only">
+  <h2>Just want to chat with the AI right now</h2>
 
-  <p>Most things you'll do happen through your web browser. Open Safari (or any browser) and visit either of these:</p>
+  <p>If you need the AI Assistant working immediately and don't want to wait for the full Command Center, your data drive includes a standalone chat surface that doesn't depend on the admin stack at all.</p>
 
-  <ul>
-    <li><a href="http://localhost:8080">localhost:8080</a> — the main control panel ("Command Center"). This is your home base.</li>
-    <li><a href="http://localhost:8090">localhost:8090</a> — the library you're browsing right now (Kiwix). All the Wikipedia and reference content lives here.</li>
-  </ul>
+  <p>On the data drive, double-click:</p>
 
-  <p>Bookmark both. The Command Center is where you'll go to add new content, manage downloads, and chat with the AI. The library is where you go to read things.</p>
+  <pre><code>quick-chat.sh</code></pre>
+
+  <p>It starts a minimal Ollama daemon pointing at your downloaded models and opens a browser chat page. No Command Center, no Kiwix, no admin — just a clean chat against the models on your drive. See <a href="http://nomad.local/docs/mac-drive-portability">Your data drive</a> for the full explanation.</p>
 </section>
 
-<section id="chat">
-  <h2>Chatting with the AI</h2>
-
-  <p>Open the Command Center (<a href="http://localhost:8080">localhost:8080</a>) and click on <strong>AI Assistant</strong> in the menu. You'll get a chat box. Type a question, hit send, get an answer.</p>
-
-  <p>Things to know about the AI:</p>
-
-  <ul>
-    <li>It runs entirely on this Mac. Nothing you ask leaves the device.</li>
-    <li>It's <em>fast</em> on Apple Silicon Macs because it uses Metal (the Mac's graphics chip) for AI work.</li>
-    <li>It doesn't know about events after its training cutoff (early 2025 for the most current models). It can't look things up online — that's the trade-off for being offline.</li>
-    <li>You can pick which model to use. Smaller models are faster but less detailed. Bigger models are slower but more capable. The default is a good balance.</li>
-  </ul>
-
-  <div class="callout ok">
-    <span class="callout-label">Try it</span>
-    Good first questions: "What can you help me with?" · "Explain how a sourdough starter works" · "Write a packing list for a 3-day camping trip with two kids" · "What are some signs of carbon monoxide poisoning?"
-  </div>
-</section>
-
-<section id="library">
-  <h2>Browsing the library</h2>
-
-  <p>The library at <a href="http://localhost:8090">localhost:8090</a> is where all the offline reference content lives. Each "book" is a separate collection — Wikipedia, Project Gutenberg, a specific Stack Exchange site, a TED talks archive.</p>
-
-  <p>To search across everything, use the search bar at the top. To filter, use the dropdown on the left to narrow by language or category. Click any book to dive in.</p>
-
-  <p>If you don't see something you expect, try:</p>
-
-  <ul>
-    <li>Clearing the category filter (it might be set to "Wikipedia" by default — change it to show all categories)</li>
-    <li>Waiting a moment if you've recently added new content — see <a href="#troubleshooting">When something looks off</a> below</li>
-  </ul>
-</section>
-
-<section id="other-devices">
-  <h2>Using it from other devices</h2>
-
-  <p>NOMAD is set up so other devices on your home WiFi can use it too — phones, tablets, laptops, anyone connected to the same network. They don't need their own copy. They just need a browser.</p>
-
-  <p>If you said "yes" to setting this Mac's network name during install, anyone on the same WiFi can simply visit:</p>
-
-  <ul>
-    <li><code>http://nomad.local:8080</code> — Command Center</li>
-    <li><code>http://nomad.local:8090</code> — Library (this site)</li>
-  </ul>
-
-  <p>That's the easy way. Type it into any browser on your phone, tablet, or another Mac on the same WiFi.</p>
-
-  <div class="callout ok">
-    <span class="callout-label">Use case</span>
-    Set this Mac up in your house, off-grid cabin, or RV. Family members type <code>nomad.local:8080</code> into their browsers and have the same access. No internet needed for any of them.
-  </div>
-
-  <h3>If <code>nomad.local</code> doesn't work</h3>
-
-  <p>Some networks (corporate WiFi, guest networks, certain mesh routers) block <code>.local</code> name resolution. In that case, find this Mac's IP address and use that instead.</p>
-
-  <p>Easiest way to find the IP — from System Settings on this Mac:</p>
-
-  <ol>
-    <li>Open <strong>System Settings</strong> (or System Preferences on older macOS)</li>
-    <li>Click <strong>Wi-Fi</strong> in the sidebar</li>
-    <li>Click <strong>Details</strong> next to your connected network</li>
-    <li>Look for <strong>IP Address</strong> — it'll be something like <code>192.168.1.42</code></li>
-  </ol>
-
-  <p>Then from any other device on the same WiFi, visit <code>http://192.168.1.42:8080</code> (replace with the actual address you saw). Bookmark it once and you're set.</p>
-
-  <h3>Want to change <code>nomad.local</code> to something else?</h3>
-
-  <p>You can rename this Mac's network name any time:</p>
-
-  <ul>
-    <li>System Settings → General → About → click "Local hostname" → type whatever you want (e.g. <code>library</code>, <code>cabin</code>, <code>basecamp</code>)</li>
-    <li>Or in Terminal: <code>sudo scutil --set LocalHostName basecamp</code></li>
-  </ul>
-
-  <p>After that, devices visit <code>http://basecamp.local:8080</code>. Whatever you pick.</p>
-</section>
-
-<section id="more-content">
-  <h2>Adding more content</h2>
-
-  <p>The Command Center has a section called <strong>Content Manager</strong> (and another called <strong>Maps Manager</strong>). That's where you go to add more reference material — extra Wikipedia variants, additional Stack Exchange sites, more Khan Academy channels, regional offline maps.</p>
-
-  <p>When you queue something to download, NOMAD does it in the background. You can keep using everything else while downloads run. New content appears in the library within a minute or two of finishing.</p>
+<section id="when-stuck">
+  <h2>When you're truly stuck</h2>
 
   <div class="callout warn">
-    <span class="callout-label">Heads up</span>
-    Some downloads are huge. Full Wikipedia is about 95 GB. Downloads can take hours on a typical home connection. Plan ahead — start big downloads when you'll be near the Mac for a while.
-  </div>
-</section>
-
-<section id="privacy">
-  <h2>Your privacy</h2>
-
-  <p>Everything runs on this Mac. Specifically:</p>
-
-  <ul>
-    <li>The AI Assistant runs locally. Your conversations never leave the device.</li>
-    <li>Wikipedia and other reference content is served from local files. Searches don't go to Google or anyone else.</li>
-    <li>No accounts, no logins, no usernames, no tracking.</li>
-    <li>Downloads (when you add new content) come from public archives like the Kiwix project — those connections are visible to your network, like any other download.</li>
-  </ul>
-
-  <p>This means you can chat openly with the AI about whatever you want — health questions, financial planning, things you're embarrassed to type into a search engine. Nobody else sees it.</p>
-</section>
-
-<section id="troubleshooting">
-  <h2>When something looks off</h2>
-
-  <div class="qa">
-    <p class="qa-q">I just downloaded a book but the library doesn't show it.</p>
-    <p>Wait a minute — NOMAD checks for new content every 60 seconds. New books appear after the next check.</p>
-    <p>If it's been more than a few minutes and you still don't see it, open Terminal and type <code>nomad fix-kiwix</code>. That refreshes the library immediately.</p>
-  </div>
-
-  <div class="qa">
-    <p class="qa-q">The AI Assistant says no models are available.</p>
-    <p>The AI engine probably lost its connection to the models. Open Terminal and type <code>nomad restart admin</code>, wait 15 seconds, then refresh the page.</p>
-  </div>
-
-  <div class="qa">
-    <p class="qa-q">A book downloaded but it's broken or empty.</p>
-    <p>The download may have been interrupted. Open the Command Center, go to Content Manager, find the broken book, click Delete, then re-add it from the wizard. NOMAD will redownload it from scratch.</p>
-  </div>
-
-  <div class="qa">
-    <p class="qa-q">Everything seems slow or stuck.</p>
-    <p>Open Terminal and type <code>nomad check</code>. It scans the whole system and tells you what's wrong, in plain language, with a suggested fix for each issue.</p>
-  </div>
-
-  <div class="qa">
-    <p class="qa-q">My external drive came unplugged. What now?</p>
-    <p>The basics keep running — the AI's main systems are on the internal Mac drive. Plug the drive back in, then in Terminal type <code>nomad up</code>. Everything resumes where it left off.</p>
-  </div>
-
-  <div class="qa">
-    <p class="qa-q">I want to start completely fresh.</p>
-    <p>In Terminal, <code>nomad reinstall</code>. It'll ask once if you're sure (because this wipes content), then handle everything. Takes 15-30 minutes plus however long the new downloads take.</p>
-  </div>
-
-  <div class="qa">
-    <p class="qa-q">Something else is weird and I can't tell what.</p>
-    <p>You can always close everything, restart the Mac, and turn things back on with <code>nomad up</code>. NOMAD is designed to recover from interruptions cleanly.</p>
+    <span class="callout-label">Last resorts</span>
+    <p>Restart the Mac, then <code>nomad up</code>. N.O.M.A.D. is designed to recover cleanly from interruptions.</p>
+    <p>If that doesn't fix it, run <code>nomad check</code> and read the output — most problems have a named cause and a named fix.</p>
+    <p>If you need to wipe and start over: <code>nomad reinstall</code> for the application stack, or run the installer fresh from the drive (<code>install-nomad.command</code>) to bring up a completely new install pointing at the same data drive.</p>
   </div>
 </section>
 
 <footer>
-  <p>Project NOMAD · macOS distribution layer</p>
-  <p style="margin-top: 0.4rem; font-size: 0.8rem;">For technical details, see the <a href="https://github.com/caweis/project-nomad-macos-arm64">project repository</a> or run <code>man nomad</code> in Terminal.</p>
+  <p>Project N.O.M.A.D. · macOS edition · offline backup help</p>
+  <p style="margin-top: 0.4rem; font-size: 0.8rem;">Technical reference: <code>man nomad</code> · Repository: <a href="https://github.com/caweis/project-nomad-macos-arm64">caweis/project-nomad-macos-arm64</a></p>
 </footer>
 
 </main>
