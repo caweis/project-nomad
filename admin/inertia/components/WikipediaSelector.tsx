@@ -3,7 +3,6 @@ import { WikipediaOption, WikipediaCurrentSelection } from '../../types/download
 import classNames from 'classnames'
 import { IconCheck, IconDownload, IconWorld } from '@tabler/icons-react'
 import StyledButton from './StyledButton'
-import LoadingSpinner from './LoadingSpinner'
 
 export interface WikipediaSelectorProps {
   options: WikipediaOption[]
@@ -45,11 +44,14 @@ const WikipediaSelector: React.FC<WikipediaSelectorProps> = ({
         </div>
       </div>
 
-      {/* Downloading status message */}
+      {/* Downloading status message — NOMAD desert palette, not generic blue */}
       {isDownloading && (
-        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-center gap-2">
-          <LoadingSpinner fullscreen={false} iconOnly className="size-5" />
-          <span className="text-sm text-blue-700">
+        <div className="mb-4 p-3 bg-desert-green/10 border border-desert-green/30 rounded-lg flex items-center gap-2">
+          <div
+            className="w-5 h-5 border-[2px] border-desert-green border-t-transparent rounded-full animate-spin"
+            aria-hidden="true"
+          />
+          <span className="text-sm text-desert-stone-dark">
             Downloading Wikipedia... This may take a while for larger packages.
           </span>
         </div>
@@ -77,11 +79,11 @@ const WikipediaSelector: React.FC<WikipediaSelectorProps> = ({
                 isInstalled
                   ? 'border-desert-green bg-desert-green/10'
                   : isSelected
-                    ? 'border-lime-500 bg-lime-50'
+                    ? 'border-desert-olive bg-desert-olive/10'
                     : 'border-gray-200 bg-white hover:border-gray-300'
               )}
             >
-              {/* Status badges */}
+              {/* Status badges — NOMAD desert palette; Downloading uses olive accent */}
               <div className="absolute top-2 right-2 flex gap-1">
                 {isInstalled && (
                   <span className="text-xs bg-desert-green text-white px-2 py-0.5 rounded-full flex items-center gap-1">
@@ -90,20 +92,22 @@ const WikipediaSelector: React.FC<WikipediaSelectorProps> = ({
                   </span>
                 )}
                 {isPending && !isInstalled && (
-                  <span className="text-xs bg-lime-500 text-white px-2 py-0.5 rounded-full">
+                  <span className="text-xs bg-desert-olive text-white px-2 py-0.5 rounded-full">
                     Selected
                   </span>
                 )}
                 {isCurrentDownloading && (
-                  <span className="text-xs bg-blue-500 text-white px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <span className="text-xs bg-desert-olive text-white px-2 py-0.5 rounded-full flex items-center gap-1">
                     <IconDownload size={12} />
                     Downloading
                   </span>
                 )}
               </div>
 
-              {/* Option content */}
-              <div className="pr-16 flex flex-col h-full">
+              {/* Option content — pr-28 reserves enough room for the widest badge
+                  ("Downloading" + icon ~110px). pr-16 was too tight and the
+                  title text wrapped under the badge. */}
+              <div className="pr-28 flex flex-col h-full">
                 <h4 className="text-lg font-semibold text-gray-900 mb-1">{option.name}</h4>
                 <p className="text-sm text-gray-600 mb-3 flex-grow">{option.description}</p>
                 <div className="flex items-center gap-3">
@@ -114,7 +118,7 @@ const WikipediaSelector: React.FC<WikipediaSelectorProps> = ({
                       isSelected
                         ? isInstalled
                           ? 'border-desert-green bg-desert-green'
-                          : 'border-lime-500 bg-lime-500'
+                          : 'border-desert-olive bg-desert-olive'
                         : 'border-gray-300'
                     )}
                   >
