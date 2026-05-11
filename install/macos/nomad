@@ -419,7 +419,7 @@ check_stack() {
   if curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
     ok "native Ollama responding on :11434"
   else
-    flag "🔴" "Native Ollama not responding" "Check ~/Library/Logs/ollama.err.log"
+    flag "🔴" "Native Ollama not responding" "Check ~/Library/Logs/nomad-ollama.err.log"
   fi
 
   # Admin's view of the world (via its own API — same auth-free routes the UI uses)
@@ -1132,9 +1132,25 @@ LAUNCH_EOF
     <key>PATH</key>                    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>
   <key>RunAtLoad</key>         <true/>
-  <key>KeepAlive</key>         <true/>
-  <key>StandardOutPath</key>   <string>${HOME}/Library/Logs/ollama.out.log</string>
-  <key>StandardErrorPath</key> <string>${HOME}/Library/Logs/ollama.err.log</string>
+  <!-- KeepAlive as a dict so launchd only restarts on CRASH (non-zero exit),
+       not on clean shutdown. Bare <true/> tight-loops on a clean `ollama stop`
+       and burns CPU until something kicks it. SuccessfulExit=false means
+       "if the process exited zero, leave it alone." -->
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key> <false/>
+  </dict>
+  <!-- ThrottleInterval: minimum seconds between restart attempts. Without
+       this, a configuration error that causes Ollama to crash on boot
+       restart-loops at full CPU. 10s is the launchd doc default but worth
+       being explicit. -->
+  <key>ThrottleInterval</key> <integer>10</integer>
+  <!-- ExitTimeOut: how long launchd waits between SIGTERM and SIGKILL.
+       Default is 20s. We bump to 30s so an in-flight model generation has
+       time to finish writing the conversation buffer to disk on shutdown. -->
+  <key>ExitTimeOut</key>      <integer>30</integer>
+  <key>StandardOutPath</key>   <string>${HOME}/Library/Logs/nomad-ollama.out.log</string>
+  <key>StandardErrorPath</key> <string>${HOME}/Library/Logs/nomad-ollama.err.log</string>
 </dict>
 </plist>
 EOF
@@ -1175,7 +1191,7 @@ Manual recovery:
     curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1 && { ok "Ollama API responding"; return 0; }
     sleep 1
   done
-  die "Ollama did not start — check ~/Library/Logs/ollama.err.log"
+  die "Ollama did not start — check ~/Library/Logs/nomad-ollama.err.log"
 }
 
 # Symlink ourselves into brew's bin dir so `nomad <cmd>` works without the
@@ -1507,6 +1523,124 @@ step_pull_embedding_quick() {
 
 # Warn loudly if the user forced a tier larger than what their RAM can handle.
 # Exits via die unless they confirm or pass --yes.
+# Per-model size estimates (GB, approximate Q4 download size). Used by the
+# pre-install picker to show what each tier costs before any pulls happen.
+# Updated by hand when Ollama bumps a model's quantized size meaningfully.
+_model_size_gb() {
+  case "$1" in
+    nomic-embed-text)         echo "0.3" ;;
+    mxbai-embed-large)        echo "0.7" ;;
+    llama3.2:1b)              echo "1.3" ;;
+    gemma3:1b)                echo "0.8" ;;
+    llama3.2:3b)              echo "2.0" ;;
+    gemma3:4b)                echo "3.3" ;;
+    phi4:14b)                 echo "9.0" ;;
+    qwen2.5-coder:7b)         echo "4.7" ;;
+    llama3.1:8b)              echo "4.9" ;;
+    gemma3:12b)               echo "8.1" ;;
+    qwen3:14b)                echo "9.3" ;;
+    qwen2.5-coder:14b)        echo "9.0" ;;
+    qwen2.5-coder:32b)        echo "20"  ;;
+    deepseek-r1:32b)          echo "20"  ;;
+    qwen3:32b)                echo "20"  ;;
+    mistral-small:24b)        echo "14"  ;;
+    gemma3:27b)               echo "17"  ;;
+    qwen2.5:72b)              echo "47"  ;;
+    deepseek-r1:70b)          echo "43"  ;;
+    llama3.3:70b)             echo "43"  ;;
+    *)                        echo "?"   ;;
+  esac
+}
+
+# One-liner blurb per model for the picker. Helps the user understand what
+# they're actually getting before downloading 10+ GB.
+_model_blurb() {
+  case "$1" in
+    nomic-embed-text)   echo "embeddings — required for RAG and document search" ;;
+    mxbai-embed-large)  echo "larger embedding model for higher-quality RAG" ;;
+    llama3.2:1b)        echo "tiny chat — fast on any Mac, weakest reasoning" ;;
+    llama3.2:3b)        echo "small chat — good baseline for 8 GB Macs" ;;
+    llama3.1:8b)        echo "general chat — solid middle-of-road default" ;;
+    llama3.3:70b)       echo "70B chat — Studio-only, slow but strong reasoning" ;;
+    gemma3:1b)          echo "tiny Google model — very fast" ;;
+    gemma3:4b)          echo "small Google model — strong-for-size" ;;
+    gemma3:12b)         echo "12B Google model — good chat + multilingual" ;;
+    gemma3:27b)         echo "27B Google model — top open-weight chat" ;;
+    qwen2.5-coder:7b)   echo "coding assistant — autocompletes + explains code" ;;
+    qwen2.5-coder:14b)  echo "larger coding assistant" ;;
+    qwen2.5-coder:32b)  echo "32B coding assistant — Studio-class" ;;
+    qwen3:14b)          echo "Qwen3 chat — strong reasoning at 14B" ;;
+    qwen3:32b)          echo "Qwen3 chat — 32B reasoning model" ;;
+    qwen2.5:72b)        echo "72B chat — for maxed-out Studios" ;;
+    deepseek-r1:32b)    echo "reasoning model with visible thinking traces" ;;
+    deepseek-r1:70b)    echo "70B reasoning model — slow, strong at math/logic" ;;
+    mistral-small:24b)  echo "Mistral 24B chat — balanced general-purpose" ;;
+    phi4:14b)           echo "Microsoft Phi-4 — strong on reasoning at 14B" ;;
+    *)                  echo "" ;;
+  esac
+}
+
+# Interactive picker shown once at install time. Walks the user through:
+#   (1) here's what your Mac auto-detects to, and what's in that tier;
+#   (2) accept, change tier, or skip.
+# Skipped (using the auto-detected tier) when:
+#   - --yes was passed (unattended run);
+#   - --models was passed (user supplied an explicit list);
+#   - --tier was passed (user already chose a tier);
+#   - --no-models was passed (user wants to skip).
+# Mutates TIER and SKIP_MODELS in-place so subsequent steps pick up the choice.
+prompt_for_models() {
+  # Honor all explicit-intent flags — don't pester users with prompts.
+  [[ "$NOMAD_YES" -eq 1 ]] && return 0
+  [[ "$TIER_EXPLICIT" -eq 1 ]] && return 0
+  [[ "$MODELS_EXPLICIT" -eq 1 ]] && return 0
+  [[ "$SKIP_MODELS_EXPLICIT" -eq 1 ]] && return 0
+
+  local ram_gb auto_t resolved_tier models_in_tier
+  ram_gb=$(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 ))
+  auto_t="$(auto_tier)"
+  resolved_tier="$auto_t"
+  models_in_tier="$(resolve_tier_models "$auto_t")"
+
+  section "Model selection"
+  echo "  Detected: ${ram_gb} GB RAM → auto-tier '${auto_t}' (~$(tier_size_gb "$auto_t") GB total)"
+  echo
+  echo "  Models in this tier:"
+  for m in $models_in_tier; do
+    printf "    %-22s ~%4s GB    %s\n" "$m" "$(_model_size_gb "$m")" "$(_model_blurb "$m")"
+  done
+  echo
+  echo "  Choices:"
+  echo "    [Y]  pull these now (default)"
+  echo "    [tiny|small|medium|large|xl|dreamy]   pick a different tier"
+  echo "    [n]  skip — install without models. Pull later with 'nomad models pull <tier>'."
+  echo
+  read -r -p "  Choice [Y]: " choice
+  choice="$(echo "$choice" | tr '[:upper:]' '[:lower:]' | xargs)"
+
+  case "$choice" in
+    ""|y|yes)
+      log "using auto-tier '$auto_t'"
+      # TIER stays "auto"; resolve_tier_models was already called by the dispatcher.
+      ;;
+    n|no|skip)
+      SKIP_MODELS=1
+      warn "models will NOT be pulled. Run 'nomad models pull $auto_t' later to install them."
+      ;;
+    tiny|small|medium|large|xl|dreamy)
+      TIER="$choice"
+      MODELS="$(resolve_tier_models "$choice")"
+      log "switched to tier '$choice' (~$(tier_size_gb "$choice") GB total)"
+      # If user picked a larger tier than their RAM auto-resolves to, defer
+      # to warn_if_tier_above_auto to give them one more chance to back off.
+      ;;
+    *)
+      warn "didn't understand '$choice' — using auto-tier '$auto_t'"
+      ;;
+  esac
+  echo
+}
+
 warn_if_tier_above_auto() {
   [[ "$TIER" == "auto" ]] && return 0
   local auto_t; auto_t="$(auto_tier)"
@@ -2164,8 +2298,15 @@ cmd_install() {
   prevent_sleep
   log "Project NOMAD — macOS install (target: $(uname -m), $(sw_vers -productVersion))"
 
-  # If user picked a tier larger than auto-detected, warn explicitly about
-  # slowness/swap before committing — let them confirm or back off.
+  # Interactive model picker — shown BEFORE the heavy work so the user can
+  # see what models will be pulled and pick a different tier (or skip) up
+  # front. Auto-skipped when --yes / --tier / --models / --no-models are on
+  # the command line (intent already declared).
+  prompt_for_models
+
+  # If the user picked (or kept) a tier larger than auto-detected, warn
+  # explicitly about slowness/swap before committing — second chance to
+  # back off after the picker shows them the size.
   warn_if_tier_above_auto
 
   step_deps
@@ -2471,15 +2612,43 @@ _upgrade_native_ollama() {
     return 0
   fi
   log "running brew update + brew upgrade ollama…"
-  brew update >/dev/null 2>&1
-  if brew upgrade ollama 2>&1 | tail -10; then
-    ok "ollama upgraded (or already at latest)"
-    log "restarting native Ollama LaunchAgent…"
-    cmd_reset_ollama
-    ok "native Ollama back up with current version: $(brew list --versions ollama 2>/dev/null | awk '{print $2}')"
-  else
+  brew update >/dev/null 2>&1 || warn "brew update returned non-zero (network? formula tap?) — continuing with cached formulas"
+  if ! brew upgrade ollama 2>&1 | tail -10; then
     warn "brew upgrade ollama exited non-zero"
+    return 1
   fi
+  ok "ollama upgraded (or already at latest)"
+  log "restarting native Ollama LaunchAgent…"
+  cmd_reset_ollama
+
+  # Don't claim success until Ollama's actually responding. The LaunchAgent
+  # comes up async — between `launchctl bootstrap` returning and Ollama
+  # binding :11434 there's typically 2-8 seconds of nothing. Without this
+  # wait, the next `nomad models` or admin API call may hit ECONNREFUSED.
+  log "waiting up to 30s for Ollama API on :11434…"
+  local waited=0
+  while [[ "$waited" -lt 30 ]]; do
+    if curl -fsS --max-time 2 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+      ok "native Ollama back up with current version: $(brew list --versions ollama 2>/dev/null | awk '{print $2}')"
+      return 0
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+
+  # Never came back. Dump diagnostic state so the user can see WHY before
+  # they ssh in and start poking around.
+  warn "Ollama API didn't respond within 30s after upgrade — daemon may have failed to start"
+  local plist_label="com.projectnomad.ollama"
+  log "launchctl state for $plist_label:"
+  launchctl list 2>/dev/null | awk -v label="$plist_label" '$3==label {print "  PID="$1" rc="$2" label="$3}' | sed 's/^/  /'
+  local err_log="$HOME/Library/Logs/nomad-ollama.err.log"
+  if [[ -s "$err_log" ]]; then
+    log "tail of $err_log:"
+    tail -20 "$err_log" | sed 's/^/  /'
+  fi
+  log "recovery: try 'nomad reset-ollama', or 'tail -f $err_log' to watch the daemon retry"
+  return 1
 }
 
 _upgrade_kiwix() {
@@ -3149,7 +3318,7 @@ Reboot the Mac and try again — this clears all launchd transient state."
     fi
     sleep 1
   done
-  warn "API not yet responding — tail ~/Library/Logs/ollama.err.log for hints"
+  warn "API not yet responding — tail ~/Library/Logs/nomad-ollama.err.log for hints"
 }
 
 # Benchmark — native Metal Ollama vs container (Rosetta-emulated) Ollama on
@@ -3515,15 +3684,22 @@ DATA_ROOT_ARG=""
 TIER="auto"            # auto | tiny | small | medium | large | xl | dreamy
 MODELS=""              # if non-empty, overrides tier resolution
 SKIP_MODELS=0
+# Track which model-related flags the user explicitly passed. Without these
+# markers we can't tell "user said --tier auto" from "user didn't pass --tier"
+# — both end up TIER=auto. The model-picker prompt skips when the user has
+# already declared intent on the command line.
+TIER_EXPLICIT=0
+MODELS_EXPLICIT=0
+SKIP_MODELS_EXPLICIT=0
 
 CMD="${1:-help}"
 [[ $# -gt 0 ]] && shift
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --data-root)  DATA_ROOT_ARG="$2"; shift 2 ;;
-    --tier)       TIER="$2"; shift 2 ;;
-    --models)     MODELS="$2"; shift 2 ;;
-    --no-models)  SKIP_MODELS=1; shift ;;
+    --tier)       TIER="$2"; TIER_EXPLICIT=1; shift 2 ;;
+    --models)     MODELS="$2"; MODELS_EXPLICIT=1; shift 2 ;;
+    --no-models)  SKIP_MODELS=1; SKIP_MODELS_EXPLICIT=1; shift ;;
     --yes|-y)     NOMAD_YES=1; shift ;;
     --help|-h)    CMD="help"; shift ;;
     *)            EXTRA_ARGS+=("$1"); shift ;;
