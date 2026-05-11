@@ -91,12 +91,14 @@ Within roughly 10–30 minutes — mostly waiting for Homebrew, OrbStack, and Ol
 
 If you don't want a full N.O.M.A.D. install on a second Mac and just want to use the AI Assistant with your existing models, double-click **quick-chat.sh** instead. It:
 
-1. Installs Ollama via Homebrew if it's not already there. Note: this requires Homebrew to be installed first. If Homebrew isn't present, the script stops with the Homebrew install instructions.
+1. Installs Ollama via Homebrew if it's not already there. If Homebrew itself isn't installed, the script asks if it should install Homebrew first — one prompt for consent, then one sudo password during the Homebrew install, then it continues into the Ollama install automatically.
 2. Sets `OLLAMA_MODELS` to point at the drive's model cache.
 3. Starts a background Ollama daemon.
 4. Opens `quick-chat.html` in your default browser.
 
 That's a chat surface with no Command Center, no Workshop, no Wikipedia, no admin — it's only chat against your local models. Useful for a quick session on someone else's Mac or your travel laptop without committing to a full install.
+
+The quick-chat.sh on your drive is regenerated each time you run `nomad install` on the source Mac, so a re-install picks up any bootstrap improvements from newer N.O.M.A.D. versions.
 
 ---
 

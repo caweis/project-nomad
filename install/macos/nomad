@@ -902,22 +902,55 @@ echo "  drive:    $DRIVE_ROOT"
 echo "  models:   $MODELS_DIR"
 echo
 
-# 1. Ensure ollama is installed
+# 1. Ensure ollama is installed (and Homebrew, if needed, with consent)
 if ! command -v ollama >/dev/null 2>&1; then
+  # Pick up ollama from its canonical install locations even if not on PATH
   for o in /opt/homebrew/bin/ollama /usr/local/bin/ollama; do
     [[ -x "$o" ]] && export PATH="$(dirname "$o"):$PATH" && break
   done
 fi
 if ! command -v ollama >/dev/null 2>&1; then
-  if command -v brew >/dev/null 2>&1; then
-    log "installing ollama via Homebrew"
-    brew install ollama
-  else
-    die "ollama not installed and Homebrew not present.
-Install Homebrew first:
-  /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"
-Then re-run this script."
+  # Pick up brew from its canonical install locations even if not on PATH
+  if ! command -v brew >/dev/null 2>&1; then
+    for b in /opt/homebrew/bin/brew /usr/local/bin/brew; do
+      [[ -x "$b" ]] && eval "$("$b" shellenv)" && break
+    done
   fi
+  # If brew still isn't present, offer to install it. Homebrew modifies
+  # /opt/homebrew (Apple Silicon) or /usr/local (Intel) and asks for sudo
+  # once — meaningful change, so we prompt instead of auto-installing.
+  if ! command -v brew >/dev/null 2>&1; then
+    warn "Ollama isn't installed on this Mac, and Homebrew isn't either."
+    warn "Ollama installs via Homebrew, so we need Homebrew first."
+    echo
+    echo "  Homebrew (https://brew.sh) is the standard macOS package manager."
+    echo "  Installing it modifies /opt/homebrew (Apple Silicon) or /usr/local"
+    echo "  (Intel) and asks for your sudo password once. After Homebrew"
+    echo "  finishes, this script continues into the Ollama install."
+    echo
+    printf "Install Homebrew now? [y/N] "
+    read -r answer
+    case "$answer" in
+      [yY]|[yY][eE][sS])
+        log "installing Homebrew — sudo prompt incoming, takes a few minutes"
+        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        # Re-source shellenv so brew is on PATH for the rest of this script
+        for b in /opt/homebrew/bin/brew /usr/local/bin/brew; do
+          [[ -x "$b" ]] && eval "$("$b" shellenv)" && break
+        done
+        command -v brew >/dev/null 2>&1 || die "Homebrew install didn't complete. See output above for the cause."
+        ok "Homebrew installed"
+        ;;
+      *)
+        die "Declined. To install Ollama manually:
+  /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"
+  brew install ollama
+Then re-run this script."
+        ;;
+    esac
+  fi
+  log "installing ollama via Homebrew"
+  brew install ollama
 fi
 ok "ollama $(ollama --version 2>&1 | head -1)"
 
