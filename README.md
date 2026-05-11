@@ -5,17 +5,15 @@
 
 </div>
 
-A pocket-sized civilization that lives in your closet.
+A fork of [Crosstalk-Solutions/project-nomad](https://github.com/Crosstalk-Solutions/project-nomad) targeting macOS on Apple Silicon. NOMAD is an offline-first knowledge server — Wikipedia, regional maps, AI chat, Khan Academy, reference libraries — running on hardware you own.
 
-[Project N.O.M.A.D.](https://github.com/Crosstalk-Solutions/project-nomad) is Crosstalk-Solutions' offline-first knowledge server — Wikipedia, regional maps, AI chat, Khan Academy courses, reference libraries on everything from medicine to mechanics to bread-baking, all running on a Mac in your house with no internet required after install. This fork makes it work properly on Apple Silicon.
+NOMAD upstream is built for Linux with NVIDIA GPUs. Getting it onto Macs has been years of work by people who did the hard parts — NoamanKhalil ported the foundation, proximasan added the Apple Silicon admin patches, snfettig wired native Ollama to Metal. This repo is one more step in that line: a multi-arch rebuild of the admin image, install-pipeline fixes for things fresh Macs were hitting, and a `nomad` command that bundles install, upgrades, and lifecycle into one place from the Terminal. Standing on a lot of shoulders.
 
-NOMAD upstream is built for Linux with NVIDIA GPUs. Getting it onto Macs has been years of work by people who did the hard parts — NoamanKhalil ported the foundation, proximasan added the Apple Silicon admin patches, snfettig wired native Ollama to Metal. This repo is one more step in that line: a multi-arch rebuild of the admin image (so it runs on `arm64` alongside `amd64`), some install-pipeline fixes for things fresh Macs were hitting, and a `nomad` command that bundles install, upgrades, and lifecycle into one place from the Terminal. Standing on a lot of shoulders.
+Useful for people who want their own offline knowledge node: preppers, homeschoolers, off-grid setups, classroom labs, family servers.
 
-If you're a prepper, a homeschooler, an off-grid landowner, a parent who doesn't want everything their kid sees to require a Cloudflare cert, or a sysadmin who likes solving problems that don't have Stack Overflow answers — this is for you.
+## Install
 
-## Try it
-
-Paste this into Terminal on a fresh Apple Silicon Mac:
+On a fresh Apple Silicon Mac (M1 or later, macOS 14+):
 
 ```bash
 mkdir -p ~/Developer && cd ~/Developer && \
@@ -23,45 +21,43 @@ mkdir -p ~/Developer && cd ~/Developer && \
   bash project-nomad-feat-macos-distribution-layer/install/macos/nomad install
 ```
 
-The installer asks you two things — where to store data (an external drive, usually) and which AI models to pull (it shows you the list before downloading) — and handles everything else. Homebrew, OrbStack, native Ollama as a LaunchAgent, the container stack, database migrations, content seeding, model downloads, kiwix self-heal, an end-user help library, the works. Idempotent: re-run any time. That's also the repair path.
+The installer asks where to store data (external drive is the usual answer) and which AI models to pull, then handles Homebrew, OrbStack, native Ollama, the container stack, database setup, content downloads, and a help library. Idempotent — re-running fixes anything that broke.
 
-When it's done, open `http://localhost:8080` on the Mac. Or `http://nomad.local:8080` from any phone, tablet, or laptop on the same WiFi.
+Admin lands at `http://localhost:8080`, or `http://nomad.local:8080` from any device on the same network.
 
-## What you get
+## What's in it
 
-The Command Center home page is tiles you click:
+The admin home page has tiles for:
 
-- **AI Assistant.** Local chat that runs on your Mac's Metal GPU. No internet, no API keys, your conversations never leave the machine. Bring your own models — Llama, Qwen, Gemma, DeepSeek — the install picks a tier that fits your RAM.
-- **Information Library.** Wikipedia in whatever size you want, from a 50 MB "top articles" dump to the full 96 GB English download. Plus medical references, military field manuals, repair guides, prepping content, cooking, Khan Academy mirrors, whatever you've curated. All searchable, all offline.
-- **Education Platform.** Kolibri — Khan Academy courses with progress tracking, K-12 curriculum content.
-- **Maps.** Offline regional maps. You download once, then they work forever, no Google trying to remember where you've been.
-- **Workshop.** A catalog of 3D-printable files you've collected, with thumbnails, categories, print times. Drop STLs into a folder, the scanner picks them up.
-- **Notes.** Local-only notebook with markdown.
-- **Data Tools.** Swiss-army-knife for encoding, encryption, hashing, format conversion (CyberChef).
+- **AI Assistant** — local Ollama chat, runs on the Mac's Metal GPU.
+- **Information Library** — Wikipedia (your choice of size, from 50 MB to 96 GB), plus reference works on medicine, mechanics, cooking, survival, anything else you download.
+- **Education Platform** — Kolibri (Khan Academy and other coursework).
+- **Maps** — offline regional maps.
+- **Workshop** — catalog of 3D-printable files (STL/3MF) you've collected.
+- **Notes** — local-only notebook.
+- **Data Tools** — CyberChef for encoding / encryption / data conversion.
 
-Everything is browseable from any device on your network. Unplug your data drive when you travel and the management plane keeps running; plug back in and the content comes back. The drive can move between Macs — a single `quick-chat.sh` script lives at its root so any other Mac can boot the AI chat directly off the drive without installing anything.
+Reachable from other devices on the same network. The data drive can be unplugged for travel and the management plane keeps running; plug back in to restore content.
 
 ## What's different from upstream
 
-The admin container is built for both `linux/amd64` and `linux/arm64` so it runs natively on Apple Silicon instead of being emulated by Rosetta. Ollama runs as a Homebrew install talking to the Metal GPU directly — Apple Silicon's actual reason for being — rather than as a Docker container with no GPU access. The ZIM downloader writes to a temp file and renames atomically on completion, so a half-downloaded Wikipedia doesn't crash Kiwix on the next start. Migrations and seeders run automatically. There's a worker container so downloads actually progress. The local Bonjour name gets set to `nomad` so the Mac is reachable at `nomad.local` from every other device. Updates happen with `nomad upgrade` from Terminal, not a flaky button in the admin that tries to rewrite compose files it doesn't recognize.
+- Admin container built for both `linux/amd64` and `linux/arm64`.
+- Ollama runs as a Homebrew install rather than a Docker container, so it can use the Metal GPU.
+- ZIM downloader writes to a temp file and renames on completion, which prevents a half-downloaded library from crashing Kiwix.
+- Migrations and seeders run during install. There's a worker container so download jobs actually progress.
+- Updates happen with `nomad upgrade` from the Terminal.
 
-For the full list of differences, install steps, storage architecture, and CLI reference: [`install/macos/README.md`](./install/macos/README.md).
+Full reference: [`install/macos/README.md`](./install/macos/README.md).
 
 ## Lineage
 
-I didn't build NOMAD. The credit chain matters:
+- [Crosstalk-Solutions/project-nomad](https://github.com/Crosstalk-Solutions/project-nomad) — upstream
+- [NoamanKhalil/project-nomad-MacOs](https://github.com/NoamanKhalil/project-nomad-MacOs) — first macOS port
+- [proximasan/project-nomad-silicon](https://github.com/proximasan/project-nomad-silicon) — Apple Silicon admin patches, multi-arch images
+- [snfettig/project-nomad-macos-arm64](https://github.com/snfettig/project-nomad-macos-arm64) — native Ollama on Metal, immediate fork-parent
 
-- [**Crosstalk-Solutions/project-nomad**](https://github.com/Crosstalk-Solutions/project-nomad) — the original. Linux-first, big-hearted, the reason any of this exists.
-- [**NoamanKhalil/project-nomad-MacOs**](https://github.com/NoamanKhalil/project-nomad-MacOs) — first serious macOS port. Phase 1-3 foundational work.
-- [**proximasan/project-nomad-silicon**](https://github.com/proximasan/project-nomad-silicon) — admin patches for Apple Silicon (`isNativeOllama`, `APPLE_CHIP_MODEL` env-var fallback), multi-arch GHCR images. Their image is still the install-time fallback if mine is unreachable.
-- [**snfettig/project-nomad-macos-arm64**](https://github.com/snfettig/project-nomad-macos-arm64) — native-Ollama-with-Metal commit, the immediate fork-parent of this repo.
+## Status
 
-What this fork adds on top: the installer/lifecycle CLI, atomic-rename ZIM downloader, auto-migrations + seeders + worker container, multi-arch image rebuild from current admin source, Workshop, install-time UX (model picker, hostname rename, Desktop-droppable tools, browser userscripts), and a weekly workflow that diffs upstream so we don't drift.
+Active work is on [`feat/macos-distribution-layer`](https://github.com/caweis/project-nomad/tree/feat/macos-distribution-layer). Validated end-to-end on a Mac mini M4 with 32 GB. Weekly upstream-diff reports land in [Issues](https://github.com/caweis/project-nomad/issues?q=label%3Aupstream-tracking).
 
-## Status & contributing
-
-Active dev on [`feat/macos-distribution-layer`](https://github.com/caweis/project-nomad/tree/feat/macos-distribution-layer) — that's the branch that gets the new image builds. End-to-end install is validated on a Mac mini M4 with 32 GB. Weekly upstream-diff reports land in [Issues](https://github.com/caweis/project-nomad/issues?q=label%3Aupstream-tracking) every Monday morning.
-
-PRs welcome, especially if you're running this on something other than a Mac mini and find rough edges. Open an issue first if it's a bigger change.
-
-Apache-2.0 throughout.
+Apache-2.0.
