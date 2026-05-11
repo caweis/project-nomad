@@ -243,6 +243,20 @@ export class OllamaService {
     }
   }
 
+  /**
+   * Strip embedding models + apply description overrides. Applied AFTER any
+   * source of model data (live API or cache) so the filtered view is
+   * consistent regardless of whether the cache was populated by an older
+   * code version that didn't filter.
+   */
+  private applyMacDistroFilters(models: NomadOllamaModel[]): NomadOllamaModel[] {
+    const noEmbed = models.filter((m) => !m.name.toLowerCase().includes('embed'))
+    return noEmbed.map((m) => {
+      const override = MODEL_DESCRIPTION_OVERRIDES[m.name]
+      return override ? { ...m, description: override } : m
+    })
+  }
+
   private async retrieveAndRefreshModels(
     sort?: 'pulls' | 'name',
     force?: boolean
@@ -252,7 +266,11 @@ export class OllamaService {
         const cachedModels = await this.readModelsFromCache()
         if (cachedModels) {
           logger.info('[OllamaService] Using cached available models data')
-          return this.sortModels(cachedModels, sort)
+          // Apply Mac-distro filters even on cache hit — older cache files
+          // may pre-date the filter, and we always want the user-facing
+          // catalog to be filtered consistently.
+          const filtered = this.applyMacDistroFilters(cachedModels)
+          return this.sortModels(filtered, sort)
         }
       } else {
         logger.info('[OllamaService] Force refresh requested, bypassing cache')
@@ -281,26 +299,13 @@ export class OllamaService {
         }))
         .filter((model) => model.tags.length > 0)
 
-      // Filter out embedding models from the user-facing recommendations.
-      // Embedding models (e.g. nomic-embed-text) are infrastructure for the
-      // RAG / Knowledge Base feature — picking one as a chat model errors
-      // because they don't generate text. The chat-model dropdown already
-      // hides them via getModels()'s default filter; this applies the same
-      // treatment to the catalog the Easy Setup wizard surfaces.
-      const noEmbed = noCloud.filter((model) => !model.name.toLowerCase().includes('embed'))
+      // Apply the same Mac-distro filters (embed-strip + description
+      // overrides) as the cache-read path so users see the same catalog
+      // regardless of cache state.
+      const filtered = this.applyMacDistroFilters(noCloud)
 
-      // Apply per-model description overrides for cases where upstream's
-      // description oversells what we actually pull (e.g. deepseek-r1's
-      // description references 671B-class capability but our default tag
-      // is the 1.5B variant). The override map lives next to the FALLBACK
-      // constants in constants/ollama.ts so all the patching is in one place.
-      const patched = noEmbed.map((model) => {
-        const override = MODEL_DESCRIPTION_OVERRIDES[model.name]
-        return override ? { ...model, description: override } : model
-      })
-
-      await this.writeModelsToCache(patched)
-      return this.sortModels(patched, sort)
+      await this.writeModelsToCache(filtered)
+      return this.sortModels(filtered, sort)
     } catch (error) {
       logger.error(
         `[OllamaService] Failed to retrieve models from Nomad API: ${error instanceof Error ? error.message : error
