@@ -1,7 +1,7 @@
 import { inject } from '@adonisjs/core'
 import { ChatRequest, Ollama } from 'ollama'
 import { NomadOllamaModel } from '../../types/ollama.js'
-import { FALLBACK_RECOMMENDED_OLLAMA_MODELS } from '../../constants/ollama.js'
+import { FALLBACK_RECOMMENDED_OLLAMA_MODELS, MODEL_DESCRIPTION_OVERRIDES } from '../../constants/ollama.js'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import logger from '@adonisjs/core/services/logger'
@@ -281,8 +281,26 @@ export class OllamaService {
         }))
         .filter((model) => model.tags.length > 0)
 
-      await this.writeModelsToCache(noCloud)
-      return this.sortModels(noCloud, sort)
+      // Filter out embedding models from the user-facing recommendations.
+      // Embedding models (e.g. nomic-embed-text) are infrastructure for the
+      // RAG / Knowledge Base feature — picking one as a chat model errors
+      // because they don't generate text. The chat-model dropdown already
+      // hides them via getModels()'s default filter; this applies the same
+      // treatment to the catalog the Easy Setup wizard surfaces.
+      const noEmbed = noCloud.filter((model) => !model.name.toLowerCase().includes('embed'))
+
+      // Apply per-model description overrides for cases where upstream's
+      // description oversells what we actually pull (e.g. deepseek-r1's
+      // description references 671B-class capability but our default tag
+      // is the 1.5B variant). The override map lives next to the FALLBACK
+      // constants in constants/ollama.ts so all the patching is in one place.
+      const patched = noEmbed.map((model) => {
+        const override = MODEL_DESCRIPTION_OVERRIDES[model.name]
+        return override ? { ...model, description: override } : model
+      })
+
+      await this.writeModelsToCache(patched)
+      return this.sortModels(patched, sort)
     } catch (error) {
       logger.error(
         `[OllamaService] Failed to retrieve models from Nomad API: ${error instanceof Error ? error.message : error

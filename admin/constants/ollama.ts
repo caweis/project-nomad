@@ -1,13 +1,32 @@
 import { NomadOllamaModel } from '../types/ollama.js'
 
 /**
+ * Per-model description overrides applied at the catalog layer
+ * (ollama_service.retrieveAndRefreshModels). Upstream descriptions
+ * sometimes oversell what we actually pull — e.g. deepseek-r1's
+ * description references 671B-class capability but our default tag
+ * is the 1.5B variant. These overrides tell the truth about the tag
+ * the wizard will pull.
+ *
+ * Add an entry whenever you spot a recommended model where the
+ * description doesn't match the default tag's actual capability.
+ */
+export const MODEL_DESCRIPTION_OVERRIDES: Record<string, string> = {
+  'llama3.1':
+    "Llama 3.1 8B — Meta's general-purpose chat model in a size that runs comfortably on consumer Macs. Strong instruction-following, multilingual.",
+  'deepseek-r1':
+    "DeepSeek-R1 1.5B — a small distilled reasoning model. Useful for testing the AI Assistant; larger DeepSeek-R1 variants (7B, 14B, 32B, 671B) have stronger reasoning but require more RAM. Pull the bigger variants from the AI Settings page if your Mac has the memory.",
+}
+
+/**
  * Fallback basic recommended Ollama models in case fetching from the service fails.
+ * Descriptions reflect the SPECIFIC tag we pull, not the upstream model family.
  */
 export const FALLBACK_RECOMMENDED_OLLAMA_MODELS: NomadOllamaModel[] = [
   {
     name: 'llama3.1',
     description:
-      'Llama 3.1 is a new state-of-the-art model from Meta available in 8B, 70B and 405B parameter sizes.',
+      "Llama 3.1 8B — Meta's general-purpose chat model in a size that runs comfortably on consumer Macs. Strong instruction-following, multilingual.",
     estimated_pulls: '109.3M',
     id: '9fe9c575-e77e-4a51-a743-07359458ee71',
     first_seen: '2026-01-28T23:37:31.000+00:00',
@@ -26,7 +45,7 @@ export const FALLBACK_RECOMMENDED_OLLAMA_MODELS: NomadOllamaModel[] = [
   {
     name: 'deepseek-r1',
     description:
-      'DeepSeek-R1 is a family of open reasoning models with performance approaching that of leading models, such as O3 and Gemini 2.5 Pro.',
+      'DeepSeek-R1 1.5B — a small distilled reasoning model. Useful for testing the AI Assistant; larger DeepSeek-R1 variants (7B, 14B, 32B, 671B) have stronger reasoning but require more RAM. Pull the bigger variants from the AI Settings page if your Mac has the memory.',
     estimated_pulls: '77.2M',
     id: '0b566560-68a6-4964-b0d4-beb3ab1ad694',
     first_seen: '2026-01-28T23:37:31.000+00:00',
