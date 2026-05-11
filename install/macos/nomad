@@ -206,6 +206,18 @@ KIWIX_SELF_HEAL_SCRIPT="$SECRETS_DIR/kiwix-self-heal.sh"
 BONJOUR_LABEL="com.projectnomad.bonjour-advertise"
 BONJOUR_PLIST="$HOME/Library/LaunchAgents/${BONJOUR_LABEL}.plist"
 
+# Fifth LaunchAgent: host-command bridge. Admin (inside Docker) can't directly
+# invoke host-side commands like `nomad upgrade ollama` (brew lives on the
+# host, not in the container). This LaunchAgent polls a directory on the
+# bind-mounted storage volume for request marker files; when admin's UI
+# button writes one, the bridge runs the matching nomad command (from a
+# strict allow-list) and writes a result file admin polls for status.
+# Pattern matches the existing benchmark-patcher / kiwix-self-heal LAs but
+# goes the opposite direction (admin → host instead of host → admin).
+HOST_BRIDGE_LABEL="com.projectnomad.host-command-bridge"
+HOST_BRIDGE_PLIST="$HOME/Library/LaunchAgents/${HOST_BRIDGE_LABEL}.plist"
+HOST_BRIDGE_SCRIPT="$SECRETS_DIR/host-command-bridge.sh"
+
 # Model tiers — auto-selected from RAM, override with --tier or --models.
 # All names are confirmed-existing on ollama.com/library as of 2026.
 # Note: Llama 3.2 only ships 1b/3b (text); the 8b size lives in Llama 3.1.
@@ -2642,6 +2654,142 @@ EOF
   fi
 }
 
+# Host-command bridge: lets the admin UI trigger host-side `nomad` commands
+# via marker files dropped in the bind-mounted storage volume. Pattern is
+# inverse of benchmark-patcher (which goes host → admin); this goes
+# admin → host. Strict allow-list, no token (bind-mount permissions are
+# user-only; no extra auth surface needed for single-user Mac install).
+#
+# Protocol: admin POSTs /api/host-commands/<cmd>, controller writes
+# storage/.host-commands/<cmd>.pending. This LaunchAgent polls every 2s,
+# matches against allow-list, runs the corresponding nomad CLI command,
+# writes <cmd>.result with the exit code + truncated stdout/stderr, then
+# deletes the .pending marker. Admin polls /api/host-commands/<cmd> which
+# reads the result file and reports back. Idempotent — concurrent identical
+# requests collapse into one (same marker filename).
+step_install_host_command_bridge() {
+  section "Host-command bridge LaunchAgent (admin UI → host nomad commands)"
+
+  # The bridge directory lives on the bind-mounted storage so admin (in
+  # container) and the LaunchAgent (on host) see the same files. Pre-create
+  # so the first admin write doesn't race with mkdir.
+  local data_root; data_root="$(grep '^NOMAD_DATA_ROOT=' "$ENV_FILE" | cut -d= -f2-)"
+  if [[ -z "$data_root" ]]; then
+    warn "NOMAD_DATA_ROOT not set in $ENV_FILE — skipping host-command bridge"
+    return 0
+  fi
+  local bridge_dir="$data_root/storage/.host-commands"
+  mkdir -p "$bridge_dir"
+
+  cat > "$HOST_BRIDGE_SCRIPT" <<'BRIDGE_EOF'
+#!/usr/bin/env bash
+# host-command-bridge.sh — polls $BRIDGE_DIR for command request markers
+# from admin's UI and runs the matching `nomad` CLI command on the host.
+# Allow-list only — never executes arbitrary input. Sleeps 2s between polls.
+# Self-cleans .result files older than 24h.
+
+set -uo pipefail
+
+BRIDGE_DIR="$1"
+NOMAD_BIN="$2"
+LOG="$HOME/Library/Logs/nomad-host-command-bridge.log"
+
+log() { /usr/bin/printf '[%s] %s\n' "$(/bin/date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG"; }
+
+# Map allow-listed command names to actual shell commands. Anything not in
+# this case statement is rejected. The .pending file name IS the cmd name
+# (no JSON parsing, no string interpolation from user-controlled content).
+run_cmd() {
+  local cmd="$1"
+  case "$cmd" in
+    upgrade-ollama)  "$NOMAD_BIN" upgrade ollama ;;
+    upgrade-admin)   "$NOMAD_BIN" upgrade admin ;;
+    reset-ollama)    "$NOMAD_BIN" reset-ollama ;;
+    fix-kiwix)       "$NOMAD_BIN" fix-kiwix ;;
+    self-update)     "$NOMAD_BIN" self-update ;;
+    *)               echo "DISALLOWED cmd: $cmd" >&2; return 126 ;;
+  esac
+}
+
+[[ -d "$BRIDGE_DIR" ]] || { log "bridge dir missing: $BRIDGE_DIR -- drive unplugged? sleeping"; exit 0; }
+
+# Process each .pending file
+shopt -s nullglob
+for pending in "$BRIDGE_DIR"/*.pending; do
+  base="$(/usr/bin/basename "$pending" .pending)"
+  in_progress="$BRIDGE_DIR/$base.in-progress"
+  result="$BRIDGE_DIR/$base.result"
+
+  # Atomic claim -- if rename succeeds, we own the work
+  if ! /bin/mv "$pending" "$in_progress" 2>/dev/null; then
+    continue
+  fi
+
+  log "running cmd: $base"
+  started_at=$(/bin/date +%s)
+  out_tmp="$(/usr/bin/mktemp)"
+  exit_code=0
+  run_cmd "$base" > "$out_tmp" 2>&1 || exit_code=$?
+  finished_at=$(/bin/date +%s)
+  duration=$((finished_at - started_at))
+
+  # Truncate output to 8KB so result file stays small and admin can render it
+  out_truncated="$(/usr/bin/head -c 8192 "$out_tmp")"
+  /bin/rm -f "$out_tmp"
+
+  # Write result atomically: temp file -> rename
+  result_tmp="$(/usr/bin/mktemp)"
+  /usr/bin/printf 'cmd=%s\nexit_code=%d\nduration_seconds=%d\nfinished_at=%d\noutput<<END_OF_OUTPUT\n%s\nEND_OF_OUTPUT\n' \
+    "$base" "$exit_code" "$duration" "$finished_at" "$out_truncated" > "$result_tmp"
+  /bin/mv "$result_tmp" "$result"
+  /bin/rm -f "$in_progress"
+
+  log "cmd $base finished (exit=$exit_code, duration=${duration}s)"
+done
+
+# Cleanup: result files older than 24h
+/usr/bin/find "$BRIDGE_DIR" -name '*.result' -type f -mtime +1 -delete 2>/dev/null || true
+BRIDGE_EOF
+  chmod +x "$HOST_BRIDGE_SCRIPT"
+
+  # Resolve nomad binary path — use the symlink, not the real path, so a
+  # subsequent self-update that rewrites the bundle target still resolves
+  # correctly via the symlink.
+  local nomad_bin; nomad_bin="$(command -v nomad 2>/dev/null || echo "$HERE/nomad")"
+
+  cat > "$HOST_BRIDGE_PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>            <string>${HOST_BRIDGE_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>${HOST_BRIDGE_SCRIPT}</string>
+    <string>${bridge_dir}</string>
+    <string>${nomad_bin}</string>
+  </array>
+  <key>StartInterval</key>    <integer>2</integer>
+  <key>RunAtLoad</key>        <true/>
+  <key>StandardOutPath</key>  <string>${HOME}/Library/Logs/nomad-host-command-bridge.out.log</string>
+  <key>StandardErrorPath</key><string>${HOME}/Library/Logs/nomad-host-command-bridge.err.log</string>
+</dict>
+</plist>
+EOF
+  chmod 644 "$HOST_BRIDGE_PLIST"
+
+  if launchctl print "$LA_TARGET/$HOST_BRIDGE_LABEL" >/dev/null 2>&1; then
+    launchctl bootout "$LA_TARGET/$HOST_BRIDGE_LABEL" 2>/dev/null || true
+    sleep 1
+  fi
+  if launchctl bootstrap "$LA_TARGET" "$HOST_BRIDGE_PLIST" 2>/dev/null; then
+    ok "host-command bridge loaded (every 2s, polls $bridge_dir for admin requests)"
+  else
+    warn "couldn't bootstrap host-command bridge — admin UI buttons that call host commands will be no-ops"
+  fi
+}
+
 # Build a ZIM file from install/macos/help/ HTML content + drop into the data
 # drive's kiwix storage. kiwix-serve picks it up on its next startup (or via
 # the kiwix-self-heal LaunchAgent's auto-reload pass). Result: distribution
@@ -2881,6 +3029,7 @@ cmd_install() {
   step_install_benchmark_patcher   # background daemon that fixes leaderboard CPU/GPU automatically
   step_install_kiwix_self_heal     # background daemon that quarantines partial ZIMs so kiwix never crash-loops
   step_install_bonjour_advertise   # advertise admin via mDNS so other devices find it in Safari Bonjour menu
+  step_install_host_command_bridge # admin UI -> host nomad commands (Upgrade Ollama button etc.)
   step_build_distro_help_zim       # build distribution help ZIM, drop into kiwix's library so it's browsable in the UI
 
   # Admin is now usable. Print the URL banner BEFORE the long model pull so the
@@ -3615,7 +3764,7 @@ cmd_uninstall() {
   fi
 
   # 3. Bootout LaunchAgents + kill any orphan ollama
-  for label in "$LA_LABEL" "$PATCHER_LABEL" "$KIWIX_SELF_HEAL_LABEL" "$BONJOUR_LABEL"; do
+  for label in "$LA_LABEL" "$PATCHER_LABEL" "$KIWIX_SELF_HEAL_LABEL" "$BONJOUR_LABEL" "$HOST_BRIDGE_LABEL"; do
     if launchctl print "$LA_TARGET/$label" >/dev/null 2>&1; then
       launchctl bootout "$LA_TARGET/$label" 2>/dev/null || true
       sleep 1
@@ -3623,10 +3772,10 @@ cmd_uninstall() {
   done
   pkill -f 'ollama serve' 2>/dev/null || true
   pkill -f 'dns-sd -R NOMAD Command Center' 2>/dev/null || true
-  for plist in "$LA_PLIST" "$PATCHER_PLIST" "$KIWIX_SELF_HEAL_PLIST" "$BONJOUR_PLIST"; do
+  for plist in "$LA_PLIST" "$PATCHER_PLIST" "$KIWIX_SELF_HEAL_PLIST" "$BONJOUR_PLIST" "$HOST_BRIDGE_PLIST"; do
     [[ -f "$plist" ]] && rm -f "$plist" && ok "removed $plist"
   done
-  for script in "$PATCHER_SCRIPT" "$KIWIX_SELF_HEAL_SCRIPT"; do
+  for script in "$PATCHER_SCRIPT" "$KIWIX_SELF_HEAL_SCRIPT" "$HOST_BRIDGE_SCRIPT"; do
     [[ -f "$script" ]] && rm -f "$script"
   done
 

@@ -25,6 +25,96 @@ function extractTag(containerImage: string): string {
   return parts.length > 1 ? parts[parts.length - 1] : 'latest'
 }
 
+/**
+ * Upgrade Ollama button for the Native (Metal) row.
+ *
+ * Admin runs in Docker and can't call Homebrew directly. The
+ * com.projectnomad.host-command-bridge LaunchAgent (installed by
+ * nomad install) polls a directory on the bind-mounted storage for
+ * marker files; admin POSTs /api/host-commands/upgrade-ollama, the
+ * bridge runs `nomad upgrade ollama` on the host and writes a result
+ * file. This component polls the status endpoint every 2s while the
+ * command is in flight, surfaces success/failure inline.
+ */
+function UpgradeOllamaButton() {
+  const [status, setStatus] = useState<'idle' | 'pending' | 'in-progress' | 'completed'>('idle')
+  const [result, setResult] = useState<{ exit_code: number; output: string; duration_seconds: number } | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const isBusy = status === 'pending' || status === 'in-progress'
+
+  const onClick = async () => {
+    setError(null)
+    setResult(null)
+    setStatus('pending')
+    try {
+      const res = await fetch('/api/host-commands/upgrade-ollama', { method: 'POST' })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || `Server returned ${res.status}`)
+      }
+    } catch (err) {
+      setStatus('idle')
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  useEffect(() => {
+    if (!isBusy) return
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/host-commands/upgrade-ollama')
+        if (!res.ok) return
+        const body = await res.json()
+        if (body.status === 'completed') {
+          setResult({ exit_code: body.exit_code, output: body.output, duration_seconds: body.duration_seconds })
+          setStatus('completed')
+        } else if (body.status === 'in-progress' && status !== 'in-progress') {
+          setStatus('in-progress')
+        }
+      } catch {
+        // transient network error, keep polling
+      }
+    }, 2000)
+    return () => clearInterval(interval)
+  }, [isBusy, status])
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <StyledButton
+          icon="IconArrowUp"
+          variant="secondary"
+          onClick={onClick}
+          disabled={isBusy}
+          loading={isBusy}
+        >
+          {status === 'pending' && 'Queued…'}
+          {status === 'in-progress' && 'Upgrading…'}
+          {status === 'completed' && result?.exit_code === 0 && 'Upgrade Ollama'}
+          {(status === 'idle' || (status === 'completed' && result?.exit_code !== 0)) && 'Upgrade Ollama'}
+        </StyledButton>
+        {status === 'completed' && result && result.exit_code === 0 && (
+          <span className="text-xs text-emerald-700">
+            ✓ Upgraded in {result.duration_seconds}s
+          </span>
+        )}
+        {status === 'completed' && result && result.exit_code !== 0 && (
+          <span className="text-xs text-red-700">
+            ✗ Failed (exit {result.exit_code}) — see output below
+          </span>
+        )}
+        {error && <span className="text-xs text-red-700">✗ {error}</span>}
+      </div>
+      {status === 'completed' && result?.output && (
+        <pre className="mt-2 max-w-2xl overflow-auto rounded bg-gray-100 p-2 text-[10px] leading-snug font-mono text-gray-700">
+          {result.output}
+        </pre>
+      )}
+    </div>
+  )
+}
+
 export default function SettingsPage(props: {
   system: { services: ServiceSlim[] }
   // True when admin is configured to talk to a native (Homebrew) Ollama at
@@ -243,9 +333,11 @@ export default function SettingsPage(props: {
 
     // Native Ollama: every Docker-side action (Start / Stop / Restart / Force
     // Reinstall / Update) routes through DockerService which refuses with a
-    // "manage via CLI" error. Hide the action buttons; show a pill explaining
-    // the actual upgrade path. The user can still see the row exists and that
-    // it's installed — they just can't click anything that would dead-end.
+    // "manage via CLI" error. Replace with the Native (Metal) pill plus a
+    // direct-to-host Upgrade button backed by the host-command-bridge
+    // LaunchAgent (admin POSTs /api/host-commands/upgrade-ollama, which
+    // writes a marker file; the bridge runs `nomad upgrade ollama` and
+    // writes a result file admin polls).
     if (props.isNativeOllama && record.service_name === SERVICE_NAMES.OLLAMA) {
       return (
         <div className="flex flex-wrap items-center gap-2">
@@ -255,10 +347,7 @@ export default function SettingsPage(props: {
           >
             Native (Metal)
           </span>
-          <span className="text-xs text-gray-500">
-            Upgrade with{' '}
-            <code className="bg-gray-100 px-1 rounded font-mono">nomad upgrade ollama</code> on the host
-          </span>
+          <UpgradeOllamaButton />
         </div>
       )
     }

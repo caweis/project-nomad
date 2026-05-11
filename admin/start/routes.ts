@@ -14,6 +14,7 @@ import EasySetupController from '#controllers/easy_setup_controller'
 import HomeController from '#controllers/home_controller'
 import MapsController from '#controllers/maps_controller'
 import OllamaController from '#controllers/ollama_controller'
+import HostCommandsController from '#controllers/host_commands_controller'
 import RagController from '#controllers/rag_controller'
 import SettingsController from '#controllers/settings_controller'
 import SystemController from '#controllers/system_controller'
@@ -120,6 +121,18 @@ router
     router.get('/installed-models', [OllamaController, 'installedModels'])
   })
   .prefix('/api/ollama')
+
+// Bridge from admin UI to host-side `nomad` CLI commands. The host's
+// com.projectnomad.host-command-bridge LaunchAgent polls a directory on
+// the bind-mounted storage volume; admin writes marker files here, the
+// LaunchAgent runs the corresponding nomad command, writes a result file
+// admin reads back via the status endpoint.
+router
+  .group(() => {
+    router.post('/:cmd', [HostCommandsController, 'dispatch'])
+    router.get('/:cmd', [HostCommandsController, 'status'])
+  })
+  .prefix('/api/host-commands')
 
 router
   .group(() => {
