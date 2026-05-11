@@ -42,6 +42,8 @@
 #                                            # partial ZIMs. Dry-run unless --apply.
 #   bash nomad uninstall                     # clean wipe (containers, agent, .env, opt. data)
 #   bash nomad reinstall                     # nuclear: wipe everything + reinstall in one shot
+#   bash nomad self-update                   # fetch latest nomad script (also runs
+#                                            # implicitly at the start of install/reinstall)
 #
 # Globals at the top, all logic in named functions, single dispatch at the bottom.
 
@@ -86,6 +88,87 @@ case "$_NOMAD_FIRST_ARG" in
     ;;
 esac
 unset _NOMAD_FIRST_ARG
+
+# Self-update: fetches the latest nomad script from the repo and re-execs.
+# Runs ONLY for `install` / `reinstall` (gated below at the dispatch site).
+# Skipped for `nomad check`, `nomad up`, `nomad upgrade kiwix`, etc. — those
+# are quick commands where a 30s curl round-trip would be friction.
+#
+# Why this exists: the nomad CLI lives at $HERE/nomad on the user's Mac
+# (typically ~/Developer/nomad-bundle-v2/nomad, symlinked from
+# $(brew --prefix)/bin/nomad). When we ship a fix to the script itself —
+# new quick-chat.sh template, new step in the install pipeline, new
+# self-heal logic — the user's local copy is stale until they manually
+# update it. This closes that gap: install/reinstall first refreshes
+# the script, then runs the latest install steps.
+#
+# Safe-skip rules:
+#   - NOMAD_NO_SELF_UPDATE=1 env var → skip (dev escape hatch)
+#   - NOMAD_SKIP_SELF_UPDATE=1 env var → skip (set internally after re-exec)
+#   - $HERE looks like a git working copy ($HERE/.git or $HERE/../.git exists) → skip
+#   - Offline (api.github.com unreachable in 5s) → skip
+#   - Fetched file fails sanity checks (shebang, bash -n) → skip
+#   - Identical to current → no-op
+#   - Can't write to target file → skip with a warning
+self_update_nomad() {
+  [[ -n "${NOMAD_NO_SELF_UPDATE:-}" ]] && return 0
+  [[ -n "${NOMAD_SKIP_SELF_UPDATE:-}" ]] && return 0
+
+  # Don't blow away an active git working copy (developer using a worktree)
+  if [[ -d "$HERE/.git" || -d "$HERE/../.git" ]]; then
+    return 0
+  fi
+
+  # Network check — fail fast when offline
+  if ! /usr/bin/curl -fsS --max-time 5 https://api.github.com >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local branch="${NOMAD_BRANCH:-feat/macos-distribution-layer}"
+  local raw_url="https://raw.githubusercontent.com/caweis/project-nomad-macos-arm64/$branch/install/macos/nomad"
+  local tmp
+  tmp="$(/usr/bin/mktemp)" || return 0
+
+  log "self-update: checking $branch for a newer nomad script"
+  if ! /usr/bin/curl -fsSL --max-time 30 "$raw_url" -o "$tmp"; then
+    warn "self-update: couldn't fetch — continuing with current version"
+    /bin/rm -f "$tmp"
+    return 0
+  fi
+
+  # Sanity: must look like a bash script
+  if ! /usr/bin/head -1 "$tmp" | /usr/bin/grep -q '^#!.*bash'; then
+    warn "self-update: fetched file doesn't look like a bash script — skipping"
+    /bin/rm -f "$tmp"
+    return 0
+  fi
+
+  # Sanity: must pass syntax check
+  if ! /bin/bash -n "$tmp" 2>/dev/null; then
+    warn "self-update: fetched script has syntax errors — keeping current version"
+    /bin/rm -f "$tmp"
+    return 0
+  fi
+
+  # If identical, no-op (silent)
+  if /usr/bin/cmp -s "$HERE/nomad" "$tmp"; then
+    /bin/rm -f "$tmp"
+    return 0
+  fi
+
+  # Atomic replace at the real bundle location (not the brew symlink)
+  /bin/chmod +x "$tmp"
+  if ! /bin/mv "$tmp" "$HERE/nomad" 2>/dev/null; then
+    warn "self-update: couldn't write to $HERE/nomad — keeping current version"
+    /bin/rm -f "$tmp"
+    return 0
+  fi
+  ok "self-update: refreshed $HERE/nomad from $branch"
+  log "self-update: re-execing with new script"
+  export NOMAD_SKIP_SELF_UPDATE=1
+  exec "$HERE/nomad" "${ORIGINAL_ARGS[@]}"
+}
+
 SECRETS_DIR="$HOME/.config/project-nomad"
 ENV_FILE="$SECRETS_DIR/.env"
 # Hot state — always on internal disk, never on a detachable drive.
@@ -4197,6 +4280,7 @@ TIER_EXPLICIT=0
 MODELS_EXPLICIT=0
 SKIP_MODELS_EXPLICIT=0
 
+ORIGINAL_ARGS=("$@")
 CMD="${1:-help}"
 [[ $# -gt 0 ]] && shift
 while [[ $# -gt 0 ]]; do
@@ -4216,6 +4300,13 @@ if [[ -z "$MODELS" ]]; then
   MODELS="$(resolve_tier_models "$TIER")"
 fi
 EXTRA_ARGS=("${EXTRA_ARGS[@]:-}")
+
+# Self-update gate — runs ONLY for install/reinstall/self-update.
+# For everything else (check, up, restart, upgrade, etc.), we skip the
+# 30s round-trip and use the local script as-is.
+case "$CMD" in
+  install|reinstall|self-update) self_update_nomad ;;
+esac
 
 case "$CMD" in
   install)         cmd_install ;;
@@ -4240,6 +4331,7 @@ case "$CMD" in
   clean)           cmd_clean "${EXTRA_ARGS[@]}" ;;
   uninstall)       cmd_uninstall ;;
   reinstall)       cmd_reinstall ;;
+  self-update)     ok "nomad script is up to date" ;;
   help|--help|-h)
     sed -n '2,45p' "$0" | sed 's/^# //; s/^#//'
     ;;
