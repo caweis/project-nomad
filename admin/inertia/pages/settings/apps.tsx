@@ -1,4 +1,4 @@
-import { Head } from '@inertiajs/react'
+import { Head, router } from '@inertiajs/react'
 import StyledTable from '~/components/StyledTable'
 import SettingsLayout from '~/layouts/SettingsLayout'
 import { ServiceSlim } from '../../../types/services'
@@ -11,6 +11,7 @@ import { useEffect, useState } from 'react'
 import InstallActivityFeed from '~/components/InstallActivityFeed'
 import LoadingSpinner from '~/components/LoadingSpinner'
 import useErrorNotification from '~/hooks/useErrorNotification'
+import useSuccessNotification from '~/hooks/useSuccessNotification'
 import useInternetStatus from '~/hooks/useInternetStatus'
 import useServiceInstallationActivity from '~/hooks/useServiceInstallationActivity'
 import { useTransmit } from 'react-adonis-transmit'
@@ -37,6 +38,7 @@ export default function SettingsPage(props: {
 }) {
   const { openModal, closeAllModals } = useModals()
   const { showError } = useErrorNotification()
+  const { showSuccess } = useSuccessNotification()
   const { isOnline } = useInternetStatus()
   const { subscribe } = useTransmit()
   const installActivity = useServiceInstallationActivity()
@@ -146,13 +148,22 @@ export default function SettingsPage(props: {
 
       closeAllModals()
 
-      setTimeout(() => {
-        setLoading(false)
-        window.location.reload()
-      }, 3000)
+      // Surface the success immediately. The previous code closed the modal
+      // and then waited 3 seconds in silence before doing a hard
+      // window.location.reload() — users couldn't tell the click had any
+      // effect and assumed the button was broken. Show a toast naming the
+      // service + action, then soft-refresh the system prop so the row's
+      // status flips to "restarting" / "stopped" / "running" without
+      // reloading the entire page (which loses in-page state).
+      const verb = action === 'restart' ? 'Restarting' : action === 'stop' ? 'Stopping' : 'Starting'
+      const label = record.friendly_name || record.service_name
+      showSuccess(`${verb} ${label}…`)
+      router.reload({ only: ['system'] })
     } catch (error) {
       console.error(`Error affecting service ${record.service_name}:`, error)
       showError(`Failed to ${action} service: ${error.message || 'Unknown error'}`)
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -169,13 +180,16 @@ export default function SettingsPage(props: {
 
       closeAllModals()
 
-      setTimeout(() => {
-        setLoading(false)
-        window.location.reload()
-      }, 3000)
+      // Same UX fix as handleAffectAction — toast + soft refresh instead of
+      // a silent 3-second wait followed by a hard browser reload.
+      const label = record.friendly_name || record.service_name
+      showSuccess(`Reinstalling ${label}…`)
+      router.reload({ only: ['system'] })
     } catch (error) {
       console.error(`Error force reinstalling service ${record.service_name}:`, error)
       showError(`Failed to force reinstall service: ${error.message || 'Unknown error'}`)
+    } finally {
+      setLoading(false)
     }
   }
 
