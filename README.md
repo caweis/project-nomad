@@ -47,6 +47,17 @@ Reachable from other devices on the same network. The data drive can be unplugge
 - Migrations and seeders run during install. There's a worker container so download jobs actually progress.
 - Updates happen with `nomad upgrade` from the Terminal.
 
+## Updating
+
+Two things to keep current:
+
+```bash
+nomad self-update    # refreshes the `nomad` CLI script itself
+nomad upgrade        # refreshes container images and Ollama
+```
+
+`nomad self-update` resolves the install path automatically — works regardless of where the script lives on your Mac. `nomad install` and `nomad reinstall` self-update before running, so the CLI stays current as a side effect of the install path.
+
 Full reference: [`install/macos/README.md`](./install/macos/README.md).
 
 ## Lineage

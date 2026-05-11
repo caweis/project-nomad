@@ -86,6 +86,8 @@ nomad benchmark patch-host Backfill the leaderboard with this Mac's chip info.
 Keeping things running over time.
 
 ```
+nomad self-update           Refresh the `nomad` CLI script from the repo.
+
 nomad upgrade               Upgrade everything (admin stack + Ollama + content services).
 nomad upgrade compose       Just the Docker stack (admin, mysql, redis).
 nomad upgrade ollama        Just the AI Assistant runtime (Homebrew upgrade).
@@ -99,6 +101,8 @@ nomad fix-kiwix             Manually run the kiwix partial-download recovery pas
 nomad clean                 Show what would be cleaned (logs, dangling images, partials).
 nomad clean --apply         Actually clean. Safe — never touches running data.
 ```
+
+`nomad self-update` resolves its install path automatically — works whether the script lives in a GitHub tarball extract, a git clone, or a custom location. `nomad install` and `nomad reinstall` run it implicitly before doing their work, so the CLI stays current as a side effect of installing.
 
 The kiwix self-heal also runs every 60 seconds in the background via a LaunchAgent, so `nomad fix-kiwix` is just the manual trigger if you want it to happen now.
 

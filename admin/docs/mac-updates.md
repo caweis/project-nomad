@@ -1,8 +1,22 @@
 # Updating your N.O.M.A.D.
 
-When a new version of the Command Center, Ollama, or one of the content services (Kiwix, Kolibri, FlatNotes, CyberChef) is published, you update it from Terminal using the `nomad upgrade` command.
+Updates are split into two surfaces — the `nomad` CLI script itself, and the things it manages (container images, Ollama, content services). Different commands keep each current.
 
-The Mac edition handles updates differently from the in-Command-Center "Start Update" button you may see on upstream installs. That button is designed for the upstream Docker-based Linux install and doesn't fit the Mac edition's mix of native and containerized software. On the Mac, you run `nomad upgrade` and it does the right thing for each piece.
+The Mac edition handles updates differently from the in-Command-Center "Start Update" button you may see on upstream installs. That button is designed for the upstream Docker-based Linux install and doesn't fit the Mac edition's mix of native and containerized software. On the Mac, the CLI is the canonical update surface.
+
+---
+
+## Updating the `nomad` CLI script
+
+```
+nomad self-update
+```
+
+Fetches the latest `nomad` script from the repo and replaces the local copy. It resolves the install path automatically — works regardless of where you originally extracted the bundle. Skipped silently when the script is already current.
+
+`nomad install` and `nomad reinstall` self-update before running, so the CLI stays current as a side effect of installing or reinstalling.
+
+Safe-skip rules: skips when offline (5-second probe of api.github.com), when the script lives inside a git working copy (the script directory has a `.git/`), or when `NOMAD_NO_SELF_UPDATE=1` is set in the environment. If the fetched file fails sanity checks (no shebang, syntax error), the existing script is preserved.
 
 ---
 

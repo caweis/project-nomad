@@ -87,3 +87,9 @@ If you want to fine-tune anything from the command line instead, see [The `nomad
 **`nomad.local` isn't reachable from my phone or laptop.** Both devices need to be on the same Wi-Fi network. Some networks block mDNS — try `http://<ip-address-of-mac>:8080/` as a fallback (`System Settings → Network → Wi-Fi → Details` shows the IP).
 
 **Something else.** Run `nomad check` from Terminal for a full diagnostic. See [The `nomad` command](/docs/mac-nomad-cli) for the full reference.
+
+---
+
+## Keeping it updated
+
+Two commands cover updates — `nomad self-update` for the CLI script itself, `nomad upgrade` for container images and Ollama. Both detailed in [Updating](/docs/mac-updates). `nomad install` and `nomad reinstall` self-update the CLI before running, so the install path keeps the CLI current as a side effect.
