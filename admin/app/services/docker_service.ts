@@ -539,6 +539,18 @@ export class DockerService {
       let finalImage = service.container_image
       let gpuHostConfig = containerConfig?.HostConfig || {}
 
+      // Default RestartPolicy: unless-stopped. Without this, dynamic
+      // services created via this code path (Kiwix, Kolibri, Cyberchef,
+      // Flatnotes, Qdrant, etc.) have NO restart policy and stay dead
+      // after any exit — including Mac reboots and Docker daemon restarts.
+      // The compose-managed services (admin, mysql, redis, dozzle,
+      // updater, admin-worker) already get unless-stopped from compose.yaml;
+      // this aligns dynamic services with that behavior. Caller can still
+      // override via containerConfig.HostConfig.RestartPolicy if needed.
+      if (!gpuHostConfig.RestartPolicy?.Name) {
+        gpuHostConfig.RestartPolicy = { Name: 'unless-stopped', MaximumRetryCount: 0 }
+      }
+
       if (service.service_name === SERVICE_NAMES.OLLAMA) {
         const gpuResult = await this._detectGPUType()
 
