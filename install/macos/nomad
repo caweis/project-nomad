@@ -1277,7 +1277,9 @@ step_drop_desktop_tools() {
 # Skip with --no-rename or NOMAD_HOSTNAME=skip. Default: prompt.
 step_set_local_hostname() {
   local target="${NOMAD_HOSTNAME:-nomad}"
-  if [[ "$target" == "skip" || "$NOMAD_NO_RENAME" == "1" ]]; then
+  # NOMAD_NO_RENAME is documented as opt-out, never set by the install path
+  # itself — guard against `set -u` exploding when the user hasn't exported it.
+  if [[ "$target" == "skip" || "${NOMAD_NO_RENAME:-}" == "1" ]]; then
     return 0
   fi
 
