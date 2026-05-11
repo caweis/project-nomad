@@ -1910,7 +1910,15 @@ _env_upsert() {
 
 step_compose_up() {
   section "Compose up"
-  dc up -d
+  # --force-recreate makes mysql + redis rebuild their containers when .env
+  # passwords changed since their last creation. Without this, a reinstall
+  # against a still-running mysql container keeps the old MYSQL_PASSWORD in
+  # the running container's user table — admin then can't authenticate with
+  # the new .env's password. Hit on a reinstall where docker was unreachable
+  # during uninstall (containers kept running), then .env was regenerated
+  # with new passwords, then `dc up -d` left the old containers in place.
+  # --force-recreate is cheap on a fresh stack and necessary on a stale one.
+  dc up -d --force-recreate
   ok "containers up"
 }
 
@@ -3182,7 +3190,14 @@ cmd_uninstall() {
       docker ps -a --filter 'name=nomad' --format '    {{.Names}}\t{{.Status}}'
     fi
   else
-    warn "docker not reachable — skipping container removal"
+    # Containers can't be removed because docker isn't up. The next install
+    # MUST force-recreate them so mysql + redis re-bootstrap against the
+    # current .env passwords rather than the stale ones baked into the
+    # still-running containers. Without force-recreate, admin will hit
+    # "Access denied" against mysql every time. (Witnessed on reinstall:
+    # 2026-05-11.)
+    warn "docker not reachable — containers can't be removed now"
+    warn "next install will --force-recreate them so credentials don't drift"
   fi
 
   # 3. Bootout LaunchAgents + kill any orphan ollama
