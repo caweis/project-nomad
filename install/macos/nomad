@@ -2029,23 +2029,47 @@ step_build_distro_help_zim() {
 step_configure_native_ollama() {
   section "Wire admin → native Ollama (via admin API)"
   api_check_up
-  local body resp
-  body='{"remoteUrl":"http://host.docker.internal:11434"}'
-  if resp="$(api_post /api/ollama/configure-remote "$body" 2>&1)"; then
-    if echo "$resp" | jq -e '.success == true' >/dev/null 2>&1; then
+
+  local body='{"remoteUrl":"http://host.docker.internal:11434"}'
+
+  # Retry the API call up to 3 times. Admin frequently returns 500 on the
+  # FIRST call right after compose-up — its controller validates the URL by
+  # making an outbound request to host.docker.internal:11434, and the
+  # container's DNS / outbound networking takes a few seconds to stabilize
+  # past the /api/health endpoint coming up. By attempt 2 or 3, the
+  # configure endpoint succeeds.
+  local attempt resp http_code
+  for attempt in 1 2 3; do
+    # Capture both body and HTTP code so a 5xx surfaces the actual server
+    # message instead of just curl's "(22) URL returned error 500" string.
+    local out_file; out_file="$(mktemp)"
+    http_code="$(curl -sS --max-time 30 -o "$out_file" -w '%{http_code}' \
+      -H 'Content-Type: application/json' -X POST -d "$body" \
+      "$ADMIN_BASE/api/ollama/configure-remote" 2>/dev/null || echo "000")"
+    resp="$(cat "$out_file")"
+    rm -f "$out_file"
+
+    if [[ "$http_code" == "200" ]] && echo "$resp" | jq -e '.success == true' >/dev/null 2>&1; then
       ok "configured: $(echo "$resp" | jq -r '.message // "Remote Ollama configured."')"
       return 0
     fi
-    warn "API returned: $resp"
-  else
-    warn "POST /api/ollama/configure-remote failed: $resp"
-  fi
+
+    if [[ "$attempt" -lt 3 ]]; then
+      log "attempt $attempt: admin returned HTTP $http_code — retrying in $((attempt * 3))s"
+      sleep $((attempt * 3))
+    else
+      warn "POST /api/ollama/configure-remote HTTP $http_code after 3 attempts. Response: ${resp:0:300}"
+    fi
+  done
+
   # Defensive fallback for the rare case admin's API is up but configureRemote
-  # can't reach native Ollama (e.g., DNS for host.docker.internal not resolving
-  # inside the admin container yet). Direct SQL bypasses the connectivity test.
+  # can't reach native Ollama (DNS for host.docker.internal not resolving
+  # inside the admin container, network timeout, etc.). Direct SQL bypasses
+  # admin's connectivity test entirely.
   warn "falling back to direct SQL seed"
   local db_pw; db_pw="$(grep '^DB_PASSWORD=' "$ENV_FILE" | cut -d= -f2-)"
-  echo '
+  local sql_err; sql_err="$(mktemp)"
+  if echo '
 INSERT INTO kv_store (`key`, value, created_at, updated_at)
 VALUES ("ai.remoteOllamaUrl", "http://host.docker.internal:11434", NOW(), NOW()) AS new
 ON DUPLICATE KEY UPDATE
@@ -2063,13 +2087,25 @@ VALUES ("ui.hasVisitedEasySetup", "true", NOW(), NOW()) AS new
 ON DUPLICATE KEY UPDATE
   value      = IF(kv_store.value IS NULL OR kv_store.value = "", new.value, kv_store.value),
   updated_at = NOW();
-' | dc exec -T -e MYSQL_PWD="$db_pw" mysql mysql -u nomad_user nomad >/dev/null 2>&1 \
-  && { ok "seeded via SQL fallback"; dc restart admin >/dev/null; sleep 5; return 0; }
+' | dc exec -T -e MYSQL_PWD="$db_pw" mysql mysql -u nomad_user nomad >/dev/null 2>"$sql_err"; then
+    rm -f "$sql_err"
+    ok "seeded via SQL fallback"
+    dc restart admin >/dev/null
+    sleep 5
+    return 0
+  fi
+
+  # Surface what mysql actually said before falling through to the degraded
+  # path — previously this was 2>&1 to /dev/null, which made the "both paths
+  # failed" warning useless for debugging.
+  local sql_err_body=""; [[ -s "$sql_err" ]] && sql_err_body="$(head -c 300 "$sql_err")"
+  rm -f "$sql_err"
 
   # Both API and SQL failed — admin's AI Assistant will not work until the user
   # manually sets the Remote Ollama URL. Track this for the install summary
   # so the green "complete" banner doesn't paper over a real degradation.
   warn "both API and SQL paths failed — manually set Settings → Models → Remote Ollama URL"
+  [[ -n "$sql_err_body" ]] && warn "mysql said: $sql_err_body"
   NOMAD_INSTALL_DEGRADED+=("admin → native Ollama not wired (Settings → Models → Remote Ollama URL)")
   return 1
 }
