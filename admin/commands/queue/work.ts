@@ -62,6 +62,20 @@ export default class QueueWork extends BaseCommand {
           connection: queueConfig.connection,
           concurrency: this.getConcurrencyForQueue(queueName),
           autorun: true,
+          // BullMQ default lockDuration is 30s — too tight for long-running
+          // streams. A 50+ GB Wikipedia download holds the worker for hours;
+          // if a separate queue (embed-file retry storm, benchmark, etc.)
+          // starves the event loop for >15s, the BullMQ lock-renewer misses
+          // its window and the download job is marked stalled, retried 3x,
+          // then killed — and disappears from the UI because failed jobs
+          // aren't returned by getJobs(['waiting','active','delayed']).
+          // 10 minutes gives the auto-renewer (lockDuration/2 = 5 min) plenty
+          // of headroom even when the worker is heavily loaded. Tradeoff:
+          // if a worker crashes mid-job, other workers wait up to 10 min
+          // before picking up the orphaned job — acceptable for our use.
+          // Mirrors upstream Crosstalk-Solutions/project-nomad #604
+          // (commit 2609530) which addresses the same failure mode.
+          lockDuration: 600_000,
         }
       )
 
