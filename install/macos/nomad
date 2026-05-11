@@ -1722,8 +1722,22 @@ _model_blurb() {
 #   - --no-models was passed (user wants to skip).
 # Mutates TIER and SKIP_MODELS in-place so subsequent steps pick up the choice.
 prompt_for_models() {
-  # Honor all explicit-intent flags — don't pester users with prompts.
-  [[ "$NOMAD_YES" -eq 1 ]] && return 0
+  # Honor explicit-intent flags ONLY: if the user already said what they
+  # want via --tier, --models, or --no-models, don't pester them.
+  #
+  # NOTE: NOMAD_YES is INTENTIONALLY NOT checked here. NOMAD_YES means
+  # "skip destructive confirmations" (e.g., wipe data drive on reinstall);
+  # it does NOT mean "use defaults for every choice." The picker is a
+  # configuration choice, not a destructive confirm. Previous version of
+  # this function gated on NOMAD_YES, which broke the picker on the most
+  # common path (`nomad reinstall`, which sets NOMAD_YES=1 internally to
+  # auto-confirm the wipe). Chris caught this 2026-05-11: he ran reinstall
+  # expecting the picker, got auto-tier model downloads instead. Fixed by
+  # removing the NOMAD_YES guard so the picker runs on every interactive
+  # install, including reinstall.
+  #
+  # Truly-unattended installs that want to skip the picker should pass
+  # --tier auto (or any explicit value) instead of relying on --yes.
   [[ "$TIER_EXPLICIT" -eq 1 ]] && return 0
   [[ "$MODELS_EXPLICIT" -eq 1 ]] && return 0
   [[ "$SKIP_MODELS_EXPLICIT" -eq 1 ]] && return 0
