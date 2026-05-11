@@ -2,169 +2,107 @@
 <img src="https://raw.githubusercontent.com/Crosstalk-Solutions/project-nomad/refs/heads/main/admin/public/project_nomad_logo.png" width="200" height="200"/>
 
 # Project N.O.M.A.D.
-### Node for Offline Media, Archives, and Data
+### macOS / Apple Silicon distribution
 
-**Knowledge That Never Goes Offline**
+**Offline-first knowledge server, tuned for Macs.**
 
-[![Website](https://img.shields.io/badge/Website-projectnomad.us-blue)](https://www.projectnomad.us)
-[![Discord](https://img.shields.io/badge/Discord-Join%20Community-5865F2)](https://discord.com/invite/crosstalksolutions)
-[![Benchmark](https://img.shields.io/badge/Benchmark-Leaderboard-green)](https://benchmark.projectnomad.us)
+[![Upstream](https://img.shields.io/badge/Upstream-Crosstalk--Solutions%2Fproject--nomad-blue)](https://github.com/Crosstalk-Solutions/project-nomad)
+[![License](https://img.shields.io/badge/License-Apache--2.0-green)](./LICENSE)
 
 </div>
 
 ---
 
-Project N.O.M.A.D. is a self-contained, offline-first knowledge and education server packed with critical tools, knowledge, and AI to keep you informed and empowered—anytime, anywhere.
+This is **caweis's macOS distribution** of [Crosstalk-Solutions/project-nomad](https://github.com/Crosstalk-Solutions/project-nomad) — an offline-first knowledge and education server with AI assistant, Wikipedia, maps, reference libraries, and more. The fork specifically targets **macOS on Apple Silicon** with first-class **native Ollama + Metal GPU** support; all installer and admin-side patches needed to make that work are bundled in.
 
-## Installation & Quickstart (macOS)
+The main development branch is **[`feat/macos-distribution-layer`](https://github.com/caweis/project-nomad/tree/feat/macos-distribution-layer)** — that's where all the active work lives until each PR train lands here on `main`.
 
-This fork is designed for macOS with Apple Silicon. Prerequisites: [Docker Desktop](https://www.docker.com/products/docker-desktop/) and [Ollama](https://ollama.com/download) installed natively for Metal GPU acceleration.
+## What's different from upstream
 
-#### Quick Install
+| Area | Upstream Crosstalk | This fork |
+|---|---|---|
+| Ollama | Docker container | **Native** via Homebrew on `:11434` → Apple Metal GPU directly, no Rosetta |
+| Install | `bash install/install_nomad_macos.sh` from this repo | `nomad install` CLI with subcommands (lifecycle, models, upgrades, diagnostics) |
+| Admin image | `ghcr.io/crosstalk-solutions/project-nomad:vX.Y.Z` (linux/amd64) | `ghcr.io/caweis/project-nomad-macos-arm64:edge` (linux/amd64 + linux/arm64, multi-arch) |
+| ZIM downloader | Direct file write — partial download crashes Kiwix | Atomic rename (`.tmp` → final on completion); plus a 60s self-heal LaunchAgent that quarantines partials |
+| Bootstrap | Manual migrations + seed steps documented in upstream's wiki | Auto-runs migrations + seeds the services catalog during install |
+| Job worker | Missing from compose; downloads silently queue forever | Dedicated `nomad_admin_worker` container running `node ace queue:work --all` |
+| Apple chip detection | `Apple Silicon (16-core)` generic placeholder | Real chip name from `system_profiler` (`Apple M2 Pro`, etc.) — passed via env vars |
+| Storage layout | Single volume | **Split:** mysql + redis on internal SSD (always-mounted); content + models on external drive (unplug-safe) |
+| Update path | Admin's broken Docker-image self-rewrite | `nomad upgrade compose / ollama / all` from Terminal |
+| Workshop | — | New: offline catalog of 3D-printable STLs with thumbnails (Workshop §50 port) |
+
+## Install
+
+Single command on a fresh Mac (Apple Silicon, macOS 14+):
+
 ```bash
-# Install dependencies
-brew install --cask docker
-brew install ollama gh
-
-# Clone this repo
-gh repo clone snfettig/project-nomad-macos-arm64
-cd project-nomad-macos-arm64
-
-# Start Ollama (if not already running)
-ollama serve &
-
-# Run the macOS install script
-bash install/install_nomad_macos.sh
+mkdir -p ~/Developer && cd ~/Developer && \
+  curl -fsSL https://github.com/caweis/project-nomad-macos-arm64/archive/refs/heads/feat/macos-distribution-layer.tar.gz | tar xz && \
+  bash project-nomad-feat-macos-distribution-layer/install/macos/nomad install
 ```
 
-Project N.O.M.A.D. is now installed on your Mac! Open a browser and navigate to `http://localhost:8080` to start exploring!
+That handles:
 
-#### Linux Install (upstream)
-For Debian/Ubuntu on x86_64, see the [upstream project](https://github.com/Crosstalk-Solutions/project-nomad) for the original install instructions.
+1. Homebrew + Xcode CLT + Rosetta (if missing)
+2. OrbStack install + auto-tune to 80% of host RAM
+3. Native Ollama install via Homebrew + LaunchAgent on `:11434`
+4. Compose stack pull (caweis multi-arch image — falls back to proximasan or upstream amd64 under Rosetta if our image is unreachable)
+5. Admin database migrations + services catalog seed
+6. Wire admin → native Ollama (retries on transient 500s)
+7. Background LaunchAgents: kiwix self-heal (partial-ZIM quarantine + auto-reload), benchmark patcher (real Apple chip backfill)
+8. Help ZIM build, dropped into the Kiwix library
+9. RAM-aware model pull tier (auto-detected from `sysctl hw.memsize`; interactive picker shows what you'll get)
 
-## How It Works
-N.O.M.A.D. is a management UI ("Command Center") and API that orchestrates a collection of containerized tools and resources via [Docker](https://www.docker.com/). It handles installation, configuration, and updates for everything — so you don't have to.
+Idempotent. Re-run is repair.
 
-**Built-in capabilities include:**
-- **AI Chat with Knowledge Base** — local AI chat powered by [Ollama](https://ollama.com/), with document upload and semantic search (RAG via [Qdrant](https://qdrant.tech/))
-- **Information Library** — offline Wikipedia, medical references, ebooks, and more via [Kiwix](https://kiwix.org/)
-- **Education Platform** — Khan Academy courses with progress tracking via [Kolibri](https://learningequality.org/kolibri/)
-- **Offline Maps** — downloadable regional maps via [ProtoMaps](https://protomaps.com)
-- **Data Tools** — encryption, encoding, and analysis via [CyberChef](https://gchq.github.io/CyberChef/)
-- **Notes** — local note-taking via [FlatNotes](https://github.com/dullage/flatnotes)
-- **System Benchmark** — hardware scoring with a [community leaderboard](https://benchmark.projectnomad.us)
-- **Easy Setup Wizard** — guided first-time configuration with curated content collections
+After install, the admin is at **http://localhost:8080** (or `http://nomad.local:8080` from any device on the same WiFi, if you accepted the Bonjour rename).
 
-N.O.M.A.D. also includes built-in tools like a Wikipedia content selector, ZIM library manager, and content explorer.
+## CLI cheatsheet
 
-## What's Included
+```
+nomad install [opts]    Full install (idempotent — repair on re-run)
+nomad check [section]   Diagnose: system | stack | install (preflight) | all
+nomad up / down         Start / stop the stack (native Ollama keeps running)
+nomad restart [svc]     Restart a service (default: admin)
+nomad logs [svc]        Tail logs (default: admin)
+nomad models            List installed + per-Mac fits-this-Mac verdict
+nomad models pull TIER  Pull a tier preset (tiny/small/medium/large/xl/dreamy)
+nomad benchmark         Native-Metal vs container-Rosetta tokens/sec
+nomad downloads list    Admin's BullMQ job queue
+nomad zim list          Installed ZIM files
+nomad stl import DIR    Bulk-import STLs into the Workshop library
+nomad orbstack-tune     Tune OrbStack VM RAM (auto = 80% of host)
+nomad upgrade [svc]     Upgrade compose / ollama / kiwix / all
+nomad reset-ollama      Recover from stuck LaunchAgent state
+nomad fix-kiwix         Manual trigger of the kiwix self-heal pass
+nomad clean [--apply]   Safe disk cleanup (dry-run by default)
+nomad uninstall         Remove containers, agents, secrets, (with confirm) data
+nomad reinstall         Nuclear: wipe everything + reinstall in one shot
+```
 
-| Capability | Powered By | What You Get |
-|-----------|-----------|-------------|
-| Information Library | Kiwix | Offline Wikipedia, medical references, survival guides, ebooks |
-| AI Assistant | Ollama + Qdrant | Built-in chat with document upload and semantic search |
-| Education Platform | Kolibri | Khan Academy courses, progress tracking, multi-user support |
-| Offline Maps | ProtoMaps | Downloadable regional maps with search and navigation |
-| Data Tools | CyberChef | Encryption, encoding, hashing, and data analysis |
-| Notes | FlatNotes | Local note-taking with markdown support |
-| System Benchmark | Built-in | Hardware scoring, Builder Tags, and community leaderboard |
+`man nomad` after install for the full reference.
 
-## Device Requirements
+## Documentation
 
-> **This fork** was created to run Project N.O.M.A.D. on **macOS / Apple Silicon (arm64)** with native **Metal GPU acceleration** via Ollama. The upstream project targets Debian/Ubuntu on x86_64 with NVIDIA GPUs. This fork adds macOS-specific install scripts, multi-arch Docker image builds, and native Ollama integration so that Apple Silicon Macs can use their Metal GPU for local AI inference instead of running Ollama inside Docker (which has no GPU passthrough on macOS).
+- **[`install/macos/README.md`](./install/macos/README.md)** — full distribution-layer documentation: storage architecture, drive-portability, tier presets, OrbStack tuning, Apple Silicon hardware identification, Workshop details
+- **[`install/macos/userscripts/README.md`](./install/macos/userscripts/README.md)** — browser userscripts (Tampermonkey / Userscripts / Violentmonkey) for patching admin UI quirks
+- **[`install/macos/help/`](./install/macos/help/)** — end-user help content, built into a Kiwix-served ZIM at install time
 
-At its core, N.O.M.A.D. is still very lightweight. For a barebones installation of the management application itself, the following minimal specs are required:
+## Lineage
 
-#### Minimum Specs
-- Processor: Apple M1 or later
-- RAM: 8 GB unified memory
-- Storage: At least 5 GB free disk space
-- OS: macOS 15 (Sequoia) or later
-- Stable internet connection (required during install only)
+This work stands on these forks in sequence:
 
-To run LLMs and other included AI tools:
+- **[Crosstalk-Solutions/project-nomad](https://github.com/Crosstalk-Solutions/project-nomad)** — original Linux-first project
+- **[NoamanKhalil/project-nomad-MacOs](https://github.com/NoamanKhalil/project-nomad-MacOs)** — foundational Phase 1-3 macOS port work
+- **[proximasan/project-nomad-silicon](https://github.com/proximasan/project-nomad-silicon)** — `APPLE_CHIP_MODEL` env-var fallback, `isNativeOllama()`/`getNativeOllamaURL()` admin patches, multi-arch GHCR images. Their image is our install-time fallback when our own is unreachable.
+- **[snfettig/project-nomad-macos-arm64](https://github.com/snfettig/project-nomad-macos-arm64)** — original native-Ollama+Metal commit, the immediate fork-parent of this repo
+- **caweis/project-nomad-macos-arm64** — this repo. Adds the installer/lifecycle layer, atomic-rename downloader port, admin migrations + services seed + worker container in compose, Workshop §50 port, multi-arch CI build, install-time UX improvements (model picker, hostname rename, Desktop tool drop, browser userscripts)
 
-#### Optimal Specs
-- A newer Apple Mac with Apple Silicon (M2 Pro / M3 Pro / M4 or better)
-- RAM: 32 GB unified memory or more (Apple Silicon shares memory between CPU and GPU — more RAM = larger AI models)
-- Storage: At least 250 GB free disk space (SSD standard on all Macs)
-- OS: macOS 26 or later
-- Stable internet connection (required during install only)
+## Status
 
-*Tested on a MacBook Pro M1 Max with 64 GB RAM.*
-
-For the original upstream hardware recommendations (Linux/NVIDIA), see the [Hardware Guide](https://www.projectnomad.us/hardware).
-
-## About Internet Usage & Privacy
-Project N.O.M.A.D. is designed for offline usage. An internet connection is only required during the initial installation (to download dependencies) and if you (the user) decide to download additional tools and resources at a later time. Otherwise, N.O.M.A.D. does not require an internet connection and has ZERO built-in telemetry.
-
-To test internet connectivity, N.O.M.A.D. attempts to make a request to Cloudflare's utility endpoint, `https://1.1.1.1/cdn-cgi/trace` and checks for a successful response.
-
-## About Security
-By design, Project N.O.M.A.D. is intended to be open and available without hurdles - it includes no authentication. If you decide to connect your device to a local network after install (e.g. for allowing other devices to access it's resources), you can block/open ports to control which services are exposed.
-
-**Will authentication be added in the future?** Maybe. It's not currently a priority, but if there's enough demand for it, we may consider building in an optional authentication layer in a future release to support uses cases where multiple users need access to the same instance but with different permission levels (e.g. family use with parental controls, classroom use with teacher/admin accounts, etc.). For now, we recommend using network-level controls to manage access if you're planning to expose your N.O.M.A.D. instance to other devices on a local network. N.O.M.A.D. is not designed to be exposed directly to the internet, and we strongly advise against doing so unless you really know what you're doing, have taken appropriate security measures, and understand the risks involved.
-
-## Contributing
-Contributions are welcome and appreciated! Please read this section fully to understand how to contribute to the project.
-
-### General Guidelines
-
-- **Open an issue first**: Before starting work on a new feature or bug fix, please open an issue to discuss your proposed changes. This helps ensure that your contribution aligns with the project's goals and avoids duplicate work. Title the issue clearly and provide a detailed description of the problem or feature you want to work on.
-- **Fork the repository**: Click the "Fork" button at the top right of the repository page to create a copy of the project under your GitHub account.
-- **Create a new branch**: In your forked repository, create a new branch for your work. Use a descriptive name for the branch that reflects the purpose of your changes (e.g., `fix/issue-123` or `feature/add-new-tool`).
-- **Make your changes**: Implement your changes in the new branch. Follow the existing code style and conventions used in the project. Be sure to test your changes locally to ensure they work as expected.
-- **Add Release Notes**: If your changes include new features, bug fixes, or improvements, please see the "Release Notes" section below to properly document your contribution for the next release.
-- **Conventional Commits**: When committing your changes, please use conventional commit messages to provide clear and consistent commit history. The format is `<type>(<scope>): <description>`, where:
-  - `type` is the type of change (e.g., `feat` for new features, `fix` for bug fixes, `docs` for documentation changes, etc.)
-  - `scope` is an optional area of the codebase that your change affects (e.g., `api`, `ui`, `docs`, etc.)
-  - `description` is a brief summary of the change
-- **Submit a pull request**: Once your changes are ready, submit a pull request to the main repository. Provide a clear description of your changes and reference any related issues. The project maintainers will review your pull request and may provide feedback or request changes before it can be merged.
-- **Be responsive to feedback**: If the maintainers request changes or provide feedback on your pull request, please respond in a timely manner. Stale pull requests may be closed if there is no activity for an extended period.
-- **Follow the project's code of conduct**: Please adhere to the project's code of conduct when interacting with maintainers and other contributors. Be respectful and considerate in your communications.
-- **No guarantee of acceptance**: The project is community-driven, and all contributions are appreciated, but acceptance is not guaranteed. The maintainers will evaluate each contribution based on its quality, relevance, and alignment with the project's goals.
-- **Thank you for contributing to Project N.O.M.A.D.!** Your efforts help make this project better for everyone.
-
-### Versioning
-This project uses semantic versioning. The version is managed in the root `package.json` 
-and automatically updated by semantic-release. For simplicity's sake, the "project-nomad" image
-uses the same version defined there instead of the version in `admin/package.json` (stays at 0.0.0), as it's the only published image derived from the code.
-
-### Release Notes
-Human-readable release notes live in [`admin/docs/release-notes.md`](admin/docs/release-notes.md) and are displayed in the Command Center's built-in documentation.
-
-When working on changes, add a summary to the `## Unreleased` section at the top of that file under the appropriate heading:
-
-- **Features** — new user-facing capabilities
-- **Bug Fixes** — corrections to existing behavior
-- **Improvements** — enhancements, refactors, docs, or dependency updates
-
-Use the format `- **Area**: Description` to stay consistent with existing entries. When a release is triggered, CI automatically stamps the version and date, commits the update, and pushes the content to the GitHub release.
-
-## Community & Resources
-
-- **Website:** [www.projectnomad.us](https://www.projectnomad.us) - Learn more about the project
-- **Discord:** [Join the Community](https://discord.com/invite/crosstalksolutions) - Get help, share your builds, and connect with other NOMAD users
-- **Benchmark Leaderboard:** [benchmark.projectnomad.us](https://benchmark.projectnomad.us) - See how your hardware stacks up against other NOMAD builds
+The macOS distribution layer is shipped on the **[`feat/macos-distribution-layer`](https://github.com/caweis/project-nomad/tree/feat/macos-distribution-layer)** branch and tracked as PR #2 against [snfettig/project-nomad-macos-arm64](https://github.com/snfettig/project-nomad-macos-arm64). Active development continues there. Weekly upstream-tracking reports land in [Issues](https://github.com/caweis/project-nomad/issues?q=label%3Aupstream-tracking) every Monday.
 
 ## License
 
-Project N.O.M.A.D. is licensed under the [Apache License 2.0](LICENSE).
-
-## Helper Scripts
-Once installed, Project N.O.M.A.D. has a few helper scripts for troubleshooting and maintenance. On macOS, these are located in `~/project-nomad-data/`:
-
-###### Start Script - Starts all installed project containers
-```bash
-bash ~/project-nomad-data/start_nomad.sh
-```
-
-###### Stop Script - Stops all installed project containers
-```bash
-bash ~/project-nomad-data/stop_nomad.sh
-```
-
-###### Update Script - Rebuilds the admin image from source and recreates containers
-```bash
-bash ~/project-nomad-data/update_nomad.sh
-```
+Apache-2.0 — matching the upstream project.
