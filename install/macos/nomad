@@ -419,7 +419,7 @@ check_stack() {
   if curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
     ok "native Ollama responding on :11434"
   else
-    flag "🔴" "Native Ollama not responding" "Check ~/Library/Logs/ollama.err.log"
+    flag "🔴" "Native Ollama not responding" "Check ~/Library/Logs/nomad-ollama.err.log"
   fi
 
   # Admin's view of the world (via its own API — same auth-free routes the UI uses)
@@ -1132,9 +1132,25 @@ LAUNCH_EOF
     <key>PATH</key>                    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>
   <key>RunAtLoad</key>         <true/>
-  <key>KeepAlive</key>         <true/>
-  <key>StandardOutPath</key>   <string>${HOME}/Library/Logs/ollama.out.log</string>
-  <key>StandardErrorPath</key> <string>${HOME}/Library/Logs/ollama.err.log</string>
+  <!-- KeepAlive as a dict so launchd only restarts on CRASH (non-zero exit),
+       not on clean shutdown. Bare <true/> tight-loops on a clean `ollama stop`
+       and burns CPU until something kicks it. SuccessfulExit=false means
+       "if the process exited zero, leave it alone." -->
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key> <false/>
+  </dict>
+  <!-- ThrottleInterval: minimum seconds between restart attempts. Without
+       this, a configuration error that causes Ollama to crash on boot
+       restart-loops at full CPU. 10s is the launchd doc default but worth
+       being explicit. -->
+  <key>ThrottleInterval</key> <integer>10</integer>
+  <!-- ExitTimeOut: how long launchd waits between SIGTERM and SIGKILL.
+       Default is 20s. We bump to 30s so an in-flight model generation has
+       time to finish writing the conversation buffer to disk on shutdown. -->
+  <key>ExitTimeOut</key>      <integer>30</integer>
+  <key>StandardOutPath</key>   <string>${HOME}/Library/Logs/nomad-ollama.out.log</string>
+  <key>StandardErrorPath</key> <string>${HOME}/Library/Logs/nomad-ollama.err.log</string>
 </dict>
 </plist>
 EOF
@@ -1175,7 +1191,7 @@ Manual recovery:
     curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1 && { ok "Ollama API responding"; return 0; }
     sleep 1
   done
-  die "Ollama did not start — check ~/Library/Logs/ollama.err.log"
+  die "Ollama did not start — check ~/Library/Logs/nomad-ollama.err.log"
 }
 
 # Symlink ourselves into brew's bin dir so `nomad <cmd>` works without the
@@ -3212,7 +3228,7 @@ Reboot the Mac and try again — this clears all launchd transient state."
     fi
     sleep 1
   done
-  warn "API not yet responding — tail ~/Library/Logs/ollama.err.log for hints"
+  warn "API not yet responding — tail ~/Library/Logs/nomad-ollama.err.log for hints"
 }
 
 # Benchmark — native Metal Ollama vs container (Rosetta-emulated) Ollama on
