@@ -1327,8 +1327,14 @@ else
   echo "install-bundle missing from this drive — fetching from GitHub instead..."
   mkdir -p "\$HOME/Developer"
   cd "\$HOME/Developer"
+  # GitHub serves the tarball with the CURRENT repo name as the top-level
+  # dir, even when the request URL uses the pre-rename name. caweis/
+  # project-nomad-macos-arm64 was renamed to caweis/project-nomad, so the
+  # extracted dir is project-nomad-feat-macos-distribution-layer/, NOT
+  # project-nomad-macos-arm64-feat-... Confirmed 2026-05-11 with
+  # \`tar tzf | head -1\`. Verify with that command after any repo rename.
   curl -fsSL https://github.com/caweis/project-nomad-macos-arm64/archive/refs/heads/feat/macos-distribution-layer.tar.gz | tar xz
-  bash project-nomad-macos-arm64-feat-macos-distribution-layer/install/macos/nomad install
+  bash project-nomad-feat-macos-distribution-layer/install/macos/nomad install
 fi
 INSTALL_NOMAD_EOF
   chmod +x "$picked/install-nomad.command"
