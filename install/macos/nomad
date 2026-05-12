@@ -900,6 +900,27 @@ step_deps() {
     command -v brew >/dev/null 2>&1 || die "Homebrew install failed"
   fi
   ok "Homebrew $(brew --version | head -1 | awk '{print $2}')"
+
+  # Persist brew on PATH for future zsh sessions. Homebrew's installer
+  # prints "Next steps" telling the user to add `eval "$(brew shellenv)"`
+  # to ~/.zprofile manually; we do it for them so the `nomad` symlink
+  # installed at step_self_install_to_path is discoverable in any new
+  # terminal without the user having to source brew shellenv first.
+  # Caught when a fresh MacBook Air install left `nomad: command not
+  # found` after install — brew was installed, symlink was created, but
+  # /opt/homebrew/bin wasn't on the interactive shell's PATH.
+  local brew_bin=""
+  [[ -x /opt/homebrew/bin/brew ]] && brew_bin="/opt/homebrew/bin/brew"
+  [[ -z "$brew_bin" && -x /usr/local/bin/brew ]] && brew_bin="/usr/local/bin/brew"
+  if [[ -n "$brew_bin" ]]; then
+    local zprofile="$HOME/.zprofile"
+    if ! grep -q 'brew shellenv' "$zprofile" 2>/dev/null \
+       && ! grep -q 'brew shellenv' "$HOME/.zshrc" 2>/dev/null; then
+      printf '\n# Added by NOMAD installer — keep brew binaries on PATH for new shells\neval "$(%s shellenv)"\n' "$brew_bin" >> "$zprofile"
+      ok "added brew shellenv to ~/.zprofile (new terminals will find nomad)"
+    fi
+  fi
+
   brew update --quiet || warn "brew update hiccup — continuing"
 
   # jq
@@ -1307,7 +1328,7 @@ else
   mkdir -p "\$HOME/Developer"
   cd "\$HOME/Developer"
   curl -fsSL https://github.com/caweis/project-nomad-macos-arm64/archive/refs/heads/feat/macos-distribution-layer.tar.gz | tar xz
-  bash project-nomad-feat-macos-distribution-layer/install/macos/nomad install
+  bash project-nomad-macos-arm64-feat-macos-distribution-layer/install/macos/nomad install
 fi
 INSTALL_NOMAD_EOF
   chmod +x "$picked/install-nomad.command"
