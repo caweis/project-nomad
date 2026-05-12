@@ -76,15 +76,25 @@ jobs:
           fi
 
           # Release tag pushes → :vX.Y.Z and :latest
+          # Docker image tags only allow [a-zA-Z0-9_.-], but SemVer 2.0 lets
+          # us use `+` for build metadata (e.g. v0.1.0-macos+2026.05.11).
+          # The git tag stays as-authored; we substitute `+` → `.` for the
+          # Docker tag so buildx accepts it. Result is still distinguishable
+          # (v0.1.0-macos.2026.05.11) and round-trippable for humans.
           if [[ "${{ github.event_name }}" == "push" && "${{ github.ref_type }}" == "tag" ]]; then
             TAG_NAME="${GITHUB_REF#refs/tags/}"
-            TAGS="${TAGS},${IMAGE}:${TAG_NAME}"
+            DOCKER_TAG="${TAG_NAME//+/.}"
+            TAGS="${TAGS},${IMAGE}:${DOCKER_TAG}"
             TAGS="${TAGS},${IMAGE}:latest"
           fi
 
           # workflow_dispatch with explicit version
+          # Same `+` → `.` substitution as the tag-push path, so a manual
+          # build with version="0.1.0-macos+2026.05.11" doesn't fail buildx.
           if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ inputs.version }}" ]]; then
-            TAGS="${TAGS},${IMAGE}:${{ inputs.version }},${IMAGE}:v${{ inputs.version }}"
+            INPUT_VERSION="${{ inputs.version }}"
+            DOCKER_VERSION="${INPUT_VERSION//+/.}"
+            TAGS="${TAGS},${IMAGE}:${DOCKER_VERSION},${IMAGE}:v${DOCKER_VERSION}"
             if [[ "${{ inputs.tag_latest }}" == "true" ]]; then
               TAGS="${TAGS},${IMAGE}:latest"
             fi
