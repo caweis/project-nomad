@@ -1487,10 +1487,25 @@ LAUNCH_EOF
   <key>EnvironmentVariables</key>
   <dict>
     <key>OLLAMA_HOST</key>             <string>0.0.0.0:11434</string>
-    <key>OLLAMA_KEEP_ALIVE</key>       <string>30m</string>
+    <!-- KEEP_ALIVE=24h: models stay resident for a day after last use.
+         First chat of the day pays cold-load cost (~5-10s for a 8B model
+         on M-series); every chat after that is instant. Memory cost is
+         covered by the bandwidth budget — see MAX_LOADED_MODELS below. -->
+    <key>OLLAMA_KEEP_ALIVE</key>       <string>24h</string>
+    <!-- FLASH_ATTENTION: 20-40% throughput improvement on Metal, no
+         quality loss. Strictly better attention kernel. -->
     <key>OLLAMA_FLASH_ATTENTION</key>  <string>1</string>
+    <!-- KV_CACHE_TYPE=q8_0: quantize the KV cache. ~1.3-1.5x speedup on
+         long prompts (RAG context, multi-turn chat); cuts KV memory by
+         half so larger contexts fit. Quality difference is below the
+         noise floor at q8_0; q4_0 is more aggressive and starts to show. -->
     <key>OLLAMA_KV_CACHE_TYPE</key>    <string>q8_0</string>
-    <key>OLLAMA_NUM_PARALLEL</key>     <string>4</string>
+    <!-- NUM_PARALLEL=1: serialize requests for max tokens/sec each.
+         LLM token generation is memory-bandwidth-bound on Apple Silicon;
+         concurrent requests share the same bandwidth pipe and each runs
+         slower. For single-user offline Mac (NOMAD's target), serial is
+         faster end-to-end. Multi-user / family deployments may want 2-4. -->
+    <key>OLLAMA_NUM_PARALLEL</key>     <string>1</string>
     <key>OLLAMA_MAX_LOADED_MODELS</key><string>${max_loaded}</string>
     <!-- OLLAMA_ORIGINS=* allows the quick-chat.html (file:// or any local origin)
          to hit the Ollama API. Single-user offline Mac — broad origin is fine. -->
@@ -1520,7 +1535,7 @@ LAUNCH_EOF
 </dict>
 </plist>
 EOF
-  log "Ollama tuning: KV-cache=q8_0 (2× context for same RAM), num_parallel=4, max_loaded_models=$max_loaded for ${ram_gb} GB RAM"
+  log "Ollama tuning: flash-attention=on, KV-cache=q8_0 (2× context for same RAM), keep-alive=24h, num_parallel=1 (single-user max throughput), max_loaded_models=$max_loaded for ${ram_gb} GB RAM"
   log "LaunchAgent wrapper at $LAUNCHER  (rename-safe drive resolution at runtime)"
   chmod 644 "$LA_PLIST"
 
