@@ -16,12 +16,13 @@ Useful for people who want their own offline knowledge node: preppers, homeschoo
 On a fresh Apple Silicon Mac (M1 or later, macOS 14+):
 
 ```bash
-mkdir -p ~/Developer && cd ~/Developer && \
-  curl -fsSL https://github.com/caweis/project-nomad-macos-arm64/archive/refs/heads/feat/macos-distribution-layer.tar.gz | tar xz && \
-  bash project-nomad-feat-macos-distribution-layer/install/macos/nomad install
+curl -fsSL https://raw.githubusercontent.com/caweis/project-nomad/feat/macos-distribution-layer/install/bootstrap.sh | bash
 ```
 
-The installer asks where to store data (external drive is the usual answer) and which AI models to pull, then handles Homebrew, OrbStack, native Ollama, the container stack, database setup, content downloads, and a help library. Idempotent — re-running fixes anything that broke.
+This installs the NOMAD command to `~/Applications/project-nomad`, then asks
+where to store your data (an external drive is the usual answer) and which AI
+models to pull. Idempotent — re-running fixes anything that broke; to update
+later, run `nomad update`.
 
 Admin lands at `http://localhost:8080`, or `http://nomad.local:8080` from any device on the same network.
 
