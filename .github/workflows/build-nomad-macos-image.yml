@@ -6,7 +6,7 @@ name: Build macOS-distribution admin image
 # Docker Desktop and arm64-native OrbStack/colima.
 #
 # Triggers:
-#   - push to feat/macos-distribution-layer (or main) when admin/, the root
+#   - push to main when admin/, the root
 #     Dockerfile, or this workflow change → image tagged :edge.
 #   - tag push matching v* → image tagged :vX.Y.Z and :latest.
 #   - workflow_dispatch → manual build, optional :latest promotion.
@@ -15,7 +15,6 @@ on:
   push:
     branches:
       - main
-      - feat/macos-distribution-layer
     paths:
       - 'admin/**'
       - 'Dockerfile'

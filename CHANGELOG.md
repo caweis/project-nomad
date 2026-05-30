@@ -5,7 +5,7 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 
 ## [Unreleased]
 
-Work on `feat/macos-distribution-layer` (2026-05-30).
+macOS distribution layer, landed 2026-05-30.
 
 ### Added
 - **`nomad update`** — one command to update an existing install: it locates the
@@ -14,7 +14,7 @@ Work on `feat/macos-distribution-layer` (2026-05-30).
   re-runs the install in place. No data loss, no model re-pull.
 - **`install/bootstrap.sh`** — a one-line first-run installer for a fresh Apple
   Silicon Mac:
-  `curl -fsSL https://raw.githubusercontent.com/caweis/project-nomad/feat/macos-distribution-layer/install/bootstrap.sh | bash`.
+  `curl -fsSL https://raw.githubusercontent.com/caweis/project-nomad/main/install/bootstrap.sh | bash`.
   It fetches the bundle to `~/Applications/project-nomad` (override with
   `NOMAD_HOME`) and hands off to `nomad install`, which still asks where to store
   content (typically an external drive).

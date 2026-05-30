@@ -4,7 +4,7 @@ name: Shell checks
 # the bash tests exercise the same BSD userland (df, mktemp, awk) as the target.
 on:
   push:
-    branches: [feat/macos-distribution-layer, main]
+    branches: [main]
     paths:
       - 'install/macos/**'
       - 'admin/constants/host_commands.ts'

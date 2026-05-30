@@ -23,10 +23,10 @@ You don't need to install Docker, Homebrew, Ollama, or anything else first. The 
 Open Terminal and paste this:
 
 ```bash
-mkdir -p ~/Developer && cd ~/Developer && \
-  curl -fsSL https://github.com/caweis/project-nomad-macos-arm64/archive/refs/heads/feat/macos-distribution-layer.tar.gz | tar xz && \
-  bash project-nomad-feat-macos-distribution-layer/install/macos/nomad install
+curl -fsSL https://raw.githubusercontent.com/caweis/project-nomad/main/install/bootstrap.sh | bash
 ```
+
+This installs the `nomad` command to `~/Applications/project-nomad` and starts the installer. To update later, run `nomad update`.
 
 The installer is interactive — it'll ask you a few questions:
 

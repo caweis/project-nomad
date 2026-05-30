@@ -44,13 +44,13 @@ jobs:
       - name: Generate report
         id: report
         env:
-          BASE_BRANCH: feat/macos-distribution-layer
+          BASE_BRANCH: main
         run: |
           set -euo pipefail
           REPORT=/tmp/report.md
           : > "$REPORT"
 
-          echo "_Auto-generated weekly by [.github/workflows/upstream-tracking.yml](../blob/feat/macos-distribution-layer/.github/workflows/upstream-tracking.yml)._  Run date: $(date -u '+%Y-%m-%d %H:%M UTC')." >> "$REPORT"
+          echo "_Auto-generated weekly by [.github/workflows/upstream-tracking.yml](../blob/main/.github/workflows/upstream-tracking.yml)._  Run date: $(date -u '+%Y-%m-%d %H:%M UTC')." >> "$REPORT"
           echo "" >> "$REPORT"
 
           # ─── Crosstalk-Solutions/project-nomad ──────────────────────────────
