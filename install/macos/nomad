@@ -96,7 +96,7 @@ case "$_NOMAD_FIRST_ARG" in
       printf '  Recovery (one paste):\n' >&2
       printf '    rm -f "$(brew --prefix)/bin/nomad"\n' >&2
       printf '    cd ~/Applications/project-nomad\n' >&2
-      printf '    git fetch && git reset --hard origin/feat/macos-distribution-layer\n' >&2
+      printf '    git fetch && git reset --hard origin/main\n' >&2
       printf '    bash install/macos/nomad install\n\n' >&2
       exit 1
     fi
@@ -139,7 +139,7 @@ self_update_nomad() {
     return 0
   fi
 
-  local branch="${NOMAD_BRANCH:-feat/macos-distribution-layer}"
+  local branch="${NOMAD_BRANCH:-main}"
   local raw_url="https://raw.githubusercontent.com/caweis/project-nomad/$branch/install/macos/nomad"
   local tmp
   tmp="$(/usr/bin/mktemp)" || return 0
@@ -201,7 +201,7 @@ self_update_compose() {
     return 0
   fi
 
-  local branch="${NOMAD_BRANCH:-feat/macos-distribution-layer}"
+  local branch="${NOMAD_BRANCH:-main}"
   local raw_url="https://raw.githubusercontent.com/caweis/project-nomad/$branch/install/macos/compose.yaml"
   local tmp
   tmp="$(/usr/bin/mktemp)" || return 0
@@ -1349,11 +1349,11 @@ else
   cd "\$HOME/Developer"
   # GitHub serves the tarball with the CURRENT repo name as the top-level
   # dir. The repo was renamed to caweis/project-nomad, so the extracted dir
-  # is project-nomad-feat-macos-distribution-layer/ (repo name + branch with
+  # is project-nomad-main/ (repo name + branch with
   # slashes turned to dashes). Confirmed 2026-05-11 with \`tar tzf | head -1\`.
   # Verify with that command after any repo rename.
-  curl -fsSL https://github.com/caweis/project-nomad/archive/refs/heads/feat/macos-distribution-layer.tar.gz | tar xz
-  bash project-nomad-feat-macos-distribution-layer/install/macos/nomad install
+  curl -fsSL https://github.com/caweis/project-nomad/archive/refs/heads/main.tar.gz | tar xz
+  bash project-nomad-main/install/macos/nomad install
 fi
 INSTALL_NOMAD_EOF
   chmod +x "$picked/install-nomad.command"
@@ -4282,7 +4282,7 @@ _validate_bundle_subtree() {
 cmd_update() {
   # Flags: --branch NAME. (Dispatcher passes EXTRA_ARGS, whose defensive
   # expansion injects one empty placeholder when no flag was given — absorb it.)
-  local branch="${NOMAD_BRANCH:-feat/macos-distribution-layer}"
+  local branch="${NOMAD_BRANCH:-main}"
   while [[ $# -gt 0 ]]; do
     case "$1" in
       "")        shift ;;

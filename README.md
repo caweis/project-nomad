@@ -13,18 +13,17 @@ Useful for people who want their own offline knowledge node: preppers, homeschoo
 
 ## Install
 
-On a fresh Apple Silicon Mac (M1 or later, macOS 14+):
+On a fresh Apple Silicon Mac (M1 or later, macOS 14+), one command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/caweis/project-nomad/feat/macos-distribution-layer/install/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/caweis/project-nomad/main/install/bootstrap.sh | bash
 ```
 
-This installs the NOMAD command to `~/Applications/project-nomad`, then asks
-where to store your data (an external drive is the usual answer) and which AI
-models to pull. Idempotent — re-running fixes anything that broke; to update
-later, run `nomad update`.
+It drops the `nomad` command bundle in `~/Applications/project-nomad`, then runs `nomad install`. The installer asks two things: where to keep your **content** — Wikipedia, AI models, maps (an external drive is the usual answer) — and which AI models to pull for your Mac's RAM. The code stays on the internal disk; the content lives wherever you point it, so the drive can be unplugged for travel and reconnected later.
 
-Admin lands at `http://localhost:8080`, or `http://nomad.local:8080` from any device on the same network.
+Homebrew, Xcode Command Line Tools, Rosetta, OrbStack, native Ollama, the container stack, the database, and the offline help library are all handled for you. It's idempotent — re-running repairs anything that broke.
+
+Admin lands at `http://localhost:8080`, or `http://nomad.local:8080` from any device on the same network. Full command reference: `man nomad` (and per-command pages, e.g. `man nomad-update`).
 
 ## What's in it
 
@@ -46,20 +45,17 @@ Reachable from other devices on the same network. The data drive can be unplugge
 - Ollama runs as a Homebrew install rather than a Docker container, so it can use the Metal GPU.
 - ZIM downloader writes to a temp file and renames on completion, which prevents a half-downloaded library from crashing Kiwix.
 - Migrations and seeders run during install. There's a worker container so download jobs actually progress.
-- Updates happen with `nomad upgrade` from the Terminal.
+- Updating and lifecycle are one command each from the Terminal (`nomad update`, `nomad upgrade`).
 
 ## Updating
 
-Two things to keep current:
-
 ```bash
-nomad self-update    # refreshes the `nomad` CLI script itself
-nomad upgrade        # refreshes container images and Ollama
+nomad update     # fetch the latest bundle and reinstall in place — no data loss
 ```
 
-`nomad self-update` resolves the install path automatically — works regardless of where the script lives on your Mac. `nomad install` and `nomad reinstall` self-update before running, so the CLI stays current as a side effect of the install path.
+`nomad update` finds your install on its own, pulls the latest, and re-runs the installer in place — your content and pulled models are left untouched (it is not a wipe; that's `nomad reinstall`). Related: `nomad upgrade` refreshes the container images and Ollama, and `nomad reset-ollama` recovers the AI service if its data drive hiccups.
 
-Full reference: [`install/macos/README.md`](./install/macos/README.md).
+Full reference: [`install/macos/README.md`](./install/macos/README.md), or `man nomad`.
 
 ## Lineage
 
@@ -70,7 +66,7 @@ Full reference: [`install/macos/README.md`](./install/macos/README.md).
 
 ## Status
 
-Active work is on [`feat/macos-distribution-layer`](https://github.com/caweis/project-nomad/tree/feat/macos-distribution-layer). Validated end-to-end on a Mac mini M4 with 32 GB. Weekly upstream-diff reports land in [Issues](https://github.com/caweis/project-nomad/issues?q=label%3Aupstream-tracking).
+`main` is the canonical line — installs and `nomad update` track it. Validated end-to-end on a Mac mini M4 with 32 GB. Weekly upstream-diff reports land in [Issues](https://github.com/caweis/project-nomad/issues?q=label%3Aupstream-tracking).
 
 ## Versioning
 

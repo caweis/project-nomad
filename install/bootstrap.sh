@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Project NOMAD — first-run bootstrap for macOS (Apple Silicon).
 # Usage (one-liner):
-#   curl -fsSL https://raw.githubusercontent.com/caweis/project-nomad/feat/macos-distribution-layer/install/bootstrap.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/caweis/project-nomad/main/install/bootstrap.sh | bash
 #
 # Fetches the install bundle to ~/Applications/project-nomad (override with
 # NOMAD_HOME) and hands off to `nomad install` — which asks where to store your
@@ -11,7 +11,7 @@
 # NOTE: stock tools only (curl/tar/uname) — git is NOT assumed; `nomad install`
 # installs Homebrew/Xcode-CLT/Rosetta/OrbStack/Ollama itself.
 
-NOMAD_BRANCH="${NOMAD_BRANCH:-feat/macos-distribution-layer}"
+NOMAD_BRANCH="${NOMAD_BRANCH:-main}"
 
 # macOS + Apple Silicon? (test-injectable via NOMAD_TEST_OS / NOMAD_TEST_ARCH)
 _bootstrap_platform_ok() {
