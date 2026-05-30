@@ -34,6 +34,19 @@ echo "== guard =="
 load
 check "MARKER_FILE under temp SECRETS_DIR" "$MARKER_FILE" "$TMP/.force-internal-models"
 
+echo "== timeout primitive =="
+load
+if _run_timeboxed 5 true;       then ok "fast cmd finishes (rc 0)"; else bad "fast cmd reported timeout"; fi
+if _run_timeboxed 5 ls /tmp;    then ok "ls /tmp finishes";        else bad "ls /tmp reported timeout"; fi
+if _run_timeboxed 1 sleep 5;    then bad "slow cmd not timed out"; else ok "slow cmd times out (rc 1)"; fi
+
+echo "== wedge probe =="
+load
+# A normal, fast-returning directory is NOT wedged.
+if _probe_wedged /tmp 5;        then bad "/tmp probed as wedged"; else ok "/tmp not wedged"; fi
+# A non-existent path fast-fails (ENOENT) → NOT wedged.
+if _probe_wedged "$TMP/nope" 5; then bad "missing path probed as wedged"; else ok "missing path not wedged"; fi
+
 echo "== marker =="
 load
 _marker_present && bad "marker present on fresh dir" || ok "absent on fresh dir"

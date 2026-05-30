@@ -4063,6 +4063,35 @@ _marker_present() { [[ -f "$MARKER_FILE" ]]; }
 _marker_set()     { mkdir -p "$SECRETS_DIR" && : > "$MARKER_FILE"; }
 _marker_clear()   { rm -f "$MARKER_FILE"; }
 
+# Run a command, killing it if it exceeds $1 seconds. No coreutils `timeout`
+# dependency (can't assume gtimeout on a fresh Mac). Returns 0 if the command
+# returned within the window (ANY exit code), 1 if it had to be killed.
+_run_timeboxed() {
+  local t="$1"; shift
+  local done_flag; done_flag="$(mktemp)"
+  ( "$@" >/dev/null 2>&1; touch "$done_flag.ok" ) &
+  local pid=$!
+  ( sleep "$t"; kill -9 "$pid" 2>/dev/null ) &
+  local watcher=$!
+  wait "$pid" 2>/dev/null
+  kill "$watcher" 2>/dev/null; wait "$watcher" 2>/dev/null
+  if [[ -f "$done_flag.ok" ]]; then
+    rm -f "$done_flag" "$done_flag.ok"
+    return 0
+  fi
+  rm -f "$done_flag" "$done_flag.ok"
+  return 1
+}
+
+# Is the drive models path WEDGED? Probes a DEEP read (the manifests dir) because
+# a mounted-but-hung APFS volume passes a top-level `ls` while a deep readdir
+# hangs. Returns 0 = wedged (read did not return within the timeout),
+# 1 = not wedged (returned fast, whether success or ENOENT).
+_probe_wedged() {
+  local path="$1" t="${2:-5}"
+  if _run_timeboxed "$t" ls "$path"; then return 1; else return 0; fi
+}
+
 # Reset the Ollama LaunchAgent — recovery for "bootstrap failed: 5: Input/output
 # error" or any other stuck-launchd state. Bootout, kill orphan ollama processes,
 # wait for launchd to commit, re-bootstrap, wait for API.
