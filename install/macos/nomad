@@ -4903,6 +4903,8 @@ case "$CMD" in
     ;;
   help|--help|-h)
     sed -n '2,45p' "$0" | sed 's/^# //; s/^#//'
+    echo
+    echo "Full reference: man nomad   (per-command: man nomad-<command>, e.g. man nomad-zim)"
     ;;
   *) die "unknown command: $CMD
 Run 'nomad help' for usage." ;;

@@ -121,6 +121,7 @@ Three layers of defense for the leaderboard CPU/GPU surfacing:
 ## Commands cheatsheet
 
 ```
+# Full docs: man nomad  (per-command: man nomad-<command>)
 nomad install [opts]    Full install. Idempotent — also fixes broken state.
 nomad check [section]   Diagnose: system | stack | install (preflight) | all.
 nomad up                Start the stack
@@ -160,6 +161,9 @@ nomad upgrade [svc]     Software upgrade router — compose stack, native Ollama
 nomad upgrade-models    Re-pull installed models at latest tags
 nomad reinstall         Full uninstall + install (one confirm prompt up front)
 nomad uninstall         Remove containers, LaunchAgents, secrets, (with confirm) data
+nomad self-update       Fetch the latest nomad script
+nomad install-bridge    Install just the host-command-bridge LaunchAgent (idempotent)
+nomad refresh-compose   Refresh compose.yaml from the bundle
 ```
 
 Other entry points:

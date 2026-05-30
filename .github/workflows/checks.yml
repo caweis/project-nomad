@@ -26,3 +26,5 @@ jobs:
         run: bash install/macos/scripts/test-host-command-allowlist.sh
       - name: Recovery helper unit tests
         run: bash install/macos/scripts/test-reset-ollama.sh
+      - name: Man-page drift guard + lint
+        run: bash install/macos/scripts/test-manpages.sh
