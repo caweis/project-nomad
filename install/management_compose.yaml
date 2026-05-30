@@ -51,14 +51,12 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock # Allows Dozzle to read logs from the Host's Docker daemon
     environment:
-      - DOZZLE_ENABLE_ACTIONS=true # Enables the action buttons (restart, stop, etc.)
-      - DOZZLE_ENABLE_SHELL=true  # Enables web-based shell access
+      - DOZZLE_ENABLE_ACTIONS=false # web UI is unauthenticated; don't expose restart/stop
+      - DOZZLE_ENABLE_SHELL=false   # web shell on an unauthenticated port = container takeover
   mysql:
     image: mysql:8.0
     container_name: nomad_mysql
     restart: unless-stopped
-    ports:
-      - "3306:3306"
     environment:
       - MYSQL_ROOT_PASSWORD=replaceme
       - MYSQL_DATABASE=nomad
@@ -75,8 +73,6 @@ services:
     image: redis:7-alpine
     container_name: nomad_redis
     restart: unless-stopped
-    ports:
-      - "6379:6379"
     volumes:
       - /opt/project-nomad/redis:/data
     healthcheck:
