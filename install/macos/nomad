@@ -4253,6 +4253,18 @@ _resolve_bundle_dir() {
   if [[ -n "$recorded" ]]; then echo "$recorded"; else echo "$HERE"; fi
 }
 
+# Is $1 inside a git working tree? (bundle dir itself or its parent has .git)
+_bundle_is_git() {
+  local d="$1"
+  [[ -d "$d/.git" || -d "$d/../.git" ]] || git -C "$d" rev-parse --is-inside-work-tree >/dev/null 2>&1
+}
+
+# Does the git working tree at $1 have uncommitted changes?
+_git_tree_dirty() {
+  local d="$1"
+  [[ -n "$(git -C "$d" status --porcelain 2>/dev/null)" ]]
+}
+
 # Reset the Ollama LaunchAgent — recovery for "bootstrap failed: 5: Input/output
 # error" or any other stuck-launchd state. Bootout, kill orphan ollama processes,
 # wait for launchd to commit, re-bootstrap, wait for API.

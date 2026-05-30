@@ -26,6 +26,18 @@ check "fallback to HERE when no .env key" "$(_resolve_bundle_dir)" "$HERE"
 printf 'NOMAD_BUNDLE_DIR=%s\n' "/some/bundle/path" > "$ENV_FILE"
 check ".env key wins" "$(_resolve_bundle_dir)" "/some/bundle/path"
 
+echo "== git helpers =="
+load
+# Non-git dir → not a git bundle.
+mkdir -p "$TMP/plain"
+if _bundle_is_git "$TMP/plain"; then bad "plain dir seen as git"; else ok "plain dir not git"; fi
+# Real git repo: clean then dirty.
+git init -q "$TMP/repo"; ( cd "$TMP/repo"; git config user.email t@t; git config user.name t; echo a > f; git add f; git commit -qm init )
+if _bundle_is_git "$TMP/repo"; then ok "git repo detected"; else bad "git repo not detected"; fi
+if _git_tree_dirty "$TMP/repo"; then bad "clean tree seen as dirty"; else ok "clean tree not dirty"; fi
+echo change >> "$TMP/repo/f"
+if _git_tree_dirty "$TMP/repo"; then ok "dirty tree detected"; else bad "dirty tree not detected"; fi
+
 echo
 echo "results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]]
