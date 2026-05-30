@@ -60,6 +60,7 @@
 .Op Ar GB
 .Nm
 .Cm reset-ollama
+.Op Fl -internal | Fl -drive
 .Nm
 .Cm fix-kiwix
 .Nm
@@ -166,9 +167,18 @@ Tune OrbStack VM memory. With no arg, computes 80% of host RAM (proportional
 formula, scales 8 GB Air → 192+ GB Studio). With explicit GB, sets that
 allocation. Restarts OrbStack VM to apply (~10s downtime). Run during
 install automatically; this is the manual entry point for re-tuning.
-.It Cm reset-ollama
+.It Cm reset-ollama Op Fl -internal | Fl -drive
 Recover from stuck LaunchAgent state ("bootstrap failed: 5: Input/output
 error"). Bootouts existing agent, kills orphan ollama serves, re-bootstraps.
+With no flag, auto-detects a mounted-but-wedged external data drive (a deep
+read that hangs) and falls back to internal models
+.Pa ~/.ollama/models ,
+then auto-pulls a disk-gated, RAM-sized model set so chat works immediately.
+.Fl -internal
+forces internal models;
+.Fl -drive
+restores to the data drive (refused while the drive is still wedged \(em
+physically unplug/replug it first).
 .It Cm fix-kiwix
 Manual trigger of the kiwix self-heal pass. Background: admin's downloader
 writes ZIM files directly to

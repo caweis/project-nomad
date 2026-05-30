@@ -143,7 +143,12 @@ nomad services list     Admin-spawned content services (Kiwix, Qdrant, Kolibri)
 nomad system info       Admin's view of host
 nomad api PATH [BODY]   Raw admin API call — generic escape hatch
 nomad orbstack-tune     Tune OrbStack VM RAM (auto = 80% of host)
-nomad reset-ollama      Recover from stuck LaunchAgent state
+nomad reset-ollama [--internal|--drive]
+                        Recover Ollama. Auto-detects a wedged external data
+                        drive, falls back to internal models, and auto-pulls a
+                        disk-gated, RAM-sized model set. --internal forces
+                        internal; --drive restores to the drive (refused if
+                        still wedged).
 nomad fix-kiwix         Manual trigger of kiwix self-heal pass
                         (the kiwix-self-heal LaunchAgent runs same logic every 60s)
 nomad clean [--apply]   Safe disk cleanup. Dry-run by default. Removes /tmp/nomad-*.log,
