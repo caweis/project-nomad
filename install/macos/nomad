@@ -4203,7 +4203,55 @@ _resolve_drive_models() {
 # Use this when 'nomad install' bombs at the LaunchAgent step on a machine that
 # had an older buggy NOMAD install previously load the agent.
 cmd_reset_ollama() {
+  # Flags: --internal forces internal models; --drive forces restore to the
+  # data drive (refused if still wedged). No flag = auto-detect. The dispatcher
+  # passes EXTRA_ARGS, whose defensive expansion injects one empty placeholder
+  # when no flag was given — absorb it (same pattern the old field-desk cmd used).
+  local mode="auto"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      "")          shift ;;
+      --internal)  mode="internal"; shift ;;
+      --drive)     mode="drive";    shift ;;
+      *) die "usage: nomad reset-ollama [--internal | --drive]" ;;
+    esac
+  done
+
   section "Reset Ollama LaunchAgent"
+
+  # ── Decide the model source BEFORE touching launchd, so the launcher resolves
+  #    the right store on its first spawn and the wait-for-API loop never hangs.
+  local drive; drive="$(_resolve_drive_models)"
+  case "$mode" in
+    internal)
+      _marker_set
+      ok "forcing internal models (~/.ollama/models)"
+      ;;
+    drive)
+      [[ -z "$drive" ]] && die "--drive refused: no data drive / ollama-models found to restore to.
+Mount the drive (or run 'nomad install'), then retry."
+      if _probe_wedged "$drive/manifests"; then
+        die "--drive refused: data drive still wedged at $drive.
+Physically unplug/replug the drive, then retry: nomad reset-ollama --drive"
+      fi
+      _marker_clear
+      ok "restoring drive-backed models at $drive"
+      ;;
+    auto)
+      if [[ -n "$drive" ]] && _probe_wedged "$drive/manifests"; then
+        _marker_set
+        warn "data drive WEDGED at $drive — fell back to internal models"
+        warn "physical unplug/replug required; the next 'nomad reset-ollama' auto-restores once healthy"
+      elif [[ -n "$drive" ]]; then
+        if _marker_present; then
+          _marker_clear
+          ok "data drive healthy — restored to drive-backed models at $drive"
+        fi
+      else
+        log "no data drive resolved — launcher will use its fallback chain"
+      fi
+      ;;
+  esac
 
   # 1. Bootout (must happen BEFORE killing process so KeepAlive can't respawn)
   if launchctl print "$LA_TARGET/$LA_LABEL" >/dev/null 2>&1; then
@@ -4264,14 +4312,29 @@ Reboot the Mac and try again — this clears all launchd transient state."
   # 6. Wait for API to come back up
   log "waiting for Ollama API on :11434..."
   local deadline=$(( $(date +%s) + 30 ))
+  local api_up=0
   while [[ $(date +%s) -lt $deadline ]]; do
     if curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
       ok "Ollama API responding"
-      return 0
+      api_up=1
+      break
     fi
     sleep 1
   done
-  warn "API not yet responding — tail ~/Library/Logs/nomad-ollama.err.log for hints"
+  [[ $api_up -eq 1 ]] || { warn "API not yet responding — tail ~/Library/Logs/nomad-ollama.err.log for hints"; return 0; }
+
+  # 7. If we're running internal (marker present) and the internal store is
+  #    empty, auto-pull the tier-appropriate set so chat works immediately.
+  if _marker_present; then
+    local model_count
+    model_count="$(curl -fsS http://127.0.0.1:11434/api/tags 2>/dev/null | jq -r '.models | length' 2>/dev/null || echo 0)"
+    if [[ "${model_count:-0}" -eq 0 ]]; then
+      _autopull_tier_models
+    else
+      ok "internal store already has ${model_count} model(s) — no pull needed"
+    fi
+  fi
+  return 0
 }
 
 # Benchmark — native Metal Ollama vs container (Rosetta-emulated) Ollama on
@@ -4788,7 +4851,7 @@ case "$CMD" in
   api)             cmd_api       "${EXTRA_ARGS[@]}" ;;
   benchmark)       cmd_benchmark "${EXTRA_ARGS[@]}" ;;
   orbstack-tune)   cmd_orbstack_tune "${EXTRA_ARGS[@]}" ;;
-  reset-ollama)    cmd_reset_ollama ;;
+  reset-ollama)    cmd_reset_ollama "${EXTRA_ARGS[@]}" ;;
   fix-kiwix)       cmd_fix_kiwix ;;
   clean)           cmd_clean "${EXTRA_ARGS[@]}" ;;
   uninstall)       cmd_uninstall ;;
