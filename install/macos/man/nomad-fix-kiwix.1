@@ -1,0 +1,41 @@
+.Dd 2026-05-30
+.Dt NOMAD-FIX-KIWIX 1
+.Os
+.Sh NAME
+.Nm nomad-fix-kiwix
+.Nd manually run the Kiwix self-heal pass
+.Sh SYNOPSIS
+.Nm nomad fix-kiwix
+.Sh DESCRIPTION
+.Nm nomad fix-kiwix
+runs the Kiwix self-heal pass once, on demand.
+This is the same logic a LaunchAgent runs automatically every 60 seconds, so
+you rarely need it; use it when you want to force a check immediately rather
+than wait for the next scheduled run.
+.Pp
+The self-heal script is silent and takes no action when Kiwix is healthy.
+When it finds a partial or broken ZIM that is wedging the server, it moves
+that file aside into the quarantine directory and restarts Kiwix so the
+remaining archives stay available.
+.Pp
+.Nm nomad fix-kiwix
+prints the Kiwix container state before and after the pass, the recent
+self-heal action log, the final container state, whether Kiwix is responding
+over HTTP, and the contents of the quarantine directory.
+.Pp
+It requires the self-heal script to be installed
+.Pq run Xr nomad-install 1
+and the
+.Sy nomad_kiwix_server
+container to exist
+.Pq bring the stack up with Xr nomad-up 1 ,
+or wait for the admin service to spawn Kiwix once a ZIM download finishes.
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic nomad fix-kiwix
+Run the self-heal pass now and report Kiwix's state.
+.El
+.Sh SEE ALSO
+.Xr nomad 1 ,
+.Xr nomad-clean 1 ,
+.Xr nomad-zim 1

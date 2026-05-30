@@ -100,11 +100,11 @@ export class DockerService {
         success: false,
         message: `Invalid action: ${action}. Use 'start', 'stop', or 'restart'.`,
       }
-    } catch (error) {
-      logger.error(`Error starting service ${serviceName}: ${error.message}`)
+    } catch (error: any) {
+      logger.error({ err: error }, `[DockerService] Error controlling service ${serviceName}`)
       return {
         success: false,
-        message: `Failed to start service ${serviceName}: ${error.message}`,
+        message: `Failed to ${action} service ${serviceName}. Check server logs for details.`,
       }
     }
   }
@@ -353,9 +353,9 @@ export class DockerService {
             `No existing container found, proceeding with installation...`
           )
         }
-      } catch (error) {
-        logger.warn(`Error during container cleanup: ${error.message}`)
-        this._broadcast(serviceName, 'cleanup-warning', `Warning during cleanup: ${error.message}`)
+      } catch (error: any) {
+        logger.warn({ err: error }, `[DockerService] Error during container cleanup for ${serviceName}`)
+        this._broadcast(serviceName, 'cleanup-warning', 'Warning during container cleanup. Check server logs for details.')
       }
 
       // Step 3: Clear volumes/data if needed
@@ -380,12 +380,12 @@ export class DockerService {
         if (serviceVolumes.length === 0) {
           this._broadcast(serviceName, 'no-volumes', `No volumes found to clear`)
         }
-      } catch (error) {
-        logger.warn(`Error during volume cleanup: ${error.message}`)
+      } catch (error: any) {
+        logger.warn({ err: error }, `[DockerService] Error during volume cleanup for ${serviceName}`)
         this._broadcast(
           serviceName,
           'volume-cleanup-warning',
-          `Warning during volume cleanup: ${error.message}`
+          'Warning during volume cleanup. Check server logs for details.'
         )
       }
 
@@ -408,12 +408,12 @@ export class DockerService {
         success: true,
         message: `Service ${serviceName} force reinstall initiated successfully. You can receive updates via server-sent events.`,
       }
-    } catch (error) {
-      logger.error(`Force reinstall failed for ${serviceName}: ${error.message}`)
+    } catch (error: any) {
+      logger.error({ err: error }, `[DockerService] Force reinstall failed for ${serviceName}`)
       await this._cleanupFailedInstallation(serviceName)
       return {
         success: false,
-        message: `Failed to force reinstall service ${serviceName}: ${error.message}`,
+        message: `Failed to force reinstall service ${serviceName}. Check server logs for details.`,
       }
     }
   }
@@ -538,6 +538,18 @@ export class DockerService {
       // GPU-aware configuration for Ollama
       let finalImage = service.container_image
       let gpuHostConfig = containerConfig?.HostConfig || {}
+
+      // Default RestartPolicy: unless-stopped. Without this, dynamic
+      // services created via this code path (Kiwix, Kolibri, Cyberchef,
+      // Flatnotes, Qdrant, etc.) have NO restart policy and stay dead
+      // after any exit — including Mac reboots and Docker daemon restarts.
+      // The compose-managed services (admin, mysql, redis, dozzle,
+      // updater, admin-worker) already get unless-stopped from compose.yaml;
+      // this aligns dynamic services with that behavior. Caller can still
+      // override via containerConfig.HostConfig.RestartPolicy if needed.
+      if (!gpuHostConfig.RestartPolicy?.Name) {
+        gpuHostConfig.RestartPolicy = { Name: 'unless-stopped', MaximumRetryCount: 0 }
+      }
 
       if (service.service_name === SERVICE_NAMES.OLLAMA) {
         const gpuResult = await this._detectGPUType()
@@ -686,11 +698,11 @@ export class DockerService {
       await dockerContainer.remove({ force: true })
 
       return { success: true, message: `Service ${serviceName} container removed successfully` }
-    } catch (error) {
-      logger.error(`Error removing service container: ${error.message}`)
+    } catch (error: any) {
+      logger.error({ err: error }, `[DockerService] Error removing service container ${serviceName}`)
       return {
         success: false,
-        message: `Failed to remove service ${serviceName} container: ${error.message}`,
+        message: `Failed to remove service ${serviceName} container. Check server logs for details.`,
       }
     }
   }
@@ -1074,10 +1086,10 @@ export class DockerService {
       this._broadcast(
         serviceName,
         'update-rollback',
-        `Update failed: ${error.message}`
+        'Update failed. Check server logs for details.'
       )
-      logger.error(`[DockerService] Update failed for ${serviceName}: ${error.message}`)
-      return { success: false, message: `Update failed: ${error.message}` }
+      logger.error({ err: error }, `[DockerService] Update failed for ${serviceName}`)
+      return { success: false, message: 'Update failed. Check server logs for details.' }
     }
   }
 

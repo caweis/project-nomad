@@ -1,0 +1,84 @@
+.Dd 2026-05-30
+.Dt NOMAD-INSTALL 1
+.Os
+.Sh NAME
+.Nm nomad-install
+.Nd install or repair the full Project NOMAD stack
+.Sh SYNOPSIS
+.Nm nomad install
+.Op Fl -data-root Ar PATH
+.Op Fl -tier Ar TIER
+.Op Fl -models Ar names
+.Op Fl -no-models
+.Op Fl -yes
+.Sh DESCRIPTION
+.Nm nomad install
+brings up the complete Project NOMAD stack on this Mac: it installs the
+required tools (Homebrew, OrbStack, native Ollama), provisions the data root,
+starts the container stack, runs database migrations, seeds the services
+catalog, and pulls the local AI models.
+.Pp
+The command is idempotent. Running it on a machine that already has NOMAD
+installed repairs the stack in place rather than starting over, so it is also
+the supported repair path after an interrupted install or a configuration
+drift. When it finishes it prints the admin URLs and a count of the models
+that were pulled.
+.Pp
+By default the command opens an interactive model picker so you can see which
+models will be pulled and choose a different tier before any heavy work
+begins. Passing any of
+.Fl -tier ,
+.Fl -models ,
+.Fl -no-models ,
+or
+.Fl -yes
+declares your intent up front and skips the picker.
+.Sh OPTIONS
+.Bl -tag -width Ds
+.It Fl -data-root Ar PATH
+Use
+.Ar PATH
+as the data root for models, databases, and stored content. When omitted on a
+fresh install the command prompts for a location; an existing data root is
+reused without prompting.
+.It Fl -tier Ar TIER
+Select the model tier to pull. One of
+.Cm auto ,
+.Cm tiny ,
+.Cm small ,
+.Cm medium ,
+.Cm large ,
+.Cm xl ,
+or
+.Cm dreamy .
+The default,
+.Cm auto ,
+sizes the model set to this Mac's hardware. Choosing a tier larger than the
+auto-detected one triggers a warning before the pull commits.
+.It Fl -models Ar names
+Pull an explicit, space-separated list of model names instead of a tier. This
+takes precedence over
+.Fl -tier .
+.It Fl -no-models
+Install and start the stack but skip pulling any AI models. Useful when you
+want the stack running before downloading models, or intend to pull them later
+with
+.Ic nomad models pull .
+.It Fl -yes , Fl y
+Assume yes to confirmation prompts and run non-interactively.
+.El
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic nomad install
+Interactive install with the model picker and hardware-sized model tier.
+.It Ic nomad install --data-root /Volumes/NOMAD --tier medium --yes
+Install onto an external drive, pull the medium model tier, and answer all
+prompts automatically.
+.It Ic nomad install --no-models
+Bring up the stack now and defer model downloads.
+.El
+.Sh SEE ALSO
+.Xr nomad 1 ,
+.Xr nomad-reinstall 1 ,
+.Xr nomad-uninstall 1 ,
+.Xr nomad-up 1

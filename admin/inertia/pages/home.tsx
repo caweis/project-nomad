@@ -1,9 +1,11 @@
 import {
   IconBolt,
+  IconBox,
   IconHelp,
   IconMapRoute,
   IconPlus,
   IconSettings,
+  IconWand,
   IconWifiOff,
 } from '@tabler/icons-react'
 import { Head, usePage } from '@inertiajs/react'
@@ -16,6 +18,28 @@ import { useSystemSetting } from '~/hooks/useSystemSetting'
 import Alert from '~/components/Alert'
 import { SERVICE_NAMES } from '../../constants/service_names'
 
+// AI Assistant — Core Capability tile on the macOS distro (display_order: 3).
+//
+// Rendered only when the `nomad_ollama` services row has installed=true.
+// `_syncContainersWithDatabase` in system_service.ts skips the OLLAMA row
+// when DockerService.isNativeOllama() is true (OLLAMA_HOST env set), so the
+// installed flag is preserved across renders for the macOS distro's native
+// install path. On a fresh install the row starts at installed=false and
+// the wizard flips it to true once Ollama is set up — at which point this
+// tile appears.
+function buildAIAssistantItem(aiAssistantName: string) {
+  return {
+    label: aiAssistantName || 'AI Assistant',
+    to: '/chat',
+    target: '',
+    description: 'Local AI chat — runs on this Mac, no internet needed',
+    icon: <IconWand size={48} />,
+    installed: true,
+    displayOrder: 3,
+    poweredBy: 'Ollama',
+  }
+}
+
 // Maps is a Core Capability (display_order: 4)
 const MAPS_ITEM = {
   label: 'Maps',
@@ -25,6 +49,18 @@ const MAPS_ITEM = {
   icon: <IconMapRoute size={48} />,
   installed: true,
   displayOrder: 4,
+  poweredBy: null,
+}
+
+// Workshop — offline 3D-printable STL catalog (Core Capability)
+const WORKSHOP_ITEM = {
+  label: 'Workshop',
+  to: '/workshop',
+  target: '',
+  description: 'Offline catalog of 3D-printable STL files',
+  icon: <IconBox size={48} />,
+  installed: true,
+  displayOrder: 5,
   poweredBy: null,
 }
 
@@ -99,13 +135,20 @@ export default function Home(props: {
   })
   const shouldHighlightEasySetup = easySetupVisited?.value ? easySetupVisited?.value !== 'true' : false
 
-  // Add installed services (non-dependency services only)
+  // Add installed services (non-dependency services only).
+  //
+  // Skip the OLLAMA row here — the AI Assistant tile is rendered separately
+  // below (with a custom label, icon, and description). Without this filter
+  // an installed OLLAMA row would produce a duplicate tile.
   props.system.services
-    .filter((service) => service.installed && service.ui_location)
+    .filter((service) =>
+      service.installed &&
+      service.ui_location &&
+      service.service_name !== SERVICE_NAMES.OLLAMA
+    )
     .forEach((service) => {
       items.push({
-        // Inject custom AI Assistant name if this is the chat service
-        label: service.service_name === SERVICE_NAMES.OLLAMA && aiAssistantName ? aiAssistantName : (service.friendly_name || service.service_name),
+        label: service.friendly_name || service.service_name,
         to: service.ui_location ? getServiceLink(service.ui_location) : '#',
         target: '_blank',
         description:
@@ -122,8 +165,23 @@ export default function Home(props: {
       })
     })
 
+  // AI Assistant — Core Capability tile, gated on the nomad_ollama services
+  // row being installed=true. See buildAIAssistantItem() for the rationale.
+  const aiAssistantInstalled = props.system.services.some(
+    (service) =>
+      service.service_name === SERVICE_NAMES.OLLAMA && service.installed
+  )
+  if (aiAssistantInstalled) {
+    items.push(buildAIAssistantItem(aiAssistantName))
+  }
+
   // Add Maps as a Core Capability
   items.push(MAPS_ITEM)
+
+  // Add Workshop as a Core Capability (caweis macOS-distribution port of
+  // SysAdminDoc §50 — offline STL library at ${NOMAD_DATA_ROOT}/storage/
+  // stl-library/)
+  items.push(WORKSHOP_ITEM)
 
   // Add system items
   items.push(...SYSTEM_ITEMS)

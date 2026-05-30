@@ -1,0 +1,62 @@
+.Dd 2026-05-30
+.Dt NOMAD-RESET-OLLAMA 1
+.Os
+.Sh NAME
+.Nm nomad-reset-ollama
+.Nd recover the native Ollama daemon from a stuck state
+.Sh SYNOPSIS
+.Nm nomad reset-ollama
+.Op Fl -internal | Fl -drive
+.Sh DESCRIPTION
+.Nm
+reloads the native Ollama LaunchAgent: it boots the agent out, kills any
+orphan
+.Ic ollama serve
+processes, confirms port 11434 is free, re-bootstraps the agent, and waits
+for the API to come back up.
+Reach for it when Ollama is wedged, after an upgrade, or when the model store
+has changed.
+.Pp
+Before touching launchd,
+.Nm
+decides which model store to serve from so the daemon resolves the right one
+on its first spawn.
+With no flag it auto-detects.
+If an external data drive is configured but its model store is wedged
+.Pq a deep read does not return ,
+.Nm
+falls back to the internal store
+.Pq Pa ~/.ollama/models
+and warns that a physical unplug and replug is required; a later run
+auto-restores the drive once it reads healthy again.
+.Pp
+When running on the internal store and that store is empty,
+.Nm
+auto-pulls a model set sized to this Mac's RAM.
+The pull is disk-gated, downshifting to a smaller tier so it fits the boot
+volume, and is best-effort: a failed or partial pull does not fail the reset,
+since the daemon is already up.
+.Sh OPTIONS
+.Bl -tag -width Ds
+.It Fl -internal
+Force the internal model store regardless of drive state.
+.It Fl -drive
+Restore to the external data drive's model store.
+Refused if no data drive or model store is found, or if the drive is still
+wedged; in the wedged case, unplug and replug the drive physically, then
+retry.
+.El
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic nomad reset-ollama
+Reload the daemon, auto-detecting the model store and falling back to internal
+if the drive is wedged.
+.It Ic nomad reset-ollama --internal
+Reload and force the internal model store.
+.It Ic nomad reset-ollama --drive
+Reload and restore the drive-backed store, once the drive is healthy.
+.El
+.Sh SEE ALSO
+.Xr nomad 1 ,
+.Xr nomad-models 1 ,
+.Xr nomad-upgrade-models 1

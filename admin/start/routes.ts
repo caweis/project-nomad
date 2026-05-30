@@ -14,13 +14,16 @@ import EasySetupController from '#controllers/easy_setup_controller'
 import HomeController from '#controllers/home_controller'
 import MapsController from '#controllers/maps_controller'
 import OllamaController from '#controllers/ollama_controller'
+import HostCommandsController from '#controllers/host_commands_controller'
 import RagController from '#controllers/rag_controller'
 import SettingsController from '#controllers/settings_controller'
 import SystemController from '#controllers/system_controller'
 import CollectionUpdatesController from '#controllers/collection_updates_controller'
 import ZimController from '#controllers/zim_controller'
+import WorkshopController from '#controllers/workshop_controller'
 import router from '@adonisjs/core/services/router'
 import transmit from '@adonisjs/transmit/services/main'
+import { middleware } from './kernel.js'
 
 transmit.registerRoutes()
 
@@ -29,6 +32,25 @@ router.get('/home', [HomeController, 'home'])
 router.on('/about').renderInertia('about')
 router.get('/chat', [ChatsController, 'inertia'])
 router.get('/maps', [MapsController, 'index'])
+router.get('/workshop', [WorkshopController, 'index'])
+router.get('/workshop/:id', [WorkshopController, 'show'])
+router
+  .group(() => {
+    router.patch('/files/:id', [WorkshopController, 'update'])
+    router.delete('/files/:id', [WorkshopController, 'destroy'])
+    router.get('/files/:id/download', [WorkshopController, 'download'])
+    router.get('/files/:id/thumbnail', [WorkshopController, 'thumbnail'])
+    router.post('/scan', [WorkshopController, 'scan'])
+    router.post('/acknowledge-rights', [WorkshopController, 'acknowledgeRights'])
+    // Permission probe is intentionally NOT gated — the UI calls it from any
+    // origin so it can render either the drop zone or the LAN-only note.
+    router.get('/upload-permitted', [WorkshopController, 'uploadPermitted'])
+    // The actual upload IS gated. The middleware enforces the same policy
+    // the UI uses to decide whether to show the drop zone, so a client that
+    // bypasses the UI still hits a 403 here.
+    router.post('/upload', [WorkshopController, 'upload']).use(middleware.localNetworkOnly())
+  })
+  .prefix('/api/workshop')
 router.on('/knowledge-base').redirectToPath('/chat?knowledge_base=true') // redirect for legacy knowledge-base links
 
 router.get('/easy-setup', [EasySetupController, 'index'])
@@ -107,6 +129,18 @@ router
     router.get('/installed-models', [OllamaController, 'installedModels'])
   })
   .prefix('/api/ollama')
+
+// Bridge from admin UI to host-side `nomad` CLI commands. The host's
+// com.projectnomad.host-command-bridge LaunchAgent polls a directory on
+// the bind-mounted storage volume; admin writes marker files here, the
+// LaunchAgent runs the corresponding nomad command, writes a result file
+// admin reads back via the status endpoint.
+router
+  .group(() => {
+    router.post('/:cmd', [HostCommandsController, 'dispatch'])
+    router.get('/:cmd', [HostCommandsController, 'status'])
+  })
+  .prefix('/api/host-commands')
 
 router
   .group(() => {

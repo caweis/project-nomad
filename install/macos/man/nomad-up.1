@@ -1,0 +1,26 @@
+.Dd 2026-05-30
+.Dt NOMAD-UP 1
+.Os
+.Sh NAME
+.Nm nomad-up
+.Nd start the container stack
+.Sh SYNOPSIS
+.Nm nomad up
+.Sh DESCRIPTION
+.Nm nomad up
+starts the Project NOMAD container stack in the background
+.Pq Ic docker compose up -d .
+Use it to bring the stack back online after a
+.Xr nomad-down 1 ,
+after a reboot, or after reconnecting the data drive.
+.Pp
+It takes no arguments.
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic nomad up
+Start the stack and return once the containers are launching.
+.El
+.Sh SEE ALSO
+.Xr nomad 1 ,
+.Xr nomad-down 1 ,
+.Xr nomad-restart 1

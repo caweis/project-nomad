@@ -1,0 +1,48 @@
+.Dd 2026-05-30
+.Dt NOMAD-RESTART 1
+.Os
+.Sh NAME
+.Nm nomad-restart
+.Nd restart a single service
+.Sh SYNOPSIS
+.Nm nomad restart
+.Op Ar SERVICE
+.Sh DESCRIPTION
+.Nm nomad restart
+restarts one service in the stack. With no argument it restarts
+.Cm admin ,
+the Command Center.
+.Pp
+If
+.Ar SERVICE
+names a compose-managed service it is restarted via
+.Ic docker compose restart .
+Otherwise the command looks for a matching admin-spawned content container,
+trying the literal name, the
+.Sy nomad_
+prefix, and the
+.Sy nomad_ Ns Ar SERVICE Ns Sy _server
+form, so
+.Ic nomad restart kiwix
+finds the
+.Sy nomad_kiwix_server
+container. If nothing matches, it lists the known compose services and exits
+with an error.
+.Sh OPTIONS
+.Bl -tag -width Ds
+.It Ar SERVICE
+The service or container to restart. Defaults to
+.Cm admin .
+.El
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic nomad restart
+Restart the admin Command Center.
+.It Ic nomad restart kiwix
+Restart the kiwix content container, matched by name even though it is
+admin-spawned and not in the compose file.
+.El
+.Sh SEE ALSO
+.Xr nomad 1 ,
+.Xr nomad-up 1 ,
+.Xr nomad-down 1

@@ -1,0 +1,46 @@
+.Dd 2026-05-30
+.Dt NOMAD-SERVICES 1
+.Os
+.Sh NAME
+.Nm nomad-services
+.Nd list, install, and control admin-managed services
+.Sh SYNOPSIS
+.Nm nomad services
+.Op Cm list | install Ar NAME | affect Ar ACTION Ar NAME
+.Sh DESCRIPTION
+.Nm nomad services
+works with the optional services the admin service can spawn on demand,
+such as Kiwix, Kolibri, CyberChef, and Flatnotes.
+.Pp
+With no subcommand,
+.Cm list
+runs and prints each service's name, whether it is installed, its
+installation status, and its container image.
+.Sh OPTIONS
+.Bl -tag -width Ds
+.It Cm list
+Print the known services and their status.
+This is the default when no subcommand is given.
+.It Cm install Ar NAME
+Ask the admin service to install the service named
+.Ar NAME .
+.It Cm affect Ar ACTION Ar NAME
+Apply
+.Ar ACTION
+.Pq Cm start , Cm stop , or Cm restart
+to the service named
+.Ar NAME .
+.El
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic nomad services
+List the available services and their status.
+.It Ic nomad services install kiwix
+Install the Kiwix service.
+.It Ic nomad services affect restart kiwix
+Restart the Kiwix service.
+.El
+.Sh SEE ALSO
+.Xr nomad 1 ,
+.Xr nomad-stl 1 ,
+.Xr nomad-upgrade 1

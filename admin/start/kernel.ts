@@ -28,7 +28,7 @@ server.use([
   () => import('@adonisjs/vite/vite_middleware'),
   () => import('@adonisjs/inertia/inertia_middleware'),
   () => import('@adonisjs/static/static_middleware'),
-  () => import('#middleware/maps_static_middleware')
+  () => import('#middleware/maps_static_middleware'),
 ])
 
 /**
@@ -45,4 +45,6 @@ router.use([
  * Named middleware collection must be explicitly assigned to
  * the routes or the routes group.
  */
-export const middleware = router.named({})
+export const middleware = router.named({
+  localNetworkOnly: () => import('#middleware/local_network_only_middleware'),
+})

@@ -16,12 +16,13 @@ Useful for people who want their own offline knowledge node: preppers, homeschoo
 On a fresh Apple Silicon Mac (M1 or later, macOS 14+):
 
 ```bash
-mkdir -p ~/Developer && cd ~/Developer && \
-  curl -fsSL https://github.com/caweis/project-nomad-macos-arm64/archive/refs/heads/feat/macos-distribution-layer.tar.gz | tar xz && \
-  bash project-nomad-feat-macos-distribution-layer/install/macos/nomad install
+curl -fsSL https://raw.githubusercontent.com/caweis/project-nomad/feat/macos-distribution-layer/install/bootstrap.sh | bash
 ```
 
-The installer asks where to store data (external drive is the usual answer) and which AI models to pull, then handles Homebrew, OrbStack, native Ollama, the container stack, database setup, content downloads, and a help library. Idempotent — re-running fixes anything that broke.
+This installs the NOMAD command to `~/Applications/project-nomad`, then asks
+where to store your data (an external drive is the usual answer) and which AI
+models to pull. Idempotent — re-running fixes anything that broke; to update
+later, run `nomad update`.
 
 Admin lands at `http://localhost:8080`, or `http://nomad.local:8080` from any device on the same network.
 
@@ -47,6 +48,17 @@ Reachable from other devices on the same network. The data drive can be unplugge
 - Migrations and seeders run during install. There's a worker container so download jobs actually progress.
 - Updates happen with `nomad upgrade` from the Terminal.
 
+## Updating
+
+Two things to keep current:
+
+```bash
+nomad self-update    # refreshes the `nomad` CLI script itself
+nomad upgrade        # refreshes container images and Ollama
+```
+
+`nomad self-update` resolves the install path automatically — works regardless of where the script lives on your Mac. `nomad install` and `nomad reinstall` self-update before running, so the CLI stays current as a side effect of the install path.
+
 Full reference: [`install/macos/README.md`](./install/macos/README.md).
 
 ## Lineage
@@ -59,5 +71,11 @@ Full reference: [`install/macos/README.md`](./install/macos/README.md).
 ## Status
 
 Active work is on [`feat/macos-distribution-layer`](https://github.com/caweis/project-nomad/tree/feat/macos-distribution-layer). Validated end-to-end on a Mac mini M4 with 32 GB. Weekly upstream-diff reports land in [Issues](https://github.com/caweis/project-nomad/issues?q=label%3Aupstream-tracking).
+
+## Versioning
+
+This fork uses an independent SemVer scheme with a `-macos` pre-release suffix. The label in `package.json` (and the admin About panel) reflects fork releases, **not** upstream's `1.x.x` line.
+
+Our merge-base with upstream is commit [`c668396`](https://github.com/Crosstalk-Solutions/project-nomad/commit/c668396) (October 2025). Upstream changes from `v1.29.1` → `v1.31.1` (and now `v1.32.0-rc`) are forward-ported commit-by-commit when applicable; the fork's version label is bumped on its own cadence rather than tracking upstream's numbers. This makes the fork status explicit instead of implying a feature parity the code may not have.
 
 Apache-2.0.

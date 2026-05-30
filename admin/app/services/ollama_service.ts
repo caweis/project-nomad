@@ -1,7 +1,7 @@
 import { inject } from '@adonisjs/core'
 import { ChatRequest, Ollama } from 'ollama'
 import { NomadOllamaModel } from '../../types/ollama.js'
-import { FALLBACK_RECOMMENDED_OLLAMA_MODELS } from '../../constants/ollama.js'
+import { FALLBACK_RECOMMENDED_OLLAMA_MODELS, MODEL_DESCRIPTION_OVERRIDES } from '../../constants/ollama.js'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import logger from '@adonisjs/core/services/logger'
@@ -243,6 +243,20 @@ export class OllamaService {
     }
   }
 
+  /**
+   * Strip embedding models + apply description overrides. Applied AFTER any
+   * source of model data (live API or cache) so the filtered view is
+   * consistent regardless of whether the cache was populated by an older
+   * code version that didn't filter.
+   */
+  private applyMacDistroFilters(models: NomadOllamaModel[]): NomadOllamaModel[] {
+    const noEmbed = models.filter((m) => !m.name.toLowerCase().includes('embed'))
+    return noEmbed.map((m) => {
+      const override = MODEL_DESCRIPTION_OVERRIDES[m.name]
+      return override ? { ...m, description: override } : m
+    })
+  }
+
   private async retrieveAndRefreshModels(
     sort?: 'pulls' | 'name',
     force?: boolean
@@ -252,7 +266,11 @@ export class OllamaService {
         const cachedModels = await this.readModelsFromCache()
         if (cachedModels) {
           logger.info('[OllamaService] Using cached available models data')
-          return this.sortModels(cachedModels, sort)
+          // Apply Mac-distro filters even on cache hit — older cache files
+          // may pre-date the filter, and we always want the user-facing
+          // catalog to be filtered consistently.
+          const filtered = this.applyMacDistroFilters(cachedModels)
+          return this.sortModels(filtered, sort)
         }
       } else {
         logger.info('[OllamaService] Force refresh requested, bypassing cache')
@@ -281,8 +299,13 @@ export class OllamaService {
         }))
         .filter((model) => model.tags.length > 0)
 
-      await this.writeModelsToCache(noCloud)
-      return this.sortModels(noCloud, sort)
+      // Apply the same Mac-distro filters (embed-strip + description
+      // overrides) as the cache-read path so users see the same catalog
+      // regardless of cache state.
+      const filtered = this.applyMacDistroFilters(noCloud)
+
+      await this.writeModelsToCache(filtered)
+      return this.sortModels(filtered, sort)
     } catch (error) {
       logger.error(
         `[OllamaService] Failed to retrieve models from Nomad API: ${error instanceof Error ? error.message : error

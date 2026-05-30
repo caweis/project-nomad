@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project N.O.M.A.D. — Offline backup help</title>
+<style>
+  :root {
+    --bg: #faf8f4;
+    --bg-card: #ffffff;
+    --bg-code: #f3f1ec;
+    --bg-hero: #243b1c;
+    --bg-hero-accent: #5b8a5b;
+    --text: #1a1a1a;
+    --text-muted: #555;
+    --text-subtle: #888;
+    --border: #e6e2d8;
+    --border-strong: #c8c2b0;
+    --accent: #2a4d2a;
+    --accent-light: #5b8a5b;
+    --warn: #b97a00;
+    --warn-bg: #fdf6e3;
+    --err: #a32d22;
+    --err-bg: #fbeae8;
+    --ok: #2a8a2a;
+    --ok-bg: #ecf5ec;
+    --shadow: 0 1px 2px rgba(0,0,0,.04), 0 2px 8px rgba(0,0,0,.04);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+    font-size: 17px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .hero {
+    background: linear-gradient(135deg, var(--bg-hero) 0%, #2f4d24 100%);
+    color: #fff;
+    padding: 2.5rem 1.5rem 2rem;
+    border-bottom: 4px solid var(--bg-hero-accent);
+  }
+  .hero-inner { max-width: 740px; margin: 0 auto; }
+  .hero-eyebrow {
+    color: #b8d4b8;
+    font-size: 0.85rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 600;
+    margin-bottom: 0.4rem;
+  }
+  .hero h1 {
+    margin: 0 0 0.6rem;
+    font-size: 1.8rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+  }
+  .hero p {
+    margin: 0;
+    color: #d8e8d8;
+    font-size: 1.05rem;
+    max-width: 60ch;
+  }
+
+  main { max-width: 740px; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; }
+
+  section { margin-bottom: 2.5rem; }
+  h2 {
+    font-size: 1.3rem;
+    color: var(--accent);
+    margin: 0 0 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid var(--border);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  p { margin: 0.7rem 0; }
+  ul, ol { padding-left: 1.4rem; margin: 0.7rem 0; }
+  li { margin: 0.4rem 0; }
+  a { color: var(--accent); text-decoration: none; border-bottom: 1px solid rgba(42,77,42,.3); }
+  a:hover { border-bottom-color: var(--accent); }
+
+  code, pre, kbd {
+    font-family: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+    font-size: 0.875em;
+  }
+  code {
+    background: var(--bg-code);
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: #4a4a4a;
+  }
+  pre {
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.9rem 1.1rem;
+    overflow-x: auto;
+    line-height: 1.5;
+    margin: 1rem 0;
+    box-shadow: var(--shadow);
+  }
+  pre code { background: none; padding: 0; border-radius: 0; color: var(--text); }
+
+  .primary-link {
+    display: block;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent);
+    border-radius: 8px;
+    padding: 1.3rem 1.5rem;
+    margin: 1.5rem 0;
+    box-shadow: var(--shadow);
+    text-decoration: none;
+    color: inherit;
+  }
+  .primary-link:hover {
+    border-left-color: var(--accent-light);
+    border-bottom: 1px solid var(--border);
+  }
+  .primary-link-eyebrow {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--accent);
+    margin-bottom: 0.3rem;
+  }
+  .primary-link-title {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--text);
+    margin: 0 0 0.3rem;
+  }
+  .primary-link-desc { margin: 0; color: var(--text-muted); font-size: 0.95rem; }
+
+  .callout {
+    margin: 1.4rem 0;
+    padding: 1rem 1.3rem;
+    border-radius: 6px;
+    border-left: 4px solid var(--text-subtle);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+  }
+  .callout.ok    { border-left-color: var(--ok);   background: var(--ok-bg); }
+  .callout.warn  { border-left-color: var(--warn); background: var(--warn-bg); }
+  .callout.err   { border-left-color: var(--err);  background: var(--err-bg); }
+  .callout-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-subtle);
+    display: block;
+    margin-bottom: 0.3rem;
+  }
+  .callout.ok    .callout-label { color: var(--ok); }
+  .callout.warn  .callout-label { color: var(--warn); }
+  .callout.err   .callout-label { color: var(--err); }
+  .callout p:first-child { margin-top: 0; }
+  .callout p:last-child { margin-bottom: 0; }
+
+  .qa {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.1rem 1.4rem;
+    margin-bottom: 0.9rem;
+    box-shadow: var(--shadow);
+  }
+  .qa-q { font-weight: 600; color: var(--accent); margin: 0 0 0.4rem; }
+  .qa p { margin: 0.4rem 0; }
+  .qa p:last-child { margin-bottom: 0; }
+
+  footer {
+    border-top: 1px solid var(--border);
+    margin-top: 3rem;
+    padding-top: 1.5rem;
+    color: var(--text-subtle);
+    font-size: 0.85rem;
+    text-align: center;
+  }
+  footer a { color: var(--text-subtle); border-bottom-color: var(--border-strong); }
+  footer a:hover { color: var(--accent); border-bottom-color: var(--accent); }
+
+  @media (max-width: 600px) {
+    .hero { padding: 2rem 1.25rem 1.5rem; }
+    .hero h1 { font-size: 1.5rem; }
+    main { padding: 1.5rem 1.25rem 3rem; }
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-inner">
+    <div class="hero-eyebrow">Offline backup help</div>
+    <h1>You're reading this because the Command Center isn't responding</h1>
+    <p>This is the offline fallback page that lives on your data drive. The real docs are inside the Command Center — when it's up. Below is what to do when it's not.</p>
+  </div>
+</header>
+
+<main>
+
+<section id="real-docs">
+  <h2>Where the real docs live</h2>
+
+  <p>The full N.O.M.A.D. documentation — including everything specific to the Mac edition — is served by the Command Center on this Mac. Once it's running, open:</p>
+
+  <a class="primary-link" href="http://nomad.local/docs/home">
+    <div class="primary-link-eyebrow">Full documentation</div>
+    <div class="primary-link-title">http://nomad.local/docs/home</div>
+    <p class="primary-link-desc">From any device on the same Wi-Fi. From this Mac specifically, <code>http://localhost</code> also works.</p>
+  </a>
+
+  <p>Pages worth bookmarking once you're in:</p>
+
+  <ul>
+    <li><a href="http://nomad.local/docs/mac-overview">N.O.M.A.D. on Mac</a> — landing page for the Mac edition</li>
+    <li><a href="http://nomad.local/docs/mac-nomad-cli">The <code>nomad</code> command</a> — terminal reference</li>
+    <li><a href="http://nomad.local/docs/mac-drive-portability">Your data drive</a> — what's on it and how to move it</li>
+    <li><a href="http://nomad.local/docs/mac-updates">Updating</a> — the <code>nomad upgrade</code> flow</li>
+  </ul>
+</section>
+
+<section id="recovery">
+  <h2>If the Command Center isn't responding</h2>
+
+  <p>From Terminal, in roughly increasing severity:</p>
+
+  <div class="qa">
+    <p class="qa-q">First, see what's actually wrong</p>
+    <pre><code>nomad check</code></pre>
+    <p>This scans the whole stack and tells you what's broken in plain language, with the suggested fix for each issue.</p>
+  </div>
+
+  <div class="qa">
+    <p class="qa-q">Restart the admin interface</p>
+    <pre><code>nomad restart admin</code></pre>
+    <p>Wait 15–30 seconds, then refresh <a href="http://nomad.local">nomad.local</a>. Most "page won't load" problems are solved here.</p>
+  </div>
+
+  <div class="qa">
+    <p class="qa-q">Restart everything cleanly</p>
+    <pre><code>nomad down
+nomad up</code></pre>
+    <p>Stops every service and brings them all back up. Slower but more thorough than the targeted restart above.</p>
+  </div>
+
+  <div class="qa">
+    <p class="qa-q">The drive was unplugged — reconnect</p>
+    <p>Plug the drive back in, then:</p>
+    <pre><code>nomad up</code></pre>
+    <p>This re-runs the bring-up pass and reconnects services to the drive's content.</p>
+  </div>
+
+  <div class="qa">
+    <p class="qa-q">Reset just the AI Assistant</p>
+    <pre><code>nomad reset-ollama</code></pre>
+    <p>Use this if the AI is the only thing broken — your models stay, but the runtime gets a clean restart.</p>
+  </div>
+
+  <div class="qa">
+    <p class="qa-q">Nothing else works — full reinstall</p>
+    <pre><code>nomad reinstall</code></pre>
+    <p>Takes 15–30 minutes plus content download time. Your data on the drive is preserved; the application stack gets rebuilt.</p>
+  </div>
+</section>
+
+<section id="ai-only">
+  <h2>Just want to chat with the AI right now</h2>
+
+  <p>If you need the AI Assistant working immediately and don't want to wait for the full Command Center, your data drive includes a standalone chat surface that doesn't depend on the admin stack at all.</p>
+
+  <p>On the data drive, double-click:</p>
+
+  <pre><code>quick-chat.sh</code></pre>
+
+  <p>It starts a minimal Ollama daemon pointing at your downloaded models and opens a browser chat page. No Command Center, no Kiwix, no admin — just a clean chat against the models on your drive. See <a href="http://nomad.local/docs/mac-drive-portability">Your data drive</a> for the full explanation.</p>
+</section>
+
+<section id="when-stuck">
+  <h2>When you're truly stuck</h2>
+
+  <div class="callout warn">
+    <span class="callout-label">Last resorts</span>
+    <p>Restart the Mac, then <code>nomad up</code>. N.O.M.A.D. is designed to recover cleanly from interruptions.</p>
+    <p>If that doesn't fix it, run <code>nomad check</code> and read the output — most problems have a named cause and a named fix.</p>
+    <p>If you need to wipe and start over: <code>nomad reinstall</code> for the application stack, or run the installer fresh from the drive (<code>install-nomad.command</code>) to bring up a completely new install pointing at the same data drive.</p>
+  </div>
+</section>
+
+<footer>
+  <p>Project N.O.M.A.D. · macOS edition · offline backup help</p>
+  <p style="margin-top: 0.4rem; font-size: 0.8rem;">Technical reference: <code>man nomad</code> · Repository: <a href="https://github.com/caweis/project-nomad-macos-arm64">caweis/project-nomad-macos-arm64</a></p>
+</footer>
+
+</main>
+
+</body>
+</html>

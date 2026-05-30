@@ -1,12 +1,12 @@
 import KVStore from '#models/kv_store';
 import { BenchmarkService } from '#services/benchmark_service';
+import { DockerService } from '#services/docker_service';
 import { MapService } from '#services/map_service';
 import { OllamaService } from '#services/ollama_service';
 import { SystemService } from '#services/system_service';
-import { updateSettingSchema } from '#validators/settings';
+import { getSettingSchema, updateSettingSchema } from '#validators/settings';
 import { inject } from '@adonisjs/core';
 import type { HttpContext } from '@adonisjs/core/http'
-import type { KVStoreKey } from '../../types/kv_store.js';
 
 @inject()
 export default class SettingsController {
@@ -22,7 +22,11 @@ export default class SettingsController {
         return inertia.render('settings/system', {
             system: {
                 info: systemInfo
-            }
+            },
+            // Frontend uses this to hide container-management buttons that
+            // wouldn't work against a native Homebrew Ollama install
+            // (configured via the OLLAMA_HOST env var on the macOS distro).
+            isNativeOllama: DockerService.isNativeOllama(),
         });
     }
 
@@ -31,7 +35,13 @@ export default class SettingsController {
         return inertia.render('settings/apps', {
             system: {
                 services
-            }
+            },
+            // Frontend uses this to gate ALL row actions for nomad_ollama
+            // (Start / Stop / Restart / Force Reinstall / Update). Each one
+            // routes through DockerService.affectService or updateService,
+            // both of which refuse with a "manage via CLI" error on native
+            // Ollama. Hiding the buttons skips the dead-end UX entirely.
+            isNativeOllama: DockerService.isNativeOllama(),
         });
     }
     
@@ -63,7 +73,11 @@ export default class SettingsController {
                     chatSuggestionsEnabled: chatSuggestionsEnabled ?? false,
                     aiAssistantCustomName: aiAssistantCustomName ?? '',
                 }
-            }
+            },
+            // Frontend uses this to hide the GPU-passthrough-failed "Reinstall
+            // AI Assistant" banner + button. Forcing a Docker reinstall against
+            // a native Homebrew Ollama install just produces a misleading error.
+            isNativeOllama: DockerService.isNativeOllama(),
         });
     }
 
@@ -74,7 +88,15 @@ export default class SettingsController {
                 updateAvailable: updateInfo.updateAvailable,
                 latestVersion: updateInfo.latestVersion,
                 currentVersion: updateInfo.currentVersion
-            }
+            },
+            // Frontend uses this to hide the self-update Start button on the
+            // macOS distro. Admin's built-in update path tries to rewrite
+            // compose.yaml image tags but only knows the
+            // ghcr.io/crosstalk-solutions/* tag pattern — it can't update
+            // caweis/* images, so it silently fails ("Failed to update
+            // compose.yml image tag — check logs"). The right path on the
+            // macOS distro is `nomad upgrade compose` on the host.
+            isNativeOllama: DockerService.isNativeOllama(),
         });
     }
 
@@ -99,8 +121,10 @@ export default class SettingsController {
     }
 
     async getSetting({ request, response }: HttpContext) {
-        const key = request.qs().key;
-        const value = await KVStore.getValue(key as KVStoreKey);
+        // Validate `key` against SETTINGS_KEYS enum so the endpoint can't be
+        // used to probe arbitrary KV keys. Ports upstream b183bc6.
+        const { key } = await getSettingSchema.validate({ key: request.qs().key });
+        const value = await KVStore.getValue(key);
         return response.status(200).send({ key, value });
     }
 

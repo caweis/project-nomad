@@ -6,6 +6,7 @@ import { NomadOllamaModel } from '../../../types/ollama'
 import StyledButton from '~/components/StyledButton'
 import useServiceInstalledStatus from '~/hooks/useServiceInstalledStatus'
 import Alert from '~/components/Alert'
+import HostCommandButton from '~/components/HostCommandButton'
 import { useNotifications } from '~/context/NotificationContext'
 import api from '~/lib/api'
 import { useModals } from '~/context/ModalContext'
@@ -27,6 +28,12 @@ export default function ModelsPage(props: {
     installedModels: ModelResponse[]
     settings: { chatSuggestionsEnabled: boolean; aiAssistantCustomName: string }
   }
+  // True when admin is configured to talk to a native (Homebrew) Ollama at
+  // OLLAMA_HOST instead of managing the Docker container itself. Set by
+  // settings_controller.ts from DockerService.isNativeOllama(). When true,
+  // the page hides container-management buttons (Reinstall, GPU "Fix") and
+  // shows a positive Metal-accelerated banner instead.
+  isNativeOllama: boolean
 }) {
   const { aiAssistantName } = usePage<{ aiAssistantName: string }>().props
   const { isInstalled } = useServiceInstalledStatus(SERVICE_NAMES.OLLAMA)
@@ -229,7 +236,12 @@ export default function ModelsPage(props: {
             starting with smaller models first to see how they perform on your system before moving
             on to larger ones.
           </p>
-          {!isInstalled && (
+          {/* Hide the "not installed" warning on native Ollama — admin's
+              `services` row gets installed=1 set by step_configure_native_ollama
+              at install time, but if some race or rollback leaves it
+              installed=0 the warning would tell the user to run a Docker
+              install path that wouldn't work for them. */}
+          {!isInstalled && !props.isNativeOllama && (
             <Alert
               title={`${aiAssistantName}'s dependencies are not installed. Please install them to manage AI models.`}
               type="warning"
@@ -237,7 +249,28 @@ export default function ModelsPage(props: {
               className="!mt-6"
             />
           )}
-          {isInstalled && systemInfo?.gpuHealth?.status === 'passthrough_failed' && !gpuBannerDismissed && (
+          {/* Positive banner replaces the GPU-passthrough warnings on native
+              Ollama — the macOS distro runs Ollama as a Homebrew LaunchAgent
+              with direct Metal access; there's no Docker passthrough to fail.
+              Update path goes through host-command-bridge — admin posts to
+              /api/host-commands/upgrade-ollama, the LaunchAgent runs
+              `nomad upgrade ollama` on the host. */}
+          {props.isNativeOllama && (
+            <Alert
+              type="success"
+              variant="bordered"
+              title="Native Ollama — Metal-accelerated"
+              message={`${aiAssistantName} is running natively on this Mac's Homebrew Ollama and using Apple Silicon's GPU directly (Metal). Update via the button below — it runs \`nomad upgrade ollama\` on the host.`}
+              className="!mt-6"
+            >
+              <HostCommandButton cmd="upgrade-ollama" label="Update Ollama" />
+            </Alert>
+          )}
+          {/* GPU-passthrough-failed banner only makes sense on container
+              Ollama. Native installs always pass through to Metal — the
+              status can't be 'passthrough_failed' there. Gate explicitly
+              instead of relying on the status field. */}
+          {isInstalled && !props.isNativeOllama && systemInfo?.gpuHealth?.status === 'passthrough_failed' && !gpuBannerDismissed && (
             <Alert
               type="warning"
               variant="bordered"

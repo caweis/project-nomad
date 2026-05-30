@@ -2,6 +2,10 @@
 
 Your personal offline knowledge server is ready to use.
 
+<!-- MAC-EDITION-LINK — remove this block to sever the macOS-edition additions -->
+> **Running on a Mac?** This installation is the Mac edition. See [N.O.M.A.D. on Mac](/docs/mac-overview) for the macOS-specific setup, the `nomad` command, native AI Assistant, and your portable data drive.
+<!-- /MAC-EDITION-LINK -->
+
 ## What is N.O.M.A.D.?
 
 **N.O.M.A.D.** stands for **Node for Offline Media, Archives, and Data**. It's your personal server for accessing knowledge, education, and AI assistance — even when you have no internet connection.

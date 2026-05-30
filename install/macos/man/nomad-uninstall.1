@@ -1,0 +1,34 @@
+.Dd 2026-05-30
+.Dt NOMAD-UNINSTALL 1
+.Os
+.Sh NAME
+.Nm nomad-uninstall
+.Nd remove the NOMAD stack, agents, and secrets
+.Sh SYNOPSIS
+.Nm nomad uninstall
+.Sh DESCRIPTION
+.Nm nomad uninstall
+removes Project NOMAD from this Mac. After a confirmation prompt it removes all
+.Sy nomad_*
+containers and named volumes, the Ollama LaunchAgent and its plist, and the
+secrets file.
+.Pp
+The data on the data drive (databases, Ollama models, stored content) is
+removed only if you confirm that step separately, so you can uninstall the
+stack while keeping your downloaded models and content. Homebrew, OrbStack, and
+Ollama are user-level installs that other apps may depend on, so they are left
+in place.
+.Pp
+Use this to cleanly remove NOMAD. If you intend to reinstall immediately,
+.Xr nomad-reinstall 1
+combines the wipe and a fresh install behind a single confirmation.
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic nomad uninstall
+Remove containers, the LaunchAgent, and secrets; you are asked separately
+whether to also erase the data drive.
+.El
+.Sh SEE ALSO
+.Xr nomad 1 ,
+.Xr nomad-install 1 ,
+.Xr nomad-reinstall 1

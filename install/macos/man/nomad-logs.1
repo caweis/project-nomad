@@ -1,0 +1,34 @@
+.Dd 2026-05-30
+.Dt NOMAD-LOGS 1
+.Os
+.Sh NAME
+.Nm nomad-logs
+.Nd tail container logs for a stack service
+.Sh SYNOPSIS
+.Nm nomad logs
+.Op Ar args ...
+.Op Ar service ...
+.Sh DESCRIPTION
+.Nm
+shows Docker Compose logs for the NOMAD stack.
+.Pp
+With no arguments it prints the last 100 lines of the
+.Cm admin
+service and exits.
+.Pp
+Any arguments are passed straight through to
+.Ic docker compose logs ,
+so you can follow a service, change the tail length, or name a different
+service.
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic nomad logs
+Snapshot the last 100 lines of the admin service.
+.It Ic nomad logs -f admin
+Follow the admin service log live.
+.It Ic nomad logs --tail 500 mysql
+Show the last 500 lines of the mysql service.
+.El
+.Sh SEE ALSO
+.Xr nomad 1 ,
+.Xr nomad-system 1

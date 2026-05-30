@@ -1,0 +1,218 @@
+# Project NOMAD — macOS base compose file.
+# Default admin image is ghcr.io/caweis/project-nomad-macos-arm64:edge, built
+# from this repo's admin/ tree by .github/workflows/build-nomad-macos-image.yml
+# (multi-arch linux/amd64,linux/arm64). It carries the Apple-Silicon patches
+# originally from proximasan/project-nomad-silicon, ported and extended:
+#   • Native arm64 + amd64 GHCR images (no Rosetta on Apple Silicon)
+#   • Admin patches read APPLE_CHIP_MODEL + APPLE_GPU_MODEL env vars as
+#     si.cpu() / si.graphics() fallbacks. Containers can't see the host's
+#     Apple chip, so env-var overrides fix the "GPU: -" / "CPU: -" issue
+#     on the upstream benchmark leaderboard.
+#   • isNativeOllama() / getNativeOllamaURL() in admin for first-class
+#     native-Ollama support (admin no longer tries to spawn nomad_ollama
+#     when remote Ollama is configured).
+#   • GPU type 'apple' with Metal health-status surfacing.
+#   • Atomic-rename ZIM downloader (writes <name>.zim.tmp → rename on
+#     completion). Fixes kiwix's partial-ZIM crash loop on download stalls.
+# Layered fallback at install time if caweis image is unreachable:
+# caweis → proximasan (pre-atomic-rename) → upstream amd64 under Rosetta.
+#
+# Differences from upstream `install/management_compose.yaml`:
+#   • SPLIT STORAGE for unplug-resilience:
+#     - ${NOMAD_STATE_ROOT}  → mysql + redis (always-internal, never detachable)
+#     - ${NOMAD_DATA_ROOT}   → admin's storage volume (Wikipedia ZIMs, models, maps)
+#   • disk-collector service removed — incompatible with macOS Docker file sharing
+#   • Secrets sourced from .env via --env-file (off-iCloud)
+#   • APPLE_CHIP_MODEL + APPLE_GPU_MODEL injected from install-time host probe
+
+name: project-nomad
+
+services:
+  admin:
+    # caweis/project-nomad-macos-arm64 — multi-arch (linux/amd64,linux/arm64),
+    # built from the admin/ source in this branch with proximasan's Apple Silicon
+    # patches (isNativeOllama, APPLE_CHIP_MODEL/APPLE_GPU_MODEL env-var reading)
+    # AND the upstream atomic-rename ZIM downloader (Crosstalk PR landed after
+    # proximasan's image was last tagged). Override at install time via
+    # NOMAD_ADMIN_IMAGE to fall back to proximasan's image or upstream.
+    image: ${NOMAD_ADMIN_IMAGE:-ghcr.io/caweis/project-nomad-macos-arm64:edge}
+    pull_policy: always
+    container_name: nomad_admin
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      # Map BOTH 80 and 8080 to the admin's internal :8080. Port 80 means
+      # users can hit `http://nomad.local/` (no port suffix) from any
+      # device — much friendlier than `http://nomad.local:8080/`. The
+      # 8080 binding stays for backward compatibility (existing docs,
+      # bookmarks, scripts) and to allow other web services on the host
+      # to take port 80 without breaking NOMAD admin access.
+      - "80:8080"
+      - "8080:8080"
+    volumes:
+      - ${NOMAD_DATA_ROOT}/storage:/app/storage
+      - /var/run/docker.sock:/var/run/docker.sock
+      - nomad-update-shared:/app/update-shared
+    environment:
+      - NODE_ENV=production
+      - PORT=8080
+      - LOG_LEVEL=info
+      - APP_KEY=${APP_KEY}
+      - HOST=0.0.0.0
+      - URL=${URL}
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_DATABASE=nomad
+      - DB_USER=nomad_user
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=nomad
+      - DB_SSL=false
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DISABLE_COMPRESSION=false
+      # CRITICAL: tells admin what host path to use when spawning content
+      # containers (Kiwix, Qdrant, Kolibri, FlatNotes, Ollama). Without this,
+      # admin defaults to /opt/project-nomad/storage (Linux convention) which
+      # doesn't exist on macOS — every spawn fails with "Failed to start
+      # service nomad_<x>_server". Reference: stormychel PR #618 + upstream
+      # bugs #588, #655, #710, #493, #809.
+      - NOMAD_STORAGE_PATH=${NOMAD_DATA_ROOT}/storage
+      # Apple Silicon hardware identification — proximasan's admin reads these
+      # as a si.cpu()/si.graphics() fallback so the upstream benchmark
+      # leaderboard sees the real chip + Metal GPU instead of the OrbStack VM's
+      # generic ARM64 view. Defense-in-depth: even with the auto-patcher
+      # LaunchAgent, this gives admin the right values from container start.
+      - APPLE_CHIP_MODEL=${APPLE_CHIP_MODEL:-}
+      - APPLE_GPU_MODEL=${APPLE_GPU_MODEL:-}
+      - HOST_PLATFORM=${HOST_PLATFORM:-darwin}
+      # CRITICAL for native Ollama integration. proximasan's admin patch reads
+      # OLLAMA_HOST in DockerService.isNativeOllama() / getNativeOllamaURL().
+      # When non-empty, getServiceURL(OLLAMA) short-circuits to this URL instead
+      # of trying to find a nomad_ollama container (which doesn't exist in our
+      # native-Ollama setup). Without it: AI Assistant + benchmark + chat all
+      # show empty / "Ollama service is not installed or running."
+      # Verified by reading /app/app/services/docker_service.js inside the
+      # running proximasan image (2026-05-09).
+      - OLLAMA_HOST=http://host.docker.internal:11434
+    depends_on:
+      mysql: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # admin's BullMQ workers — separate container so the HTTP server doesn't
+  # block on long-running jobs (ZIM downloads, model pulls, benchmark runs,
+  # RAG embedding jobs). Uses the same admin image but runs `queue:work
+  # --all` instead of the HTTP server. Without this container, jobs queue
+  # to Redis and never get consumed — Easy Setup downloads stuck at 0%,
+  # model downloads never start, benchmarks never run.
+  #
+  # Discovered missing on Chris's mini install 2026-05-10: he picked
+  # content in the wizard and everything stayed at 0% indefinitely.
+  # Likely also missing in upstream Crosstalk's published compose but
+  # masked because their `easy-setup` flow happens to no-op cleanly.
+  admin-worker:
+    image: ${NOMAD_ADMIN_IMAGE:-ghcr.io/caweis/project-nomad-macos-arm64:edge}
+    pull_policy: always
+    container_name: nomad_admin_worker
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ${NOMAD_DATA_ROOT}/storage:/app/storage
+      - /var/run/docker.sock:/var/run/docker.sock
+      - nomad-update-shared:/app/update-shared
+    environment:
+      - NODE_ENV=production
+      # PORT + HOST are required by admin's start/env.ts validator even
+      # though the worker doesn't actually serve HTTP. Without them the
+      # worker exits 1 with "EnvValidationException: Missing environment
+      # variable PORT/HOST" and crash-loops, leaving every queued job
+      # (downloads, model pulls, benchmarks, check-service-updates)
+      # silently unprocessed. Dummy values are fine — the worker never
+      # binds them.
+      - PORT=8080
+      - HOST=0.0.0.0
+      - LOG_LEVEL=info
+      - APP_KEY=${APP_KEY}
+      - URL=${URL}
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_DATABASE=nomad
+      - DB_USER=nomad_user
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=nomad
+      - DB_SSL=false
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - NOMAD_STORAGE_PATH=${NOMAD_DATA_ROOT}/storage
+      - APPLE_CHIP_MODEL=${APPLE_CHIP_MODEL:-}
+      - APPLE_GPU_MODEL=${APPLE_GPU_MODEL:-}
+      - HOST_PLATFORM=${HOST_PLATFORM:-darwin}
+      - OLLAMA_HOST=http://host.docker.internal:11434
+    depends_on:
+      mysql: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      admin: { condition: service_started }   # let migrations run first
+    command: ["node", "ace", "queue:work", "--all"]
+
+  dozzle:
+    image: amir20/dozzle:v10.0
+    container_name: nomad_dozzle
+    restart: unless-stopped
+    ports:
+      - "9999:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - DOZZLE_ENABLE_ACTIONS=false
+      - DOZZLE_ENABLE_SHELL=false
+
+  mysql:
+    image: mysql:8.0
+    container_name: nomad_mysql
+    restart: unless-stopped
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_DATABASE=nomad
+      - MYSQL_USER=nomad_user
+      - MYSQL_PASSWORD=${DB_PASSWORD}
+    volumes:
+      # Always internal — survives the data drive being unplugged.
+      - ${NOMAD_STATE_ROOT}/mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: nomad_redis
+    restart: unless-stopped
+    volumes:
+      # Always internal — survives the data drive being unplugged.
+      - ${NOMAD_STATE_ROOT}/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  updater:
+    image: ${NOMAD_UPDATER_IMAGE:-ghcr.io/proximasan/project-nomad-sidecar-updater:latest}
+    pull_policy: always
+    container_name: nomad_updater
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${NOMAD_DATA_ROOT}:/opt/project-nomad
+      - nomad-update-shared:/shared
+
+volumes:
+  nomad-update-shared:
+    driver: local

@@ -10,7 +10,7 @@ import classNames from 'classnames'
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [isChatOpen, setIsChatOpen] = useState(false)
-  const aiAssistantInstalled = useServiceInstalledStatus(SERVICE_NAMES.OLLAMA)
+  const { isInstalled: aiAssistantInstalled } = useServiceInstalledStatus(SERVICE_NAMES.OLLAMA)
 
   return (
     <div className="min-h-screen flex flex-col">

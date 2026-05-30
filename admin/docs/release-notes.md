@@ -194,7 +194,7 @@
 
 ### 🚀 Features
 
-- **Collections**: Expanded curated categories with more content and improved tier selection modal UX
+- **Collections**: Expanded curated categories with more content and improved tier selection experience
 - **Legal**: Expanded Legal Notices and moved to bottom of Settings sidebar
 
 ### 🐛 Bug Fixes

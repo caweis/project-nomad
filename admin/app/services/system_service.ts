@@ -285,12 +285,20 @@ export class SystemService {
             os.hostname = dockerInfo.Name
           }
 
-          // Fix CPU info — si.cpu() returns empty manufacturer/brand inside Docker on macOS
+          // Fix CPU info — si.cpu() returns empty manufacturer/brand inside Docker on macOS.
+          // First-best is the env-var APPLE_CHIP_MODEL (set by the macOS installer from
+          // system_profiler SPHardwareDataType on the host), since the host knows its exact
+          // chip name ("Apple M2 Pro") which the container cannot determine on its own.
           if (!cpu.manufacturer || cpu.manufacturer === '-' || cpu.manufacturer.trim() === '') {
             cpu.manufacturer = 'Apple'
-            // Construct a descriptive brand from core count
-            const coreCount = cpu.physicalCores || cpu.cores || 0
-            cpu.brand = `Apple Silicon (${coreCount}-core)`
+            const chipModelOverride = env.get('APPLE_CHIP_MODEL')
+            if (chipModelOverride && chipModelOverride.trim() !== '') {
+              cpu.brand = chipModelOverride.trim()
+            } else {
+              // Fallback: construct a descriptive brand from core count
+              const coreCount = cpu.physicalCores || cpu.cores || 0
+              cpu.brand = `Apple Silicon (${coreCount}-core)`
+            }
           }
 
           // If native Ollama is configured, Metal GPU is accessible
@@ -298,9 +306,16 @@ export class SystemService {
             gpuHealth.status = 'apple_metal'
             gpuHealth.ollamaGpuAccessible = true
 
-            // Populate graphics controllers with Apple Silicon GPU info
+            // Populate graphics controllers with Apple Silicon GPU info.
+            // Prefer APPLE_GPU_MODEL env-var when set (the host installer captures it from
+            // system_profiler SPDisplaysDataType, e.g. "Apple M2 Pro" or
+            // "Apple M3 Max (40-core GPU)") — that's more precise than what si.cpu().brand
+            // can tell us from inside the container.
             if (!graphics.controllers || graphics.controllers.length === 0) {
-              const gpuLabel = cpu.brand || `Apple Silicon (${cpu.physicalCores || cpu.cores}-core)`
+              const gpuModelOverride = env.get('APPLE_GPU_MODEL')
+              const gpuLabel = (gpuModelOverride && gpuModelOverride.trim() !== '')
+                ? gpuModelOverride.trim()
+                : (cpu.brand || `Apple Silicon (${cpu.physicalCores || cpu.cores}-core)`)
               graphics.controllers = [{
                 model: `${gpuLabel} GPU (Metal)`,
                 vendor: 'Apple',

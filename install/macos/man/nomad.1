@@ -1,0 +1,337 @@
+.\" Manpage for nomad
+.\" Source: github.com/caweis/project-nomad-mac-bundle (or current location)
+.\" Format: mandoc / mdoc — render with `man nomad` after install
+.Dd May 9, 2026
+.Dt NOMAD 1
+.Os
+.Sh NAME
+.Nm nomad
+.Nd Project NOMAD installer + lifecycle CLI for macOS
+.Sh SYNOPSIS
+.Nm
+.Cm install
+.Op Fl -data-root Ar PATH
+.Op Fl -tier Ar TIER
+.Op Fl -models Ar "names..."
+.Op Fl -no-models
+.Op Fl -yes
+.Nm
+.Cm check
+.Op Cm system | stack | install | all
+.Nm
+.Cm up | down
+.Nm
+.Cm restart
+.Op Ar SERVICE
+.Nm
+.Cm logs
+.Op Ar SERVICE
+.Nm
+.Cm models
+.Op Cm list | pull
+.Op Ar TIER | NAMES...
+.Nm
+.Cm benchmark
+.Op Cm run | patch-host
+.Op Ar MODEL
+.Nm
+.Cm downloads
+.Op Cm list | cancel | remove
+.Op Ar JOBID
+.Nm
+.Cm zim
+.Op Cm list | wikipedia | remote
+.Nm
+.Cm stl
+.Op Cm list | scan | import | path
+.Op Ar DIR Op Ar CATEGORY
+.Nm
+.Cm services
+.Op Cm list | install | affect
+.Nm
+.Cm system
+.Op Cm info | debug | internet
+.Nm
+.Cm api
+.Ar PATH
+.Op Ar JSON_BODY
+.Nm
+.Cm orbstack-tune
+.Op Ar GB
+.Nm
+.Cm reset-ollama
+.Op Fl -internal | Fl -drive
+.Nm
+.Cm fix-kiwix
+.Nm
+.Cm reinstall
+.Nm
+.Cm uninstall
+.Nm
+.Cm upgrade-models
+.Nm
+.Cm help
+.Sh DESCRIPTION
+.Nm
+is the macOS installer and lifecycle CLI for
+.Lk https://github.com/Crosstalk-Solutions/project-nomad "Project NOMAD" ,
+an offline AI + knowledge server.
+The CLI sits above the admin-layer patches contributed by the macOS community
+fork lineage (snfettig, NoamanKhalil, proximasan), providing a single-file
+bash entry point for installation, lifecycle management, model pulls,
+benchmarking, and recovery operations.
+.Pp
+On Apple Silicon, the installer runs Ollama natively (Metal-accelerated) while
+the admin/MySQL/Redis stack runs in OrbStack containers. Storage is split
+between always-internal hot state (mysql, redis under
+.Pa ~/.config/project-nomad/state )
+and a configurable cold content root
+.Pa ${NOMAD_DATA_ROOT}
+that may be on an external drive and safely unplugged.
+.Sh COMMANDS
+.Ss Setup & lifecycle
+.Bl -tag -width "refresh-compose"
+.It Cm install
+Install or repair the full stack.
+.Xr nomad-install 1 .
+.It Cm reinstall
+Full wipe then reinstall.
+.Xr nomad-reinstall 1 .
+.It Cm uninstall
+Remove containers, agents, secrets (optionally data).
+.Xr nomad-uninstall 1 .
+.It Cm up | down | restart
+Start, stop, or restart the stack.
+.Xr nomad-up 1 ,
+.Xr nomad-down 1 ,
+.Xr nomad-restart 1 .
+.It Cm self-update
+Fetch the latest nomad script.
+.Xr nomad-self-update 1 .
+.El
+.Ss Status & logs
+.Bl -tag -width "refresh-compose"
+.It Cm check
+Pre-flight + health inventory.
+.Xr nomad-check 1 .
+.It Cm logs
+Tail a service's logs.
+.Xr nomad-logs 1 .
+.It Cm system
+Host/stack diagnostics.
+.Xr nomad-system 1 .
+.El
+.Ss AI models
+.Bl -tag -width "refresh-compose"
+.It Cm models
+List or pull Ollama models.
+.Xr nomad-models 1 .
+.It Cm upgrade-models
+Re-pull installed models at latest tags.
+.Xr nomad-upgrade-models 1 .
+.It Cm reset-ollama
+Recover Ollama; auto-detect a wedged data drive.
+.Xr nomad-reset-ollama 1 .
+.It Cm benchmark
+Native-vs-Rosetta tokens/sec; patch the leaderboard.
+.Xr nomad-benchmark 1 .
+.It Cm orbstack-tune
+Bump the OrbStack VM RAM.
+.Xr nomad-orbstack-tune 1 .
+.El
+.Ss Offline content
+.Bl -tag -width "refresh-compose"
+.It Cm zim
+Wikipedia/ZIM content state.
+.Xr nomad-zim 1 .
+.It Cm downloads
+Inspect the admin download queue.
+.Xr nomad-downloads 1 .
+.It Cm stl
+Workshop STL library.
+.Xr nomad-stl 1 .
+.El
+.Ss Services & API
+.Bl -tag -width "refresh-compose"
+.It Cm services
+List/install/affect admin services.
+.Xr nomad-services 1 .
+.It Cm api
+Raw admin API call.
+.Xr nomad-api 1 .
+.El
+.Ss Maintenance
+.Bl -tag -width "refresh-compose"
+.It Cm upgrade
+Upgrade admin/ollama/everything.
+.Xr nomad-upgrade 1 .
+.It Cm update
+Fetch the latest bundle and reinstall in place.
+.Xr nomad-update 1 .
+.It Cm clean
+Safe cleanup of logs, dangling images, partial ZIMs.
+.Xr nomad-clean 1 .
+.It Cm fix-kiwix
+Manual kiwix self-heal pass.
+.Xr nomad-fix-kiwix 1 .
+.It Cm install-bridge
+Install the host-command-bridge LaunchAgent.
+.Xr nomad-install-bridge 1 .
+.It Cm refresh-compose
+Refresh compose.yaml from the bundle.
+.Xr nomad-refresh-compose 1 .
+.It Cm help
+Show usage.
+.Xr nomad-help 1 .
+.El
+.Ss Companion apps
+.Bl -tag -width "uninstall-field-desk"
+.It Cm install-field-desk
+Install SysAdminDoc Field Desk alongside the admin (shares Ollama on :11434).
+.Xr nomad-install-field-desk 1 .
+.It Cm uninstall-field-desk
+Remove Field Desk; the shared Ollama is left running.
+.Xr nomad-uninstall-field-desk 1 .
+.El
+.Sh ENVIRONMENT
+.Bl -tag -width "NOMAD_STATE_ROOT"
+.It Ev NOMAD_DATA_ROOT
+Cold content root (Wikipedia ZIMs, models, maps). Set in
+.Pa ~/.config/project-nomad/.env
+at install. Typically an external APFS drive but may be internal.
+.It Ev NOMAD_STATE_ROOT
+Hot state root (mysql, redis). Always
+.Pa ~/.config/project-nomad/state
+on internal disk. Survives data-drive eject.
+.It Ev APPLE_CHIP_MODEL , Ev APPLE_GPU_MODEL
+Host hardware identifiers passed to admin so it can identify the real Apple
+Silicon chip via
+.Pa si.cpu()
+fallback. Captured at install via
+.Pa system_profiler .
+.It Ev NOMAD_ADMIN_IMAGE , Ev NOMAD_UPDATER_IMAGE
+GHCR image overrides. Default to proximasan's multi-arch images. Falls back
+to upstream amd64 (Rosetta-emulated) if the proximasan pull fails.
+.It Ev NOMAD_YES
+Set to
+.Cm 1
+to auto-confirm prompts. Equivalent to
+.Fl -yes .
+.El
+.Sh FILES
+.Bl -tag -width "~/.config/project-nomad/state/"
+.It Pa ~/.config/project-nomad/.env
+Generated secrets (chmod 600). APP_KEY, MySQL passwords, NOMAD_DATA_ROOT,
+NOMAD_STATE_ROOT, APPLE_CHIP_MODEL, APPLE_GPU_MODEL.
+.It Pa ~/.config/project-nomad/state/
+Always-internal mysql + redis bind mounts.
+.It Pa ~/.config/project-nomad/ollama-launcher.sh
+Wrapper script run by the Ollama LaunchAgent. Resolves the data drive at
+runtime so renamed mounts don't break the daemon.
+.It Pa ~/.config/project-nomad/benchmark-patcher.sh
+Background script run every 30 seconds by the benchmark-patcher LaunchAgent.
+Fills in real Apple chip + Metal GPU on
+.Pa benchmark_results
+rows.
+.It Pa ~/Library/LaunchAgents/com.projectnomad.ollama.plist
+Native Ollama LaunchAgent (port 11434, KV-cache q8_0, 4 parallel,
+RAM-scaled max-loaded-models).
+.It Pa ~/Library/LaunchAgents/com.projectnomad.benchmark-patcher.plist
+Auto-patcher LaunchAgent.
+.It Pa ${NOMAD_DATA_ROOT}/storage/
+Admin's storage mount: ZIMs, Kolibri, Qdrant vectors, FlatNotes, ProtoMaps.
+.It Pa ${NOMAD_DATA_ROOT}/ollama-models/
+Native Ollama model weights.
+.It Pa ${NOMAD_DATA_ROOT}/quick-chat.html
+Portable browser chat UI dropped onto the data drive. Plug the drive into
+any Mac, open this file — page bootstraps Ollama if missing and connects.
+.It Pa ${NOMAD_DATA_ROOT}/quick-chat.sh
+Companion script for the HTML page; auto-installs Ollama via Homebrew if
+needed, sets OLLAMA_MODELS, starts the daemon, opens the HTML.
+.El
+.Sh EXAMPLES
+.Bd -literal -offset indent
+# First install on a fresh Mac
+bash nomad install
+
+# Pre-flight inventory (read-only, what would 'install' touch?)
+nomad check install
+
+# Pull a different model tier on existing install
+nomad models pull large
+
+# Diagnose why the leaderboard shows wrong CPU
+nomad benchmark patch-host
+
+# Bring stack down before unplugging the data drive
+nomad down
+
+# After replug
+nomad up
+
+# One-command nuke and fresh install
+nomad reinstall
+
+# Hit any admin endpoint directly
+nomad api /api/system/services
+nomad api /api/zim/wikipedia/select '{"optionId":"all-mini"}'
+.Ed
+.Sh COMMUNITY LINEAGE
+The macOS port lineage this CLI builds on:
+.Bl -bullet -compact
+.It
+.Lk https://github.com/snfettig/project-nomad-macos-arm64 "snfettig"
+— most current macOS fork, original native-Ollama+Metal commit (March 2026)
+.It
+.Lk https://github.com/proximasan/project-nomad-silicon "proximasan"
+— deeper admin patches:
+.Va APPLE_CHIP_MODEL
+fallback,
+.Va isNativeOllama() ,
+multi-arch GHCR images
+.It
+.Lk https://github.com/NoamanKhalil/project-nomad-MacOs "NoamanKhalil"
+— foundational Phase 1-3 macOS port work
+.It
+.Lk https://github.com/Crosstalk-Solutions/project-nomad "Crosstalk-Solutions"
+— upstream
+.El
+.Sh AUTHOR
+Chris Weis
+.Aq Mt caweis@mac.com
+on top of the macOS-port lineage above.
+Apache-2.0.
+.Sh SEE ALSO
+.Xr nomad-install 1 ,
+.Xr nomad-reinstall 1 ,
+.Xr nomad-uninstall 1 ,
+.Xr nomad-up 1 ,
+.Xr nomad-down 1 ,
+.Xr nomad-restart 1 ,
+.Xr nomad-self-update 1 ,
+.Xr nomad-check 1 ,
+.Xr nomad-logs 1 ,
+.Xr nomad-system 1 ,
+.Xr nomad-models 1 ,
+.Xr nomad-upgrade-models 1 ,
+.Xr nomad-reset-ollama 1 ,
+.Xr nomad-benchmark 1 ,
+.Xr nomad-orbstack-tune 1 ,
+.Xr nomad-zim 1 ,
+.Xr nomad-downloads 1 ,
+.Xr nomad-stl 1 ,
+.Xr nomad-services 1 ,
+.Xr nomad-api 1 ,
+.Xr nomad-upgrade 1 ,
+.Xr nomad-update 1 ,
+.Xr nomad-clean 1 ,
+.Xr nomad-fix-kiwix 1 ,
+.Xr nomad-install-bridge 1 ,
+.Xr nomad-refresh-compose 1 ,
+.Xr nomad-help 1 ,
+.Xr nomad-install-field-desk 1 ,
+.Xr nomad-uninstall-field-desk 1 ,
+.Xr ollama 1 ,
+.Xr docker-compose 1 ,
+.Xr launchctl 1 ,
+.Xr brew 1

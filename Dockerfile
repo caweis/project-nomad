@@ -1,7 +1,29 @@
 FROM node:22-slim AS base
 
-# Install bash & curl for entrypoint script compatibility, graphicsmagick for pdf2pic, and vips-dev & build-base for sharp 
+# Install bash & curl for entrypoint script compatibility, graphicsmagick for pdf2pic, and vips-dev & build-base for sharp
 RUN apt-get update && apt-get install -y bash curl graphicsmagick libvips-dev build-essential
+
+# stl-thumb — generates PNG previews for the Workshop / Offline STL Library.
+# Multi-arch: TARGETARCH is set automatically by buildx (amd64 or arm64),
+# so the same Dockerfile produces matching images for linux/amd64 and
+# linux/arm64. The .deb pulls in its own X/GL deps via apt-get install -f.
+# Upstream: https://github.com/unlimitedbacon/stl-thumb
+ARG STL_THUMB_VERSION=0.5.0
+ARG TARGETARCH
+RUN set -eux; \
+    case "$TARGETARCH" in \
+      amd64) STL_DEB="stl-thumb_${STL_THUMB_VERSION}_amd64.deb" ;; \
+      arm64) STL_DEB="stl-thumb_${STL_THUMB_VERSION}_arm64.deb" ;; \
+      *) echo "stl-thumb: unsupported TARGETARCH '$TARGETARCH', Workshop thumbnails disabled"; exit 0 ;; \
+    esac; \
+    curl -fsSL "https://github.com/unlimitedbacon/stl-thumb/releases/download/v${STL_THUMB_VERSION}/${STL_DEB}" \
+      -o "/tmp/${STL_DEB}"; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends "/tmp/${STL_DEB}"; \
+    rm -f "/tmp/${STL_DEB}"; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/*; \
+    stl-thumb --version
 
 # All deps stage
 FROM base AS deps
