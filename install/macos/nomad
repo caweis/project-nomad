@@ -43,6 +43,11 @@
 #                                            # (refused if still wedged).
 #   bash nomad fix-kiwix                     # manual trigger of kiwix self-heal
 #                                            # (LaunchAgent runs same logic every 60s)
+#   bash nomad install-field-desk [--port N] [--foreground] [--force]
+#                                            # SysAdminDoc Field Desk alongside
+#                                            # admin (default :8081, shares
+#                                            # Ollama on :11434, SHA-256 verified)
+#   bash nomad uninstall-field-desk          # remove Field Desk (Ollama untouched)
 #   bash nomad clean [--apply]               # safe cleanup: /tmp logs, dangling
 #                                            # Docker images, builder cache, stopped
 #                                            # admin-spawned containers, quarantined
@@ -5064,8 +5069,10 @@ case "$CMD" in
     # through to the unknown-command die().
     ok "compose.yaml refresh complete (run 'nomad down && nomad up' to apply)"
     ;;
+  install-field-desk)   cmd_install_field_desk "${EXTRA_ARGS[@]}" ;;
+  uninstall-field-desk) cmd_uninstall_field_desk ;;
   help|--help|-h)
-    sed -n '2,45p' "$0" | sed 's/^# //; s/^#//'
+    sed -n '2,58p' "$0" | sed 's/^# //; s/^#//'
     echo
     echo "Full reference: man nomad   (per-command: man nomad-<command>, e.g. man nomad-zim)"
     ;;
