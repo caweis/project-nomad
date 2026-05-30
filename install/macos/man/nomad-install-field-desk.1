@@ -1,0 +1,64 @@
+.Dd 2026-05-30
+.Dt NOMAD-INSTALL-FIELD-DESK 1
+.Os
+.Sh NAME
+.Nm nomad-install-field-desk
+.Nd install SysAdminDoc NOMAD Field Desk alongside the admin
+.Sh SYNOPSIS
+.Nm nomad install-field-desk
+.Op Fl -port Ar N
+.Op Fl -foreground
+.Op Fl -force
+.Sh DESCRIPTION
+NOMAD Field Desk is a separate preparedness desktop app from
+.Lk https://github.com/SysAdminDoc/project-nomad-desktop "SysAdminDoc/project-nomad-desktop" .
+It is a distinct product, not part of this distribution's lineage, but it
+coexists cleanly: it runs side-by-side with the Crosstalk admin and shares the
+single native Metal Ollama daemon on port 11434 for its AI Chat tab.
+.Pp
+This command downloads the
+.Pa NOMADFieldDesk-macOS
+release binary into
+.Pa ~/Applications/ ,
+verifies it against the release's
+.Pa SHA256SUMS.txt
+(defense in depth; a missing sums file is a warning, not fatal), and launches it
+loopback-only on port 8081. It first checks that the chosen port is free
+(refusing it only if something other than Field Desk or Python is listening) and
+notes whether the admin (port 8080) and Ollama (port 11434) are up. Re-running
+without
+.Fl -force
+reuses an already-downloaded binary.
+.Sh OPTIONS
+.Bl -tag -width Ds
+.It Fl -port Ar N
+Port to serve Field Desk on. Defaults to 8081, or the value of the
+.Ev NOMAD_FIELD_DESK_PORT
+environment variable.
+.It Fl -foreground
+Run Field Desk in the foreground so its stderr is visible, instead of launching
+it detached with
+.Xr nohup 1 .
+.It Fl -force
+Re-download the binary even if one is already present at the target path.
+.El
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic nomad install-field-desk
+Download (if needed), verify, and launch Field Desk on port 8081.
+.It Ic nomad install-field-desk --port 8090 --foreground
+Run on port 8090 in the foreground to watch its output.
+.It Ic nomad install-field-desk --force
+Force a fresh download of the latest binary, then launch.
+.El
+.Sh ENVIRONMENT
+.Bl -tag -width "NOMAD_FIELD_DESK_PORT"
+.It Ev NOMAD_FIELD_DESK_PORT
+Default port when
+.Fl -port
+is not given (otherwise 8081).
+.El
+.Sh SEE ALSO
+.Xr nomad 1 ,
+.Xr nomad-uninstall-field-desk 1 ,
+.Xr nomad-reset-ollama 1
