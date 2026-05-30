@@ -95,7 +95,7 @@ case "$_NOMAD_FIRST_ARG" in
       printf '  $(brew --prefix)/bin/nomad pointing at the wrong location.\n\n' >&2
       printf '  Recovery (one paste):\n' >&2
       printf '    rm -f "$(brew --prefix)/bin/nomad"\n' >&2
-      printf '    cd ~/Developer/project-nomad\n' >&2
+      printf '    cd ~/Applications/project-nomad\n' >&2
       printf '    git fetch && git reset --hard origin/feat/macos-distribution-layer\n' >&2
       printf '    bash install/macos/nomad install\n\n' >&2
       exit 1
@@ -1625,7 +1625,7 @@ step_self_install_to_path() {
   if [[ "$HERE" == "$bindir" ]]; then
     warn "skipping symlink — HERE ($HERE) equals \$(brew --prefix)/bin"
     warn "would create self-referential link. Run install from the bundle dir instead:"
-    warn "  bash ~/Developer/project-nomad/install/macos/nomad install"
+    warn "  bash ~/Applications/project-nomad/install/macos/nomad install"
     return 0
   fi
 
