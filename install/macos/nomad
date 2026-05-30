@@ -4111,6 +4111,62 @@ _select_pull_tier() {
   echo "none"
 }
 
+# Auto-pull the tier-appropriate model set into the internal store when it is
+# empty. IAW system performance: auto_tier() picks the tier from RAM; the pull
+# is disk-gated (downshifts to fit the boot volume) and best-effort/offline-safe
+# (a failed or partial pull never fails recovery — the daemon is already up).
+_autopull_tier_models() {
+  section "Auto-pull models (internal store is empty)"
+
+  # Free GB on the volume holding ~/.ollama/models (nearest existing parent).
+  local probe_dir="$HOME/.ollama"
+  [[ -d "$probe_dir" ]] || probe_dir="$HOME"
+  local avail_gb
+  if avail_gb="$(df -g "$probe_dir" 2>/dev/null | awk 'NR==2 {print $4}')" && [[ -n "$avail_gb" ]]; then
+    :
+  else  # -g unavailable → parse 1K blocks
+    avail_gb="$(( $(df -k "$probe_dir" | awk 'NR==2 {print $4}') / 1024 / 1024 ))"
+  fi
+
+  local target chosen models
+  target="$(auto_tier)"
+  chosen="$(_select_pull_tier "$target" "$avail_gb")"
+  log "RAM tier '$target', ${avail_gb} GB free on boot volume → pulling '$chosen'"
+
+  case "$chosen" in
+    none)
+      warn "boot drive critically low (${avail_gb} GB free) — skipping auto-pull"
+      warn "free space, then:  ollama pull llama3.2:3b"
+      return 0 ;;
+    minimal) models="llama3.2:3b nomic-embed-text" ;;
+    *)
+      models="$(resolve_tier_models "$chosen")"
+      [[ "$chosen" != "$target" ]] && warn "downshifted from '$target' for disk space" ;;
+  esac
+
+  local total pulled=0 failed=0 i=0 start; start="$(date +%s)"
+  total="$(echo "$models" | wc -w | tr -d ' ')"
+  local m
+  for m in $models; do
+    i=$((i+1))
+    if pull_one_model "$m" "$i" "$total" "$start"; then
+      pulled=$((pulled+1))
+    else
+      failed=$((failed+1))
+      warn "pull failed for $m (network? offline?) — continuing"
+    fi
+  done
+
+  if [[ $pulled -eq 0 ]]; then
+    warn "no models pulled (likely offline). Daemon is up; pull when online:"
+    warn "  ollama pull llama3.2:3b"
+  elif [[ $failed -gt 0 ]]; then
+    ok "pulled $pulled/$total models ($failed failed — retry with 'nomad upgrade-models')"
+  else
+    ok "pulled $pulled/$total models into internal store"
+  fi
+}
+
 # Resolve the drive-backed models dir the way ollama-launcher.sh does. Echoes
 # the path, or "" if no drive store is found. KEEP IN SYNC with the launcher
 # heredoc in step_ollama_native (the launcher is standalone — it cannot source
