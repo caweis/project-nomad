@@ -164,6 +164,11 @@ nomad uninstall         Remove containers, LaunchAgents, secrets, (with confirm)
 nomad self-update       Fetch the latest nomad script
 nomad install-bridge    Install just the host-command-bridge LaunchAgent (idempotent)
 nomad refresh-compose   Refresh compose.yaml from the bundle
+nomad install-field-desk [--port N] [--foreground] [--force]
+                        Install SysAdminDoc Field Desk alongside admin
+                        (default :8081, shares Ollama on :11434, SHA-256 verified)
+nomad uninstall-field-desk
+                        Remove Field Desk (native Ollama left running)
 ```
 
 Other entry points:
@@ -216,6 +221,10 @@ The Apple Silicon admin patches that make Metal-aware benchmark reporting work c
 - **snfettig/project-nomad-macos-arm64** — native Ollama on Metal.
 
 This repo carries forward-ported versions of the proximasan patches (plus `APPLE_GPU_MODEL` and atomic-rename ZIM downloads), rebuilds the admin image as `ghcr.io/caweis/project-nomad-macos-arm64` for a `linux/amd64,linux/arm64` multi-arch, and adds the installer/lifecycle layer above the admin tree. proximasan's GHCR image remains the first fallback at install time.
+
+**Sibling project (separate product, not part of the lineage):**
+
+- **[SysAdminDoc/project-nomad-desktop](https://github.com/SysAdminDoc/project-nomad-desktop)** — NOMAD Field Desk, a Python + Electron preparedness command center (Situation Room, Loadout, NukeMap, broader survival domain). It runs side-by-side with the Crosstalk admin via `nomad install-field-desk`, sharing the single native Metal Ollama daemon on :11434.
 
 ## License
 

@@ -181,6 +181,15 @@ Refresh compose.yaml from the bundle.
 Show usage.
 .Xr nomad-help 1 .
 .El
+.Ss Companion apps
+.Bl -tag -width "uninstall-field-desk"
+.It Cm install-field-desk
+Install SysAdminDoc Field Desk alongside the admin (shares Ollama on :11434).
+.Xr nomad-install-field-desk 1 .
+.It Cm uninstall-field-desk
+Remove Field Desk; the shared Ollama is left running.
+.Xr nomad-uninstall-field-desk 1 .
+.El
 .Sh ENVIRONMENT
 .Bl -tag -width "NOMAD_STATE_ROOT"
 .It Ev NOMAD_DATA_ROOT
@@ -316,6 +325,8 @@ Apache-2.0.
 .Xr nomad-install-bridge 1 ,
 .Xr nomad-refresh-compose 1 ,
 .Xr nomad-help 1 ,
+.Xr nomad-install-field-desk 1 ,
+.Xr nomad-uninstall-field-desk 1 ,
 .Xr ollama 1 ,
 .Xr docker-compose 1 ,
 .Xr launchctl 1 ,
