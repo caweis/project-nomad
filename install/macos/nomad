@@ -2821,6 +2821,10 @@ log() { /usr/bin/printf '[%s] %s\n' "$(/bin/date '+%Y-%m-%d %H:%M:%S')" "$*" >> 
 # (no JSON parsing, no string interpolation from user-controlled content).
 run_cmd() {
   local cmd="$1"
+  # Allow-list MIRRORS admin/constants/host_commands.ts (the canonical name
+  # list). This case is the bridge's security boundary — hand-authored, NOT
+  # generated. Drift is caught by
+  # install/macos/scripts/test-host-command-allowlist.sh (CI).
   case "$cmd" in
     upgrade-ollama)  "$NOMAD_BIN" upgrade ollama ;;
     upgrade-admin)   "$NOMAD_BIN" upgrade admin ;;
