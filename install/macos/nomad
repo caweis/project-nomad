@@ -33,7 +33,14 @@
 #                                            # patch-host = inject real Apple chip into
 #                                            # admin's latest benchmark row before Submit
 #   bash nomad orbstack-tune [GB]            # bump OrbStack VM RAM (default: 80% of host)
-#   bash nomad reset-ollama                  # recover from stuck LaunchAgent state
+#   bash nomad reset-ollama [--internal|--drive]
+#                                            # recover Ollama; auto-detects a
+#                                            # wedged data drive and falls back to
+#                                            # internal models (auto-pulls a
+#                                            # disk-gated, RAM-sized model set).
+#                                            # --internal: force internal models.
+#                                            # --drive: restore to the data drive
+#                                            # (refused if still wedged).
 #   bash nomad fix-kiwix                     # manual trigger of kiwix self-heal
 #                                            # (LaunchAgent runs same logic every 60s)
 #   bash nomad clean [--apply]               # safe cleanup: /tmp logs, dangling
