@@ -1,0 +1,39 @@
+.Dd 2026-05-30
+.Dt NOMAD-SELF-UPDATE 1
+.Os
+.Sh NAME
+.Nm nomad-self-update
+.Nd fetch the latest nomad script
+.Sh SYNOPSIS
+.Nm nomad self-update
+.Sh DESCRIPTION
+.Nm nomad self-update
+fetches the latest version of the
+.Nm nomad
+script from the project repository and replaces the installed copy in place. It
+also refreshes the companion
+.Pa compose.yaml
+so the CLI and the compose file stay in sync.
+.Pp
+The update is conservative. It is skipped silently when the machine is offline,
+when the bundle is a git working copy (so a developer's checkout is never
+overwritten), or when the fetched script is identical to the current one. The
+download is validated as a bash script and syntax-checked before it replaces
+the live file; on any failure the current version is kept. When a newer script
+is installed, the command re-executes with the new version.
+.Pp
+The same self-update runs automatically at the start of
+.Ic nomad install
+and
+.Ic nomad reinstall .
+This command is the way to refresh on demand without reinstalling.
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic nomad self-update
+Pull the latest nomad script and compose file, then report whether an update
+was applied.
+.El
+.Sh SEE ALSO
+.Xr nomad 1 ,
+.Xr nomad-install 1 ,
+.Xr nomad-reinstall 1
