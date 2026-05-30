@@ -34,6 +34,24 @@ echo "== guard =="
 load
 check "MARKER_FILE under temp SECRETS_DIR" "$MARKER_FILE" "$TMP/.force-internal-models"
 
+echo "== resolve drive models =="
+load
+# No .env yet → empty.
+check "no .env → empty" "$(_resolve_drive_models)" ""
+# .env points at a dir that HAS ollama-models → returns that path.
+mkdir -p "$TMP/data/ollama-models"
+printf 'NOMAD_DATA_ROOT=%s\n' "$TMP/data" > "$ENV_FILE"
+check "configured + present" "$(_resolve_drive_models)" "$TMP/data/ollama-models"
+# .env points at a dir WITHOUT ollama-models, and no /Volumes match expected →
+# empty (this assertion is skipped if a real NOMAD data drive is mounted).
+printf 'NOMAD_DATA_ROOT=%s\n' "$TMP/empty" > "$ENV_FILE"
+mkdir -p "$TMP/empty"
+if compgen -G "/Volumes/*/project-nomad/ollama-models" >/dev/null; then
+  ok "skip none-case — a real NOMAD drive is mounted"
+else
+  check "configured-absent + no volume → empty" "$(_resolve_drive_models)" ""
+fi
+
 echo "== timeout primitive =="
 load
 if _run_timeboxed 5 true;       then ok "fast cmd finishes (rc 0)"; else bad "fast cmd reported timeout"; fi
