@@ -34,6 +34,18 @@ echo "== guard =="
 load
 check "MARKER_FILE under temp SECRETS_DIR" "$MARKER_FILE" "$TMP/.force-internal-models"
 
+echo "== disk-gate tier selector =="
+load   # tier_size_gb is defined near the top of nomad, available after source
+check "dreamy + 200 → xl"      "$(_select_pull_tier dreamy 200)" "xl"
+check "dreamy + 50  → medium"  "$(_select_pull_tier dreamy 50)"  "medium"
+check "medium + 100 → medium"  "$(_select_pull_tier medium 100)" "medium"
+check "medium + 5   → none"    "$(_select_pull_tier medium 5)"   "none"
+check "tiny + 13    → tiny"    "$(_select_pull_tier tiny 13)"    "tiny"
+check "tiny + 12    → minimal" "$(_select_pull_tier tiny 12)"    "minimal"
+check "tiny + 11    → none"    "$(_select_pull_tier tiny 11)"    "none"
+# downshift never exceeds the RAM target:
+check "small + 999  → small"   "$(_select_pull_tier small 999)"  "small"
+
 echo "== resolve drive models =="
 load
 # No .env yet → empty.

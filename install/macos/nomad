@@ -4093,6 +4093,24 @@ _probe_wedged() {
   if _run_timeboxed "$t" ls "$path"; then return 1; else return 0; fi
 }
 
+# Pick the model tier to pull given a RAM-derived target and available GB on the
+# boot volume. Walks DOWN from the target (never up — downshift is always
+# RAM-safe), choosing the largest tier whose estimate + 10 GB headroom fits.
+# Echoes a tier name, or "minimal" (chat+embed ~2 GB sub-floor), or "none".
+_select_pull_tier() {
+  local target="$1" avail="$2" headroom=10
+  local ladder=(tiny small medium large xl dreamy)
+  local ti=$(( ${#ladder[@]} - 1 )) k
+  for k in "${!ladder[@]}"; do [[ "${ladder[$k]}" == "$target" ]] && ti=$k; done
+  local i
+  for (( i=ti; i>=0; i-- )); do
+    local t="${ladder[$i]}" sz; sz="$(tier_size_gb "$t")"
+    if (( sz + headroom <= avail )); then echo "$t"; return 0; fi
+  done
+  if (( 2 + headroom <= avail )); then echo "minimal"; return 0; fi
+  echo "none"
+}
+
 # Resolve the drive-backed models dir the way ollama-launcher.sh does. Echoes
 # the path, or "" if no drive store is found. KEEP IN SYNC with the launcher
 # heredoc in step_ollama_native (the launcher is standalone — it cannot source
