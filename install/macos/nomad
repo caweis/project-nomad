@@ -4277,6 +4277,81 @@ _validate_bundle_subtree() {
   return 0
 }
 
+cmd_update() {
+  # Flags: --branch NAME. (Dispatcher passes EXTRA_ARGS, whose defensive
+  # expansion injects one empty placeholder when no flag was given — absorb it.)
+  local branch="${NOMAD_BRANCH:-feat/macos-distribution-layer}"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      "")        shift ;;
+      --branch)  branch="$2"; shift 2 ;;
+      *) die "usage: nomad update [--branch NAME]" ;;
+    esac
+  done
+
+  section "Update NOMAD"
+  local bundle; bundle="$(_resolve_bundle_dir)"
+  [[ -d "$bundle" ]] || die "bundle dir not found: $bundle
+Set NOMAD_BUNDLE_DIR in $ENV_FILE or reinstall."
+  ok "active bundle: $bundle"
+
+  if _bundle_is_git "$bundle"; then
+    # ── git checkout: pull (unless dirty) ──
+    local repo; repo="$(git -C "$bundle" rev-parse --show-toplevel 2>/dev/null || echo "$bundle")"
+    if _git_tree_dirty "$repo"; then
+      warn "git working tree at $repo has uncommitted changes — skipping pull"
+      warn "commit/stash and re-run 'nomad update' to fetch the latest"
+    else
+      log "git pull origin $branch"
+      git -C "$repo" fetch origin "$branch" 2>/dev/null || warn "fetch failed — using current checkout"
+      git -C "$repo" checkout "$branch" >/dev/null 2>&1 || true
+      if git -C "$repo" pull --ff-only origin "$branch" 2>/tmp/nomad-update-pull.log; then
+        ok "pulled $branch → $(git -C "$repo" rev-parse --short HEAD)"
+      else
+        warn "pull not fast-forward — using current checkout ($(cat /tmp/nomad-update-pull.log | tail -1))"
+      fi
+    fi
+  else
+    # ── tarball install: fetch whole-repo tarball, extract, validate, swap ──
+    if ! /usr/bin/curl -fsS --max-time 5 https://api.github.com >/dev/null 2>&1; then
+      die "offline — cannot fetch update. Bundle left untouched."
+    fi
+    local tgz tmpd
+    tgz="$(/usr/bin/mktemp)"; tmpd="$(/usr/bin/mktemp -d)"
+    local url="https://codeload.github.com/caweis/project-nomad/tar.gz/refs/heads/$branch"
+    log "downloading bundle tarball ($branch)"
+    if ! /usr/bin/curl -fsSL --max-time 120 "$url" -o "$tgz"; then
+      /bin/rm -rf "$tgz" "$tmpd"; die "download failed: $url — bundle left untouched"
+    fi
+    /usr/bin/tar -xzf "$tgz" -C "$tmpd" 2>/dev/null \
+      || { /bin/rm -rf "$tgz" "$tmpd"; die "extract failed — bundle left untouched"; }
+    # codeload extracts to a single top dir: project-nomad-<branch-with-dashes>/
+    local sub; sub="$(/usr/bin/find "$tmpd" -type d -path '*/install/macos' -maxdepth 4 | head -1)"
+    if [[ -z "$sub" ]] || ! _validate_bundle_subtree "$sub"; then
+      /bin/rm -rf "$tgz" "$tmpd"; die "fetched bundle failed validation — current bundle left untouched"
+    fi
+    log "swapping in validated bundle"
+    # rsync the validated subtree over the bundle (preserves the brew symlink,
+    # which points at $bundle/nomad). --delete keeps the bundle in sync with the
+    # release, but protect runtime drop-ins the bundle accrues.
+    if command -v rsync >/dev/null 2>&1; then
+      rsync -a --delete --exclude '.env-pointer' "$sub"/ "$bundle"/ \
+        || { /bin/rm -rf "$tgz" "$tmpd"; die "swap failed — bundle may be partial; reinstall"; }
+    else
+      /bin/cp -R "$sub"/. "$bundle"/ \
+        || { /bin/rm -rf "$tgz" "$tmpd"; die "swap failed — bundle may be partial; reinstall"; }
+    fi
+    /bin/chmod +x "$bundle/nomad"
+    /bin/rm -rf "$tgz" "$tmpd"
+    ok "bundle refreshed from $branch"
+  fi
+
+  # ── in-place install via the freshly-updated script (no nuke, no self-update
+  #    loop — we just refreshed the bundle ourselves). ──
+  log "running in-place install to relink script + man pages and refresh the stack"
+  NOMAD_NO_SELF_UPDATE=1 exec /bin/bash "$bundle/nomad" install
+}
+
 # Reset the Ollama LaunchAgent — recovery for "bootstrap failed: 5: Input/output
 # error" or any other stuck-launchd state. Bootout, kill orphan ollama processes,
 # wait for launchd to commit, re-bootstrap, wait for API.
@@ -5086,6 +5161,7 @@ case "$CMD" in
   models)          cmd_models   "${EXTRA_ARGS[@]}" ;;
   upgrade)         cmd_upgrade "${EXTRA_ARGS[@]}" ;;
   upgrade-models)  cmd_upgrade_models ;;
+  update)          cmd_update "${EXTRA_ARGS[@]}" ;;
   downloads)       cmd_downloads "${EXTRA_ARGS[@]:-list}" ;;
   zim)             cmd_zim       "${EXTRA_ARGS[@]:-list}" ;;
   stl)             cmd_stl       "${EXTRA_ARGS[@]:-list}" ;;
