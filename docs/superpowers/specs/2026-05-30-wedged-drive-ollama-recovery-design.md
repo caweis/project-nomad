@@ -294,16 +294,19 @@ No bats/shellcheck harness exists in the repo (CI is image-build only). Plan:
    functions safe to source without running the dispatcher (guard the dispatch
    tail with the existing bottom-of-file pattern). Add
    `install/macos/scripts/test-reset-ollama.sh`:
-   - `_probe_readable` against a **FIFO** (named pipe) to simulate a hang →
-     expect wedged within the timeout; against a normal dir → expect not-wedged;
-     against a non-existent path → expect not-wedged (fast ENOENT).
+   - the generic timeout primitive `_run_timeboxed T CMD…` (which `_probe_wedged`
+     composes with `ls`): `_run_timeboxed 1 sleep 5` → timed out; `_run_timeboxed
+     5 true` → finished; `_run_timeboxed 5 ls /tmp` → finished. (`ls` can't be
+     made to hang portably, so the *primitive* is tested with `sleep`; the
+     wedge composition is exercised on-device.)
    - marker round-trip: set → check present → clear → check absent.
    - `_resolve_drive_models` against a temp `.env` with/without a real dir.
-   - **disk-gate selector** (inject `avail_gb` so it's deterministic): target
-     `dreamy` + 5 GB free → picks `tiny` (downshift); target `medium` + 100 GB
-     → picks `medium` (no downshift); target `tiny` + 4 GB → sub-floor
-     chat+embed; 1 GB free → skip-with-warn. Asserts downshift never selects a
-     tier above the RAM target.
+   - **disk-gate selector** (inject `avail_gb` so it's deterministic; headroom
+     10 GB): target `dreamy` + 200 GB → `xl` (downshift, since 215+10>200 but
+     147+10≤200); target `medium` + 100 GB → `medium` (no downshift); target
+     `dreamy` + 50 GB → `medium`; 12 GB → `minimal` (chat+embed sub-floor,
+     ~2 GB + headroom); 11 GB → `none` (skip-with-warn). Asserts downshift never
+     selects a tier above the RAM target.
 2. **shellcheck** the changed functions (run locally; document the invocation in
    the test script header).
 3. **On-device round-trip checklist** (flagged for Chris — a real wedge can't be
