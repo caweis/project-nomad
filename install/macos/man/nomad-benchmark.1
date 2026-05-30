@@ -1,0 +1,55 @@
+.Dd 2026-05-30
+.Dt NOMAD-BENCHMARK 1
+.Os
+.Sh NAME
+.Nm nomad-benchmark
+.Nd compare native Metal and Rosetta inference speed
+.Sh SYNOPSIS
+.Nm nomad benchmark
+.Op Cm run
+.Op Ar model
+.Nm nomad benchmark
+.Cm patch-host
+.Sh DESCRIPTION
+.Nm
+runs the same model and prompt twice on this Mac: once on the native Ollama
+daemon using Metal, and once in a forced
+.Cm linux/amd64
+container under Rosetta.
+It reports the eval rate
+.Pq tokens per second
+and total wall time for each path, and prints a Markdown table suitable for a
+README.
+.Pp
+With no subcommand,
+.Nm
+runs
+.Cm run .
+The optional model argument defaults to
+.Cm llama3.1:8b .
+The model is pulled into each path if not already present.
+.Sh OPTIONS
+.Bl -tag -width Ds
+.It Cm run Op Ar model
+Run the native-versus-Rosetta comparison.
+This is the default.
+.It Cm patch-host
+Patch the latest benchmark row recorded by the admin service with this Mac's
+real host hardware
+.Pq the Apple chip and Metal GPU .
+Containers cannot see Metal, so admin records empty CPU and GPU fields that
+otherwise submit as a dash to the upstream leaderboard; this fills them in
+before the row is submitted from the UI.
+.El
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic nomad benchmark
+Run the comparison with the default model.
+.It Ic nomad benchmark run qwen2.5-coder:7b
+Run the comparison with a specific model.
+.It Ic nomad benchmark patch-host
+Inject this Mac's real hardware into the admin leaderboard row.
+.El
+.Sh SEE ALSO
+.Xr nomad 1 ,
+.Xr nomad-models 1

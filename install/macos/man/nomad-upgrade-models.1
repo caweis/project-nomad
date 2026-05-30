@@ -1,0 +1,28 @@
+.Dd 2026-05-30
+.Dt NOMAD-UPGRADE-MODELS 1
+.Os
+.Sh NAME
+.Nm nomad-upgrade-models
+.Nd re-pull every installed model at its latest tag
+.Sh SYNOPSIS
+.Nm nomad upgrade-models
+.Sh DESCRIPTION
+.Nm
+reads the list of models installed on the native Ollama daemon and re-pulls
+each one, fetching the latest published tag of the same model.
+The native daemon must be responding on
+.Pa http://127.0.0.1:11434 .
+.Pp
+If no models are installed, it reports that and exits without error.
+The Mac is kept awake for the duration.
+A summary of refreshed and failed models is printed at the end; the command
+exits non-zero if any model failed to refresh.
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic nomad upgrade-models
+Re-pull all installed models at their latest tags.
+.El
+.Sh SEE ALSO
+.Xr nomad 1 ,
+.Xr nomad-models 1 ,
+.Xr nomad-reset-ollama 1

@@ -1,0 +1,42 @@
+.Dd 2026-05-30
+.Dt NOMAD-ORBSTACK-TUNE 1
+.Os
+.Sh NAME
+.Nm nomad-orbstack-tune
+.Nd raise the OrbStack VM memory limit
+.Sh SYNOPSIS
+.Nm nomad orbstack-tune
+.Op Ar gb
+.Sh DESCRIPTION
+.Nm
+raises the memory limit of the OrbStack virtual machine so the NOMAD stack has
+more RAM to work with.
+It requires the
+.Ic orb
+CLI, which ships with OrbStack.
+.Pp
+With no argument the target is 80% of host RAM, scaled to the machine, with at
+least 4 GB reserved for macOS and a 4 GB floor for the VM.
+An optional whole-number argument sets the target in GB explicitly.
+.Pp
+If OrbStack already allocates at least the target,
+.Nm
+makes no change.
+Otherwise it asks for confirmation, then sets the limit and restarts OrbStack
+to apply it, which briefly interrupts running containers.
+.Sh OPTIONS
+.Bl -tag -width Ds
+.It Ar gb
+Target memory in whole GB.
+Overrides the default 80%-of-host calculation.
+.El
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic nomad orbstack-tune
+Bump the VM to 80% of host RAM.
+.It Ic nomad orbstack-tune 64
+Set the VM memory limit to 64 GB.
+.El
+.Sh SEE ALSO
+.Xr nomad 1 ,
+.Xr nomad-system 1

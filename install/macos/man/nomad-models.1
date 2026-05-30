@@ -1,0 +1,62 @@
+.Dd 2026-05-30
+.Dt NOMAD-MODELS 1
+.Os
+.Sh NAME
+.Nm nomad-models
+.Nd list or pull Ollama models
+.Sh SYNOPSIS
+.Nm nomad models
+.Op Cm list
+.Nm nomad models
+.Cm pull
+.Op Ar tier | Ar name ...
+.Sh DESCRIPTION
+.Nm
+manages models on the native Ollama daemon, which must be responding on
+.Pa http://127.0.0.1:11434 .
+.Pp
+With no subcommand,
+.Nm
+runs
+.Cm list .
+.Sh OPTIONS
+.Bl -tag -width Ds
+.It Cm list
+List installed models.
+For each model it reports file size, the RAM estimated to run it, and a
+fit verdict for this Mac's memory.
+It also prints the size tiers and which tier was auto-detected for this Mac.
+.It Cm pull Op Ar tier | Ar name ...
+Pull models.
+A single tier name pulls that tier's model set.
+One or more model names pulls those exact models.
+With no argument it pulls the tier resolved at dispatch
+.Pq from Fl -tier or auto-detection .
+The Mac is kept awake for the duration, since large pulls can run a long time.
+.El
+.Pp
+The tier sets scale with this Mac's RAM.
+The available tiers, smallest to largest, are
+.Cm tiny ,
+.Cm small ,
+.Cm medium ,
+.Cm large ,
+.Cm xl ,
+and
+.Cm dreamy .
+.Cm list
+shows the approximate size and member models of each, and which one was
+auto-detected for this machine.
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic nomad models
+List installed models with fit verdicts and the tier table.
+.It Ic nomad models pull medium
+Pull the medium tier's model set.
+.It Ic nomad models pull qwen3:32b deepseek-r1:32b
+Pull those two specific models.
+.El
+.Sh SEE ALSO
+.Xr nomad 1 ,
+.Xr nomad-reset-ollama 1 ,
+.Xr nomad-upgrade-models 1

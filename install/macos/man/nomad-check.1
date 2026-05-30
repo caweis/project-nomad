@@ -1,0 +1,51 @@
+.Dd 2026-05-30
+.Dt NOMAD-CHECK 1
+.Os
+.Sh NAME
+.Nm nomad-check
+.Nd pre-flight and health inventory of the host, stack, and install
+.Sh SYNOPSIS
+.Nm nomad check
+.Op Cm system | stack | install | all
+.Sh DESCRIPTION
+.Nm
+inspects the machine and the NOMAD deployment and prints a findings report.
+Run it before an install to confirm the host is ready, or after one to confirm
+the stack is healthy.
+.Pp
+The optional argument selects which section to run.
+With no argument,
+.Nm
+runs every section.
+.Pp
+Output is written to the terminal and also tee'd, with ANSI color stripped, to
+.Pa nomad-check-<timestamp>.log
+and
+.Pa nomad-check-latest.log
+in the directory the
+.Nm nomad
+script lives in, so a run can be reviewed or synced later.
+.Sh OPTIONS
+.Bl -tag -width Ds
+.It Cm system
+Check the host: hardware, OS, RAM, and related prerequisites.
+.It Cm stack
+Check the running NOMAD stack and its services.
+.It Cm install
+Inventory the installation.
+.Cm inventory
+is an accepted alias.
+.It Cm all
+Run system, stack, and install in sequence.
+This is the default.
+.El
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic nomad check
+Run the full inventory across all sections.
+.It Ic nomad check system
+Check only the host prerequisites.
+.El
+.Sh SEE ALSO
+.Xr nomad 1 ,
+.Xr nomad-system 1
