@@ -29,6 +29,40 @@ _bootstrap_already_installed() {
   [[ -f "$1/install/macos/nomad" ]]
 }
 
+# Download the branch tarball, extract just into $1, then hand off to the real
+# installer. Stock curl/tar only. Leaves nothing half-placed on failure.
+_bootstrap_fetch_and_install() {
+  local dest="$1"
+  command -v curl >/dev/null 2>&1 || { echo "curl not found — cannot bootstrap" >&2; exit 1; }
+
+  echo "Fetching Project NOMAD ($NOMAD_BRANCH) → $dest"
+  local tgz tmpd
+  tgz="$(mktemp)"; tmpd="$(mktemp -d)"
+  local url="https://codeload.github.com/caweis/project-nomad/tar.gz/refs/heads/$NOMAD_BRANCH"
+  if ! curl -fsSL --max-time 180 "$url" -o "$tgz"; then
+    rm -rf "$tgz" "$tmpd"; echo "Download failed: $url" >&2; exit 1
+  fi
+  # --strip-components=1 drops the codeload top dir; extract straight into tmpd.
+  if ! tar -xzf "$tgz" --strip-components=1 -C "$tmpd" 2>/dev/null; then
+    rm -rf "$tgz" "$tmpd"; echo "Extract failed" >&2; exit 1
+  fi
+  # Validate before placing.
+  if [[ ! -f "$tmpd/install/macos/nomad" ]] || ! head -1 "$tmpd/install/macos/nomad" | grep -q '^#!.*bash'; then
+    rm -rf "$tgz" "$tmpd"; echo "Fetched bundle is missing install/macos/nomad — aborting" >&2; exit 1
+  fi
+  mkdir -p "$(dirname "$dest")"
+  rm -rf "$dest"
+  mv "$tmpd" "$dest"
+  rm -f "$tgz"
+  chmod +x "$dest/install/macos/nomad"
+
+  echo
+  echo "Next, the installer will ask where to store your CONTENT (Wikipedia, AI"
+  echo "models, maps) — usually an external drive. The app code lives in $dest."
+  echo
+  exec bash "$dest/install/macos/nomad" install
+}
+
 _bootstrap_main() {
   set -euo pipefail
 
