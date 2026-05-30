@@ -1800,12 +1800,23 @@ URL=http://localhost:8080
 APPLE_CHIP_MODEL=${apple_chip}
 APPLE_GPU_MODEL=${apple_gpu}
 HOST_PLATFORM=darwin
+NOMAD_BUNDLE_DIR=${HERE}
 EOF
     chmod 600 "$ENV_FILE"
     ok "$ENV_FILE written (chmod 600)"
     log "host hardware injected for admin: $apple_chip / $apple_gpu"
   fi
   echo "$ENV_FILE" > "$HERE/.env-pointer"
+
+  # Idempotent: ensure NOMAD_BUNDLE_DIR reflects the current bundle on every
+  # install/repair (handles pre-existing .env files + a relocated bundle).
+  if [[ -f "$ENV_FILE" ]]; then
+    if grep -q '^NOMAD_BUNDLE_DIR=' "$ENV_FILE"; then
+      /usr/bin/sed -i '' "s|^NOMAD_BUNDLE_DIR=.*|NOMAD_BUNDLE_DIR=$HERE|" "$ENV_FILE"
+    else
+      printf 'NOMAD_BUNDLE_DIR=%s\n' "$HERE" >> "$ENV_FILE"
+    fi
+  fi
 
   # Validate required keys (Apple chip vars are best-effort, not required)
   for key in NOMAD_DATA_ROOT NOMAD_STATE_ROOT APP_KEY MYSQL_ROOT_PASSWORD DB_PASSWORD URL; do
@@ -4231,6 +4242,15 @@ _resolve_drive_models() {
     fi
   done
   echo ""
+}
+
+# Resolve the active install bundle dir. Precedence: NOMAD_BUNDLE_DIR in .env
+# (recorded at install) > $HERE (this script's own symlink-resolved dir). $HERE
+# is the right fallback because the brew symlink resolves to the real bundle.
+_resolve_bundle_dir() {
+  local recorded=""
+  [[ -f "$ENV_FILE" ]] && recorded="$(grep '^NOMAD_BUNDLE_DIR=' "$ENV_FILE" | cut -d= -f2-)"
+  if [[ -n "$recorded" ]]; then echo "$recorded"; else echo "$HERE"; fi
 }
 
 # Reset the Ollama LaunchAgent — recovery for "bootstrap failed: 5: Input/output
