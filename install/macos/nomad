@@ -4057,6 +4057,12 @@ cmd_orbstack_tune() {
   log "the NOMAD stack should auto-restart. If admin's System Information still shows the old number, run: nomad up"
 }
 
+# ─── wedged-drive recovery helpers ────────────────────────────────────────────
+# Forced-internal marker (see MARKER_FILE global). Presence ⇒ use internal models.
+_marker_present() { [[ -f "$MARKER_FILE" ]]; }
+_marker_set()     { mkdir -p "$SECRETS_DIR" && : > "$MARKER_FILE"; }
+_marker_clear()   { rm -f "$MARKER_FILE"; }
+
 # Reset the Ollama LaunchAgent — recovery for "bootstrap failed: 5: Input/output
 # error" or any other stuck-launchd state. Bootout, kill orphan ollama processes,
 # wait for launchd to commit, re-bootstrap, wait for API.

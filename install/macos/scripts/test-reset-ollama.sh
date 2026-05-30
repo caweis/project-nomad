@@ -18,7 +18,11 @@ check(){ if [[ "$2" == "$3" ]]; then ok "$1 ($2)"; else bad "$1 — expected '$3
 # Fresh sourced environment with an isolated SECRETS_DIR.
 load() {
   TMP="$(mktemp -d -t nomad-test.XXXXXX)"
-  SECRETS_DIR="$TMP" NOMAD_SOURCE_FOR_TEST=1 source "$NOMAD"
+  # Export SECRETS_DIR as a regular variable (not just a prefix) so it persists
+  # in this shell after `source` returns — bash prefix-env vars to `source` do
+  # not survive the source command's return in the caller's scope.
+  export SECRETS_DIR="$TMP"
+  NOMAD_SOURCE_FOR_TEST=1 source "$NOMAD"
   # Re-assert test helpers after source (nomad defines its own ok() which would
   # shadow the counters above — restore them so assertions work correctly).
   ok()   { PASS=$((PASS+1)); printf '  ok   %s\n' "$1"; }
@@ -29,6 +33,15 @@ load() {
 echo "== guard =="
 load
 check "MARKER_FILE under temp SECRETS_DIR" "$MARKER_FILE" "$TMP/.force-internal-models"
+
+echo "== marker =="
+load
+_marker_present && bad "marker present on fresh dir" || ok "absent on fresh dir"
+_marker_set
+_marker_present && ok "present after set" || bad "absent after set"
+[[ -f "$TMP/.force-internal-models" ]] && ok "set created the file" || bad "set did not create file"
+_marker_clear
+_marker_present && bad "present after clear" || ok "absent after clear"
 
 echo
 echo "results: $PASS passed, $FAIL failed"
