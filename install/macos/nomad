@@ -137,7 +137,7 @@ self_update_nomad() {
   fi
 
   local branch="${NOMAD_BRANCH:-feat/macos-distribution-layer}"
-  local raw_url="https://raw.githubusercontent.com/caweis/project-nomad-macos-arm64/$branch/install/macos/nomad"
+  local raw_url="https://raw.githubusercontent.com/caweis/project-nomad/$branch/install/macos/nomad"
   local tmp
   tmp="$(/usr/bin/mktemp)" || return 0
 
@@ -199,7 +199,7 @@ self_update_compose() {
   fi
 
   local branch="${NOMAD_BRANCH:-feat/macos-distribution-layer}"
-  local raw_url="https://raw.githubusercontent.com/caweis/project-nomad-macos-arm64/$branch/install/macos/compose.yaml"
+  local raw_url="https://raw.githubusercontent.com/caweis/project-nomad/$branch/install/macos/compose.yaml"
   local tmp
   tmp="$(/usr/bin/mktemp)" || return 0
   local target="$HERE/compose.yaml"
