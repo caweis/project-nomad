@@ -217,8 +217,13 @@ self_update_compose() {
   ok "self-update: refreshed $target from $branch (run 'nomad down && nomad up' to apply new port/env bindings)"
 }
 
-SECRETS_DIR="$HOME/.config/project-nomad"
+SECRETS_DIR="${SECRETS_DIR:-$HOME/.config/project-nomad}"
 ENV_FILE="$SECRETS_DIR/.env"
+# Forced-internal-models marker. Presence ⇒ Ollama uses ~/.ollama/models
+# instead of the data-drive store. Set by `nomad reset-ollama --internal` or
+# auto-fallback when the drive is wedged; cleared on restore. Honored by the
+# generated ollama-launcher.sh at step 0 so KeepAlive respawns stay internal.
+MARKER_FILE="$SECRETS_DIR/.force-internal-models"
 # Hot state — always on internal disk, never on a detachable drive.
 # MySQL + Redis bind-mount here so the data drive can be safely unplugged
 # without killing the management plane.
@@ -4589,6 +4594,12 @@ SKIP_MODELS=0
 TIER_EXPLICIT=0
 MODELS_EXPLICIT=0
 SKIP_MODELS_EXPLICIT=0
+
+# When sourced by the unit-test harness, stop here: callers get every function
+# definition above without running arg-parsing, the self-update gate, or dispatch.
+if [[ -n "${NOMAD_SOURCE_FOR_TEST:-}" ]]; then
+  return 0 2>/dev/null || true
+fi
 
 ORIGINAL_ARGS=("$@")
 CMD="${1:-help}"
