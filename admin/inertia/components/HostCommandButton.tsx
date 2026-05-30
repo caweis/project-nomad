@@ -2,18 +2,11 @@ import { useEffect, useState } from 'react'
 import StyledButton, { StyledButtonProps } from './StyledButton'
 import { DynamicIconName } from './DynamicIcon'
 
-/**
- * Allow-listed host commands. Must stay in sync with:
- *   - admin/app/controllers/host_commands_controller.ts ALLOWED_COMMANDS
- *   - install/macos/nomad host-command-bridge.sh case statement (~line 2704)
- */
-export type HostCommandName =
-  | 'upgrade-ollama'
-  | 'upgrade-admin'
-  | 'upgrade-all'
-  | 'reset-ollama'
-  | 'fix-kiwix'
-  | 'self-update'
+// HostCommandName is derived from the canonical name list in
+// constants/host_commands.ts (shared with the backend controller). Re-exported
+// here so existing `import { HostCommandName } from './HostCommandButton'` sites
+// keep resolving.
+export type { HostCommandName } from '../../constants/host_commands'
 
 export interface HostCommandButtonProps {
   cmd: HostCommandName
