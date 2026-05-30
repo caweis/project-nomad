@@ -2,6 +2,7 @@ import type { HttpContext } from '@adonisjs/core/http'
 import { promises as fs } from 'fs'
 import path from 'path'
 import logger from '@adonisjs/core/services/logger'
+import { HOST_COMMANDS } from '../../constants/host_commands.js'
 
 /**
  * Bridge from admin UI to host-side `nomad` CLI commands.
@@ -34,16 +35,10 @@ import logger from '@adonisjs/core/services/logger'
  * arbitrary shell injection.
  */
 export default class HostCommandsController {
-  // Must match the allow-list in the LaunchAgent's run_cmd() case statement
-  // (install/macos/nomad — host-command-bridge.sh body).
-  private static readonly ALLOWED_COMMANDS = new Set([
-    'upgrade-ollama',
-    'upgrade-admin',
-    'upgrade-all',
-    'reset-ollama',
-    'fix-kiwix',
-    'self-update',
-  ])
+  // Canonical name list lives in constants/host_commands.ts; the bash run_cmd()
+  // case in install/macos/nomad is the matching security boundary (kept in sync
+  // by install/macos/scripts/test-host-command-allowlist.sh).
+  private static readonly ALLOWED_COMMANDS = new Set<string>(HOST_COMMANDS)
 
   private static readonly BRIDGE_DIR = '/app/storage/.host-commands'
 
