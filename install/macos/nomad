@@ -56,6 +56,9 @@
 #   bash nomad reinstall                     # nuclear: wipe everything + reinstall in one shot
 #   bash nomad self-update                   # fetch latest nomad script (also runs
 #                                            # implicitly at the start of install/reinstall)
+#   bash nomad update                        # fetch latest bundle + reinstall
+#                                            # in place (no data loss; see
+#                                            # 'man nomad-update')
 #
 # Globals at the top, all logic in named functions, single dispatch at the bottom.
 
@@ -5192,7 +5195,7 @@ case "$CMD" in
   install-field-desk)   cmd_install_field_desk "${EXTRA_ARGS[@]}" ;;
   uninstall-field-desk) cmd_uninstall_field_desk ;;
   help|--help|-h)
-    sed -n '2,58p' "$0" | sed 's/^# //; s/^#//'
+    sed -n '2,61p' "$0" | sed 's/^# //; s/^#//'
     echo
     echo "Full reference: man nomad   (per-command: man nomad-<command>, e.g. man nomad-zim)"
     ;;

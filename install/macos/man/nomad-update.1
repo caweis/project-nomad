@@ -1,0 +1,57 @@
+.Dd 2026-05-30
+.Dt NOMAD-UPDATE 1
+.Os
+.Sh NAME
+.Nm nomad-update
+.Nd fetch the latest bundle and reinstall in place
+.Sh SYNOPSIS
+.Nm nomad update
+.Op Fl -branch Ar NAME
+.Sh DESCRIPTION
+Updates an installed NOMAD to the latest code in one step, replacing the manual
+.Ic git pull
+plus
+.Ic nomad reinstall
+dance.
+.Pp
+It locates the active bundle via
+.Ev NOMAD_BUNDLE_DIR
+in
+.Pa ~/.config/project-nomad/.env
+(falling back to the directory the running
+.Nm nomad
+resolves to). If that bundle is a git checkout, it pulls the branch
+fast-forward only \(em and skips the pull if the working tree has uncommitted
+changes, so local work is never discarded. Otherwise it downloads the whole-repo
+tarball, validates the fetched
+.Nm nomad
+and man pages, and atomically swaps the validated files into the bundle.
+.Pp
+It then runs the idempotent in-place install: the script and all man pages are
+re-linked, compose is refreshed, and the stack and LaunchAgents are ensured. It
+does
+.Em not
+wipe data, re-pull models, or tear down the stack \(em for a clean-slate wipe use
+.Xr nomad-reinstall 1 .
+.Sh OPTIONS
+.Bl -tag -width Ds
+.It Fl -branch Ar NAME
+Track a branch other than the default
+.Pq Ev NOMAD_BRANCH , No or feat/macos-distribution-layer .
+.El
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic nomad update
+Pull/fetch the latest bundle and reinstall in place.
+.El
+.Sh ENVIRONMENT
+.Bl -tag -width "NOMAD_BUNDLE_DIR"
+.It Ev NOMAD_BUNDLE_DIR
+Path to the active install bundle, recorded in .env at install time.
+.It Ev NOMAD_BRANCH
+Default branch to track.
+.El
+.Sh SEE ALSO
+.Xr nomad 1 ,
+.Xr nomad-reinstall 1 ,
+.Xr nomad-install 1

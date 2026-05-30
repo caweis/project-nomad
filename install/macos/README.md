@@ -162,6 +162,7 @@ nomad upgrade-models    Re-pull installed models at latest tags
 nomad reinstall         Full uninstall + install (one confirm prompt up front)
 nomad uninstall         Remove containers, LaunchAgents, secrets, (with confirm) data
 nomad self-update       Fetch the latest nomad script
+nomad update            Fetch latest bundle + reinstall in place (no data loss)
 nomad install-bridge    Install just the host-command-bridge LaunchAgent (idempotent)
 nomad refresh-compose   Refresh compose.yaml from the bundle
 nomad install-field-desk [--port N] [--foreground] [--force]
