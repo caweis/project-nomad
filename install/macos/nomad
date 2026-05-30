@@ -4265,6 +4265,18 @@ _git_tree_dirty() {
   [[ -n "$(git -C "$d" status --porcelain 2>/dev/null)" ]]
 }
 
+# Validate a freshly-fetched install/macos subtree before swapping it in:
+# must contain a bash-shebang nomad that passes syntax check + a man/nomad.1.
+# Returns 0 if safe to install, 1 otherwise.
+_validate_bundle_subtree() {
+  local d="$1"
+  [[ -f "$d/nomad" ]] || return 1
+  /usr/bin/head -1 "$d/nomad" | /usr/bin/grep -q '^#!.*bash' || return 1
+  /bin/bash -n "$d/nomad" 2>/dev/null || return 1
+  [[ -f "$d/man/nomad.1" ]] || return 1
+  return 0
+}
+
 # Reset the Ollama LaunchAgent — recovery for "bootstrap failed: 5: Input/output
 # error" or any other stuck-launchd state. Bootout, kill orphan ollama processes,
 # wait for launchd to commit, re-bootstrap, wait for API.

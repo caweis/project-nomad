@@ -38,6 +38,21 @@ if _git_tree_dirty "$TMP/repo"; then bad "clean tree seen as dirty"; else ok "cl
 echo change >> "$TMP/repo/f"
 if _git_tree_dirty "$TMP/repo"; then ok "dirty tree detected"; else bad "dirty tree not detected"; fi
 
+echo "== bundle validation gate =="
+load
+# Missing everything → invalid.
+mkdir -p "$TMP/cand"
+if _validate_bundle_subtree "$TMP/cand"; then bad "empty dir validated"; else ok "empty dir rejected"; fi
+# A nomad that isn't bash → invalid.
+printf 'not a script\n' > "$TMP/cand/nomad"; mkdir -p "$TMP/cand/man"; : > "$TMP/cand/man/nomad.1"
+if _validate_bundle_subtree "$TMP/cand"; then bad "non-bash nomad validated"; else ok "non-bash nomad rejected"; fi
+# Valid: bash shebang + parses + man/nomad.1 present.
+printf '#!/usr/bin/env bash\necho hi\n' > "$TMP/cand/nomad"
+if _validate_bundle_subtree "$TMP/cand"; then ok "valid subtree accepted"; else bad "valid subtree rejected"; fi
+# Missing man/ → invalid.
+rm -rf "$TMP/cand/man"
+if _validate_bundle_subtree "$TMP/cand"; then bad "missing man/ validated"; else ok "missing man/ rejected"; fi
+
 echo
 echo "results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]]
