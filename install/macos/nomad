@@ -1630,17 +1630,19 @@ step_self_install_to_path() {
     fi
   fi
 
-  # Manpage — only if we have one in the bundle
-  if [[ -f "$HERE/nomad.1" ]]; then
+  # Manpages — symlink the whole set (overview + per-command) from the bundle.
+  if [[ -d "$HERE/man" ]]; then
     manpath="$prefix/share/man/man1"
-    manpage_target="$manpath/nomad.1"
     mkdir -p "$manpath" 2>/dev/null
     if [[ -d "$manpath" && -w "$manpath" ]]; then
-      if [[ -L "$manpage_target" && "$(readlink "$manpage_target")" == "$HERE/nomad.1" ]]; then
-        :
-      elif ln -sf "$HERE/nomad.1" "$manpage_target" 2>/dev/null; then
-        ok "manpage: $manpage_target  ('man nomad' now works)"
-      fi
+      local mp count=0
+      for mp in "$HERE"/man/nomad*.1; do
+        [[ -f "$mp" ]] || continue
+        if ln -sf "$mp" "$manpath/$(basename "$mp")" 2>/dev/null; then
+          count=$((count+1))
+        fi
+      done
+      [[ $count -gt 0 ]] && ok "manpages: $count pages in $manpath  ('man nomad', 'man nomad-<command>' now work)"
     fi
   fi
 }
@@ -3933,6 +3935,18 @@ cmd_uninstall() {
     else
       log "preserving content at $data_root — re-run 'nomad install' to reuse it"
     fi
+  fi
+
+  # 8. Manpages: remove only symlinks that point into our bundle's man/ dir.
+  local manpath; manpath="$(brew --prefix 2>/dev/null)/share/man/man1"
+  if [[ -d "$manpath" ]]; then
+    local mp
+    for mp in "$manpath"/nomad*.1; do
+      [[ -L "$mp" ]] || continue
+      case "$(readlink "$mp")" in
+        */man/nomad*.1) rm -f "$mp" ;;
+      esac
+    done
   fi
 
   echo
