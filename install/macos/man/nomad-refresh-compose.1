@@ -1,0 +1,31 @@
+.Dd 2026-05-30
+.Dt NOMAD-REFRESH-COMPOSE 1
+.Os
+.Sh NAME
+.Nm nomad-refresh-compose
+.Nd refresh compose.yaml from the bundle
+.Sh SYNOPSIS
+.Nm nomad refresh-compose
+.Sh DESCRIPTION
+.Nm nomad refresh-compose
+fetches the latest
+.Pa compose.yaml
+for the bundled install and replaces the local copy if it differs.
+When run from a checked-out git repository the local file is used as-is and
+nothing is fetched.
+.Pp
+Refreshing the file does not restart anything on its own.
+Run
+.Xr nomad-down 1
+then
+.Xr nomad-up 1
+to apply the refreshed definition to the running stack.
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic nomad refresh-compose
+Refresh the local compose.yaml from the bundle.
+.El
+.Sh SEE ALSO
+.Xr nomad 1 ,
+.Xr nomad-down 1 ,
+.Xr nomad-up 1

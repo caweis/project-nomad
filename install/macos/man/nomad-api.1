@@ -1,0 +1,39 @@
+.Dd 2026-05-30
+.Dt NOMAD-API 1
+.Os
+.Sh NAME
+.Nm nomad-api
+.Nd make a raw call to the admin service API
+.Sh SYNOPSIS
+.Nm nomad api
+.Ar PATH
+.Op Ar JSON_BODY
+.Sh DESCRIPTION
+.Nm nomad api
+is a low-level escape hatch for calling the admin service's HTTP API
+directly.
+It sends a request to
+.Ar PATH
+and pretty-prints the JSON response.
+.Pp
+With no
+.Ar JSON_BODY
+the request is a
+.Sy GET .
+When
+.Ar JSON_BODY
+is supplied, the request becomes a
+.Sy POST
+carrying that body.
+Use this for endpoints the dedicated subcommands do not cover.
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic nomad api /api/system/services
+GET the services endpoint and print the response.
+.It Ic nomad api /api/zim/wikipedia/select '{"optionId":"all-nopic"}'
+POST a JSON body to select a Wikipedia variant.
+.El
+.Sh SEE ALSO
+.Xr nomad 1 ,
+.Xr nomad-downloads 1 ,
+.Xr nomad-services 1

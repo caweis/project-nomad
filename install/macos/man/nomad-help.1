@@ -1,0 +1,33 @@
+.Dd 2026-05-30
+.Dt NOMAD-HELP 1
+.Os
+.Sh NAME
+.Nm nomad-help
+.Nd show usage for the nomad command
+.Sh SYNOPSIS
+.Nm nomad help
+.Nm nomad
+.Fl -help
+.Nm nomad
+.Fl h
+.Sh DESCRIPTION
+.Nm nomad help
+prints the usage summary for the
+.Nm nomad
+command, listing every subcommand with its arguments and a short note on what
+it does.
+.Pp
+.Fl -help
+and
+.Fl h
+are accepted as equivalents, both as a bare command and after any other
+arguments.
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic nomad help
+Print the usage summary.
+.It Ic nomad --help
+Same as above.
+.El
+.Sh SEE ALSO
+.Xr nomad 1

@@ -1,0 +1,63 @@
+.Dd 2026-05-30
+.Dt NOMAD-ZIM 1
+.Os
+.Sh NAME
+.Nm nomad-zim
+.Nd inspect and select offline Wikipedia and ZIM content
+.Sh SYNOPSIS
+.Nm nomad zim
+.Op Cm list | wikipedia | remote
+.Sh DESCRIPTION
+.Nm nomad zim
+reports on the ZIM content known to the admin service.
+ZIM files are the offline archives Kiwix serves, including Wikipedia,
+Wiktionary, and other reference collections.
+.Pp
+With no subcommand,
+.Cm list
+runs and prints the installed-ZIM catalog as seen by the admin service.
+The
+.Cm wikipedia
+subcommand reports the current Wikipedia download state and can request a
+specific Wikipedia variant.
+The
+.Cm remote
+subcommand lists ZIMs available to download from the remote catalog.
+.Sh OPTIONS
+.Bl -tag -width Ds
+.It Cm list
+Print the admin service's catalog of installed ZIMs.
+This is the default when no subcommand is given.
+.It Cm wikipedia Op Cm state | select Ar VARIANT
+With
+.Cm state
+(the default), print the current Wikipedia download state.
+With
+.Cm select Ar VARIANT ,
+request that variant for download, where
+.Ar VARIANT
+is one of
+.Cm top-mini ,
+.Cm top-nopic ,
+.Cm all-mini ,
+.Cm all-nopic ,
+or
+.Cm all-maxi .
+.It Cm remote
+List the ZIMs available in the remote catalog.
+.El
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic nomad zim list
+Show the ZIMs currently installed.
+.It Ic nomad zim wikipedia
+Show the current Wikipedia download state.
+.It Ic nomad zim wikipedia select all-nopic
+Request the no-picture full Wikipedia variant.
+.It Ic nomad zim remote
+List ZIMs available to download.
+.El
+.Sh SEE ALSO
+.Xr nomad 1 ,
+.Xr nomad-downloads 1 ,
+.Xr nomad-fix-kiwix 1
