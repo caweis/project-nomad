@@ -1,0 +1,28 @@
+name: Shell checks
+
+# Lightweight checks for the macOS distribution layer. Runs on macos-latest so
+# the bash tests exercise the same BSD userland (df, mktemp, awk) as the target.
+on:
+  push:
+    branches: [feat/macos-distribution-layer, main]
+    paths:
+      - 'install/macos/**'
+      - 'admin/constants/host_commands.ts'
+      - '.github/workflows/checks.yml'
+  pull_request:
+    paths:
+      - 'install/macos/**'
+      - 'admin/constants/host_commands.ts'
+      - '.github/workflows/checks.yml'
+
+jobs:
+  shell-checks:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: nomad syntax
+        run: bash -n install/macos/nomad
+      - name: Host-command allow-list drift guard
+        run: bash install/macos/scripts/test-host-command-allowlist.sh
+      - name: Recovery helper unit tests
+        run: bash install/macos/scripts/test-reset-ollama.sh
