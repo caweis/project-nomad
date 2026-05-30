@@ -66,9 +66,11 @@ fi
 
 echo "== timeout primitive =="
 load
-if _run_timeboxed 5 true;       then ok "fast cmd finishes (rc 0)"; else bad "fast cmd reported timeout"; fi
-if _run_timeboxed 5 ls /tmp;    then ok "ls /tmp finishes";        else bad "ls /tmp reported timeout"; fi
-if _run_timeboxed 1 sleep 5;    then bad "slow cmd not timed out"; else ok "slow cmd times out (rc 1)"; fi
+if _run_timeboxed 5 true;          then ok "fast cmd finishes (rc 0)";      else bad "fast cmd reported timeout"; fi
+if _run_timeboxed 5 false;         then ok "fast-fail cmd finishes (rc 1)"; else bad "fast-fail cmd reported as timeout"; fi
+if _run_timeboxed 5 ls /tmp;       then ok "ls /tmp finishes";              else bad "ls /tmp reported timeout"; fi
+if _run_timeboxed 5 ls /nonexist;  then ok "fast ENOENT finishes";          else bad "fast ENOENT reported as timeout"; fi
+if _run_timeboxed 1 sleep 5;       then bad "slow cmd not timed out";       else ok "slow cmd times out (rc 1)"; fi
 
 echo "== wedge probe =="
 load

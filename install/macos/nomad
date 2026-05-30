@@ -4143,7 +4143,13 @@ _autopull_tier_models() {
   if avail_gb="$(df -g "$probe_dir" 2>/dev/null | awk 'NR==2 {print $4}')" && [[ -n "$avail_gb" ]]; then
     :
   else  # -g unavailable → parse 1K blocks
-    avail_gb="$(( $(df -k "$probe_dir" | awk 'NR==2 {print $4}') / 1024 / 1024 ))"
+    local raw_k; raw_k="$(df -k "$probe_dir" 2>/dev/null | awk 'NR==2 {print $4}')"
+    avail_gb=$(( ${raw_k:-0} / 1024 / 1024 ))
+    if [[ $avail_gb -eq 0 ]]; then
+      warn "could not determine free space on boot volume — skipping auto-pull"
+      warn "when online, run:  ollama pull llama3.2:3b"
+      return 0
+    fi
   fi
 
   local target chosen models
