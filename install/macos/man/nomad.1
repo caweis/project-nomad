@@ -88,182 +88,98 @@ between always-internal hot state (mysql, redis under
 and a configurable cold content root
 .Pa ${NOMAD_DATA_ROOT}
 that may be on an external drive and safely unplugged.
-.Sh SUBCOMMANDS
-.Bl -tag -width "upgrade-models"
+.Sh COMMANDS
+.Ss Setup & lifecycle
+.Bl -tag -width "refresh-compose"
 .It Cm install
-Run the full install pipeline: dependency bootstrap (Xcode CLT, Homebrew, jq,
-Rosetta 2), data root selection, OrbStack install + memory tune, native Ollama
-+ LaunchAgent, secrets generation, container stack pull and bring-up, admin
-health-check, native-Ollama wiring via the admin API, model pulls, and
-benchmark host-info auto-patcher LaunchAgent. Idempotent — safe to re-run.
-.Pp
-Options:
-.Bl -tag -width "--no-models"
-.It Fl -data-root Ar PATH
-Path for cold content (Wikipedia ZIMs, Ollama models, Kolibri, ProtoMaps).
-Default: prompt for internal vs external drive choice.
-.It Fl -tier Ar TIER
-Model preset to pull. One of:
-.Cm auto , tiny , small , medium , large , xl , dreamy .
-Default:
-.Cm auto
-(picks based on
-.Ev hw.memsize ).
-.It Fl -models Ar "names..."
-Explicit space-separated model list, overrides
-.Fl -tier .
-.It Fl -no-models
-Skip model pulls entirely.
-.It Fl -yes , Fl y
-Auto-confirm prompts (for unattended runs).
-.El
-.It Cm check Op Ar section
-Read-only diagnostic. Sections: system (RAM, ports, network, Rosetta),
-stack (containers, native Ollama, admin API, download queue, Wikipedia state),
-install (pre-flight inventory with skip/install/fix plan).
-Default:
-.Cm all .
-Output also written to a timestamped log file in the bundle folder for
-iCloud-sync inspection.
-.It Cm up | down
-Bring the compose stack up or down. Native Ollama LaunchAgent is unaffected
-by either command.
-.It Cm restart Op Ar SERVICE
-Restart a compose service. Default: admin.
-.It Cm logs Op Ar SERVICE
-Snapshot the last 100 lines of a service's logs. Default: admin. Pass
-.Fl f
-for follow mode (e.g.
-.Nm Cm logs Fl f Cm admin Ns ).
-.It Cm models Op Cm list | pull Ar TIER|NAMES...
-List installed models with fits-this-Mac verdict, or pull a tier or specific
-named models via native Ollama API. With no subargs, lists.
-.It Cm benchmark Op Cm run | patch-host Op Ar MODEL
-Run native-Metal vs container-Rosetta tokens/sec comparison on the same
-model, or patch admin's latest benchmark row with this Mac's real CPU/GPU
-hardware. Default model:
-.Cm llama3.1:8b .
-.It Cm downloads Op Cm list | cancel | remove Op Ar JOBID
-List or manage admin's BullMQ download queue (Wikipedia ZIMs, model pulls,
-ProtoMaps regions). Uses the admin REST API.
-.It Cm zim Op Cm list | wikipedia | remote
-Manage installed ZIM files. With
-.Cm wikipedia ,
-manages the Wikipedia variant selection (state or select).
-.It Cm services Op Cm list | install | affect
-Inspect or manage admin-spawned content services (Kiwix, Qdrant, Kolibri,
-FlatNotes). Uses the admin REST API.
-.It Cm system Op Cm info | debug | internet
-Inspect admin's view of the system (CPU, memory, services, internet
-reachability) via its REST API.
-.It Cm api Ar PATH Op Ar JSON_BODY
-Raw admin API call. Generic escape hatch for endpoints not wrapped by other
-subcommands. PATH is e.g.
-.Pa /api/system/services
-or
-.Pa /api/ollama/configure-remote .
-.It Cm orbstack-tune Op Ar GB
-Tune OrbStack VM memory. With no arg, computes 80% of host RAM (proportional
-formula, scales 8 GB Air → 192+ GB Studio). With explicit GB, sets that
-allocation. Restarts OrbStack VM to apply (~10s downtime). Run during
-install automatically; this is the manual entry point for re-tuning.
-.It Cm reset-ollama Op Fl -internal | Fl -drive
-Recover from stuck LaunchAgent state ("bootstrap failed: 5: Input/output
-error"). Bootouts existing agent, kills orphan ollama serves, re-bootstraps.
-With no flag, auto-detects a mounted-but-wedged external data drive (a deep
-read that hangs) and falls back to internal models
-.Pa ~/.ollama/models ,
-then auto-pulls a disk-gated, RAM-sized model set so chat works immediately.
-.Fl -internal
-forces internal models;
-.Fl -drive
-restores to the data drive (refused while the drive is still wedged \(em
-physically unplug/replug it first).
-.It Cm fix-kiwix
-Manual trigger of the kiwix self-heal pass. Background: admin's downloader
-writes ZIM files directly to
-.Pa /data/ Ns Ar name Ns .zim
-with no
-.Pa .tmp
-suffix during download. kiwix-serve is launched with the shell glob
-.Cm *.zim
-which expands to ALL files in
-.Pa /data
-including in-progress ones. Partial files have valid filenames and invalid
-libzim headers, so kiwix-serve crashes on the first one it encounters and
-the
-.Cm unless-stopped
-restart policy puts it in a crash loop.
-.Pp
-Self-heal reads kiwix's own log for the line
-.Dq Unable to add the ZIM file 'X' to the internal library.\& ,
-moves
-.Pa X
-to
-.Pa storage/zim-inprogress/ ,
-restarts kiwix, repeats up to 5 passes per run. The
-.Cm com.projectnomad.kiwix-self-heal
-LaunchAgent runs the same logic every 60 seconds automatically — this
-subcommand triggers an immediate run plus verbose output (current state,
-recent action-log entries, final state, quarantine listing). Useful for:
-fixing kiwix without waiting for the next 60s tick; understanding what
-prior auto-runs did. The action log is at
-.Pa ~/Library/Logs/nomad-kiwix-self-heal.action.log .
-Upstream fix worth filing: admin's downloader should write
-.Pa name.zim.downloading
-and rename atomically on completion.
-.It Cm stl Op Cm list | scan | import | path Op Ar DIR Op Ar CATEGORY
-Workshop / Offline STL Library — host-side ops for the 3D-printable file
-catalog at
-.Pa ${NOMAD_DATA_ROOT}/storage/stl-library/ .
-.Pp
-.Cm list
-calls
-.Pa /api/workshop?per_page=200
-and pretty-prints the admin's catalog.
-.Cm scan
-triggers a server-side rescan (same code path as the UI's Rescan button) —
-walks the library tree, upserts the
-.Cm stl_files
-index, removes orphan rows for deleted files, generates missing
-thumbnails via
-.Xr stl-thumb 1 .
-.Cm import Ar DIR Op Ar CATEGORY
-copies every
-.Pa *.stl
-and
-.Pa *.3mf
-under
-.Ar DIR
-into
-.Pa storage/stl-library/<CATEGORY>/
-(default
-.Cm other )
-and triggers a rescan. Existing files in the library are not overwritten;
-re-running
-.Cm import
-just skips them.
-.Cm path
-prints the absolute library root on the host (useful for shell scripting).
-Categories:
-.Cm medical , tools , household , replacement-parts , agriculture ,
-.Cm firearm-accessories , other .
+Install or repair the full stack.
+.Xr nomad-install 1 .
 .It Cm reinstall
-Nuclear path: full
-.Cm uninstall
-(including data drive contents with confirm) followed by
-.Cm install .
-One confirmation prompt up front, fully unattended after.
+Full wipe then reinstall.
+.Xr nomad-reinstall 1 .
 .It Cm uninstall
-Remove all NOMAD containers + named volumes + networks, the Ollama
-LaunchAgent + plist, the benchmark patcher LaunchAgent, secrets at
-.Pa ~/.config/project-nomad/.env ,
-and (with confirm) data drive contents. Preserves Homebrew, OrbStack, and
-Ollama themselves (other apps may depend on them).
+Remove containers, agents, secrets (optionally data).
+.Xr nomad-uninstall 1 .
+.It Cm up | down | restart
+Start, stop, or restart the stack.
+.Xr nomad-up 1 ,
+.Xr nomad-down 1 ,
+.Xr nomad-restart 1 .
+.It Cm self-update
+Fetch the latest nomad script.
+.Xr nomad-self-update 1 .
+.El
+.Ss Status & logs
+.Bl -tag -width "refresh-compose"
+.It Cm check
+Pre-flight + health inventory.
+.Xr nomad-check 1 .
+.It Cm logs
+Tail a service's logs.
+.Xr nomad-logs 1 .
+.It Cm system
+Host/stack diagnostics.
+.Xr nomad-system 1 .
+.El
+.Ss AI models
+.Bl -tag -width "refresh-compose"
+.It Cm models
+List or pull Ollama models.
+.Xr nomad-models 1 .
 .It Cm upgrade-models
-Re-pull all currently-installed Ollama models at their latest tag.
+Re-pull installed models at latest tags.
+.Xr nomad-upgrade-models 1 .
+.It Cm reset-ollama
+Recover Ollama; auto-detect a wedged data drive.
+.Xr nomad-reset-ollama 1 .
+.It Cm benchmark
+Native-vs-Rosetta tokens/sec; patch the leaderboard.
+.Xr nomad-benchmark 1 .
+.It Cm orbstack-tune
+Bump the OrbStack VM RAM.
+.Xr nomad-orbstack-tune 1 .
+.El
+.Ss Offline content
+.Bl -tag -width "refresh-compose"
+.It Cm zim
+Wikipedia/ZIM content state.
+.Xr nomad-zim 1 .
+.It Cm downloads
+Inspect the admin download queue.
+.Xr nomad-downloads 1 .
+.It Cm stl
+Workshop STL library.
+.Xr nomad-stl 1 .
+.El
+.Ss Services & API
+.Bl -tag -width "refresh-compose"
+.It Cm services
+List/install/affect admin services.
+.Xr nomad-services 1 .
+.It Cm api
+Raw admin API call.
+.Xr nomad-api 1 .
+.El
+.Ss Maintenance
+.Bl -tag -width "refresh-compose"
+.It Cm upgrade
+Upgrade admin/ollama/everything.
+.Xr nomad-upgrade 1 .
+.It Cm clean
+Safe cleanup of logs, dangling images, partial ZIMs.
+.Xr nomad-clean 1 .
+.It Cm fix-kiwix
+Manual kiwix self-heal pass.
+.Xr nomad-fix-kiwix 1 .
+.It Cm install-bridge
+Install the host-command-bridge LaunchAgent.
+.Xr nomad-install-bridge 1 .
+.It Cm refresh-compose
+Refresh compose.yaml from the bundle.
+.Xr nomad-refresh-compose 1 .
 .It Cm help
-Print short usage. Full reference is this manpage.
+Show usage.
+.Xr nomad-help 1 .
 .El
 .Sh ENVIRONMENT
 .Bl -tag -width "NOMAD_STATE_ROOT"
@@ -374,6 +290,32 @@ Chris Weis
 on top of the macOS-port lineage above.
 Apache-2.0.
 .Sh SEE ALSO
+.Xr nomad-install 1 ,
+.Xr nomad-reinstall 1 ,
+.Xr nomad-uninstall 1 ,
+.Xr nomad-up 1 ,
+.Xr nomad-down 1 ,
+.Xr nomad-restart 1 ,
+.Xr nomad-self-update 1 ,
+.Xr nomad-check 1 ,
+.Xr nomad-logs 1 ,
+.Xr nomad-system 1 ,
+.Xr nomad-models 1 ,
+.Xr nomad-upgrade-models 1 ,
+.Xr nomad-reset-ollama 1 ,
+.Xr nomad-benchmark 1 ,
+.Xr nomad-orbstack-tune 1 ,
+.Xr nomad-zim 1 ,
+.Xr nomad-downloads 1 ,
+.Xr nomad-stl 1 ,
+.Xr nomad-services 1 ,
+.Xr nomad-api 1 ,
+.Xr nomad-upgrade 1 ,
+.Xr nomad-clean 1 ,
+.Xr nomad-fix-kiwix 1 ,
+.Xr nomad-install-bridge 1 ,
+.Xr nomad-refresh-compose 1 ,
+.Xr nomad-help 1 ,
 .Xr ollama 1 ,
 .Xr docker-compose 1 ,
 .Xr launchctl 1 ,
