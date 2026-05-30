@@ -1,0 +1,125 @@
+name: Build macOS-distribution admin image
+
+# Builds the admin Docker image for the macOS-distribution lineage and
+# pushes it to ghcr.io/caweis/project-nomad-macos-arm64. Multi-arch
+# (linux/amd64,linux/arm64) so the same image works on Rosetta-backed
+# Docker Desktop and arm64-native OrbStack/colima.
+#
+# Triggers:
+#   - push to feat/macos-distribution-layer (or main) when admin/, the root
+#     Dockerfile, or this workflow change → image tagged :edge.
+#   - tag push matching v* → image tagged :vX.Y.Z and :latest.
+#   - workflow_dispatch → manual build, optional :latest promotion.
+
+on:
+  push:
+    branches:
+      - main
+      - feat/macos-distribution-layer
+    paths:
+      - 'admin/**'
+      - 'Dockerfile'
+      - 'package.json'
+      - '.github/workflows/build-nomad-macos-image.yml'
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version label (no "v" prefix, e.g. "1.2.3"). Leave blank for :edge only.'
+        required: false
+        type: string
+        default: ''
+      tag_latest:
+        description: 'Also tag this image as :latest?'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    name: Build and push admin image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tags
+        id: tags
+        run: |
+          IMAGE="ghcr.io/${{ github.repository_owner }}/project-nomad-macos-arm64"
+          TAGS=""
+
+          # Always include a short-SHA tag for traceability
+          SHORT_SHA="${GITHUB_SHA::7}"
+          TAGS="${IMAGE}:sha-${SHORT_SHA}"
+
+          # Branch pushes → :edge (latest from the dev branch)
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref_type }}" == "branch" ]]; then
+            TAGS="${TAGS},${IMAGE}:edge"
+          fi
+
+          # Release tag pushes → :vX.Y.Z and :latest
+          # Docker image tags only allow [a-zA-Z0-9_.-], but SemVer 2.0 lets
+          # us use `+` for build metadata (e.g. v0.1.0-macos+2026.05.11).
+          # The git tag stays as-authored; we substitute `+` → `.` for the
+          # Docker tag so buildx accepts it. Result is still distinguishable
+          # (v0.1.0-macos.2026.05.11) and round-trippable for humans.
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref_type }}" == "tag" ]]; then
+            TAG_NAME="${GITHUB_REF#refs/tags/}"
+            DOCKER_TAG="${TAG_NAME//+/.}"
+            TAGS="${TAGS},${IMAGE}:${DOCKER_TAG}"
+            TAGS="${TAGS},${IMAGE}:latest"
+          fi
+
+          # workflow_dispatch with explicit version
+          # Same `+` → `.` substitution as the tag-push path, so a manual
+          # build with version="0.1.0-macos+2026.05.11" doesn't fail buildx.
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ inputs.version }}" ]]; then
+            INPUT_VERSION="${{ inputs.version }}"
+            DOCKER_VERSION="${INPUT_VERSION//+/.}"
+            TAGS="${TAGS},${IMAGE}:${DOCKER_VERSION},${IMAGE}:v${DOCKER_VERSION}"
+            if [[ "${{ inputs.tag_latest }}" == "true" ]]; then
+              TAGS="${TAGS},${IMAGE}:latest"
+            fi
+          fi
+
+          # workflow_dispatch without version → just :edge
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -z "${{ inputs.version }}" ]]; then
+            TAGS="${TAGS},${IMAGE}:edge"
+          fi
+
+          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
+          echo "Resolved tags:"
+          echo "${TAGS}" | tr ',' '\n' | sed 's/^/  - /'
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VERSION=${{ inputs.version || github.ref_name }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            VCS_REF=${{ github.sha }}

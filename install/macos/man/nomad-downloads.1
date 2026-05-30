@@ -1,0 +1,45 @@
+.Dd 2026-05-30
+.Dt NOMAD-DOWNLOADS 1
+.Os
+.Sh NAME
+.Nm nomad-downloads
+.Nd inspect and manage the admin download job queue
+.Sh SYNOPSIS
+.Nm nomad downloads
+.Op Cm list | cancel Ar JOBID | remove Ar JOBID
+.Sh DESCRIPTION
+.Nm nomad downloads
+shows the admin service's background download jobs across all states
+.Pq active, waiting, delayed, failed, completed
+and lets you cancel or remove individual jobs.
+These are the jobs that fetch ZIM archives, embeddings, and other content.
+.Pp
+With no subcommand,
+.Cm list
+runs and prints each job's state, file type, source URL, progress, and any
+failure reason.
+.Sh OPTIONS
+.Bl -tag -width Ds
+.It Cm list
+Print all download jobs in every state.
+This is the default when no subcommand is given.
+.It Cm cancel Ar JOBID
+Cancel the running or queued job with the given
+.Ar JOBID .
+.It Cm remove Ar JOBID
+Remove the job with the given
+.Ar JOBID
+from the queue.
+.El
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic nomad downloads
+List every download job and its progress.
+.It Ic nomad downloads cancel 42
+Cancel job 42.
+.It Ic nomad downloads remove 42
+Remove job 42 from the queue.
+.El
+.Sh SEE ALSO
+.Xr nomad 1 ,
+.Xr nomad-zim 1

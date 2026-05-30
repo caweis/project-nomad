@@ -295,35 +295,54 @@ export default function EasySetupWizard(props: { system: { services: ServiceSlim
     wikipediaState,
   ])
 
-  // Get primary disk/filesystem info for storage projection
-  // Try disk array first (Linux/production), fall back to fsSize (Windows/dev)
-  // Filter out invalid disks (totalSize === 0) and prefer disk with root mount or largest valid disk
-  const getPrimaryDisk = () => {
-    if (!systemInfo?.disk || systemInfo.disk.length === 0) return null
+  // Get the filesystem the user's data actually lives on. Admin runs in a
+  // container; the data drive is bind-mounted at /app/storage (compose.yaml).
+  // Reading the container's rootfs (/) or any unrelated disk gives the wrong
+  // numbers — that's the OrbStack VM's disk, not the user's drive.
+  //
+  // Priority order:
+  //   1. fsSize entry mounted at /app/storage — the bind-mount target, this
+  //      is the actual data drive on the host (correct on macOS)
+  //   2. fsSize entry mounted at /storage — legacy upstream Linux convention
+  //   3. disk array entry whose filesystems include /app/storage or /storage
+  //      — covers the systeminformation Linux path where disk + fsSize
+  //      coexist
+  //   4. Largest valid disk — last-resort fallback
+  const getStorageInfo = (): { totalSize: number; totalUsed: number } | null => {
+    // 1. Bind-mount target — the macOS distro's canonical answer
+    const bindMountFs = systemInfo?.fsSize?.find((fs) => fs.mount === '/app/storage')
+    if (bindMountFs) return { totalSize: bindMountFs.size, totalUsed: bindMountFs.used }
 
-    // Filter to only valid disks with actual storage
-    const validDisks = systemInfo.disk.filter((d) => d.totalSize > 0)
-    if (validDisks.length === 0) return null
+    // 2. Legacy /storage mount
+    const legacyStorageFs = systemInfo?.fsSize?.find((fs) => fs.mount === '/storage')
+    if (legacyStorageFs) return { totalSize: legacyStorageFs.size, totalUsed: legacyStorageFs.used }
 
-    // Prefer disk containing root mount (/) or /storage mount
-    const diskWithRoot = validDisks.find((d) =>
-      d.filesystems?.some((fs) => fs.mount === '/' || fs.mount === '/storage')
-    )
-    if (diskWithRoot) return diskWithRoot
+    // 3. disk array on Linux production installs
+    if (systemInfo?.disk && systemInfo.disk.length > 0) {
+      const validDisks = systemInfo.disk.filter((d) => d.totalSize > 0)
+      const diskWithStorage = validDisks.find((d) =>
+        d.filesystems?.some((fs) => fs.mount === '/app/storage' || fs.mount === '/storage')
+      )
+      if (diskWithStorage) {
+        return { totalSize: diskWithStorage.totalSize, totalUsed: diskWithStorage.totalUsed }
+      }
+      // 4. Largest valid disk
+      if (validDisks.length > 0) {
+        const largest = validDisks.reduce((acc, current) =>
+          current.totalSize > acc.totalSize ? current : acc
+        )
+        return { totalSize: largest.totalSize, totalUsed: largest.totalUsed }
+      }
+    }
 
-    // Fall back to largest valid disk
-    return validDisks.reduce((largest, current) =>
-      current.totalSize > largest.totalSize ? current : largest
-    )
+    // 4b. Any fsSize entry (last-resort fallback)
+    const anyFs = systemInfo?.fsSize?.[0]
+    if (anyFs) return { totalSize: anyFs.size, totalUsed: anyFs.used }
+
+    return null
   }
 
-  const primaryDisk = getPrimaryDisk()
-  const primaryFs = systemInfo?.fsSize?.[0]
-  const storageInfo = primaryDisk
-    ? { totalSize: primaryDisk.totalSize, totalUsed: primaryDisk.totalUsed }
-    : primaryFs
-      ? { totalSize: primaryFs.size, totalUsed: primaryFs.used }
-      : null
+  const storageInfo = getStorageInfo()
 
   const canProceedToNextStep = () => {
     if (!isOnline) return false // Must be online to proceed

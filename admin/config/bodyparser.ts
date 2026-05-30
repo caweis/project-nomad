@@ -44,10 +44,16 @@ const bodyParserConfig = defineConfig({
     processManually: [],
 
     /**
-     * Maximum limit of data to parse including all files
-     * and fields
+     * Maximum limit of data to parse including all files and fields.
+     *
+     * Raised from 20mb to 250mb to accommodate the Workshop STL/3MF upload
+     * (200mb per-file cap + multipart boundary overhead). Bodyparser streams
+     * multipart bodies to OS tmp, so this is a request-size guard rather than
+     * a memory allocation. Per-endpoint validators still enforce tighter
+     * caps (Workshop upload validates `size: '200mb'`; RAG upload is bounded
+     * by the embedding pipeline's own checks).
      */
-    limit: '20mb',
+    limit: '250mb',
     types: ['multipart/form-data'],
   },
 })

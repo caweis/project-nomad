@@ -1,0 +1,39 @@
+.Dd 2026-05-30
+.Dt NOMAD-SYSTEM 1
+.Os
+.Sh NAME
+.Nm nomad-system
+.Nd host and stack diagnostics from the admin API
+.Sh SYNOPSIS
+.Nm nomad system
+.Op Cm info | debug | internet
+.Sh DESCRIPTION
+.Nm
+queries the admin service API and pretty-prints the JSON response.
+The admin service must be up.
+.Pp
+The optional argument selects which report to fetch.
+With no argument,
+.Nm
+returns
+.Cm info .
+.Sh OPTIONS
+.Bl -tag -width Ds
+.It Cm info
+System information report.
+This is the default.
+.It Cm debug
+Extended debug information report.
+.It Cm internet
+Internet connectivity status.
+.El
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic nomad system
+Fetch the system information report.
+.It Ic nomad system internet
+Check whether the host has internet connectivity.
+.El
+.Sh SEE ALSO
+.Xr nomad 1 ,
+.Xr nomad-check 1

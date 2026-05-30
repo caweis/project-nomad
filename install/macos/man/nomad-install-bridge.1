@@ -1,0 +1,32 @@
+.Dd 2026-05-30
+.Dt NOMAD-INSTALL-BRIDGE 1
+.Os
+.Sh NAME
+.Nm nomad-install-bridge
+.Nd install only the host-command-bridge LaunchAgent
+.Sh SYNOPSIS
+.Nm nomad install-bridge
+.Sh DESCRIPTION
+.Nm nomad install-bridge
+installs just the host-command-bridge LaunchAgent.
+The bridge lets the admin UI run allow-listed
+.Nm nomad
+commands on the host, for example the Upgrade Ollama button.
+.Pp
+A full install already sets this up.
+Use this command on its own to pick up a newly added LaunchAgent without
+running a full
+.Xr nomad-install 1
+or
+.Xr nomad-reinstall 1 .
+The operation is idempotent and safe to re-run.
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic nomad install-bridge
+Install or refresh the host-command-bridge LaunchAgent.
+.El
+.Sh SEE ALSO
+.Xr nomad 1 ,
+.Xr nomad-fix-kiwix 1 ,
+.Xr nomad-install 1 ,
+.Xr nomad-reset-ollama 1

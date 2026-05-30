@@ -8,8 +8,7 @@ import { formatBytes } from '~/lib/util'
 import { useModals } from '~/context/ModalContext'
 import { ChatMessage } from '../../../types/chat'
 import classNames from '~/lib/classNames'
-import { IconX } from '@tabler/icons-react'
-import { DEFAULT_QUERY_REWRITE_MODEL } from '../../../constants/ollama'
+import { IconMenu2, IconX } from '@tabler/icons-react'
 import { useSystemSetting } from '~/hooks/useSystemSetting'
 
 interface ChatProps {
@@ -33,6 +32,11 @@ export default function Chat({
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [selectedModel, setSelectedModel] = useState<string>('')
   const [isStreamingResponse, setIsStreamingResponse] = useState(false)
+  // Tracks the mobile sidebar drawer open state. Desktop layout ignores
+  // this entirely; the sidebar is permanently inline above the md
+  // breakpoint. The hamburger button in the chat header is the only way
+  // to toggle this on small screens.
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const streamAbortRef = useRef<AbortController | null>(null)
 
   // Fetch all sessions
@@ -59,6 +63,7 @@ export default function Chat({
     queryFn: () => api.getInstalledModels(),
     enabled,
     select: (data) => data || [],
+    refetchInterval: 10_000,
   })
 
   const { data: chatSuggestions, isLoading: chatSuggestionsLoading } = useQuery<string[]>({
@@ -72,9 +77,23 @@ export default function Chat({
     refetchOnMount: false,
   })
 
-  const rewriteModelAvailable = useMemo(() => {
-    return installedModels.some(model => model.name === DEFAULT_QUERY_REWRITE_MODEL)
-  }, [installedModels])
+  // The chat UI surfaces a "qwen2.5:3b isn't installed — install for better
+  // Knowledge Base RAG" notice when this is false. The 3B model is a fast
+  // dedicated query-rewrite helper; without it the runtime falls back to the
+  // user's primary chat model for the rewrite step (slower but functional).
+  //
+  // Default behavior: hide the notice when ANY chat model is installed. If
+  // the user already has, say, a 14B model, nagging them to install an
+  // older 3B model adds friction without value — their setup works. The
+  // user can opt into the 3B speed optimization from Settings → Apps if
+  // they want it.
+  //
+  // Only show the notice when the user has nothing installed at all —
+  // which is a different (and equally important) thing to surface.
+  const rewriteModelAvailable = useMemo(
+    () => installedModels.length > 0,
+    [installedModels]
+  )
 
   const deleteAllSessionsMutation = useMutation({
     mutationFn: () => api.deleteAllChatSessions(),
@@ -356,27 +375,41 @@ export default function Chat({
         onNewChat={handleNewChat}
         onClearHistory={handleClearHistory}
         isInModal={isInModal}
+        mobileOpen={mobileSidebarOpen}
+        onMobileClose={() => setMobileSidebarOpen(false)}
       />
       <div className="flex-1 flex flex-col min-h-0">
-        <div className="px-6 py-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between h-[75px] flex-shrink-0">
-          <h2 className="text-lg font-semibold text-gray-800">
-            {activeSession?.title || 'New Chat'}
-          </h2>
-          <div className="flex items-center gap-4">
+        <div className="px-4 sm:px-6 py-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between h-[75px] flex-shrink-0 gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            {/* Hamburger toggle — visible only below the md breakpoint where
+                the sidebar is hidden by default. Tap to open the drawer. */}
+            <button
+              type="button"
+              onClick={() => setMobileSidebarOpen(true)}
+              className="md:hidden p-2 -ml-2 rounded-lg hover:bg-gray-100 flex-shrink-0"
+              aria-label="Open chat history"
+            >
+              <IconMenu2 className="h-6 w-6 text-gray-600" />
+            </button>
+            <h2 className="text-base sm:text-lg font-semibold text-gray-800 truncate">
+              {activeSession?.title || 'New Chat'}
+            </h2>
+          </div>
+          <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0">
             <div className="flex items-center gap-2">
-              <label htmlFor="model-select" className="text-sm text-gray-600">
+              <label htmlFor="model-select" className="hidden sm:inline text-sm text-gray-600">
                 Model:
               </label>
               {isLoadingModels ? (
-                <div className="text-sm text-gray-500">Loading models...</div>
+                <div className="text-sm text-gray-500">Loading...</div>
               ) : installedModels.length === 0 ? (
-                <div className="text-sm text-red-600">No models installed</div>
+                <div className="text-sm text-red-600">No models</div>
               ) : (
                 <select
                   id="model-select"
                   value={selectedModel}
                   onChange={(e) => setSelectedModel(e.target.value)}
-                  className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-desert-green focus:border-transparent bg-white"
+                  className="px-2 sm:px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-desert-green focus:border-transparent bg-white max-w-[150px] sm:max-w-none truncate"
                 >
                   {installedModels.map((model) => (
                     <option key={model.name} value={model.name}>
@@ -393,7 +426,8 @@ export default function Chat({
                     onClose()
                   }
                 }}
-                className="rounded-lg hover:bg-gray-100 transition-colors"
+                className="rounded-lg hover:bg-gray-100 transition-colors p-1"
+                aria-label="Close chat"
               >
                 <IconX className="h-6 w-6 text-gray-500" />
               </button>

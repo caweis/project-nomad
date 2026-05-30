@@ -28,10 +28,17 @@ export class RagService {
   public static EMBEDDING_MODEL = 'nomic-embed-text:v1.5'
   public static EMBEDDING_DIMENSION = 768 // Nomic Embed Text v1.5 dimension is 768
   public static MODEL_CONTEXT_LENGTH = 2048 // nomic-embed-text has 2K token context
-  public static MAX_SAFE_TOKENS = 1800 // Leave buffer for prefix and tokenization variance
+  // Tighter than the model's nominal 2048 context to leave room for tokenizer
+  // variance. Empirically, char-based estimates undercount on dense content
+  // (HTML, German, code-heavy text) where chars/token can drop below 3 — we
+  // hit "the input length exceeds the context length" 400 errors from Ollama
+  // when MAX_SAFE_TOKENS was 1800 + CHAR_TO_TOKEN_RATIO was 3. Pulling both
+  // tighter (1400 cap, 2.5 ratio) trades ~20% chunk content for reliable
+  // embedding success across non-English and structured-data ZIMs.
+  public static MAX_SAFE_TOKENS = 1400 // Leave generous buffer for prefix + tokenization variance
   public static TARGET_TOKENS_PER_CHUNK = 1700 // Target 1700 tokens per chunk for embedding
   public static PREFIX_TOKEN_BUDGET = 10 // Reserve ~10 tokens for prefixes
-  public static CHAR_TO_TOKEN_RATIO = 3 // Approximate chars per token
+  public static CHAR_TO_TOKEN_RATIO = 2.5 // Conservative chars/token — undercounting causes context overruns
   // Nomic Embed Text v1.5 uses task-specific prefixes for optimal performance
   public static SEARCH_DOCUMENT_PREFIX = 'search_document: '
   public static SEARCH_QUERY_PREFIX = 'search_query: '
@@ -309,10 +316,19 @@ export class RagService {
         prefixedChunks.push(RagService.SEARCH_DOCUMENT_PREFIX + chunkText)
       }
 
-      // Batch embed chunks for performance
+      // Batch embed chunks for performance. Track per-chunk success so we
+      // can skip failed batches without taking down the whole job — earlier
+      // behavior was that one over-context batch threw, BullMQ retried the
+      // entire job 30x with 60s fixed backoff, starved the worker for 30
+      // minutes per file, and ultimately failed. Now we log + skip and ship
+      // whatever embeddings succeeded; missing chunks reduce RAG recall on
+      // that document but don't break ingest for the other 99 documents in
+      // the batch.
       const embeddings: number[][] = []
+      const successfulChunkIndices: number[] = []
       const batchSize = RagService.EMBEDDING_BATCH_SIZE
       const totalBatches = Math.ceil(prefixedChunks.length / batchSize)
+      let failedBatches = 0
 
       for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
         const batchStart = batchIdx * batchSize
@@ -320,12 +336,28 @@ export class RagService {
 
         logger.debug(`[RAG] Embedding batch ${batchIdx + 1}/${totalBatches} (${batch.length} chunks)`)
 
-        const response = await ollamaClient.embed({
-          model: RagService.EMBEDDING_MODEL,
-          input: batch,
-        })
+        try {
+          const response = await ollamaClient.embed({
+            model: RagService.EMBEDDING_MODEL,
+            input: batch,
+          })
 
-        embeddings.push(...response.embeddings)
+          embeddings.push(...response.embeddings)
+          for (let j = 0; j < batch.length; j++) {
+            successfulChunkIndices.push(batchStart + j)
+          }
+        } catch (embedError: any) {
+          // Specific 400 "input length exceeds context length" is the common
+          // case here; also handle network errors, model-not-loaded, etc.
+          // gracefully so a single problematic batch doesn't blow up ingest.
+          failedBatches++
+          const errMsg = embedError?.error || embedError?.message || String(embedError)
+          const sampleChunk = batch[0]?.slice(0, 120) ?? ''
+          logger.warn(
+            `[RAG] Embedding batch ${batchIdx + 1}/${totalBatches} FAILED (${errMsg}). ` +
+              `Skipping ${batch.length} chunks starting with: "${sampleChunk}..."`
+          )
+        }
 
         if (onProgress) {
           const progress = ((batchStart + batch.length) / prefixedChunks.length) * 100
@@ -333,8 +365,28 @@ export class RagService {
         }
       }
 
+      if (failedBatches > 0) {
+        logger.warn(
+          `[RAG] ${failedBatches}/${totalBatches} batches failed; embedded ${successfulChunkIndices.length}/${prefixedChunks.length} chunks. Continuing with partial ingest.`
+        )
+      }
+
+      // If every batch failed, surface the failure to the caller rather
+      // than silently shipping zero embeddings.
+      if (embeddings.length === 0 && prefixedChunks.length > 0) {
+        throw new Error(
+          `All ${totalBatches} embedding batches failed — see prior warnings. Job aborted.`
+        )
+      }
+
       const timestamp = Date.now()
-      const points = chunks.map((chunkText, index) => {
+      // Iterate over successfully-embedded chunks only. successfulChunkIndices
+      // is parallel to embeddings[] (both built in lockstep during the batch
+      // loop), so embeddings[position] is the vector for chunks[origIndex].
+      // This is the change from the older chunks.map((_, index) => ...) which
+      // mis-indexed embeddings[] whenever a batch was skipped.
+      const points = successfulChunkIndices.map((origIndex, position) => {
+        const chunkText = chunks[origIndex]
         // Sanitize text to prevent JSON encoding errors
         const sanitizedText = this.sanitizeText(chunkText)
 
@@ -352,7 +404,7 @@ export class RagService {
         // Combine and dedup keywords
         const allKeywords = [...new Set([...structuralKeywords, ...contentKeywords])]
 
-        logger.debug(`[RAG] Extracted keywords for chunk ${index}: [${allKeywords.join(', ')}]`)
+        logger.debug(`[RAG] Extracted keywords for chunk ${origIndex}: [${allKeywords.join(', ')}]`)
         if (structuralKeywords.length > 0) {
           logger.debug(`[RAG]   - Structural: [${structuralKeywords.join(', ')}], Content: [${contentKeywords.join(', ')}]`)
         }
@@ -364,11 +416,11 @@ export class RagService {
 
         return {
           id: randomUUID(), // qdrant requires either uuid or unsigned int
-          vector: embeddings[index],
+          vector: embeddings[position],
           payload: {
             ...metadata,
             text: sanitizedText,
-            chunk_index: index,
+            chunk_index: origIndex,
             total_chunks: chunks.length,
             keywords: allKeywords.join(' '), // store as space-separated string for text search
             char_count: sanitizedText.length,
@@ -380,10 +432,12 @@ export class RagService {
 
       await this.qdrant!.upsert(RagService.CONTENT_COLLECTION_NAME, { points })
 
-      logger.debug(`[RAG] Successfully embedded and stored ${chunks.length} chunks`)
-      logger.debug(`[RAG] First chunk preview: "${chunks[0].substring(0, 100)}..."`)
+      logger.debug(`[RAG] Successfully embedded and stored ${points.length}/${chunks.length} chunks`)
+      if (points.length > 0) {
+        logger.debug(`[RAG] First successful chunk preview: "${chunks[successfulChunkIndices[0]].substring(0, 100)}..."`)
+      }
 
-      return { chunks: chunks.length }
+      return { chunks: points.length }
     } catch (error) {
       console.error(error)
       logger.error('[RAG] Error embedding text:', error)

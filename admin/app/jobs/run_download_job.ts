@@ -80,7 +80,11 @@ export class RunDownloadJob {
           if (filetype === 'zim') {
             const dockerService = new DockerService()
             const zimService = new ZimService(dockerService)
-            await zimService.downloadRemoteSuccessCallback([url], true)
+            // Pass our job.id so the "any other ZIM jobs pending?" check
+            // can deterministically exclude us. Without this, the check
+            // counts the just-finished job as "still pending" and never
+            // restarts Kiwix.
+            await zimService.downloadRemoteSuccessCallback([url], true, job.id)
 
             // Dispatch an embedding job for the downloaded ZIM file
             try {

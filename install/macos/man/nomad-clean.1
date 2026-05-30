@@ -1,0 +1,49 @@
+.Dd 2026-05-30
+.Dt NOMAD-CLEAN 1
+.Os
+.Sh NAME
+.Nm nomad-clean
+.Nd reclaim disk space from install detritus, safely
+.Sh SYNOPSIS
+.Nm nomad clean
+.Op Fl -apply
+.Sh DESCRIPTION
+.Nm nomad clean
+frees disk space by removing artifacts left behind by installs and partial
+downloads, without touching any data or state you want to keep.
+It removes
+.Pa /tmp/nomad-*.log
+files, the
+.Pa compose.yaml.bak
+backup from the amd64 fallback path, quarantined partial ZIMs under
+.Pa $NOMAD_DATA_ROOT/storage/zim-inprogress ,
+dangling Docker images, the Docker builder cache, and stopped
+admin-spawned content containers.
+.Pp
+It never touches Ollama models, downloaded ZIMs, the mysql or redis data,
+the secrets file, the LaunchAgents, or any container that is currently
+running.
+.Pp
+By default
+.Nm nomad clean
+is a dry run: it reports what it would remove and an estimate of the space
+involved.
+Pass
+.Fl -apply
+to actually perform the cleanup.
+.Sh OPTIONS
+.Bl -tag -width Ds
+.It Fl -apply
+Perform the cleanup rather than only reporting it.
+.El
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic nomad clean
+Show what would be cleaned, without removing anything.
+.It Ic nomad clean --apply
+Remove the detritus and report the space freed.
+.El
+.Sh SEE ALSO
+.Xr nomad 1 ,
+.Xr nomad-fix-kiwix 1 ,
+.Xr nomad-uninstall 1

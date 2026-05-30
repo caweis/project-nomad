@@ -1,0 +1,26 @@
+.Dd 2026-05-30
+.Dt NOMAD-DOWN 1
+.Os
+.Sh NAME
+.Nm nomad-down
+.Nd stop the container stack
+.Sh SYNOPSIS
+.Nm nomad down
+.Sh DESCRIPTION
+.Nm nomad down
+stops the Project NOMAD container stack
+.Pq Ic docker compose down .
+Run it before unplugging the external data drive so the databases and model
+store are flushed and closed cleanly. Bring the stack back with
+.Xr nomad-up 1 .
+.Pp
+It takes no arguments.
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic nomad down
+Stop the stack; safe to do before disconnecting the data drive.
+.El
+.Sh SEE ALSO
+.Xr nomad 1 ,
+.Xr nomad-up 1 ,
+.Xr nomad-restart 1

@@ -1,0 +1,65 @@
+.Dd 2026-05-30
+.Dt NOMAD-UPGRADE 1
+.Os
+.Sh NAME
+.Nm nomad-upgrade
+.Nd upgrade the stack, Ollama, or an individual service
+.Sh SYNOPSIS
+.Nm nomad upgrade
+.Op Ar TARGET
+.Op Fl -check
+.Op Fl -force
+.Sh DESCRIPTION
+.Nm nomad upgrade
+brings NOMAD components up to date.
+With no
+.Ar TARGET
+it upgrades everything: the compose stack
+.Pq admin, mysql, redis, dozzle, updater
+and native Ollama, then prints guidance for upgrading admin-spawned services.
+.Pp
+A
+.Ar TARGET
+of
+.Cm ollama
+upgrades native Metal Ollama through Homebrew and restarts its LaunchAgent.
+A
+.Ar TARGET
+of
+.Cm admin ,
+.Cm mysql ,
+.Cm redis ,
+.Cm dozzle ,
+or
+.Cm updater
+upgrades that one compose service.
+Any other
+.Ar TARGET
+.Pq for example Cm kiwix
+is treated as an admin-spawned service and upgraded with its own
+service-specific safety checks.
+.Pp
+While upgrading, the Mac is kept awake so multi-gigabyte pulls and Homebrew
+bottle downloads are not interrupted by sleep.
+.Sh OPTIONS
+.Bl -tag -width Ds
+.It Fl -check
+Dry run: report what would be upgraded and the current versions without
+making any changes.
+.It Fl -force
+For a Kiwix upgrade, proceed even when the admin service cannot be queried
+to confirm there are no in-progress ZIM downloads.
+Use only when you accept the risk of restarting Kiwix mid-write.
+.El
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic nomad upgrade
+Upgrade the full stack and native Ollama.
+.It Ic nomad upgrade ollama
+Upgrade native Ollama through Homebrew and restart it.
+.It Ic nomad upgrade admin --check
+Report whether the admin service has an update available, without applying it.
+.El
+.Sh SEE ALSO
+.Xr nomad 1 ,
+.Xr nomad-services 1

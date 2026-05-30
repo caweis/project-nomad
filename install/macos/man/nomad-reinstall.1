@@ -1,0 +1,37 @@
+.Dd 2026-05-30
+.Dt NOMAD-REINSTALL 1
+.Os
+.Sh NAME
+.Nm nomad-reinstall
+.Nd wipe all state and reinstall from scratch
+.Sh SYNOPSIS
+.Nm nomad reinstall
+.Sh DESCRIPTION
+.Nm nomad reinstall
+performs a full wipe followed by a fresh install in one step. It asks for a
+single confirmation up front, then proceeds without further prompts.
+.Pp
+The wipe stops and removes all NOMAD containers and named volumes, removes the
+Ollama LaunchAgent and its plist, removes the secrets file, removes all data on
+the data drive (databases, Ollama models, stored content), and removes the
+cached compose images so the install pulls fresh. Homebrew tools (Ollama,
+OrbStack,
+.Xr jq 1 )
+and this command bundle stay intact.
+.Pp
+After the wipe it re-runs
+.Ic nomad install
+against the same data root, so you are not prompted to choose a drive again.
+Reach for this when an install is corrupted beyond what a plain
+.Ic nomad install
+repair can fix and you want a clean slate without running the wipe and install
+steps by hand.
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic nomad reinstall
+Confirm once, then wipe everything and reinstall onto the same data drive.
+.El
+.Sh SEE ALSO
+.Xr nomad 1 ,
+.Xr nomad-install 1 ,
+.Xr nomad-uninstall 1

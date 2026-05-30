@@ -1,0 +1,35 @@
+.Dd 2026-05-30
+.Dt NOMAD-UNINSTALL-FIELD-DESK 1
+.Os
+.Sh NAME
+.Nm nomad-uninstall-field-desk
+.Nd remove NOMAD Field Desk, leaving the shared Ollama untouched
+.Sh SYNOPSIS
+.Nm nomad uninstall-field-desk
+.Sh DESCRIPTION
+Removes the SysAdminDoc NOMAD Field Desk app installed by
+.Xr nomad-install-field-desk 1 .
+It stops a running
+.Pa NOMADFieldDesk-macOS
+process and deletes the binary from
+.Pa ~/Applications/ .
+.Pp
+Field Desk stores its own data (SQLite database, caches) under the user's home
+directory in locations that vary by version. This command
+.Em surfaces
+any candidate data directories it finds and prints their sizes, but never
+removes them automatically \(em you decide what to delete. It does not touch
+.Pa ~/.config/project-nomad
+(this distribution's own install) or any other vault.
+.Pp
+The native Metal Ollama daemon on port 11434 is left running; it continues to
+serve the Crosstalk admin and any other consumer.
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic nomad uninstall-field-desk
+Stop Field Desk, remove its binary, and report any leftover data directories
+for manual review.
+.El
+.Sh SEE ALSO
+.Xr nomad 1 ,
+.Xr nomad-install-field-desk 1

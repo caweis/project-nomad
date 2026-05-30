@@ -8,6 +8,11 @@ export const KV_STORE_SCHEMA = {
   'system.earlyAccess':         'boolean',
   'ui.hasVisitedEasySetup':     'boolean',
   'ai.assistantCustomName':     'string',
+  // Workshop / Offline STL Library — user has acknowledged the rights modal
+  // on first visit ("Use at your own peril. You are responsible for ensuring
+  // you have the right to store every STL you put in this library."). Until
+  // accepted, the key simply doesn't exist; once accepted, value is 'true'.
+  'workshop.rightsAcknowledged': 'boolean',
 } as const
 
 type KVTagToType<T extends string> = T extends 'boolean' ? boolean : string

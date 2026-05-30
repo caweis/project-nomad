@@ -1,0 +1,76 @@
+.Dd 2026-05-30
+.Dt NOMAD-STL 1
+.Os
+.Sh NAME
+.Nm nomad-stl
+.Nd manage the offline Workshop 3D-model library
+.Sh SYNOPSIS
+.Nm nomad stl
+.Op Cm list | scan | import Ar DIR Op Ar CATEGORY | path
+.Sh DESCRIPTION
+.Nm nomad stl
+works with the Workshop library, the on-disk collection of
+.Pa .stl
+and
+.Pa .3mf
+3D-printable models that the admin service indexes and serves offline.
+The library lives under
+.Pa $NOMAD_DATA_ROOT/storage/stl-library
+on the data drive.
+.Pp
+With no subcommand,
+.Cm list
+runs and prints the indexed catalog from the admin service.
+The
+.Cm import
+subcommand copies model files into the library from a directory on the host
+and triggers a rescan so they appear in the index.
+.Sh OPTIONS
+.Bl -tag -width Ds
+.It Cm list
+Print the indexed Workshop catalog from the admin service.
+This is the default when no subcommand is given.
+.It Cm scan
+Trigger an admin-side rescan of the library, the same code path as the
+Rescan button in the Workshop UI.
+.It Cm import Ar DIR Op Ar CATEGORY
+Copy every
+.Pa .stl
+and
+.Pa .3mf
+file found under
+.Ar DIR
+into the library, then trigger a rescan.
+Existing files of the same name are skipped rather than overwritten.
+.Ar CATEGORY
+is one of
+.Cm medical ,
+.Cm tools ,
+.Cm household ,
+.Cm replacement-parts ,
+.Cm agriculture ,
+.Cm firearm-accessories ,
+or
+.Cm other ;
+it defaults to
+.Cm other ,
+and an unrecognized value falls back to
+.Cm other
+with a warning.
+.It Cm path
+Print the absolute path of the library root on the host.
+.El
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic nomad stl list
+Show the indexed models.
+.It Ic nomad stl scan
+Rescan the library directory and update the index.
+.It Ic nomad stl import ~/Downloads/prints tools
+Copy 3D-model files from a directory into the tools category and rescan.
+.It Ic nomad stl path
+Print the host path of the library root.
+.El
+.Sh SEE ALSO
+.Xr nomad 1 ,
+.Xr nomad-services 1

@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, stat, unlink } from 'fs/promises'
+import { mkdir, open, readdir, readFile, stat, unlink } from 'fs/promises'
 import path, { join } from 'path'
 import { FileEntry } from '../../types/files.js'
 import { createReadStream } from 'fs'
@@ -105,6 +105,30 @@ export async function deleteFileIfExists(path: string): Promise<void> {
     if (error.code !== 'ENOENT') {
       throw error
     }
+  }
+}
+
+/**
+ * Validates that a file has the ZIM magic number (bytes 0x5a 0x49 0x4d 0x04
+ * = "ZIM\x04"). Must be called before passing a file to @openzim/libzim
+ * Archive, because a corrupted ZIM causes a native C++ abort
+ * (ZimFileFormatError) that bypasses JS try/catch and kills the process.
+ * Ports the ZIM piece of upstream c8cb79a — the Ollama-log dedup half of
+ * that commit conflicts with our applyMacDistroFilters and is skipped.
+ */
+export async function isValidZimFile(filePath: string): Promise<boolean> {
+  let fh
+  try {
+    fh = await open(filePath, 'r')
+    const buf = Buffer.alloc(4)
+    const { bytesRead } = await fh.read(buf, 0, 4, 0)
+    if (bytesRead < 4) return false
+    // ZIM magic number: bytes 0x5a 0x49 0x4d 0x04 = "ZIM\x04"
+    return buf[0] === 0x5a && buf[1] === 0x49 && buf[2] === 0x4d && buf[3] === 0x04
+  } catch {
+    return false
+  } finally {
+    await fh?.close()
   }
 }
 

@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NOMAD — Quick Chat</title>
+<style>
+  :root {
+    --ink: #1a1a1a;
+    --paper: #fbfaf6;
+    --rule: #d8d4c8;
+    --soft: #6e6a60;
+    --accent: #a04a2c;
+    --user-bg: #1a1a1a;
+    --user-fg: #fbfaf6;
+    --assist-bg: #ffffff;
+    --code-bg: #efebde;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: .8rem 1.5rem;
+    border-bottom: 1px solid var(--rule);
+    background: #fff;
+    flex-shrink: 0;
+  }
+  header h1 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0;
+    letter-spacing: 0.3px;
+  }
+  header .accent { color: var(--accent); }
+  header .spacer { flex: 1; }
+
+  select, button {
+    font: inherit;
+    padding: .35rem .6rem;
+    border: 1px solid var(--rule);
+    background: var(--paper);
+    color: var(--ink);
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  button:hover { background: var(--rule); }
+  button.primary { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  button.primary:hover { background: var(--accent); border-color: var(--accent); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+
+  #status {
+    font-size: .75rem;
+    color: var(--soft);
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+  }
+  #status.ok { color: #2d6a3a; }
+  #status.err { color: #b04030; }
+
+  main {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  #chat { max-width: 780px; margin: 0 auto; width: 100%; }
+
+  .empty {
+    color: var(--soft);
+    font-size: .95rem;
+    text-align: center;
+    padding: 4rem 2rem;
+    line-height: 1.7;
+  }
+  .empty .examples {
+    margin-top: 1.5rem;
+    display: grid;
+    gap: .5rem;
+  }
+  .empty .ex {
+    background: #fff;
+    border: 1px solid var(--rule);
+    padding: .6rem .9rem;
+    border-radius: 6px;
+    cursor: pointer;
+    text-align: left;
+    font-size: .9rem;
+  }
+  .empty .ex:hover { border-color: var(--accent); color: var(--accent); }
+
+  .msg {
+    display: flex;
+    flex-direction: column;
+    gap: .25rem;
+    margin-bottom: 1rem;
+  }
+  .msg.user { align-items: flex-end; }
+  .msg.assistant { align-items: flex-start; }
+  .msg .who {
+    font-size: .7rem;
+    color: var(--soft);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    padding: 0 .5rem;
+  }
+  .msg .body {
+    max-width: 85%;
+    padding: .75rem 1rem;
+    border-radius: 12px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-size: .95rem;
+  }
+  .msg.user .body {
+    background: var(--user-bg);
+    color: var(--user-fg);
+    border-bottom-right-radius: 3px;
+  }
+  .msg.assistant .body {
+    background: var(--assist-bg);
+    border: 1px solid var(--rule);
+    border-bottom-left-radius: 3px;
+  }
+  .msg .meta {
+    font-size: .7rem;
+    color: var(--soft);
+    padding: 0 .5rem;
+    font-family: "SF Mono", Menlo, monospace;
+  }
+  .msg.assistant .body code {
+    background: var(--code-bg);
+    padding: 1px 4px;
+    border-radius: 2px;
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: .9em;
+  }
+  .msg.assistant .body pre {
+    background: var(--code-bg);
+    padding: .75rem;
+    border-radius: 4px;
+    overflow-x: auto;
+    margin: .5rem 0;
+  }
+  .msg.assistant .body pre code {
+    background: transparent;
+    padding: 0;
+  }
+
+  .typing {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    background: var(--accent);
+    border-radius: 50%;
+    margin-left: .25rem;
+    animation: pulse 1s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: .3; }
+    50% { opacity: 1; }
+  }
+
+  footer {
+    border-top: 1px solid var(--rule);
+    padding: 1rem 1.5rem;
+    background: #fff;
+    flex-shrink: 0;
+  }
+  #compose {
+    max-width: 780px;
+    margin: 0 auto;
+    display: flex;
+    gap: .5rem;
+    align-items: flex-end;
+  }
+  #input {
+    flex: 1;
+    padding: .6rem .8rem;
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    background: var(--paper);
+    color: var(--ink);
+    font: inherit;
+    font-size: .95rem;
+    resize: none;
+    min-height: 44px;
+    max-height: 200px;
+    line-height: 1.5;
+  }
+  #input:focus { outline: none; border-color: var(--accent); }
+
+  .footer-tip {
+    text-align: center;
+    color: var(--soft);
+    font-size: .7rem;
+    margin-top: .5rem;
+    font-family: "SF Mono", Menlo, monospace;
+  }
+
+  /* ───── boot modal — shown when Ollama isn't running yet ───── */
+  #boot-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(26, 26, 26, .55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
+  #boot-overlay[hidden] { display: none; }
+  .boot-card {
+    background: var(--paper);
+    border: 1px solid var(--ink);
+    max-width: 580px;
+    width: 90%;
+    padding: 2rem 2.2rem;
+    box-shadow: 0 20px 60px rgba(0,0,0,.25);
+  }
+  .boot-card h2 {
+    margin: 0 0 .3rem;
+    font-size: 1.4rem;
+    border-bottom: 2px solid var(--ink);
+    padding-bottom: .4rem;
+  }
+  .boot-card .step-num {
+    color: var(--accent);
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: .7rem;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+  }
+  .boot-card p {
+    margin: .8rem 0;
+    line-height: 1.5;
+  }
+  .boot-card .cmd-row {
+    display: flex;
+    gap: .5rem;
+    align-items: stretch;
+    margin: 1rem 0;
+  }
+  .boot-card code {
+    flex: 1;
+    background: var(--ink);
+    color: var(--paper);
+    padding: .8rem 1rem;
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: .85rem;
+    overflow-x: auto;
+    white-space: nowrap;
+    border-radius: 4px;
+  }
+  .boot-card .copy-btn {
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 0 1.2rem;
+    font-size: .85rem;
+    border-radius: 4px;
+    cursor: pointer;
+    flex-shrink: 0;
+    font-weight: 600;
+    letter-spacing: .5px;
+  }
+  .boot-card .copy-btn:hover { background: #b95a3a; }
+  .boot-card .copy-btn.copied { background: #2d6a3a; }
+  .boot-card .detecting {
+    margin-top: 1.2rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--rule);
+    color: var(--soft);
+    font-size: .85rem;
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+  }
+  .boot-card .pulse {
+    width: 8px;
+    height: 8px;
+    background: var(--accent);
+    border-radius: 50%;
+    animation: pulse 1.2s ease-in-out infinite;
+    flex-shrink: 0;
+  }
+  .boot-card .alt {
+    margin-top: 1rem;
+    color: var(--soft);
+    font-size: .8rem;
+    line-height: 1.5;
+  }
+  .boot-card .alt-cmd {
+    background: var(--code-bg);
+    padding: 1px 6px;
+    border-radius: 2px;
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: .85em;
+    color: var(--ink);
+  }
+</style>
+</head>
+<body>
+
+<!-- Boot overlay — shown until Ollama is reachable -->
+<div id="boot-overlay">
+  <div class="boot-card">
+    <div class="step-num">First-time setup</div>
+    <h2>Start Ollama</h2>
+    <p>This page is your chat interface. To activate it, start native Ollama on this Mac. Open <strong>Terminal</strong> and paste:</p>
+    <div class="cmd-row">
+      <code id="boot-cmd">…detecting paths…</code>
+      <button class="copy-btn" id="copy-cmd">Copy</button>
+    </div>
+    <p class="alt">Ollama serves at <span class="alt-cmd">http://localhost:11434</span>. Models live on this drive — first request per model is slower while it loads from disk.</p>
+    <div class="detecting">
+      <div class="pulse"></div>
+      <span id="detect-status">Watching for Ollama on port 11434…</span>
+    </div>
+    <p class="alt">Already have NOMAD installed? <span class="alt-cmd">nomad up</span> starts the LaunchAgent. This page activates as soon as <span class="alt-cmd">localhost:11434</span> responds.</p>
+  </div>
+</div>
+
+<header>
+  <h1><span class="accent">NOMAD</span> Quick Chat</h1>
+  <select id="model" disabled>
+    <option>loading…</option>
+  </select>
+  <span id="status">connecting…</span>
+  <span class="spacer"></span>
+  <button id="clear" title="Clear conversation">Clear</button>
+</header>
+
+<main>
+  <div id="chat">
+    <div class="empty" id="empty">
+      <div>Native Ollama, talking to the models cached on this drive.</div>
+      <div style="margin-top:.5rem;font-size:.8rem">No internet, no cloud, no telemetry. Just local inference.</div>
+      <div class="examples">
+        <button class="ex" data-prompt="Explain how ocean tides work in one paragraph.">Explain how ocean tides work in one paragraph.</button>
+        <button class="ex" data-prompt="Write a Python function that finds prime numbers up to N using the Sieve of Eratosthenes.">Write a Python function that finds primes using the Sieve of Eratosthenes.</button>
+        <button class="ex" data-prompt="What's a good 1-week itinerary for a road trip through the American Southwest in spring?">Plan a 1-week road trip through the American Southwest.</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <form id="compose" onsubmit="return false;">
+    <textarea id="input" placeholder="Type a message... (Enter to send, Shift+Enter for newline)" rows="1"></textarea>
+    <button id="send" class="primary">Send</button>
+    <button id="stop" hidden>Stop</button>
+  </form>
+  <div class="footer-tip">running locally · <span id="ollama-url">http://localhost:11434</span></div>
+</footer>
+
+<script>
+const OLLAMA = location.hash.slice(1) || 'http://localhost:11434';
+document.getElementById('ollama-url').textContent = OLLAMA;
+
+const els = {
+  model: document.getElementById('model'),
+  status: document.getElementById('status'),
+  chat: document.getElementById('chat'),
+  empty: document.getElementById('empty'),
+  input: document.getElementById('input'),
+  send: document.getElementById('send'),
+  stop: document.getElementById('stop'),
+  clear: document.getElementById('clear'),
+  bootOverlay: document.getElementById('boot-overlay'),
+  bootCmd: document.getElementById('boot-cmd'),
+  copyCmd: document.getElementById('copy-cmd'),
+  detectStatus: document.getElementById('detect-status'),
+};
+
+let messages = [];
+let abortController = null;
+let bootPollTimer = null;
+
+// ───── compute the bash command to start ollama ─────
+// Page lives at file:///Volumes/<drive>/project-nomad/quick-chat.html (typical)
+// Sibling script is quick-chat.sh in same folder. Resolve the absolute path.
+function resolveBootCommand() {
+  let scriptPath = '';
+  if (location.protocol === 'file:') {
+    // pathname is URI-encoded; decode to get usable shell path
+    const p = decodeURIComponent(location.pathname).replace(/\/quick-chat\.html$/, '/quick-chat.sh');
+    scriptPath = p;
+  }
+  if (scriptPath) {
+    // Single-quote the path so spaces (e.g. "Project Nomad") are safe in shell
+    return `bash '${scriptPath}'`;
+  }
+  // Fallback if we can't resolve — generic
+  return `bash quick-chat.sh   # run from the drive's project-nomad/ folder`;
+}
+
+// ───── boot polling ─────
+async function pingOllama() {
+  try {
+    const r = await fetch(`${OLLAMA}/api/tags`, {cache: 'no-store'});
+    return r.ok;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function bootLoop() {
+  const up = await pingOllama();
+  if (up) {
+    // Ollama is alive — dismiss overlay, load models, ready to chat
+    els.bootOverlay.hidden = true;
+    if (bootPollTimer) { clearInterval(bootPollTimer); bootPollTimer = null; }
+    await loadModels();
+    await loadHistory();
+    els.input.focus();
+  } else {
+    // Still waiting — keep the overlay; show heartbeat
+    const dots = ['.', '..', '...'][Math.floor(Date.now() / 700) % 3];
+    els.detectStatus.textContent = `Watching for Ollama on port 11434${dots}`;
+  }
+}
+
+function showBoot() {
+  els.bootOverlay.hidden = false;
+  els.bootCmd.textContent = resolveBootCommand();
+  if (!bootPollTimer) bootPollTimer = setInterval(bootLoop, 2000);
+}
+
+// ───── copy-to-clipboard ─────
+els.copyCmd.addEventListener('click', async () => {
+  const text = els.bootCmd.textContent;
+  try {
+    await navigator.clipboard.writeText(text);
+    els.copyCmd.classList.add('copied');
+    els.copyCmd.textContent = 'Copied ✓';
+    setTimeout(() => {
+      els.copyCmd.classList.remove('copied');
+      els.copyCmd.textContent = 'Copy';
+    }, 1500);
+  } catch (e) {
+    // Fallback: select the text so user can ⌘C manually
+    const range = document.createRange();
+    range.selectNode(els.bootCmd);
+    getSelection().removeAllRanges();
+    getSelection().addRange(range);
+  }
+});
+
+// ───── model loading (called once Ollama is up) ─────
+async function loadModels() {
+  els.status.className = '';
+  els.status.textContent = 'connecting…';
+  try {
+    const r = await fetch(`${OLLAMA}/api/tags`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    els.model.innerHTML = '';
+    if (!data.models || data.models.length === 0) {
+      els.model.innerHTML = '<option>no models — pull one first</option>';
+      els.status.textContent = 'no models';
+      els.status.className = 'err';
+      return;
+    }
+    // Filter out embedding models — they don't support /api/chat (they're for
+    // vector embeddings used in RAG, not text generation). Same heuristic admin
+    // uses internally (OllamaService.getModels filters name.includes('embed')).
+    const chatModels = data.models.filter(m => !/embed|bge-/i.test(m.name));
+    const embedCount = data.models.length - chatModels.length;
+    if (chatModels.length === 0) {
+      els.model.innerHTML = '<option>only embedding models found — pull a chat model (e.g. llama3.1:8b)</option>';
+      els.status.textContent = 'no chat models';
+      els.status.className = 'err';
+      return;
+    }
+    // Sort smallest first among chat models (faster first-load), but prefer
+    // models 1 GB+ as the default since sub-GB chat models are rare and usually
+    // toy quants. Pick the smallest model >= 1 GB; fall back to smallest overall.
+    chatModels.sort((a, b) => (a.size || 0) - (b.size || 0));
+    const defaultModel = chatModels.find(m => (m.size || 0) >= 1e9) || chatModels[0];
+    chatModels.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m.name;
+      const sizeGB = (m.size / 1e9).toFixed(1);
+      opt.textContent = `${m.name}  (${sizeGB} GB)`;
+      if (m.name === defaultModel.name) opt.selected = true;
+      els.model.appendChild(opt);
+    });
+    els.model.disabled = false;
+    const summary = embedCount > 0
+      ? `${chatModels.length} chat${chatModels.length === 1 ? '' : 's'} (${embedCount} embedding hidden)`
+      : `${chatModels.length} model${chatModels.length === 1 ? '' : 's'}`;
+    els.status.textContent = `connected · ${summary}`;
+    els.status.className = 'ok';
+  } catch (e) {
+    els.model.innerHTML = '<option>offline</option>';
+    els.status.textContent = `offline · ${e.message}`;
+    els.status.className = 'err';
+  }
+}
+
+// ───── markdown-lite rendering ─────
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function renderMarkdown(text) {
+  let html = escapeHtml(text);
+  // fenced code blocks
+  html = html.replace(/```([a-z]*)\n([\s\S]*?)```/g, (_, lang, code) =>
+    `<pre><code>${code}</code></pre>`);
+  // inline code
+  html = html.replace(/`([^`\n]+?)`/g, '<code>$1</code>');
+  // bold
+  html = html.replace(/\*\*([^\*]+?)\*\*/g, '<strong>$1</strong>');
+  // italic
+  html = html.replace(/(?<![\*\w])\*([^\*\n]+?)\*(?![\*\w])/g, '<em>$1</em>');
+  return html;
+}
+
+// ───── message rendering ─────
+function appendMsg(role, content, meta) {
+  if (els.empty) { els.empty.remove(); els.empty = null; }
+  const div = document.createElement('div');
+  div.className = `msg ${role}`;
+  const who = role === 'user' ? 'You' : (meta?.model || 'Assistant');
+  div.innerHTML = `
+    <div class="who">${who}</div>
+    <div class="body">${role === 'assistant' ? renderMarkdown(content) : escapeHtml(content)}</div>
+    ${meta ? `<div class="meta">${meta.text || ''}</div>` : ''}
+  `;
+  els.chat.appendChild(div);
+  div.scrollIntoView({behavior:'smooth', block:'end'});
+  return div;
+}
+
+function setBusy(busy) {
+  els.send.hidden = busy;
+  els.stop.hidden = !busy;
+  els.input.disabled = busy;
+  els.model.disabled = busy;
+}
+
+// ───── send ─────
+async function send(promptOverride) {
+  const text = (promptOverride ?? els.input.value).trim();
+  if (!text) return;
+  els.input.value = '';
+  els.input.style.height = 'auto';
+
+  messages.push({role:'user', content:text});
+  appendMsg('user', text);
+  const assistantDiv = appendMsg('assistant', '');
+  const bodyEl = assistantDiv.querySelector('.body');
+  bodyEl.innerHTML = '<span class="typing"></span>';
+
+  const model = els.model.value;
+  let fullResponse = '';
+  let evalCount = 0, evalDuration = 0;
+  abortController = new AbortController();
+  setBusy(true);
+
+  try {
+    const r = await fetch(`${OLLAMA}/api/chat`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({model, messages, stream:true}),
+      signal: abortController.signal,
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+    const reader = r.body.getReader();
+    const dec = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      buffer += dec.decode(value, {stream:true});
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const obj = JSON.parse(line);
+        if (obj.message?.content) {
+          fullResponse += obj.message.content;
+          bodyEl.innerHTML = renderMarkdown(fullResponse) + '<span class="typing"></span>';
+          assistantDiv.scrollIntoView({block:'end'});
+        }
+        if (obj.eval_count) evalCount = obj.eval_count;
+        if (obj.eval_duration) evalDuration = obj.eval_duration;
+        if (obj.done) {
+          bodyEl.innerHTML = renderMarkdown(fullResponse);
+          if (evalCount && evalDuration) {
+            const tps = (evalCount / (evalDuration / 1e9)).toFixed(1);
+            assistantDiv.querySelector('.meta')?.remove();
+            const meta = document.createElement('div');
+            meta.className = 'meta';
+            meta.textContent = `${model} · ${tps} tok/s · ${evalCount} tokens`;
+            assistantDiv.appendChild(meta);
+          }
+        }
+      }
+    }
+    messages.push({role:'assistant', content: fullResponse});
+    saveHistory();
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      bodyEl.innerHTML = renderMarkdown(fullResponse) + '<div style="color:var(--soft);font-size:.8em;margin-top:.3rem">— stopped —</div>';
+      messages.push({role:'assistant', content: fullResponse});
+    } else {
+      bodyEl.innerHTML = `<span style="color:#b04030">Error: ${escapeHtml(e.message)}</span>`;
+    }
+  } finally {
+    abortController = null;
+    setBusy(false);
+    els.input.focus();
+  }
+}
+
+// ───── persistence ─────
+const KEY = 'nomad-quick-chat-history';
+function saveHistory() {
+  try { localStorage.setItem(KEY, JSON.stringify(messages.slice(-40))); } catch(e){}
+}
+function loadHistory() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(KEY) || '[]');
+    if (stored.length > 0) {
+      if (els.empty) { els.empty.remove(); els.empty = null; }
+      stored.forEach(m => appendMsg(m.role, m.content));
+      messages = stored;
+    }
+  } catch(e){}
+}
+function clearHistory() {
+  messages = [];
+  els.chat.innerHTML = '';
+  localStorage.removeItem(KEY);
+  location.reload();
+}
+
+// ───── wiring ─────
+els.input.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    if (!els.send.hidden) send();
+  }
+});
+els.input.addEventListener('input', () => {
+  els.input.style.height = 'auto';
+  els.input.style.height = Math.min(els.input.scrollHeight, 200) + 'px';
+});
+els.send.onclick = () => send();
+els.stop.onclick = () => abortController?.abort();
+els.clear.onclick = () => { if (confirm('Clear conversation?')) clearHistory(); };
+document.querySelectorAll('.ex').forEach(b => {
+  b.onclick = () => send(b.dataset.prompt);
+});
+
+// Initial: probe Ollama. If up, hide overlay and run normal init. If down,
+// show overlay and keep polling until it comes up.
+(async () => {
+  const up = await pingOllama();
+  if (up) {
+    els.bootOverlay.hidden = true;
+    await loadModels();
+    loadHistory();
+    els.input.focus();
+  } else {
+    showBoot();
+    // Render command immediately so user can see it/copy it
+    els.bootCmd.textContent = resolveBootCommand();
+  }
+})();
+</script>
+</body>
+</html>

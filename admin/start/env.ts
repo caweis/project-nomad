@@ -71,4 +71,20 @@ export default await Env.create(new URL('../', import.meta.url), {
   |----------------------------------------------------------
   */
   OLLAMA_HOST: Env.schema.string.optional(),
+
+  /*
+  |----------------------------------------------------------
+  | Apple Silicon chip / GPU model overrides (macOS host).
+  | Inside Docker, systeminformation cannot read the exact chip
+  | name from the host. The macOS installer probes the host with
+  | system_profiler SPHardwareDataType / SPDisplaysDataType and
+  | passes the result here so leaderboard rows and system-info
+  | UIs show real chip names ("Apple M3 Max") instead of generic
+  | "Apple Silicon (16-core)" placeholders.
+  | Example: APPLE_CHIP_MODEL=Apple M3 Max
+  |          APPLE_GPU_MODEL=Apple M3 Max (40-core GPU)
+  |----------------------------------------------------------
+  */
+  APPLE_CHIP_MODEL: Env.schema.string.optional(),
+  APPLE_GPU_MODEL: Env.schema.string.optional(),
 })
