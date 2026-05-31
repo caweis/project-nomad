@@ -3665,6 +3665,8 @@ cmd_models() {
       ;;
     pull)
       shift
+      _load_backend
+      [[ "$BACKEND" == "omlx" ]] && log "AI backend: oMLX (models pulled as MLX via the proxy on :11434)"
       ensure_ollama_path || die "ollama not found anywhere — run 'nomad install' first"
       if ! curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
         die "native Ollama not responding — run 'nomad reset-ollama'"
@@ -3683,6 +3685,19 @@ cmd_models() {
       else
         to_pull="$*"
         log "pulling: $to_pull"
+      fi
+      # oMLX backend: the ollama binary would bypass the proxy and hit native
+      # Ollama (which isn't the active chat backend). Route pulls through the
+      # proxy on :11434 instead so oMLX translates them to MLX format.
+      if [[ "$BACKEND" == "omlx" ]]; then
+        local m
+        for m in $to_pull; do
+          log "pulling (MLX) $m via proxy…"
+          curl -fsS -X POST http://127.0.0.1:11434/api/pull \
+            -H 'Content-Type: application/json' -d "{\"name\":\"$m\"}" \
+            --no-buffer || warn "pull failed for $m"
+        done
+        return 0
       fi
       local ok_count=0 fail_count=0
       for m in $to_pull; do
