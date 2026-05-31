@@ -1,5 +1,41 @@
 # oMLX On-Device Verification — Ship-Gate Checklist
 
+## ✅ Verified live on Apple Silicon — 2026-05-31 (omlx 0.3.12, macOS 26.5, arm64)
+
+The oMLX integration was exercised against a real running oMLX + proxy + embed
+Ollama on Apple-Silicon hardware. Confirmed working, with code corrected to match
+the real contract (commit `835cbc5`):
+
+- **Install:** `brew tap jundot/omlx && brew install omlx` succeeds; binary `omlx`,
+  `omlx serve` flags `--host/--port/--model-dir/--paged-ssd-cache-dir/--max-concurrent-requests`
+  all present (defaults 127.0.0.1:8000).
+- **Download API contract (corrected):** `POST /admin/api/hf/download {"repo_id":...}`
+  (not `/api/hf/download {"model_id":...}`); progress via `GET /admin/api/hf/tasks`
+  (`total_size`/`downloaded_size`). Single `:8000` for admin + inference (no `:8080`).
+  Requires `auth.skip_api_key_verification=true` — the installer now sets it in
+  `~/.omlx/settings.json` (oMLX is loopback-only).
+- **Proxy end-to-end (live):** `/api/tags` lists oMLX models; `/api/chat` translates
+  Ollama→oMLX and returns a coherent Ollama-shaped response; `/api/pull` drives the
+  real download and streams **real** NDJSON `total`/`completed` → `success`;
+  `/api/embeddings` routes to the embed Ollama and returns a **768-dim** vector
+  (= `nomic-embed-text` → matches Qdrant → **no reindex**, confirmed empirically).
+- **Python:** the proxy venv uses `/usr/bin/python3` (3.9.6); the vendored pinned
+  requirements build there, and the app imports cleanly (a PEP-604 type hint that
+  broke 3.9 was fixed).
+- **Loopback/reachability (resolved by construction):** the proxy now binds
+  `0.0.0.0:11434`, identical to the native Ollama agent the admin already reaches via
+  `host.docker.internal`. Same exposure as today's Ollama backend. oMLX (:8000) and
+  the embed Ollama (:11435) stay loopback.
+
+**Residual (deployment validation, not code correctness):** a full NOMAD-node test —
+OrbStack + the container admin stack + Wikipedia content — exercising chat + RAG
+*through the admin UI* end-to-end, and confirming the curated `model_map.json` repo
+names all resolve on HuggingFace (the mechanism + the `Llama-3.2` family are verified;
+the remaining mlx-community repo names follow the verified naming convention). Run this
+on an actual NOMAD deployment with content. The checklist below remains as the record.
+
+---
+
 `recommend_backend()` in `install/macos/nomad` returns **oMLX on eligible Macs**
 (Apple Silicon + macOS 15+) — the approved default. The install picker shows that as
 the recommended choice (the user can still type `ollama`), so most eligible users land

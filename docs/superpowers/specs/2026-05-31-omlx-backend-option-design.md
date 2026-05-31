@@ -10,8 +10,12 @@
 > `/api/show`, `/api/version`, and a 501 `/api/pull` (we *replace* the 501, not add);
 > it has a built-in `MODEL_MAPPING_FILE` so the Ollama→mlx map is a single JSON
 > source and the "parallel MLX tier table" is dropped (reuse `TIER_*`, DRY); oMLX
-> serves a single `:8000` (we target it, keep a `:8080` fallback probe). See the
-> plan's "Spec ↔ reality reconciliation" section.
+> serves a single `:8000`. See the plan's "Spec ↔ reality reconciliation" section.
+>
+> **Update (verified live on-device 2026-05-31, omlx 0.3.12):** the download API is
+> `POST /admin/api/hf/download {"repo_id":...}` with progress via
+> `GET /admin/api/hf/tasks` (needs `auth.skip_api_key_verification`); the proxy binds
+> `0.0.0.0:11434`. Code corrected (`835cbc5`); see the §Security + §Components notes.
 
 ---
 
@@ -118,13 +122,14 @@ The admin never knows which backend is live — it always talks to `:11434`.
 - **What we add** (the admin also calls these):
   - `POST /api/pull` → **route by model kind**: a chat/generation model maps to an
     mlx-community HF repo and drives oMLX's downloader; an embedding model
-    (`nomic-embed-text`) is pulled on the embed-only Ollama. The downloader target
-    is found by **probing both candidate ports** (`:8000` then `:8080`) for
-    `/api/hf/download` and caching whichever answers. Progress is reported as
-    **Ollama-style NDJSON** (`{status,total,completed}`); since `/api/hf/download`
-    may not stream, the bridge **polls `/v1/models` until the model appears and
-    emits synthetic progress** — works whether or not the download API streams, so
-    the Easy-Setup wizard's progress bar always advances.
+    (`nomic-embed-text`) is pulled on the embed-only Ollama. **Verified on-device
+    contract (omlx 0.3.12):** the proxy `POST`s `{"repo_id": "<repo>"}` to
+    `{oMLX}/admin/api/hf/download` (single `:8000` for admin + inference — no
+    `:8080`), then polls `{oMLX}/admin/api/hf/tasks` and maps each task's
+    `total_size`/`downloaded_size` to **real Ollama-style NDJSON**
+    (`{status,total,completed}`) until `status==completed` → `success` (or `error`).
+    The oMLX admin API requires `auth.skip_api_key_verification=true`, which the
+    installer sets in `~/.omlx/settings.json` (oMLX binds loopback only).
   - `GET /api/version` → synthesize a static version response.
   - `POST /api/show` → synthesize from `/v1/models` metadata (the admin uses it
     for model details/params).
@@ -170,13 +175,15 @@ The admin never knows which backend is live — it always talks to `:11434`.
   disk), so the Qdrant index stays valid across a switch either way.
 
 ## Security (Maxim 8)
-- oMLX and the proxy bind **127.0.0.1 only** (the admin reaches them via Docker's
-  `host.docker.internal`, which maps to the host loopback). No LAN exposure.
-  **On-device caveat:** this assumes the admin container can reach a loopback-bound
-  host service via `host.docker.internal` under OrbStack. The native Ollama agent binds
-  `0.0.0.0` — if loopback turns out unreachable from the container, the proxy + embed
-  Ollama must bind `0.0.0.0` too (same posture as today's Ollama), trading this
-  loopback-only improvement for reachability. Flagged as the top item in `VERIFY_ON_DEVICE.md`.
+- **Binding (settled on-device):** the **proxy binds `0.0.0.0:11434`** — identical to
+  the native Ollama agent the admin already reaches via `host.docker.internal`, so the
+  network exposure equals today's Ollama backend (no worse). **oMLX (`:8000`) and the
+  embed Ollama (`:11435`) bind `127.0.0.1` only** — they're reached solely by the proxy,
+  host-local. (The earlier "everything loopback" goal was dropped for `:11434` because
+  the container must reach it the same way it reaches Ollama.)
+- **oMLX open admin:** the installer sets `auth.skip_api_key_verification=true` so the
+  proxy can drive `/admin/api/hf/download` headlessly. Acceptable because oMLX binds
+  loopback only — the open admin is reachable solely by host-local processes.
 - No API key needed locally; if oMLX's `--api-key` is set, the proxy holds it
   host-side (never in the container/admin).
 - The `/api/pull` bridge only accepts model names it can map to mlx-community
@@ -216,10 +223,16 @@ The admin never knows which backend is live — it always talks to `:11434`.
 - **Embeddings:** **hybrid** — embeddings always run on native `nomic-embed-text`
   (embed-only Ollama on `:11435` under `omlx`), so the Qdrant index stays valid and
   no reindex is ever forced.
-- **Download port:** the proxy **probes both `:8000` and `:8080`** for
-  `/api/hf/download` and caches the answer.
-- **Pull progress:** the bridge uses a **polling fallback** (`/v1/models` until the
-  model appears, synthetic NDJSON) so it works whether or not the download API streams.
+- **Download port + API (verified on-device 2026-05-31, omlx 0.3.12):** single
+  `:8000` (admin + inference). Download = `POST /admin/api/hf/download {"repo_id":...}`;
+  progress = `GET /admin/api/hf/tasks` (`total_size`/`downloaded_size`). Admin API
+  requires `auth.skip_api_key_verification=true` (installer sets it; oMLX loopback-only).
+  The earlier `:8080`-probe / `{"model_id"}` / `/v1/models`-poll assumptions were
+  wrong and have been corrected in code (commit `835cbc5`).
+- **Pull progress:** the bridge maps the oMLX task's real byte counts to Ollama NDJSON
+  `total`/`completed`, so the Easy-Setup wizard bar advances with true progress.
+- **Proxy bind:** `0.0.0.0:11434` (matches native Ollama for container reachability;
+  same exposure as today's Ollama). oMLX + embed Ollama stay loopback.
 
 ## Still open (resolve in writing-plans / on-device)
 - **MLX `nomic-embed-text` equivalence:** confirm whether an MLX-converted

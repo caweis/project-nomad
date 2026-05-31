@@ -30,8 +30,8 @@ Requires Apple Silicon and macOS 15 (Sequoia) or later.
 .Pp
 Switching backends tears down every active AI LaunchAgent and kills any
 orphan inference processes before bringing up the target stack.
-The admin layer continues to reach inference at
-.Li 127.0.0.1:11434
+The admin layer (a container) continues to reach inference at
+.Li host.docker.internal:11434
 regardless of which backend is active.
 Models on disk are preserved both ways: MLX weights
 .Pq Pa ${NOMAD_DATA_ROOT}/mlx-models
@@ -55,11 +55,14 @@ Model weights are stored on the data drive under
 .Pa ${NOMAD_DATA_ROOT}/mlx-models .
 .It Ollama-compat proxy
 Listens on
-.Li 127.0.0.1:11434
-and translates the Ollama API into oMLX requests forwarded to
+.Li 0.0.0.0:11434
+\(em the same bind the native Ollama agent uses, so the admin container reaches it
+via
+.Li host.docker.internal:11434
+unchanged \(em and translates the Ollama API into oMLX requests forwarded to the
+loopback oMLX server on
 .Li :8000 .
-This is the address the admin talks to, so no admin configuration changes
-are required when switching backends.
+No admin configuration changes are required when switching backends.
 .It Embed-only Ollama
 Listens on
 .Li 127.0.0.1:11435
@@ -73,7 +76,7 @@ when switching.
 .El
 .Pp
 Under the plain Ollama backend, only native Ollama runs, listening on
-.Li 127.0.0.1:11434 .
+.Li 0.0.0.0:11434 .
 .Sh OPTIONS
 .Bl -tag -width Ds
 .It Cm show
