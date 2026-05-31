@@ -659,7 +659,7 @@ check_stack() {
     if curl -fsS --max-time 3 http://127.0.0.1:11435/api/tags >/dev/null 2>&1; then
       ok "embed-only Ollama on :11435"
     else
-      flag "🟡" "embed Ollama not responding on :11435" "RAG embeddings unavailable; check nomad-ollama-embed.err.log"
+      flag "🟡" "embed Ollama not responding on :11435" "RAG embeddings unavailable; check ~/Library/Logs/nomad-ollama-embed.err.log"
     fi
   else
     if curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
