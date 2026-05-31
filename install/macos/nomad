@@ -2433,21 +2433,22 @@ prompt_for_backend() {
     return
   fi
 
-  # Eligible, no flag: interactive pick defaulting to the recommendation.
+  # Eligible, no flag: numbered pick. Enter takes the recommended default, so the
+  # common path is a single keystroke. (This prompt only appears when the Mac is
+  # oMLX-eligible, in which case the recommendation is always oMLX.)
   local rec; rec="$(recommend_backend)"
   section "AI backend selection"
-  echo "  Detected: ${arch} on macOS $(sw_vers -productVersion 2>/dev/null) → Recommended backend: ${rec}"
+  echo "  Detected: ${arch} · macOS $(sw_vers -productVersion 2>/dev/null)"
   echo
-  echo "    oMLX   — Apple-MLX server: continuous batching + KV cache, faster on long RAG context"
-  echo "    Ollama — native Metal, the mature default"
+  echo "    1) oMLX    (recommended)  — Apple-MLX: continuous batching + KV cache, faster long-context RAG"
+  echo "    2) Ollama                 — native Metal, the mature default"
   echo
-  read -r -p "  Backend [${rec}] (type 'omlx' or 'ollama'): " choice
+  read -r -p "  Press Enter for oMLX, or 2 for Ollama: " choice
   choice="$(echo "$choice" | tr '[:upper:]' '[:lower:]' | xargs)"
   case "$choice" in
-    "")        BACKEND="$rec" ;;
-    omlx)      BACKEND="omlx" ;;
-    ollama)    BACKEND="ollama" ;;
-    *)         warn "didn't understand '$choice' — using recommended '$rec'"; BACKEND="$rec" ;;
+    ""|1|omlx)   BACKEND="omlx" ;;
+    2|ollama)    BACKEND="ollama" ;;
+    *)           warn "didn't understand '$choice' — using recommended ($rec)"; BACKEND="$rec" ;;
   esac
   log "AI backend: $BACKEND"
   echo
