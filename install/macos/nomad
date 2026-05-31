@@ -286,6 +286,13 @@ HOST_BRIDGE_LABEL="com.projectnomad.host-command-bridge"
 HOST_BRIDGE_PLIST="$HOME/Library/LaunchAgents/${HOST_BRIDGE_LABEL}.plist"
 HOST_BRIDGE_SCRIPT="$SECRETS_DIR/host-command-bridge.sh"
 
+OMLX_LABEL="com.projectnomad.omlx"
+OMLX_PLIST="$HOME/Library/LaunchAgents/${OMLX_LABEL}.plist"
+PROXY_LABEL="com.projectnomad.ollama-proxy"
+PROXY_PLIST="$HOME/Library/LaunchAgents/${PROXY_LABEL}.plist"
+EMBED_LABEL="com.projectnomad.ollama-embed"
+EMBED_PLIST="$HOME/Library/LaunchAgents/${EMBED_LABEL}.plist"
+
 # Model tiers — auto-selected from RAM, override with --tier or --models.
 # All names are confirmed-existing on ollama.com/library as of 2026.
 # Note: Llama 3.2 only ships 1b/3b (text); the 8b size lives in Llama 3.1.
@@ -1647,6 +1654,67 @@ Manual recovery:
     sleep 1
   done
   die "Ollama did not start — check ~/Library/Logs/nomad-ollama.err.log"
+}
+
+step_omlx_native() {
+  section "Native oMLX (Apple-MLX) on :8000"
+  local data_root; data_root="$(grep '^NOMAD_DATA_ROOT=' "$ENV_FILE" | cut -d= -f2-)"
+  local mlx_dir="$data_root/mlx-models"
+  local cache_dir="$data_root/mlx-kv-cache"
+  mkdir -p "$mlx_dir" "$cache_dir" "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
+
+  # Install oMLX (idempotent). 🔌 VERIFY ON DEVICE: confirm formula name post-tap.
+  if ! command -v omlx >/dev/null 2>&1; then
+    brew tap jundot/omlx https://github.com/jundot/omlx 2>/dev/null || true
+    brew install omlx || die "brew install omlx failed — see https://github.com/jundot/omlx"
+  fi
+  local omlx_bin; omlx_bin="$(command -v omlx)"
+
+  # Concurrency from RAM (oMLX default is 8); keep modest on small Macs.
+  local ram_gb; ram_gb=$(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 ))
+  local max_conc=8; [[ $ram_gb -lt 24 ]] && max_conc=4; [[ $ram_gb -lt 16 ]] && max_conc=2
+
+  cat > "$OMLX_PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>                 <string>${OMLX_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${omlx_bin}</string>
+    <string>serve</string>
+    <string>--model-dir</string>          <string>${mlx_dir}</string>
+    <string>--paged-ssd-cache-dir</string> <string>${cache_dir}</string>
+    <string>--max-concurrent-requests</string> <string>${max_conc}</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOST</key> <string>127.0.0.1</string>
+    <key>PORT</key> <string>8000</string>
+  </dict>
+  <key>RunAtLoad</key> <true/>
+  <key>KeepAlive</key>
+  <dict><key>SuccessfulExit</key> <false/></dict>
+  <key>ThrottleInterval</key> <integer>10</integer>
+  <key>ExitTimeOut</key>      <integer>30</integer>
+  <key>StandardOutPath</key>  <string>${HOME}/Library/Logs/nomad-omlx.out.log</string>
+  <key>StandardErrorPath</key> <string>${HOME}/Library/Logs/nomad-omlx.err.log</string>
+</dict>
+</plist>
+EOF
+
+  launchctl bootout "$LA_TARGET/$OMLX_LABEL" 2>/dev/null || true
+  local last_err=""
+  for attempt in 1 2 3; do
+    if launchctl bootstrap "$LA_TARGET" "$OMLX_PLIST" 2>/tmp/nomad-bootstrap.log; then
+      last_err=""; ok "oMLX LaunchAgent bootstrapped on :8000"; break
+    fi
+    last_err="$(cat /tmp/nomad-bootstrap.log)"
+    launchctl bootout "$LA_TARGET/$OMLX_LABEL" 2>/dev/null || true
+    sleep $((attempt * 2))
+  done
+  [[ -n "$last_err" ]] && die "oMLX bootstrap failed after 3 attempts: $last_err"
 }
 
 # Symlink ourselves into brew's bin dir so `nomad <cmd>` works without the
