@@ -19,7 +19,7 @@ On a fresh Apple Silicon Mac (M1 or later, macOS 14+), one command:
 curl -fsSL https://raw.githubusercontent.com/caweis/project-nomad/main/install/bootstrap.sh | bash
 ```
 
-It drops the `nomad` command bundle in `~/Applications/project-nomad`, then runs `nomad install`. The installer asks two things: where to keep your **content** — Wikipedia, AI models, maps (an external drive is the usual answer) — and which AI models to pull for your Mac's RAM. The code stays on the internal disk; the content lives wherever you point it, so the drive can be unplugged for travel and reconnected later.
+It drops the `nomad` command bundle in `~/Applications/project-nomad`, then runs `nomad install`. The installer asks two things: where to keep your **content** — Wikipedia, AI models, maps (an external drive is the usual answer) — and which AI models to pull for your Mac's RAM. The code stays on the internal disk; the content lives wherever you point it, so the drive can be unplugged for travel and reconnected later. On Apple Silicon running macOS 15 or later the installer also offers a choice of AI engine — oMLX (Apple's MLX runtime) or the native Ollama it uses elsewhere — and you can switch later with `nomad backend`.
 
 Homebrew, Xcode Command Line Tools, Rosetta, OrbStack, native Ollama, the container stack, the database, and the offline help library are all handled for you. It's idempotent — re-running repairs anything that broke.
 
@@ -46,6 +46,7 @@ Reachable from other devices on the same network. The data drive can be unplugge
 - ZIM downloader writes to a temp file and renames on completion, which prevents a half-downloaded library from crashing Kiwix.
 - Migrations and seeders run during install. There's a worker container so download jobs actually progress.
 - Updating and lifecycle are one command each from the Terminal (`nomad update`, `nomad upgrade`).
+- Optional oMLX (Apple MLX) backend, selectable at install or via `nomad backend`; the admin is unchanged because a local proxy speaks the Ollama API on its behalf.
 
 ## Updating
 
