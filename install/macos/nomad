@@ -339,6 +339,17 @@ auto_tier() {
   fi
 }
 
+# OS/arch detection with injectable test seams (NOMAD_TEST_OS / NOMAD_TEST_ARCH).
+# _nomad_os_major echoes the macOS major version as an integer (e.g. 15).
+_nomad_os_major() {
+  local ver="${NOMAD_TEST_OS:-$(sw_vers -productVersion 2>/dev/null)}"
+  echo "${ver%%.*}"
+}
+# _nomad_arch echoes the CPU arch (arm64 | x86_64).
+_nomad_arch() {
+  echo "${NOMAD_TEST_ARCH:-$(uname -m)}"
+}
+
 # Resolve a tier name to its model list. "auto" = auto_tier.
 resolve_tier_models() {
   local tier="${1:-auto}"
