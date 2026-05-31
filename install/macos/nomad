@@ -1659,6 +1659,7 @@ Manual recovery:
 step_omlx_native() {
   section "Native oMLX (Apple-MLX) on :8000"
   local data_root; data_root="$(grep '^NOMAD_DATA_ROOT=' "$ENV_FILE" | cut -d= -f2-)"
+  [[ -z "$data_root" ]] && die "NOMAD_DATA_ROOT not set in $ENV_FILE — run 'nomad install' (data-root step) first"
   local mlx_dir="$data_root/mlx-models"
   local cache_dir="$data_root/mlx-kv-cache"
   mkdir -p "$mlx_dir" "$cache_dir" "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
@@ -1703,6 +1704,7 @@ step_omlx_native() {
 </dict>
 </plist>
 EOF
+  chmod 644 "$OMLX_PLIST"
 
   launchctl bootout "$LA_TARGET/$OMLX_LABEL" 2>/dev/null || true
   local last_err=""
@@ -1711,10 +1713,20 @@ EOF
       last_err=""; ok "oMLX LaunchAgent bootstrapped on :8000"; break
     fi
     last_err="$(cat /tmp/nomad-bootstrap.log)"
+    warn "oMLX bootstrap attempt $attempt failed: $last_err"
     launchctl bootout "$LA_TARGET/$OMLX_LABEL" 2>/dev/null || true
     sleep $((attempt * 2))
   done
   [[ -n "$last_err" ]] && die "oMLX bootstrap failed after 3 attempts: $last_err"
+
+  local deadline=$(( $(date +%s) + 30 ))
+  while [[ $(date +%s) -lt $deadline ]]; do
+    if curl -fsS --max-time 2 http://127.0.0.1:8000/v1/models >/dev/null 2>&1; then
+      ok "oMLX responding on :8000"; return 0
+    fi
+    sleep 1
+  done
+  warn "oMLX bootstrapped but not yet answering on :8000 (it may still be starting/loading) — check ~/Library/Logs/nomad-omlx.err.log"
 }
 
 # Symlink ourselves into brew's bin dir so `nomad <cmd>` works without the
