@@ -2153,7 +2153,6 @@ warn_if_tier_above_auto() {
 # Non-interactive (BACKEND_ARG set) skips the prompt. Ineligible Macs are told
 # plainly that only Ollama is available (no prompt).
 prompt_for_backend() {
-  local rec; rec="$(resolve_backend_choice)"
   local arch major; arch="$(_nomad_arch)"; major="$(_nomad_os_major)"
 
   # Explicit flag: validate it, honor it, but hard-stop an impossible request.
@@ -2177,8 +2176,10 @@ prompt_for_backend() {
     return
   fi
 
+  # Eligible, no flag: interactive pick defaulting to the recommendation.
+  local rec; rec="$(recommend_backend)"
   section "AI backend selection"
-  echo "  Detected: $(_nomad_arch) on macOS $(sw_vers -productVersion 2>/dev/null) → Recommended backend: ${rec}"
+  echo "  Detected: ${arch} on macOS $(sw_vers -productVersion 2>/dev/null) → Recommended backend: ${rec}"
   echo
   echo "    oMLX   — Apple-MLX server: continuous batching + KV cache, faster on long RAG context"
   echo "    Ollama — native Metal, the mature default"
@@ -2192,6 +2193,7 @@ prompt_for_backend() {
     *)         warn "didn't understand '$choice' — using recommended '$rec'"; BACKEND="$rec" ;;
   esac
   log "AI backend: $BACKEND"
+  echo
 }
 
 # Pull the resolved tier — runs AFTER admin is up so the admin UI is usable
