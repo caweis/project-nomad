@@ -34,6 +34,16 @@ check "arm64+15 → omlx"   "$(NOMAD_TEST_ARCH=arm64  NOMAD_TEST_OS=15.5 recomme
 check "arm64+14 → ollama" "$(NOMAD_TEST_ARCH=arm64  NOMAD_TEST_OS=14.7 recommend_backend)" "ollama"
 check "intel+15 → ollama" "$(NOMAD_TEST_ARCH=x86_64 NOMAD_TEST_OS=15.5 recommend_backend)" "ollama"
 
+echo "== backend persisted in .env, with fallback =="
+load
+ENV_FILE="$SECRETS_DIR/.env"
+: > "$ENV_FILE"
+_load_backend; check "missing key → ollama fallback" "$BACKEND" "ollama"
+echo "NOMAD_AI_BACKEND=omlx" >> "$ENV_FILE"
+_load_backend; check "reads omlx from .env" "$BACKEND" "omlx"
+echo "NOMAD_AI_BACKEND=bogus" > "$ENV_FILE"
+_load_backend; check "invalid value → ollama fallback" "$BACKEND" "ollama"
+
 echo
 echo "RESULTS: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]]

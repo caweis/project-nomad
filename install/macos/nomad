@@ -363,6 +363,18 @@ recommend_backend() {
   if backend_eligible; then echo omlx; else echo ollama; fi
 }
 
+# Resolve the active backend into the global BACKEND. Reads NOMAD_AI_BACKEND from
+# the .env; anything other than a known backend falls back to ollama (covers old
+# .env files and typos). ENV_FILE is defined globally near SECRETS_DIR.
+_load_backend() {
+  local v=""
+  [[ -f "$ENV_FILE" ]] && v="$(grep '^NOMAD_AI_BACKEND=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true)"
+  case "$v" in
+    ollama|omlx) BACKEND="$v" ;;
+    *)           BACKEND="ollama" ;;
+  esac
+}
+
 # Resolve a tier name to its model list. "auto" = auto_tier.
 resolve_tier_models() {
   local tier="${1:-auto}"
@@ -1827,6 +1839,7 @@ APPLE_CHIP_MODEL=${apple_chip}
 APPLE_GPU_MODEL=${apple_gpu}
 HOST_PLATFORM=darwin
 NOMAD_BUNDLE_DIR=${HERE}
+NOMAD_AI_BACKEND=${BACKEND:-ollama}
 EOF
     chmod 600 "$ENV_FILE"
     ok "$ENV_FILE written (chmod 600)"
