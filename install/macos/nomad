@@ -3449,6 +3449,7 @@ cmd_install() {
   # front. Auto-skipped when --yes / --tier / --models / --no-models are on
   # the command line (intent already declared).
   prompt_for_models
+  prompt_for_backend        # sets BACKEND (ollama|omlx); written to .env by step_secrets
 
   # If the user picked (or kept) a tier larger than auto-detected, warn
   # explicitly about slowness/swap before committing — second chance to
@@ -3459,11 +3460,19 @@ cmd_install() {
   step_data_root "$DATA_ROOT_ARG"
   step_orbstack
   step_orbstack_tune_quiet  # auto-bump VM RAM to 80% of host (proportional, no prompt during install)
-  step_ollama_native
   step_self_install_to_path
   step_drop_desktop_tools            # symlink wipe-and-pave + userscript to ~/Desktop/Project Nomad/
   step_set_local_hostname            # set Mac's Bonjour name to 'nomad' so devices reach http://nomad.local
   step_secrets
+  # Runtime AI-backend install — omlx needs NOMAD_DATA_ROOT + NOMAD_BUNDLE_DIR
+  # from .env (written by step_secrets above), so this branch MUST stay after it.
+  if [[ "$BACKEND" == "omlx" ]]; then
+    step_omlx_native
+    step_ollama_embed       # embed-only Ollama on :11435 (chat-Ollama agent stays unloaded)
+    step_omlx_proxy         # proxy owns :11434
+  else
+    step_ollama_native      # today's behavior
+  fi
   step_compose_pull
   step_compose_up
   step_wait_admin
