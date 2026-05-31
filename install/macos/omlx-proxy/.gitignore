@@ -1,0 +1,7 @@
+# Python byproducts from running the proxy test suite
+__pycache__/
+*.pyc
+*.pyo
+# Proxy venv is created at $SECRETS_DIR at install time, never in-repo
+*-venv/
+.pytest_cache/
