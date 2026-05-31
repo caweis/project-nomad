@@ -1,0 +1,159 @@
+# Ollama vs oMLX — selectable AI backend — design
+
+**Date:** 2026-05-31
+**Branch:** `main`
+**Components:** `install/macos/nomad` (backend selection, oMLX + proxy setup, MLX tiers, backend-aware commands), a vendored Ollama-compat proxy, `install/macos/compose.yaml` (unchanged for the admin), docs/man.
+**Status:** Approved architecture — drafting spec for review.
+
+---
+
+## Problem
+
+NOMAD's AI runs on native Metal **Ollama** (LaunchAgent on :11434; the admin reaches
+it via `OLLAMA_HOST=http://host.docker.internal:11434` and the Ollama Node SDK).
+Some users want **oMLX** ([jundot/omlx](https://github.com/jundot/omlx), Apache-2.0) —
+an Apple-MLX inference server with continuous batching, two-tier RAM+SSD KV
+caching (big TTFT win on long RAG contexts), and native embeddings/rerank. The
+admin is **Ollama-API-locked**, and oMLX speaks **OpenAI/Anthropic** APIs, so a
+backend choice requires a translation layer.
+
+## Decision (researched)
+
+Offer a **install-time choice: Ollama (default) or oMLX**, with **full parity**
+(the admin behaves identically on either). Rather than fork the admin's AI layer,
+keep the admin unchanged and put a **proxy on :11434** that translates Ollama API →
+oMLX's OpenAI API. The proxy is adapted from [`eyalrot/ollama_openai`](https://github.com/eyalrot/ollama_openai)
+(MIT) — it already implements `/api/chat`, `/api/generate`, `/api/tags`,
+`/api/embeddings` with streaming; we add the Ollama-specific bits it lacks.
+
+Default stays **Ollama** (mature, lower macOS floor). oMLX is opt-in and requires
+**macOS 15+** (Sequoia) + Apple Silicon.
+
+## Architecture
+
+```
+admin (Docker, Ollama SDK)
+        │  OLLAMA_HOST=http://host.docker.internal:11434   (UNCHANGED)
+        ▼
+:11434  ┌─────────────────────────────────────────────┐
+        │  backend = ollama  → native Ollama (today)    │
+        │  backend = omlx    → ollama-compat proxy ─────┼──:8000──▶ oMLX (native MLX)
+        └─────────────────────────────────────────────┘            OpenAI API + /api/hf/download
+```
+
+`:11434` has exactly one owner at a time, decided by `NOMAD_AI_BACKEND`:
+- **ollama** → the `com.projectnomad.ollama` LaunchAgent (current behavior, untouched).
+- **omlx** → the `com.projectnomad.ollama-proxy` LaunchAgent (proxy on :11434) +
+  the `com.projectnomad.omlx` LaunchAgent (oMLX serving :8000). The native-Ollama
+  LaunchAgent is unloaded.
+
+The admin never knows which backend is live.
+
+## Components
+
+### 1. Backend selection — `NOMAD_AI_BACKEND`
+- `nomad install` prompts **Ollama (default) / oMLX**, recorded as
+  `NOMAD_AI_BACKEND=ollama|omlx` in `~/.config/project-nomad/.env`.
+- Non-interactive override: `nomad install --backend omlx` (and `--backend ollama`).
+- Choosing oMLX on macOS < 15 → hard stop with a clear message (don't half-install).
+
+### 2. oMLX setup (when `omlx`)
+- Install: `brew tap jundot/omlx https://github.com/jundot/omlx && brew install omlx`
+  (pin a version once verified). Requires Python 3.10+ (brew handles).
+- Model dir on the data drive: `$NOMAD_DATA_ROOT/mlx-models` (parallel to
+  `ollama-models`), so models live with the rest of the cold content and the
+  drive stays unpluggable.
+- LaunchAgent `com.projectnomad.omlx` runs `omlx serve --model-dir <…>/mlx-models
+  --port 8000` (+ `--paged-ssd-cache-dir`, `--max-concurrent-requests` tuned to
+  RAM like the Ollama env tuning). Loopback-bound (127.0.0.1:8000).
+
+### 3. Ollama-compat proxy (vendored, adapted)
+- Vendor `eyalrot/ollama_openai` (MIT) into `install/macos/omlx-proxy/` (pin
+  commit; keep its LICENSE). Run via a `com.projectnomad.ollama-proxy`
+  LaunchAgent: `uvicorn` on `127.0.0.1:11434`, `OPENAI_API_BASE_URL=http://127.0.0.1:8000/v1`.
+- **What the proxy already covers:** `/api/tags` (← `/v1/models`), `/api/chat`,
+  `/api/generate` (← `/v1/chat/completions`), `/api/embeddings` (← `/v1/embeddings`),
+  streaming included — i.e. all of the admin's *inference + listing* needs.
+- **What we add** (the admin also calls these):
+  - `POST /api/pull` → map the requested name (Ollama tag) to an mlx-community HF
+    repo, then drive oMLX's downloader: `POST http://127.0.0.1:<omlx-admin>/api/hf/download
+    {"model_id": "mlx-community/…"}`, and stream **Ollama-style NDJSON progress**
+    (`{status,total,completed}`) back to the admin so the Easy-Setup wizard's
+    progress bar works.
+  - `GET /api/version` → synthesize a static version response.
+  - `POST /api/show` → synthesize from `/v1/models` metadata (the admin uses it
+    for model details/params).
+
+### 4. Ollama-tag → mlx-community name mapping
+- A curated map for the tier models (e.g. `llama3.1:8b` →
+  `mlx-community/Meta-Llama-3.1-8B-Instruct-4bit`, `nomic-embed-text` →
+  an MLX embedding repo, etc.) plus a heuristic fallback (`<name>:<tag>` →
+  search `mlx-community/<Name>-<size>-4bit`). Lives next to the tier map.
+
+### 5. MLX model tiers
+- A parallel tier→models table (mlx-community repos) mirroring `resolve_tier_models`,
+  since oMLX uses MLX-format models, not Ollama GGUF tags. Pre-pulled at install
+  via oMLX's download API so chat + RAG work out of the box.
+
+### 6. Backend-aware `nomad` commands
+- `nomad check` / status: report the active backend + the right service health
+  (Ollama :11434 vs proxy :11434 + oMLX :8000).
+- `nomad reset-ollama`: backend-aware — for `omlx`, reset the proxy + oMLX
+  LaunchAgents (and keep the wedged-drive recovery logic, now applied to the
+  mlx-models dir).
+- `nomad backend [ollama|omlx]`: switch an existing install — flip
+  `NOMAD_AI_BACKEND`, load the target LaunchAgents, unload the other, ensure the
+  target's models, re-point nothing in the admin (still :11434).
+- `nomad models`: backend-aware (Ollama tiers vs MLX tiers).
+
+### Mutual exclusivity & data
+- Only one thing binds :11434. The backend switch loads/unloads agents
+  accordingly. oMLX models live at `$NOMAD_DATA_ROOT/mlx-models`; Ollama models
+  stay at `$NOMAD_DATA_ROOT/ollama-models` — both can coexist on disk so a switch
+  back doesn't re-download.
+
+## Security (Maxim 8)
+- oMLX and the proxy bind **127.0.0.1 only** (the admin reaches them via Docker's
+  `host.docker.internal`, which maps to the host loopback). No LAN exposure.
+- No API key needed locally; if oMLX's `--api-key` is set, the proxy holds it
+  host-side (never in the container/admin).
+- The `/api/pull` bridge only accepts model names it can map to mlx-community
+  repos (allow-listed prefixes) — no arbitrary URL/path passed to the downloader.
+
+## Testing
+- **Unit (sourceable helpers in `nomad`):** backend resolver (`NOMAD_AI_BACKEND`
+  precedence), MLX tier resolver, Ollama-tag→MLX-repo mapper, macOS-15 gate.
+- **Proxy:** a local test that, with oMLX running, hits the proxy's `/api/tags`,
+  `/api/chat` (stream), `/api/embeddings`, and `/api/pull` and checks Ollama-shaped
+  responses. (Runs on-device — needs oMLX.)
+- **Parity check:** with `NOMAD_AI_BACKEND=omlx`, the admin's chat, Easy-Setup
+  model pull, and RAG/Wikipedia query all work unchanged.
+- **Regression:** Ollama path (default) unchanged; existing suites green.
+- **On-device (flagged for Chris):** full oMLX install on a macOS 15 Apple-Silicon
+  Mac; chat + RAG + wizard-pull; `nomad backend ollama` round-trip.
+
+## Files touched
+- **Modify** `install/macos/nomad`: backend selection + `.env` key; `step_omlx_native`
+  + `step_omlx_proxy` (LaunchAgents); MLX tier map + name map; macOS-15 gate;
+  backend-aware `check`/`reset-ollama`/`models`; new `cmd_backend`; help/usage.
+- **Create** `install/macos/omlx-proxy/` (vendored proxy + our `/api/pull`,
+  `/api/show`, `/api/version` additions + LICENSE + a pinned-version note).
+- **Create** `install/macos/man/nomad-backend.1`; update `nomad.1` overview, README.
+- **Unchanged:** `install/macos/compose.yaml` (admin still `:11434`).
+
+## Open implementation questions (resolve in writing-plans / on-device)
+- **oMLX admin/download port:** docs show the inference server on `:8000` but the
+  download API as `:8080/api/hf/download`. Confirm whether `omlx serve` exposes
+  both on one port or two, and set the proxy's download target accordingly.
+- **Pull progress shape:** does `/api/hf/download` stream progress (so we can map
+  to Ollama NDJSON), or is it fire-and-forget (then the proxy polls `/v1/models`
+  until the model appears and emits synthetic progress)? Determines the bridge.
+- **Embedding model on MLX:** confirm an mlx-community embedding model that the
+  admin's RAG (nomic-embed-text today) maps to, and that oMLX's `/v1/embeddings`
+  dimension matches what Qdrant expects (or document a reindex).
+- **Proxy runtime:** vendor as a pinned git subtree/copy vs `pip install
+  ollama-openai-proxy` + our patch — decide based on how cleanly we can add
+  `/api/pull` (favor a small vendored copy we control).
+- **`brew install omlx` footprint** + whether `brew services` or our own
+  LaunchAgent is cleaner alongside the existing `com.projectnomad.*` pattern
+  (lean to our LaunchAgent for consistency).
