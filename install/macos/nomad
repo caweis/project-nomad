@@ -1498,11 +1498,10 @@ step_ollama_native() {
   # The LaunchAgent runs this wrapper (not ollama directly). The wrapper
   # resolves OLLAMA_MODELS at runtime so renamed/remounted drives don't break
   # the daemon. Falls back to ~/.ollama/models if the drive is unplugged.
-  # mkdir is needed because step_ollama_native runs BEFORE any other step
-  # creates $SECRETS_DIR — on a fresh Mac (no prior nomad install) the
-  # ~/.config/project-nomad directory doesn't exist yet, so the
-  # `cat > "$LAUNCHER"` redirection below fails with "No such file or
-  # directory." Caught when testing on a clean MacBook Air 2026-05-11.
+  # Ensure $SECRETS_DIR exists before the `cat > "$LAUNCHER"` redirection — on a
+  # fresh Mac the ~/.config/project-nomad directory may not exist yet, which would
+  # make the redirect fail with "No such file or directory." Idempotent (step_secrets
+  # also creates it). Caught when testing on a clean MacBook Air 2026-05-11.
   mkdir -p "$SECRETS_DIR" && chmod 700 "$SECRETS_DIR"
   local LAUNCHER="$SECRETS_DIR/ollama-launcher.sh"
   cat > "$LAUNCHER" <<LAUNCH_EOF
