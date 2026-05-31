@@ -1732,9 +1732,16 @@ EOF
 step_ollama_embed() {
   section "Embed-only Ollama on :11435 (hybrid embeddings for oMLX)"
   local ollama_bin; ollama_bin="$(command -v ollama)" || die "ollama not found — install step must run first"
-  local data_root; data_root="$(grep '^NOMAD_DATA_ROOT=' "$ENV_FILE" | cut -d= -f2-)"
-  [[ -z "$data_root" ]] && die "NOMAD_DATA_ROOT not set in $ENV_FILE"
+  # Embed model lives on the internal disk so RAG embeddings survive a data-drive unplug; vectors are bit-identical (same weights regardless of disk).
+  mkdir -p "$SECRETS_DIR/embed-models"
   mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
+
+  # I2: pre-check :11435 — boot out any stale embed agent before writing new plist
+  if lsof -nP -iTCP:11435 -sTCP:LISTEN >/dev/null 2>&1; then
+    warn ":11435 already in use — booting out any stale embed agent"
+    launchctl bootout "$LA_TARGET/$EMBED_LABEL" 2>/dev/null || true
+  fi
+
   cat > "$EMBED_PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -1746,7 +1753,7 @@ step_ollama_embed() {
   <key>EnvironmentVariables</key>
   <dict>
     <key>OLLAMA_HOST</key>   <string>127.0.0.1:11435</string>
-    <key>OLLAMA_MODELS</key> <string>${data_root}/ollama-models</string>
+    <key>OLLAMA_MODELS</key> <string>${SECRETS_DIR}/embed-models</string>
     <key>OLLAMA_KEEP_ALIVE</key> <string>24h</string>
   </dict>
   <key>RunAtLoad</key> <true/>
@@ -1759,27 +1766,47 @@ step_ollama_embed() {
 </plist>
 EOF
   chmod 644 "$EMBED_PLIST"
+
   launchctl bootout "$LA_TARGET/$EMBED_LABEL" 2>/dev/null || true
-  launchctl bootstrap "$LA_TARGET" "$EMBED_PLIST" 2>/dev/null || die "embed-Ollama bootstrap failed"
-  ok "embed-only Ollama on :11435"
-  # Ensure the embedding model exists on this instance (shared models dir, so it
-  # may already be present from the chat side — pull is then a fast no-op).
-  OLLAMA_HOST=127.0.0.1:11435 "$ollama_bin" pull nomic-embed-text >/dev/null 2>&1 || \
+  local last_err=""
+  for attempt in 1 2 3; do
+    if launchctl bootstrap "$LA_TARGET" "$EMBED_PLIST" 2>/tmp/nomad-bootstrap.log; then
+      last_err=""; ok "embed-only Ollama on :11435"; break
+    fi
+    last_err="$(cat /tmp/nomad-bootstrap.log)"
+    warn "embed-Ollama bootstrap attempt $attempt failed: $last_err"
+    launchctl bootout "$LA_TARGET/$EMBED_LABEL" 2>/dev/null || true
+    sleep $((attempt * 2))
+  done
+  [[ -n "$last_err" ]] && die "embed-Ollama bootstrap failed after 3 attempts: $last_err"
+
+  # Ensure the embedding model exists on this instance (internal disk, so pull
+  # is always local — fast no-op if already present).
+  OLLAMA_HOST=127.0.0.1:11435 OLLAMA_MODELS="$SECRETS_DIR/embed-models" "$ollama_bin" pull nomic-embed-text >/dev/null 2>&1 || \
     warn "could not pre-pull nomic-embed-text on embed Ollama — RAG will pull on first use"
 }
 
 step_omlx_proxy() {
   section "Ollama-compat proxy on :11434 → oMLX :8000"
   local bundle; bundle="$(grep '^NOMAD_BUNDLE_DIR=' "$ENV_FILE" | cut -d= -f2-)"
-  [[ -z "$bundle" ]] && die "NOMAD_BUNDLE_DIR not set in $ENV_FILE"
+  [[ -z "$bundle" ]] && die "NOMAD_BUNDLE_DIR not set in $ENV_FILE — reinstall to record it"
   local proxy_dir="$bundle/install/macos/omlx-proxy"
   [[ -d "$proxy_dir/vendor" ]] || die "proxy not vendored at $proxy_dir/vendor (Part B not installed)"
+
+  # I3: ensure SECRETS_DIR exists with correct permissions before creating venv inside it.
+  mkdir -p "$SECRETS_DIR" && chmod 700 "$SECRETS_DIR"
 
   # Isolated venv next to the secrets dir (not on the data drive).
   local venv="$SECRETS_DIR/omlx-proxy-venv"
   if [[ ! -x "$venv/bin/uvicorn" ]]; then
     /usr/bin/python3 -m venv "$venv" || die "python3 venv creation failed"
     "$venv/bin/pip" install --quiet -r "$proxy_dir/vendor/requirements.txt" || die "proxy deps install failed"
+  fi
+
+  # I2: pre-check :11434 — boot out any stale proxy agent before writing new plist
+  if lsof -nP -iTCP:11434 -sTCP:LISTEN >/dev/null 2>&1; then
+    warn ":11434 already in use — booting out any stale proxy agent"
+    launchctl bootout "$LA_TARGET/$PROXY_LABEL" 2>/dev/null || true
   fi
 
   cat > "$PROXY_PLIST" <<EOF
@@ -1816,9 +1843,19 @@ step_omlx_proxy() {
 </plist>
 EOF
   chmod 644 "$PROXY_PLIST"
+
   launchctl bootout "$LA_TARGET/$PROXY_LABEL" 2>/dev/null || true
-  launchctl bootstrap "$LA_TARGET" "$PROXY_PLIST" 2>/dev/null || die "proxy bootstrap failed"
-  ok "proxy bootstrapped on :11434"
+  local last_err=""
+  for attempt in 1 2 3; do
+    if launchctl bootstrap "$LA_TARGET" "$PROXY_PLIST" 2>/tmp/nomad-bootstrap.log; then
+      last_err=""; ok "proxy bootstrapped on :11434"; break
+    fi
+    last_err="$(cat /tmp/nomad-bootstrap.log)"
+    warn "proxy bootstrap attempt $attempt failed: $last_err"
+    launchctl bootout "$LA_TARGET/$PROXY_LABEL" 2>/dev/null || true
+    sleep $((attempt * 2))
+  done
+  [[ -n "$last_err" ]] && die "proxy bootstrap failed after 3 attempts: $last_err"
 }
 
 # Symlink ourselves into brew's bin dir so `nomad <cmd>` works without the
