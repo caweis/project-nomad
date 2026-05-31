@@ -47,3 +47,15 @@ async def test_embedding_pull_is_noop_success(monkeypatch):
     monkeypatch.setattr(nomad_pull, "_is_embedding", lambda name: True)
     lines = [json.loads(l) async for l in nomad_pull._pull_stream("nomic-embed-text")]
     assert lines[-1]["status"] == "success"
+
+
+@pytest.mark.asyncio
+async def test_chat_pull_emits_error_ndjson_when_download_unreachable(monkeypatch):
+    async def boom(client, repo):
+        raise RuntimeError("oMLX download API unreachable on :8000 or :8080")
+    monkeypatch.setattr(nomad_pull, "_resolve_mlx_repo", lambda name: "mlx-community/Foo-4bit")
+    monkeypatch.setattr(nomad_pull, "_is_embedding", lambda name: False)
+    monkeypatch.setattr(nomad_pull, "_hf_download", boom)
+    lines = [json.loads(l) async for l in nomad_pull._pull_stream("foo:7b")]
+    assert lines[-1]["status"] == "error"
+    assert "unreachable" in lines[-1]["error"]

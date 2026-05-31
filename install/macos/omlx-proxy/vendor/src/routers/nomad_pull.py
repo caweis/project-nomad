@@ -45,7 +45,7 @@ async def _hf_download(client: httpx.AsyncClient, repo: str) -> str:
     for base in (_OMLX, _OMLX_FALLBACK):
         try:
             r = await client.post(f"{base}/api/hf/download", json={"model_id": repo})
-            if r.status_code < 500:
+            if r.status_code < 400 or r.status_code == 409:
                 return base
         except Exception:
             continue
@@ -65,7 +65,7 @@ async def _pull_stream(name: str):
     """Yield Ollama-style NDJSON strings for pulling `name`."""
     if _is_embedding(name):
         # Embedding model lives on the embed-only Ollama; forward its pull stream.
-        async with httpx.AsyncClient(timeout=None) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(connect=5.0, read=None, write=10.0, pool=5.0)) as client:
             yield _ndjson({"status": f"pulling {name} (embedding, via embed Ollama)"})
             try:
                 async with client.stream("POST", f"{_EMBED}/api/pull",
@@ -80,8 +80,12 @@ async def _pull_stream(name: str):
 
     repo = _resolve_mlx_repo(name)
     yield _ndjson({"status": "pulling manifest"})
-    async with httpx.AsyncClient(timeout=None) as client:
-        base = await _hf_download(client, repo)
+    async with httpx.AsyncClient(timeout=httpx.Timeout(connect=5.0, read=None, write=10.0, pool=5.0)) as client:
+        try:
+            base = await _hf_download(client, repo)
+        except RuntimeError as exc:
+            yield _ndjson({"status": "error", "error": str(exc)})
+            return
         yield _ndjson({"status": "downloading", "digest": repo})
         for _ in range(_POLL_MAX):
             if await _model_present(client, base, repo):
