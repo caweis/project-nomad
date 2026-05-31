@@ -2149,6 +2149,51 @@ warn_if_tier_above_auto() {
   fi
 }
 
+# Interactive AI-backend picker — mirrors prompt_for_models. Sets BACKEND.
+# Non-interactive (BACKEND_ARG set) skips the prompt. Ineligible Macs are told
+# plainly that only Ollama is available (no prompt).
+prompt_for_backend() {
+  local rec; rec="$(resolve_backend_choice)"
+  local arch major; arch="$(_nomad_arch)"; major="$(_nomad_os_major)"
+
+  # Explicit flag: validate it, honor it, but hard-stop an impossible request.
+  if [[ -n "${BACKEND_ARG:-}" ]]; then
+    case "$BACKEND_ARG" in
+      ollama|omlx) ;;
+      *) die "unknown --backend '$BACKEND_ARG' (use 'omlx' or 'ollama')" ;;
+    esac
+    if [[ "$BACKEND_ARG" == "omlx" ]] && ! backend_eligible; then
+      die "oMLX requires Apple Silicon + macOS 15+, this Mac is $arch / macOS ${major}. Re-run with --backend ollama."
+    fi
+    BACKEND="$BACKEND_ARG"
+    log "AI backend (from --backend): $BACKEND"
+    return
+  fi
+
+  # Ineligible hardware: Ollama only, no prompt.
+  if ! backend_eligible; then
+    BACKEND="ollama"
+    log "AI backend: Ollama (oMLX needs Apple Silicon + macOS 15+; this Mac is $arch / macOS ${major})"
+    return
+  fi
+
+  section "AI backend selection"
+  echo "  Detected: $(_nomad_arch) on macOS $(sw_vers -productVersion 2>/dev/null) → Recommended backend: ${rec}"
+  echo
+  echo "    oMLX   — Apple-MLX server: continuous batching + KV cache, faster on long RAG context"
+  echo "    Ollama — native Metal, the mature default"
+  echo
+  read -r -p "  Backend [${rec}] (type 'omlx' or 'ollama'): " choice
+  choice="$(echo "$choice" | tr '[:upper:]' '[:lower:]' | xargs)"
+  case "$choice" in
+    "")        BACKEND="$rec" ;;
+    omlx)      BACKEND="omlx" ;;
+    ollama)    BACKEND="ollama" ;;
+    *)         warn "didn't understand '$choice' — using recommended '$rec'"; BACKEND="$rec" ;;
+  esac
+  log "AI backend: $BACKEND"
+}
+
 # Pull the resolved tier — runs AFTER admin is up so the admin UI is usable
 # while models stream in. Each model pulled via the Ollama API so we render
 # our own counter (always visible, works when piped).
@@ -5176,7 +5221,7 @@ CMD="${1:-help}"
 [[ $# -gt 0 ]] && shift
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --backend)    BACKEND_ARG="$2"; shift 2 ;;
+    --backend)    [[ -n "${2:-}" ]] || die "--backend needs a value (omlx|ollama)"; BACKEND_ARG="$2"; shift 2 ;;
     --data-root)  DATA_ROOT_ARG="$2"; shift 2 ;;
     --tier)       TIER="$2"; TIER_EXPLICIT=1; shift 2 ;;
     --models)     MODELS="$2"; MODELS_EXPLICIT=1; shift 2 ;;
