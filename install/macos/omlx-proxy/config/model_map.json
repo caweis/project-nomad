@@ -16,7 +16,7 @@
   "deepseek-r1:32b": "mlx-community/DeepSeek-R1-Distill-Qwen-32B-4bit",
   "qwen2.5:72b": "mlx-community/Qwen2.5-72B-Instruct-4bit",
   "phi4:14b": "mlx-community/phi-4-4bit",
-  "deepseek-r1:70b": "mlx-community/DeepSeek-R1-Zero-Llama-70B-4bit",
+  "deepseek-r1:70b": "mlx-community/DeepSeek-R1-Distill-Llama-70B-4bit",
   "nomic-embed-text": "nomic-embed-text",
   "mxbai-embed-large": "mxbai-embed-large"
 }
