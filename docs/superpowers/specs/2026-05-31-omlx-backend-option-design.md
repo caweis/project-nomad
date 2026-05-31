@@ -160,9 +160,11 @@ The admin never knows which backend is live — it always talks to `:11434`.
   contention.
 - oMLX (chat) models live at `$NOMAD_DATA_ROOT/mlx-models`; Ollama models stay at
   `$NOMAD_DATA_ROOT/ollama-models` — both coexist on disk so a switch back doesn't
-  re-download. The `nomic-embed-text` embedding model stays in `ollama-models` and
-  is used in **both** backends, which is also why the Qdrant index stays valid
-  across a switch.
+  re-download. **Implementation refinement:** the embed-only Ollama keeps
+  `nomic-embed-text` on the **internal disk** (`$SECRETS_DIR/embed-models`), not on
+  the data drive, so RAG embeddings survive a data-drive unplug. Vectors are
+  bit-identical to the Ollama-backend embeddings (same model weights, independent of
+  disk), so the Qdrant index stays valid across a switch either way.
 
 ## Security (Maxim 8)
 - oMLX and the proxy bind **127.0.0.1 only** (the admin reaches them via Docker's
