@@ -1857,8 +1857,10 @@ step_omlx_proxy() {
   section "Ollama-compat proxy on :11434 → oMLX :8000"
   local bundle; bundle="$(grep '^NOMAD_BUNDLE_DIR=' "$ENV_FILE" | cut -d= -f2-)"
   [[ -z "$bundle" ]] && die "NOMAD_BUNDLE_DIR not set in $ENV_FILE — reinstall to record it"
-  local proxy_dir="$bundle/install/macos/omlx-proxy"
-  [[ -d "$proxy_dir/vendor" ]] || die "proxy not vendored at $proxy_dir/vendor (Part B not installed)"
+  # NOMAD_BUNDLE_DIR ($bundle) is the dir that holds the nomad script itself
+  # (install/macos), so omlx-proxy is a sibling — NOT under another install/macos.
+  local proxy_dir="$bundle/omlx-proxy"
+  [[ -d "$proxy_dir/vendor" ]] || die "proxy not vendored at $proxy_dir/vendor — your bundle is stale; run 'nomad update' (or re-bootstrap) to fetch the full latest bundle"
 
   # I3: ensure SECRETS_DIR exists with correct permissions before creating venv inside it.
   mkdir -p "$SECRETS_DIR" && chmod 700 "$SECRETS_DIR"
