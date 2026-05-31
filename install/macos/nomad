@@ -6,9 +6,10 @@
 #
 # Usage:
 #   bash nomad install [--data-root PATH] [--tier auto|tiny|small|medium|large|xl|dreamy]
-#                      [--models "names..."] [--no-models] [--yes]
+#                      [--models "names..."] [--no-models] [--yes] [--backend ollama|omlx]
 #   bash nomad check   [system|stack|install|all]   # default: all (writes log)
 #                                            # install = pre-flight inventory
+#   bash nomad backend [show|ollama|omlx]            # show or switch the AI backend
 #   bash nomad up
 #   bash nomad down
 #   bash nomad restart [SERVICE]             # default: admin
@@ -4256,7 +4257,8 @@ cmd_uninstall() {
   fi
 
   # 3. Bootout LaunchAgents + kill any orphan ollama
-  for label in "$LA_LABEL" "$PATCHER_LABEL" "$KIWIX_SELF_HEAL_LABEL" "$BONJOUR_LABEL" "$HOST_BRIDGE_LABEL"; do
+  for label in "$LA_LABEL" "$PATCHER_LABEL" "$KIWIX_SELF_HEAL_LABEL" "$BONJOUR_LABEL" "$HOST_BRIDGE_LABEL" \
+               "$OMLX_LABEL" "$PROXY_LABEL" "$EMBED_LABEL"; do
     if launchctl print "$LA_TARGET/$label" >/dev/null 2>&1; then
       launchctl bootout "$LA_TARGET/$label" 2>/dev/null || true
       sleep 1
@@ -4264,12 +4266,18 @@ cmd_uninstall() {
   done
   pkill -f 'ollama serve' 2>/dev/null || true
   pkill -f 'dns-sd -R NOMAD Command Center' 2>/dev/null || true
-  for plist in "$LA_PLIST" "$PATCHER_PLIST" "$KIWIX_SELF_HEAL_PLIST" "$BONJOUR_PLIST" "$HOST_BRIDGE_PLIST"; do
+  for plist in "$LA_PLIST" "$PATCHER_PLIST" "$KIWIX_SELF_HEAL_PLIST" "$BONJOUR_PLIST" "$HOST_BRIDGE_PLIST" \
+               "$OMLX_PLIST" "$PROXY_PLIST" "$EMBED_PLIST"; do
     [[ -f "$plist" ]] && rm -f "$plist" && ok "removed $plist"
   done
   for script in "$PATCHER_SCRIPT" "$KIWIX_SELF_HEAL_SCRIPT" "$HOST_BRIDGE_SCRIPT"; do
     [[ -f "$script" ]] && rm -f "$script"
   done
+  # oMLX-stack generated artifacts: proxy venv + embed model cache
+  local _omlx_venv="$SECRETS_DIR/omlx-proxy-venv"
+  local _embed_models="$SECRETS_DIR/embed-models"
+  [[ -d "$_omlx_venv" ]]    && rm -rf "$_omlx_venv"    && ok "removed omlx-proxy-venv"
+  [[ -d "$_embed_models" ]] && rm -rf "$_embed_models" && ok "removed embed-models cache"
 
   # 4. Capture state-root path before we remove .env
   local state_root=""
@@ -5628,7 +5636,7 @@ case "$CMD" in
   install-field-desk)   cmd_install_field_desk "${EXTRA_ARGS[@]}" ;;
   uninstall-field-desk) cmd_uninstall_field_desk ;;
   help|--help|-h)
-    sed -n '2,61p' "$0" | sed 's/^# //; s/^#//'
+    sed -n '2,62p' "$0" | sed 's/^# //; s/^#//'
     echo
     echo "Full reference: man nomad   (per-command: man nomad-<command>, e.g. man nomad-zim)"
     ;;

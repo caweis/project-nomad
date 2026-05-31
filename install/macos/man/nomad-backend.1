@@ -1,0 +1,57 @@
+.Dd 2026-05-31
+.Dt NOMAD-BACKEND 1
+.Os
+.Sh NAME
+.Nm nomad-backend
+.Nd show or switch the AI inference backend
+.Sh SYNOPSIS
+.Nm nomad backend
+.Op Cm show | ollama | omlx
+.Sh DESCRIPTION
+.Nm
+inspects or changes the AI inference backend used by the NOMAD stack.
+.Pp
+NOMAD supports two backends:
+.Cm ollama
+runs Ollama natively and works on all supported Macs, and
+.Cm omlx
+runs Apple's MLX-based inference stack, which delivers higher throughput
+on Apple Silicon (M-series) running macOS 15 or later.
+The active backend is stored as
+.Ev NOMAD_AI_BACKEND
+in the secrets file and is read at startup.
+.Pp
+Switching backends tears down every active AI LaunchAgent and kills any
+orphan inference processes before bringing up the target stack.
+Admin continues to reach inference at
+.Li 127.0.0.1:11434
+regardless of which backend is active; on-disk models are preserved.
+.Sh OPTIONS
+.Bl -tag -width Ds
+.It Cm show
+Print the currently active backend.
+This is the default when no argument is given.
+.It Cm ollama
+Switch to the Ollama backend.
+Works on any supported Mac (Intel or Apple Silicon, macOS 14+).
+.It Cm omlx
+Switch to the oMLX (Apple MLX) backend.
+Requires Apple Silicon and macOS 15 or later; the command aborts with
+an error if the host does not meet these requirements.
+.El
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic nomad backend
+Print the active backend (e.g.\&
+.Sq omlx
+or
+.Sq ollama ) .
+.It Ic nomad backend omlx
+Switch to the oMLX backend on an eligible Apple Silicon Mac.
+.It Ic nomad backend ollama
+Switch back to the Ollama backend.
+.El
+.Sh SEE ALSO
+.Xr nomad 1 ,
+.Xr nomad-install 1 ,
+.Xr nomad-check 1
