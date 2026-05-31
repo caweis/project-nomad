@@ -351,6 +351,17 @@ _nomad_arch() {
   echo "${NOMAD_TEST_ARCH:-$(uname -m)}"
 }
 
+# oMLX needs Apple Silicon + macOS 15 (Sequoia). Returns 0 if eligible.
+backend_eligible() {
+  local arch major
+  arch="$(_nomad_arch)"; major="$(_nomad_os_major)"
+  [[ "$arch" == "arm64" && -n "$major" && "$major" -ge 15 ]]
+}
+# Hardware-recommended default backend: oMLX when eligible, else Ollama.
+recommend_backend() {
+  if backend_eligible; then echo omlx; else echo ollama; fi
+}
+
 # Resolve a tier name to its model list. "auto" = auto_tier.
 resolve_tier_models() {
   local tier="${1:-auto}"

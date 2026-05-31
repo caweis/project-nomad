@@ -22,6 +22,18 @@ check "os major from NOMAD_TEST_OS=14"   "$(NOMAD_TEST_OS=14   _nomad_os_major)"
 check "arch from NOMAD_TEST_ARCH"        "$(NOMAD_TEST_ARCH=arm64 _nomad_arch)"  "arm64"
 check "arch x86 from NOMAD_TEST_ARCH"    "$(NOMAD_TEST_ARCH=x86_64 _nomad_arch)" "x86_64"
 
+echo "== backend eligibility (Apple Silicon + macOS 15+) =="
+load
+NOMAD_TEST_ARCH=arm64  NOMAD_TEST_OS=15.5 backend_eligible && r=yes || r=no; check "arm64+15 eligible" "$r" "yes"
+NOMAD_TEST_ARCH=arm64  NOMAD_TEST_OS=14.7 backend_eligible && r=yes || r=no; check "arm64+14 ineligible" "$r" "no"
+NOMAD_TEST_ARCH=x86_64 NOMAD_TEST_OS=15.5 backend_eligible && r=yes || r=no; check "intel+15 ineligible" "$r" "no"
+
+echo "== recommended backend =="
+load
+check "arm64+15 → omlx"   "$(NOMAD_TEST_ARCH=arm64  NOMAD_TEST_OS=15.5 recommend_backend)" "omlx"
+check "arm64+14 → ollama" "$(NOMAD_TEST_ARCH=arm64  NOMAD_TEST_OS=14.7 recommend_backend)" "ollama"
+check "intel+15 → ollama" "$(NOMAD_TEST_ARCH=x86_64 NOMAD_TEST_OS=15.5 recommend_backend)" "ollama"
+
 echo
 echo "RESULTS: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]]
