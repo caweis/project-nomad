@@ -123,6 +123,9 @@ Host/stack diagnostics.
 .El
 .Ss AI models
 .Bl -tag -width "refresh-compose"
+.It Cm backend
+Show or switch the AI backend (Ollama or oMLX).
+.Xr nomad-backend 1 .
 .It Cm models
 List or pull Ollama models.
 .Xr nomad-models 1 .
@@ -312,6 +315,7 @@ Apache-2.0.
 .Xr nomad-check 1 ,
 .Xr nomad-logs 1 ,
 .Xr nomad-system 1 ,
+.Xr nomad-backend 1 ,
 .Xr nomad-models 1 ,
 .Xr nomad-upgrade-models 1 ,
 .Xr nomad-reset-ollama 1 ,
