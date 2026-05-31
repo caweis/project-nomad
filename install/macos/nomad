@@ -1729,6 +1729,98 @@ EOF
   warn "oMLX bootstrapped but not yet answering on :8000 (it may still be starting/loading) — check ~/Library/Logs/nomad-omlx.err.log"
 }
 
+step_ollama_embed() {
+  section "Embed-only Ollama on :11435 (hybrid embeddings for oMLX)"
+  local ollama_bin; ollama_bin="$(command -v ollama)" || die "ollama not found — install step must run first"
+  local data_root; data_root="$(grep '^NOMAD_DATA_ROOT=' "$ENV_FILE" | cut -d= -f2-)"
+  [[ -z "$data_root" ]] && die "NOMAD_DATA_ROOT not set in $ENV_FILE"
+  mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
+  cat > "$EMBED_PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key> <string>${EMBED_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array><string>${ollama_bin}</string><string>serve</string></array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>OLLAMA_HOST</key>   <string>127.0.0.1:11435</string>
+    <key>OLLAMA_MODELS</key> <string>${data_root}/ollama-models</string>
+    <key>OLLAMA_KEEP_ALIVE</key> <string>24h</string>
+  </dict>
+  <key>RunAtLoad</key> <true/>
+  <key>KeepAlive</key>
+  <dict><key>SuccessfulExit</key> <false/></dict>
+  <key>ThrottleInterval</key> <integer>10</integer>
+  <key>StandardOutPath</key>  <string>${HOME}/Library/Logs/nomad-ollama-embed.out.log</string>
+  <key>StandardErrorPath</key> <string>${HOME}/Library/Logs/nomad-ollama-embed.err.log</string>
+</dict>
+</plist>
+EOF
+  chmod 644 "$EMBED_PLIST"
+  launchctl bootout "$LA_TARGET/$EMBED_LABEL" 2>/dev/null || true
+  launchctl bootstrap "$LA_TARGET" "$EMBED_PLIST" 2>/dev/null || die "embed-Ollama bootstrap failed"
+  ok "embed-only Ollama on :11435"
+  # Ensure the embedding model exists on this instance (shared models dir, so it
+  # may already be present from the chat side — pull is then a fast no-op).
+  OLLAMA_HOST=127.0.0.1:11435 "$ollama_bin" pull nomic-embed-text >/dev/null 2>&1 || \
+    warn "could not pre-pull nomic-embed-text on embed Ollama — RAG will pull on first use"
+}
+
+step_omlx_proxy() {
+  section "Ollama-compat proxy on :11434 → oMLX :8000"
+  local bundle; bundle="$(grep '^NOMAD_BUNDLE_DIR=' "$ENV_FILE" | cut -d= -f2-)"
+  [[ -z "$bundle" ]] && die "NOMAD_BUNDLE_DIR not set in $ENV_FILE"
+  local proxy_dir="$bundle/install/macos/omlx-proxy"
+  [[ -d "$proxy_dir/vendor" ]] || die "proxy not vendored at $proxy_dir/vendor (Part B not installed)"
+
+  # Isolated venv next to the secrets dir (not on the data drive).
+  local venv="$SECRETS_DIR/omlx-proxy-venv"
+  if [[ ! -x "$venv/bin/uvicorn" ]]; then
+    /usr/bin/python3 -m venv "$venv" || die "python3 venv creation failed"
+    "$venv/bin/pip" install --quiet -r "$proxy_dir/vendor/requirements.txt" || die "proxy deps install failed"
+  fi
+
+  cat > "$PROXY_PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key> <string>${PROXY_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${venv}/bin/uvicorn</string>
+    <string>src.main:app</string>
+    <string>--host</string> <string>127.0.0.1</string>
+    <string>--port</string> <string>11434</string>
+  </array>
+  <key>WorkingDirectory</key> <string>${proxy_dir}/vendor</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>OPENAI_API_BASE_URL</key> <string>http://127.0.0.1:8000/v1</string>
+    <key>OPENAI_API_KEY</key>      <string>not-needed-local</string>
+    <key>MODEL_MAPPING_FILE</key>  <string>${proxy_dir}/config/model_map.json</string>
+    <key>NOMAD_OMLX_BASE</key>     <string>http://127.0.0.1:8000</string>
+    <key>NOMAD_OMLX_BASE_FALLBACK</key> <string>http://127.0.0.1:8080</string>
+    <key>NOMAD_EMBED_URL</key>     <string>http://127.0.0.1:11435</string>
+    <key>PYTHONPATH</key>          <string>${proxy_dir}/vendor</string>
+  </dict>
+  <key>RunAtLoad</key> <true/>
+  <key>KeepAlive</key>
+  <dict><key>SuccessfulExit</key> <false/></dict>
+  <key>ThrottleInterval</key> <integer>10</integer>
+  <key>StandardOutPath</key>  <string>${HOME}/Library/Logs/nomad-omlx-proxy.out.log</string>
+  <key>StandardErrorPath</key> <string>${HOME}/Library/Logs/nomad-omlx-proxy.err.log</string>
+</dict>
+</plist>
+EOF
+  chmod 644 "$PROXY_PLIST"
+  launchctl bootout "$LA_TARGET/$PROXY_LABEL" 2>/dev/null || true
+  launchctl bootstrap "$LA_TARGET" "$PROXY_PLIST" 2>/dev/null || die "proxy bootstrap failed"
+  ok "proxy bootstrapped on :11434"
+}
+
 # Symlink ourselves into brew's bin dir so `nomad <cmd>` works without the
 # 'bash' prefix or cd'ing into the bundle folder. Also install the manpage so
 # `man nomad` works. Silent on failure.
