@@ -16,7 +16,7 @@ from src._version import get_version, get_version_info
 from src.config import get_settings
 from src.middleware.logging_middleware import LoggingMiddleware
 from src.middleware.metrics_middleware import MetricsMiddleware
-from src.routers import chat, embeddings, metrics, models, nomad_pull, version
+from src.routers import chat, embeddings, metrics, models, nomad_embed, nomad_pull, version
 from src.utils.exceptions import ProxyException, UpstreamError
 from src.utils.http_client import close_global_client
 from src.utils.logging import get_logger, setup_logging
@@ -204,6 +204,7 @@ app.include_router(metrics.router, prefix="/v1", tags=["metrics"])
 
 # Also include Ollama-style endpoints
 app.include_router(nomad_pull.router, prefix="/api", tags=["nomad-pull"])
+app.include_router(nomad_embed.router, prefix="/api", tags=["nomad-embed"])
 app.include_router(chat.router, prefix="/api", tags=["ollama-chat"])
 app.include_router(models.router, prefix="/api", tags=["ollama-mode"])
 app.include_router(embeddings.router, prefix="/api", tags=["ollama-embeddings"])
