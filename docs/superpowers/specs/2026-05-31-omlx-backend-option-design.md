@@ -23,8 +23,9 @@ Offer an **install-time choice: Ollama or oMLX**, with **full parity** (the admi
 behaves identically on either). Rather than fork the admin's AI layer, keep the
 admin unchanged and put a **proxy on :11434** that translates Ollama API → oMLX's
 OpenAI API. The proxy is adapted from [`eyalrot/ollama_openai`](https://github.com/eyalrot/ollama_openai)
-(MIT) — it already implements `/api/chat`, `/api/generate`, `/api/tags`,
-`/api/embeddings` with streaming; we add the Ollama-specific bits it lacks.
+(MIT) — it already implements `/api/chat`, `/api/generate`, `/api/tags` with
+streaming; we add the Ollama-specific bits it lacks and route embeddings to a
+native Ollama (see Embeddings below) rather than through oMLX.
 
 **The recommended backend is hardware-detected**, the same way model tiers are
 auto-picked from RAM. A `recommend_backend()` helper inspects the host and proposes
@@ -56,10 +57,12 @@ admin (Docker, Ollama SDK)
 `:11434` has exactly one owner at a time, decided by `NOMAD_AI_BACKEND`:
 - **ollama** → the `com.projectnomad.ollama` LaunchAgent (current behavior, untouched).
 - **omlx** → the `com.projectnomad.ollama-proxy` LaunchAgent (proxy on :11434) +
-  the `com.projectnomad.omlx` LaunchAgent (oMLX serving :8000). The native-Ollama
-  LaunchAgent is unloaded.
+  the `com.projectnomad.omlx` LaunchAgent (oMLX serving :8000) + a small
+  `com.projectnomad.ollama-embed` LaunchAgent (native Ollama bound to
+  `127.0.0.1:11435`, embed-only — see Embeddings below). The full native-Ollama
+  `:11434` agent is unloaded; the proxy owns `:11434`.
 
-The admin never knows which backend is live.
+The admin never knows which backend is live — it always talks to `:11434`.
 
 ## Components
 
@@ -95,17 +98,30 @@ The admin never knows which backend is live.
   commit; keep its LICENSE). Run via a `com.projectnomad.ollama-proxy`
   LaunchAgent: `uvicorn` on `127.0.0.1:11434`, `OPENAI_API_BASE_URL=http://127.0.0.1:8000/v1`.
 - **What the proxy already covers:** `/api/tags` (← `/v1/models`), `/api/chat`,
-  `/api/generate` (← `/v1/chat/completions`), `/api/embeddings` (← `/v1/embeddings`),
-  streaming included — i.e. all of the admin's *inference + listing* needs.
+  `/api/generate` (← `/v1/chat/completions`), streaming included — i.e. the admin's
+  chat/generation needs.
+- **Embeddings are routed, not translated** (hybrid decision): `/api/embeddings`
+  is **passed through to the embed-only Ollama at `127.0.0.1:11435`** rather than to
+  oMLX. This keeps embedding vectors **bit-identical to what is already indexed in
+  Qdrant** (same `nomic-embed-text` weights), so switching backends never invalidates
+  the index — no reindex in either direction. (On-device, confirm whether an
+  MLX-converted `nomic-embed-text` yields equivalent vectors; if so, a later
+  simplification can drop the embed-only Ollama and serve embeddings from oMLX.)
 - **What we add** (the admin also calls these):
-  - `POST /api/pull` → map the requested name (Ollama tag) to an mlx-community HF
-    repo, then drive oMLX's downloader: `POST http://127.0.0.1:<omlx-admin>/api/hf/download
-    {"model_id": "mlx-community/…"}`, and stream **Ollama-style NDJSON progress**
-    (`{status,total,completed}`) back to the admin so the Easy-Setup wizard's
-    progress bar works.
+  - `POST /api/pull` → **route by model kind**: a chat/generation model maps to an
+    mlx-community HF repo and drives oMLX's downloader; an embedding model
+    (`nomic-embed-text`) is pulled on the embed-only Ollama. The downloader target
+    is found by **probing both candidate ports** (`:8000` then `:8080`) for
+    `/api/hf/download` and caching whichever answers. Progress is reported as
+    **Ollama-style NDJSON** (`{status,total,completed}`); since `/api/hf/download`
+    may not stream, the bridge **polls `/v1/models` until the model appears and
+    emits synthetic progress** — works whether or not the download API streams, so
+    the Easy-Setup wizard's progress bar always advances.
   - `GET /api/version` → synthesize a static version response.
   - `POST /api/show` → synthesize from `/v1/models` metadata (the admin uses it
     for model details/params).
+  - `GET /api/tags` → union of oMLX chat models (← `/v1/models`) and the embed-only
+    Ollama's embedding model, so the admin sees the full installed set.
 
 ### 4. Ollama-tag → mlx-community name mapping
 - A curated map for the tier models (e.g. `llama3.1:8b` →
@@ -130,10 +146,15 @@ The admin never knows which backend is live.
 - `nomad models`: backend-aware (Ollama tiers vs MLX tiers).
 
 ### Mutual exclusivity & data
-- Only one thing binds :11434. The backend switch loads/unloads agents
-  accordingly. oMLX models live at `$NOMAD_DATA_ROOT/mlx-models`; Ollama models
-  stay at `$NOMAD_DATA_ROOT/ollama-models` — both can coexist on disk so a switch
-  back doesn't re-download.
+- Only one thing binds :11434 (native Ollama in `ollama` mode; the proxy in `omlx`
+  mode). The backend switch loads/unloads agents accordingly. In `omlx` mode the
+  embed-only Ollama also runs, but on `127.0.0.1:11435`, so there is no `:11434`
+  contention.
+- oMLX (chat) models live at `$NOMAD_DATA_ROOT/mlx-models`; Ollama models stay at
+  `$NOMAD_DATA_ROOT/ollama-models` — both coexist on disk so a switch back doesn't
+  re-download. The `nomic-embed-text` embedding model stays in `ollama-models` and
+  is used in **both** backends, which is also why the Qdrant index stays valid
+  across a switch.
 
 ## Security (Maxim 8)
 - oMLX and the proxy bind **127.0.0.1 only** (the admin reaches them via Docker's
@@ -162,23 +183,31 @@ The admin never knows which backend is live.
 ## Files touched
 - **Modify** `install/macos/nomad`: `recommend_backend()` helper + hardware-detected
   install prompt; backend selection + `.env` key; `step_omlx_native`
-  + `step_omlx_proxy` (LaunchAgents); MLX tier map + name map; macOS-15 gate;
-  backend-aware `check`/`reset-ollama`/`models`; new `cmd_backend`; help/usage.
+  + `step_omlx_proxy` + embed-only Ollama agent (`:11435`) (LaunchAgents); MLX tier
+  map + name map; macOS-15 gate; backend-aware `check`/`reset-ollama`/`models`; new
+  `cmd_backend`; help/usage.
 - **Create** `install/macos/omlx-proxy/` (vendored proxy + our `/api/pull`,
   `/api/show`, `/api/version` additions + LICENSE + a pinned-version note).
 - **Create** `install/macos/man/nomad-backend.1`; update `nomad.1` overview, README.
 - **Unchanged:** `install/macos/compose.yaml` (admin still `:11434`).
 
-## Open implementation questions (resolve in writing-plans / on-device)
-- **oMLX admin/download port:** docs show the inference server on `:8000` but the
-  download API as `:8080/api/hf/download`. Confirm whether `omlx serve` exposes
-  both on one port or two, and set the proxy's download target accordingly.
-- **Pull progress shape:** does `/api/hf/download` stream progress (so we can map
-  to Ollama NDJSON), or is it fire-and-forget (then the proxy polls `/v1/models`
-  until the model appears and emits synthetic progress)? Determines the bridge.
-- **Embedding model on MLX:** confirm an mlx-community embedding model that the
-  admin's RAG (nomic-embed-text today) maps to, and that oMLX's `/v1/embeddings`
-  dimension matches what Qdrant expects (or document a reindex).
+## Resolved decisions (this review)
+- **macOS floor:** oMLX eligibility gate is **macOS 15+ (Sequoia)** + Apple Silicon.
+- **Recommended backend:** hardware-detected — oMLX whenever eligible, Ollama
+  otherwise (see Decision + §1).
+- **Embeddings:** **hybrid** — embeddings always run on native `nomic-embed-text`
+  (embed-only Ollama on `:11435` under `omlx`), so the Qdrant index stays valid and
+  no reindex is ever forced.
+- **Download port:** the proxy **probes both `:8000` and `:8080`** for
+  `/api/hf/download` and caches the answer.
+- **Pull progress:** the bridge uses a **polling fallback** (`/v1/models` until the
+  model appears, synthetic NDJSON) so it works whether or not the download API streams.
+
+## Still open (resolve in writing-plans / on-device)
+- **MLX `nomic-embed-text` equivalence:** confirm whether an MLX-converted
+  `nomic-embed-text` produces vectors equivalent to the GGUF one. If yes, a later
+  simplification drops the embed-only Ollama and serves embeddings from oMLX (still
+  no reindex). Until proven, the hybrid stands.
 - **Proxy runtime:** vendor as a pinned git subtree/copy vs `pip install
   ollama-openai-proxy` + our patch — decide based on how cleanly we can add
   `/api/pull` (favor a small vendored copy we control).
