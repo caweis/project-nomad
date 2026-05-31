@@ -643,11 +643,30 @@ check_stack() {
     [[ "$state" != "running" ]] && flag "🔴" "$svc not running (state=${state:-missing})" "Run: nomad up"
   done
 
-  # Native Ollama
-  if curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
-    ok "native Ollama responding on :11434"
+  # AI backend — omlx or native Ollama
+  _load_backend
+  if [[ "$BACKEND" == "omlx" ]]; then
+    if curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+      ok "oMLX proxy responding on :11434"
+    else
+      flag "🔴" "oMLX proxy not responding on :11434" "Check ~/Library/Logs/nomad-omlx-proxy.err.log; run 'nomad reset-ollama'"
+    fi
+    if curl -fsS --max-time 3 http://127.0.0.1:8000/v1/models >/dev/null 2>&1; then
+      ok "oMLX serving on :8000"
+    else
+      flag "🔴" "oMLX not serving on :8000" "Check ~/Library/Logs/nomad-omlx.err.log"
+    fi
+    if curl -fsS --max-time 3 http://127.0.0.1:11435/api/tags >/dev/null 2>&1; then
+      ok "embed-only Ollama on :11435"
+    else
+      flag "🟡" "embed Ollama not responding on :11435" "RAG embeddings unavailable; check nomad-ollama-embed.err.log"
+    fi
   else
-    flag "🔴" "Native Ollama not responding" "Check ~/Library/Logs/nomad-ollama.err.log"
+    if curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+      ok "native Ollama responding on :11434"
+    else
+      flag "🔴" "Native Ollama not responding" "Check ~/Library/Logs/nomad-ollama.err.log"
+    fi
   fi
 
   # Admin's view of the world (via its own API — same auth-free routes the UI uses)
