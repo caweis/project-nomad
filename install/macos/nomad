@@ -1704,6 +1704,24 @@ step_omlx_native() {
   local ram_gb; ram_gb=$(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 ))
   local max_conc=8; [[ $ram_gb -lt 24 ]] && max_conc=4; [[ $ram_gb -lt 16 ]] && max_conc=2
 
+  # Open the oMLX admin API on loopback so the proxy's /api/pull bridge can drive
+  # downloads headlessly (POST /admin/api/hf/download). oMLX gates the admin API
+  # behind a session cookie unless auth.skip_api_key_verification is set. oMLX
+  # binds 127.0.0.1 only, so the open admin is reachable only by host-local
+  # processes (the proxy). Merge the flag into ~/.omlx/settings.json, preserving
+  # any existing settings; oMLX loads this on start.
+  mkdir -p "$HOME/.omlx"
+  /usr/bin/python3 - "$HOME/.omlx/settings.json" <<'PYEOF' || warn "could not set oMLX open-admin flag — wizard model pulls may require manual oMLX auth"
+import json, os, sys
+p = sys.argv[1]
+try:
+    d = json.load(open(p)) if os.path.exists(p) else {}
+except Exception:
+    d = {}
+d.setdefault("auth", {})["skip_api_key_verification"] = True
+json.dump(d, open(p, "w"), indent=2)
+PYEOF
+
   cat > "$OMLX_PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -1714,15 +1732,12 @@ step_omlx_native() {
   <array>
     <string>${omlx_bin}</string>
     <string>serve</string>
+    <string>--host</string>                <string>127.0.0.1</string>
+    <string>--port</string>                <string>8000</string>
     <string>--model-dir</string>          <string>${mlx_dir}</string>
     <string>--paged-ssd-cache-dir</string> <string>${cache_dir}</string>
     <string>--max-concurrent-requests</string> <string>${max_conc}</string>
   </array>
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>HOST</key> <string>127.0.0.1</string>
-    <key>PORT</key> <string>8000</string>
-  </dict>
   <key>RunAtLoad</key> <true/>
   <key>KeepAlive</key>
   <dict><key>SuccessfulExit</key> <false/></dict>
@@ -1838,6 +1853,11 @@ step_omlx_proxy() {
     launchctl bootout "$LA_TARGET/$PROXY_LABEL" 2>/dev/null || true
   fi
 
+  # The proxy binds 0.0.0.0:11434 — the admin container reaches it via Docker's
+  # host.docker.internal exactly as it reaches native Ollama (which also binds
+  # 0.0.0.0:11434). Same network exposure as today's Ollama backend, no worse.
+  # oMLX (:8000) and the embed Ollama (:11435) stay loopback — only the proxy
+  # talks to them, host-local.
   cat > "$PROXY_PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -1848,7 +1868,7 @@ step_omlx_proxy() {
   <array>
     <string>${venv}/bin/uvicorn</string>
     <string>src.main:app</string>
-    <string>--host</string> <string>127.0.0.1</string>
+    <string>--host</string> <string>0.0.0.0</string>
     <string>--port</string> <string>11434</string>
   </array>
   <key>WorkingDirectory</key> <string>${proxy_dir}/vendor</string>
@@ -1858,7 +1878,6 @@ step_omlx_proxy() {
     <key>OPENAI_API_KEY</key>      <string>not-needed-local</string>
     <key>MODEL_MAPPING_FILE</key>  <string>${proxy_dir}/config/model_map.json</string>
     <key>NOMAD_OMLX_BASE</key>     <string>http://127.0.0.1:8000</string>
-    <key>NOMAD_OMLX_BASE_FALLBACK</key> <string>http://127.0.0.1:8080</string>
     <key>NOMAD_EMBED_URL</key>     <string>http://127.0.0.1:11435</string>
     <key>PYTHONPATH</key>          <string>${proxy_dir}/vendor</string>
   </dict>

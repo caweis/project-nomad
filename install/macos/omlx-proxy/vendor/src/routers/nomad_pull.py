@@ -1,12 +1,25 @@
 """oMLX-aware /api/pull bridge.
 
 Maps an Ollama tag to an mlx-community repo (via MODEL_MAPPING_FILE), drives
-oMLX's /api/hf/download, and streams Ollama-style NDJSON progress. Embedding
-models are served by a separate embed-only Ollama, so their "pull" is a no-op.
+oMLX's download API, and streams Ollama-style NDJSON progress with real byte
+counts. Embedding models are served by a separate embed-only Ollama, so their
+"pull" is forwarded there instead.
+
+oMLX contract (verified on-device against omlx 0.3.12):
+  - download:  POST {base}/admin/api/hf/download  {"repo_id": "<org/repo>"}
+               → 200 {"success": true, "task": {...}}
+  - progress:  GET  {base}/admin/api/hf/tasks
+               → {"tasks": [{"repo_id","status","progress","total_size",
+                             "downloaded_size","error",...}]}
+               status ∈ pending|downloading|completed|error|failed
+  Both the admin API and the OpenAI API are served on the single oMLX port
+  (:8000). The admin API requires `auth.skip_api_key_verification=true` in
+  ~/.omlx/settings.json, which the installer sets (the server is loopback-only).
 """
 import asyncio
 import json
 import os
+from typing import Optional
 
 import httpx
 from fastapi import APIRouter, Request
@@ -17,10 +30,9 @@ from src.config import get_settings as _get_settings  # upstream Settings factor
 router = APIRouter()
 
 _OMLX = os.getenv("NOMAD_OMLX_BASE", "http://127.0.0.1:8000")
-_OMLX_FALLBACK = os.getenv("NOMAD_OMLX_BASE_FALLBACK", "http://127.0.0.1:8080")
 _EMBED = os.getenv("NOMAD_EMBED_URL", "http://127.0.0.1:11435")
-_POLL_INTERVAL = 3.0
-_POLL_MAX = 600  # ~30 min at 3s
+_POLL_INTERVAL = 2.0
+_POLL_MAX = 1800  # ~60 min at 2s — large MLX repos can be tens of GB
 
 
 def _is_embedding(name: str) -> bool:
@@ -52,25 +64,32 @@ def _ndjson(obj: dict) -> str:
     return json.dumps(obj) + "\n"
 
 
-async def _hf_download(client: httpx.AsyncClient, repo: str) -> str:
-    """POST /api/hf/download against :8000 then :8080. Returns the base that worked."""
-    for base in (_OMLX, _OMLX_FALLBACK):
-        try:
-            r = await client.post(f"{base}/api/hf/download", json={"model_id": repo})
-            if r.status_code < 400 or r.status_code == 409:
-                return base
-        except Exception:
-            continue
-    raise RuntimeError("oMLX download API unreachable on :8000 or :8080")
-
-
-async def _model_present(client: httpx.AsyncClient, base: str, repo: str) -> bool:
+async def _start_download(client: httpx.AsyncClient, repo: str) -> None:
+    """POST the oMLX download request. Raises RuntimeError on failure."""
     try:
-        r = await client.get(f"{base}/v1/models")
-        data = r.json().get("data", [])
-        return any(repo in (m.get("id", "")) for m in data)
+        r = await client.post(f"{_OMLX}/admin/api/hf/download", json={"repo_id": repo})
+    except Exception as exc:  # connection refused / timeout
+        raise RuntimeError(f"oMLX download API unreachable at {_OMLX}: {exc}")
+    if r.status_code == 401:
+        raise RuntimeError(
+            "oMLX admin API requires auth — set auth.skip_api_key_verification=true "
+            "in ~/.omlx/settings.json (the installer does this)."
+        )
+    if r.status_code >= 400 and r.status_code != 409:
+        raise RuntimeError(f"oMLX download API returned HTTP {r.status_code}: {r.text[:200]}")
+
+
+async def _latest_task(client: httpx.AsyncClient, repo: str) -> Optional[dict]:
+    """Return the most recent download task for *repo*, or None."""
+    try:
+        r = await client.get(f"{_OMLX}/admin/api/hf/tasks")
+        tasks = r.json().get("tasks", [])
     except Exception:
-        return False
+        return None
+    matches = [t for t in tasks if t.get("repo_id") == repo]
+    if not matches:
+        return None
+    return max(matches, key=lambda t: t.get("created_at", 0))
 
 
 async def _pull_stream(name: str):
@@ -100,21 +119,42 @@ async def _pull_stream(name: str):
             ),
         })
         return
+
     yield _ndjson({"status": "pulling manifest"})
-    async with httpx.AsyncClient(timeout=httpx.Timeout(connect=5.0, read=None, write=10.0, pool=5.0)) as client:
+    async with httpx.AsyncClient(timeout=httpx.Timeout(connect=5.0, read=30.0, write=10.0, pool=5.0)) as client:
         try:
-            base = await _hf_download(client, repo)
+            await _start_download(client, repo)
         except RuntimeError as exc:
             yield _ndjson({"status": "error", "error": str(exc)})
             return
-        yield _ndjson({"status": "downloading", "digest": repo})
+
+        # Poll the oMLX task for real byte progress → Ollama-style NDJSON.
         for _ in range(_POLL_MAX):
-            if await _model_present(client, base, repo):
-                yield _ndjson({"status": "verifying"})
-                yield _ndjson({"status": "success"})
-                return
+            task = await _latest_task(client, repo)
+            if task is not None:
+                status = task.get("status", "")
+                total = int(task.get("total_size", 0) or 0)
+                done = int(task.get("downloaded_size", 0) or 0)
+                if status in ("error", "failed"):
+                    yield _ndjson({"status": "error",
+                                   "error": task.get("error") or f"download {status}"})
+                    return
+                if status == "completed":
+                    if total:
+                        yield _ndjson({"status": "downloading", "digest": repo,
+                                       "total": total, "completed": total})
+                    yield _ndjson({"status": "verifying"})
+                    yield _ndjson({"status": "success"})
+                    return
+                # pending / downloading → emit progress (real numbers when known)
+                line = {"status": "downloading", "digest": repo}
+                if total:
+                    line["total"] = total
+                    line["completed"] = done
+                yield _ndjson(line)
+            else:
+                yield _ndjson({"status": "downloading", "digest": repo})
             await asyncio.sleep(_POLL_INTERVAL)
-            yield _ndjson({"status": "downloading", "digest": repo})
         yield _ndjson({"status": "error", "error": f"timed out downloading {repo}"})
 
 

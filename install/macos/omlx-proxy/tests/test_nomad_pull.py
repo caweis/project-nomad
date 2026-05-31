@@ -9,37 +9,66 @@ sys.path.insert(0, str(VENDOR))
 os.environ.setdefault("OPENAI_API_KEY", "x")
 os.environ.setdefault("OPENAI_API_BASE_URL", "http://127.0.0.1:8000/v1")
 os.environ["NOMAD_OMLX_BASE"] = "http://omlx:8000"
-os.environ["NOMAD_OMLX_BASE_FALLBACK"] = "http://omlx:8080"
 os.environ["NOMAD_EMBED_URL"] = "http://embed:11435"
 
 from src.routers import nomad_pull  # noqa: E402
 
+_REPO = "mlx-community/Meta-Llama-3.1-8B-Instruct-4bit"
+
 
 @pytest.mark.asyncio
-async def test_chat_pull_emits_success_ndjson(monkeypatch):
-    """A chat model: download is fired, /v1/models then shows it, NDJSON ends success."""
+async def test_chat_pull_emits_progress_then_success(monkeypatch):
+    """Chat model: POSTs repo_id to /admin/api/hf/download, polls the task to
+    completion, emits real total/completed progress and ends with success."""
     posted = {}
 
     async def fake_post(url, json=None, **kw):
         posted["url"] = url; posted["json"] = json
-        return httpx.Response(200, json={"status": "started"})
+        return httpx.Response(200, json={"success": True, "task": {"repo_id": _REPO, "status": "pending"}})
 
     seen = {"n": 0}
     async def fake_get(url, **kw):
         seen["n"] += 1
-        models = [] if seen["n"] < 2 else [{"id": "mlx-community/Meta-Llama-3.1-8B-Instruct-4bit"}]
-        return httpx.Response(200, json={"data": models})
+        # first poll: downloading half; second poll: completed
+        if seen["n"] < 2:
+            t = {"repo_id": _REPO, "status": "downloading", "total_size": 1000, "downloaded_size": 500, "created_at": 1}
+        else:
+            t = {"repo_id": _REPO, "status": "completed", "total_size": 1000, "downloaded_size": 1000, "created_at": 1}
+        return httpx.Response(200, json={"tasks": [t]})
 
-    monkeypatch.setattr(nomad_pull, "_resolve_mlx_repo", lambda name: "mlx-community/Meta-Llama-3.1-8B-Instruct-4bit")
+    monkeypatch.setattr(nomad_pull, "_resolve_mlx_repo", lambda name: _REPO)
     monkeypatch.setattr(nomad_pull, "_is_embedding", lambda name: False)
     monkeypatch.setattr(nomad_pull.httpx.AsyncClient, "post", lambda self, url, **k: fake_post(url, **k))
     monkeypatch.setattr(nomad_pull.httpx.AsyncClient, "get", lambda self, url, **k: fake_get(url, **k))
     monkeypatch.setattr(nomad_pull, "_POLL_INTERVAL", 0)
 
     lines = [json.loads(l) async for l in nomad_pull._pull_stream("llama3.1:8b")]
-    assert posted["json"]["model_id"] == "mlx-community/Meta-Llama-3.1-8B-Instruct-4bit"
-    assert "/api/hf/download" in posted["url"]
+    assert posted["json"]["repo_id"] == _REPO
+    assert posted["url"].endswith("/admin/api/hf/download")
+    # a downloading line carries real byte counts
+    dl = [l for l in lines if l["status"] == "downloading" and "total" in l]
+    assert dl and dl[0]["total"] == 1000 and dl[0]["completed"] == 500
     assert lines[-1]["status"] == "success"
+
+
+@pytest.mark.asyncio
+async def test_chat_pull_emits_error_on_failed_task(monkeypatch):
+    async def fake_post(url, json=None, **kw):
+        return httpx.Response(200, json={"success": True, "task": {"repo_id": _REPO, "status": "pending"}})
+
+    async def fake_get(url, **kw):
+        return httpx.Response(200, json={"tasks": [
+            {"repo_id": _REPO, "status": "error", "error": "disk full", "created_at": 1}]})
+
+    monkeypatch.setattr(nomad_pull, "_resolve_mlx_repo", lambda name: _REPO)
+    monkeypatch.setattr(nomad_pull, "_is_embedding", lambda name: False)
+    monkeypatch.setattr(nomad_pull.httpx.AsyncClient, "post", lambda self, url, **k: fake_post(url, **k))
+    monkeypatch.setattr(nomad_pull.httpx.AsyncClient, "get", lambda self, url, **k: fake_get(url, **k))
+    monkeypatch.setattr(nomad_pull, "_POLL_INTERVAL", 0)
+
+    lines = [json.loads(l) async for l in nomad_pull._pull_stream("llama3.1:8b")]
+    assert lines[-1]["status"] == "error"
+    assert "disk full" in lines[-1]["error"]
 
 
 @pytest.mark.asyncio
@@ -52,10 +81,10 @@ async def test_embedding_pull_is_noop_success(monkeypatch):
 @pytest.mark.asyncio
 async def test_chat_pull_emits_error_ndjson_when_download_unreachable(monkeypatch):
     async def boom(client, repo):
-        raise RuntimeError("oMLX download API unreachable on :8000 or :8080")
+        raise RuntimeError("oMLX download API unreachable at http://omlx:8000")
     monkeypatch.setattr(nomad_pull, "_resolve_mlx_repo", lambda name: "mlx-community/Foo-4bit")
     monkeypatch.setattr(nomad_pull, "_is_embedding", lambda name: False)
-    monkeypatch.setattr(nomad_pull, "_hf_download", boom)
+    monkeypatch.setattr(nomad_pull, "_start_download", boom)
     lines = [json.loads(l) async for l in nomad_pull._pull_stream("foo:7b")]
     assert lines[-1]["status"] == "error"
     assert "unreachable" in lines[-1]["error"]
