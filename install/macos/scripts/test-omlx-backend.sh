@@ -44,6 +44,15 @@ _load_backend; check "reads omlx from .env" "$BACKEND" "omlx"
 echo "NOMAD_AI_BACKEND=bogus" > "$ENV_FILE"
 _load_backend; check "invalid value → ollama fallback" "$BACKEND" "ollama"
 
+echo "== backend choice precedence =="
+load
+check "no flag, eligible → recommend omlx" \
+  "$(BACKEND_ARG='' NOMAD_TEST_ARCH=arm64 NOMAD_TEST_OS=15.5 resolve_backend_choice)" "omlx"
+check "flag ollama wins over recommend" \
+  "$(BACKEND_ARG=ollama NOMAD_TEST_ARCH=arm64 NOMAD_TEST_OS=15.5 resolve_backend_choice)" "ollama"
+check "no flag, ineligible → ollama" \
+  "$(BACKEND_ARG='' NOMAD_TEST_ARCH=x86_64 NOMAD_TEST_OS=15.5 resolve_backend_choice)" "ollama"
+
 echo
 echo "RESULTS: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]]
