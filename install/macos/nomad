@@ -4737,6 +4737,41 @@ _reset_omlx_stack() {
   return 1
 }
 
+# nomad backend [show|ollama|omlx]
+#   show          → print the active backend
+#   ollama|omlx   → switch: rewrite NOMAD_AI_BACKEND, load target agents, unload the other
+cmd_backend() {
+  local sub="${1:-show}"
+  _load_backend
+  case "$sub" in
+    show|"")
+      echo "Active AI backend: $BACKEND"
+      return 0 ;;
+    ollama|omlx)
+      local target="$sub"
+      if [[ "$target" == "omlx" ]] && ! backend_eligible; then
+        die "oMLX requires Apple Silicon + macOS 15+ — cannot switch on this Mac."
+      fi
+      if [[ "$target" == "$BACKEND" ]]; then log "already on '$target'"; return 0; fi
+      _env_upsert NOMAD_AI_BACKEND "$target"
+      local label
+      if [[ "$target" == "omlx" ]]; then
+        launchctl bootout "$LA_TARGET/$LA_LABEL" 2>/dev/null || true   # unload chat-Ollama :11434
+        step_omlx_native; step_ollama_embed; step_omlx_proxy
+      else
+        for label in "$PROXY_LABEL" "$OMLX_LABEL" "$EMBED_LABEL"; do
+          launchctl bootout "$LA_TARGET/$label" 2>/dev/null || true
+        done
+        step_ollama_native
+      fi
+      BACKEND="$target"
+      ok "switched backend → $target (admin still talks to :11434; models on disk are preserved)"
+      log "run 'nomad check stack' to confirm health, 'nomad models pull auto' to ensure models"
+      ;;
+    *) die "usage: nomad backend [show|ollama|omlx]" ;;
+  esac
+}
+
 # Reset the Ollama LaunchAgent — recovery for "bootstrap failed: 5: Input/output
 # error" or any other stuck-launchd state. Bootout, kill orphan ollama processes,
 # wait for launchd to commit, re-bootstrap, wait for API.
@@ -5561,6 +5596,7 @@ case "$CMD" in
   api)             cmd_api       "${EXTRA_ARGS[@]}" ;;
   benchmark)       cmd_benchmark "${EXTRA_ARGS[@]}" ;;
   orbstack-tune)   cmd_orbstack_tune "${EXTRA_ARGS[@]}" ;;
+  backend)         cmd_backend "${EXTRA_ARGS[@]}" ;;
   reset-ollama)    cmd_reset_ollama "${EXTRA_ARGS[@]}" ;;
   fix-kiwix)       cmd_fix_kiwix ;;
   clean)           cmd_clean "${EXTRA_ARGS[@]}" ;;

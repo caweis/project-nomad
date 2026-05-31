@@ -53,6 +53,11 @@ check "flag ollama wins over recommend" \
 check "no flag, ineligible → ollama" \
   "$(BACKEND_ARG='' NOMAD_TEST_ARCH=x86_64 NOMAD_TEST_OS=15.5 resolve_backend_choice)" "ollama"
 
+echo "== nomad backend show =="
+load
+ENV_FILE="$SECRETS_DIR/.env"; echo "NOMAD_AI_BACKEND=omlx" > "$ENV_FILE"
+check "show reads .env" "$(cmd_backend show 2>/dev/null | tr -d '\n' | grep -oE 'omlx|ollama' | head -1)" "omlx"
+
 echo
 echo "RESULTS: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]]
