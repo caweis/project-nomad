@@ -103,9 +103,29 @@ do not leave eligible users defaulted onto a path with a failing item.**
 
 ## 5. End-to-end parity (the core gate)
 
+- [ ] **HIGHEST-RISK ITEM — container→host loopback reachability.** The proxy binds
+  `127.0.0.1:11434`, but the admin (in a container) reaches it via
+  `host.docker.internal:11434`. The native Ollama agent binds `0.0.0.0:11434`, and
+  `check_install` historically warns that a non-`0.0.0.0` bind means "containers can't
+  reach via host.docker.internal." CONFIRM the admin container can actually reach the
+  loopback-bound proxy under OrbStack: `docker exec nomad_admin curl -fsS
+  http://host.docker.internal:11434/api/tags`. **If it cannot, oMLX mode is dead
+  end-to-end** — the fix is to bind the proxy (and embed Ollama) to `0.0.0.0` like the
+  native Ollama agent (edit `--host`/`OLLAMA_HOST` in `step_omlx_proxy`/`step_ollama_embed`),
+  accepting the same LAN-exposure posture the native Ollama already has, and update the
+  spec's "loopback only" security claim accordingly. Settle this BEFORE anything else in
+  this section.
+
 - [ ] Run a fresh `nomad install --backend omlx` on a macOS 15 Apple-Silicon Mac (clean
   state, no prior install). Confirm all three agents come up and `nomad check stack` is
   all-green: proxy on :11434, oMLX on :8000, embed-only Ollama on :11435.
+
+- [ ] **`/api/tags` parity (known gap).** The proxy's `/api/tags` lists oMLX models from
+  `/v1/models` only — it does NOT union the embed Ollama's `nomic-embed-text`, and models
+  show as raw HF repo IDs (`mlx-community/...`) rather than Ollama tags (`llama3.1:8b`).
+  RAG still works (embeddings route correctly), so this is cosmetic/parity. Confirm the
+  admin's installed-models view is acceptable as-is; if not, implement a nomad-aware
+  `/api/tags` that unions `:11435/api/tags` and reverse-maps repo→tag via model_map.json.
 
 - [ ] Confirm admin chat works end-to-end through the proxy path: send a prompt through the
   admin UI, verify a coherent response arrives, and confirm the request visibly flowed

@@ -128,8 +128,11 @@ The admin never knows which backend is live — it always talks to `:11434`.
   - `GET /api/version` → synthesize a static version response.
   - `POST /api/show` → synthesize from `/v1/models` metadata (the admin uses it
     for model details/params).
-  - `GET /api/tags` → union of oMLX chat models (← `/v1/models`) and the embed-only
-    Ollama's embedding model, so the admin sees the full installed set.
+  - `GET /api/tags` → **deferred (parity gap, not built):** intended to union oMLX chat
+    models (← `/v1/models`) with the embed-only Ollama's model. As shipped, upstream's
+    `/api/tags` lists oMLX models only, as raw HF repo IDs. RAG is unaffected; the
+    installed-models *view* differs. Tracked in `VERIFY_ON_DEVICE.md` §5 for an
+    implement-or-accept decision on-device.
 
 ### 4. Ollama-tag → mlx-community name mapping
 - A curated map for the tier models (e.g. `llama3.1:8b` →
@@ -169,6 +172,11 @@ The admin never knows which backend is live — it always talks to `:11434`.
 ## Security (Maxim 8)
 - oMLX and the proxy bind **127.0.0.1 only** (the admin reaches them via Docker's
   `host.docker.internal`, which maps to the host loopback). No LAN exposure.
+  **On-device caveat:** this assumes the admin container can reach a loopback-bound
+  host service via `host.docker.internal` under OrbStack. The native Ollama agent binds
+  `0.0.0.0` — if loopback turns out unreachable from the container, the proxy + embed
+  Ollama must bind `0.0.0.0` too (same posture as today's Ollama), trading this
+  loopback-only improvement for reachability. Flagged as the top item in `VERIFY_ON_DEVICE.md`.
 - No API key needed locally; if oMLX's `--api-key` is set, the proxy holds it
   host-side (never in the container/admin).
 - The `/api/pull` bridge only accepts model names it can map to mlx-community
