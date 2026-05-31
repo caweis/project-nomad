@@ -345,6 +345,7 @@ _nomad_os_major() {
   local ver="${NOMAD_TEST_OS:-$(sw_vers -productVersion 2>/dev/null)}"
   echo "${ver%%.*}"
 }
+
 # _nomad_arch echoes the CPU arch (arm64 | x86_64).
 _nomad_arch() {
   echo "${NOMAD_TEST_ARCH:-$(uname -m)}"
