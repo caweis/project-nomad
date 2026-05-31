@@ -19,15 +19,27 @@ backend choice requires a translation layer.
 
 ## Decision (researched)
 
-Offer a **install-time choice: Ollama (default) or oMLX**, with **full parity**
-(the admin behaves identically on either). Rather than fork the admin's AI layer,
-keep the admin unchanged and put a **proxy on :11434** that translates Ollama API →
-oMLX's OpenAI API. The proxy is adapted from [`eyalrot/ollama_openai`](https://github.com/eyalrot/ollama_openai)
+Offer an **install-time choice: Ollama or oMLX**, with **full parity** (the admin
+behaves identically on either). Rather than fork the admin's AI layer, keep the
+admin unchanged and put a **proxy on :11434** that translates Ollama API → oMLX's
+OpenAI API. The proxy is adapted from [`eyalrot/ollama_openai`](https://github.com/eyalrot/ollama_openai)
 (MIT) — it already implements `/api/chat`, `/api/generate`, `/api/tags`,
 `/api/embeddings` with streaming; we add the Ollama-specific bits it lacks.
 
-Default stays **Ollama** (mature, lower macOS floor). oMLX is opt-in and requires
-**macOS 15+** (Sequoia) + Apple Silicon.
+**The recommended backend is hardware-detected**, the same way model tiers are
+auto-picked from RAM. A `recommend_backend()` helper inspects the host and proposes
+a default the user can accept or override:
+- **Intel, or macOS < 15** → **Ollama** (oMLX needs Apple Silicon + Sequoia; not a
+  choice on these Macs, it's forced).
+- **Apple Silicon + macOS 15+** → **oMLX recommended** (its continuous batching +
+  RAM/SSD KV cache are the better fit on capable hardware), with Ollama one
+  keystroke away.
+
+**Ship-gate (honest-engineering flag):** because this default routes most eligible
+Macs through the newer proxy+oMLX path, the **on-device parity check (chat + RAG +
+wizard-pull on a macOS 15 Apple-Silicon Mac) is a hard prerequisite** before the
+oMLX-by-default recommendation goes live. If that verification slips, fall back to
+recommending Ollama until it passes.
 
 ## Architecture
 
@@ -51,10 +63,21 @@ The admin never knows which backend is live.
 
 ## Components
 
-### 1. Backend selection — `NOMAD_AI_BACKEND`
-- `nomad install` prompts **Ollama (default) / oMLX**, recorded as
-  `NOMAD_AI_BACKEND=ollama|omlx` in `~/.config/project-nomad/.env`.
-- Non-interactive override: `nomad install --backend omlx` (and `--backend ollama`).
+### 1. Backend selection — `NOMAD_AI_BACKEND` (hardware-recommended)
+- A `recommend_backend()` helper mirrors `auto_tier()`: it reads the chip
+  (`machdep.cpu.brand_string` / Apple-Silicon detection already in the script) and
+  macOS version (`sw_vers -productVersion`), and echoes the recommended backend:
+  - Intel **or** macOS < 15 → `ollama` (oMLX ineligible).
+  - Apple Silicon **and** macOS 15+ → `omlx`.
+- `nomad install` shows the same **"Detected → Recommended, override allowed"** UX
+  the tier picker uses, e.g.:
+  > `Detected: Apple M4, 32 GB RAM, macOS 15.5 → Recommended backend: oMLX`
+  > `[Enter] accept · type 'ollama' to use native Ollama instead`
+  On an ineligible Mac it states plainly that only Ollama is available (no prompt).
+- The choice is recorded as `NOMAD_AI_BACKEND=ollama|omlx` in
+  `~/.config/project-nomad/.env`.
+- Non-interactive override: `nomad install --backend omlx|ollama` (skips the prompt;
+  still hard-stops if `omlx` is asked for on an ineligible Mac).
 - Choosing oMLX on macOS < 15 → hard stop with a clear message (don't half-install).
 
 ### 2. oMLX setup (when `omlx`)
@@ -122,18 +145,23 @@ The admin never knows which backend is live.
 
 ## Testing
 - **Unit (sourceable helpers in `nomad`):** backend resolver (`NOMAD_AI_BACKEND`
-  precedence), MLX tier resolver, Ollama-tag→MLX-repo mapper, macOS-15 gate.
+  precedence), **`recommend_backend()` across the hardware matrix** (Intel→ollama,
+  Apple-Silicon+macOS14→ollama, Apple-Silicon+macOS15→omlx — using the injectable
+  `NOMAD_TEST_OS`/`NOMAD_TEST_ARCH` test seams), MLX tier resolver, Ollama-tag→MLX-repo
+  mapper, macOS-15 gate.
 - **Proxy:** a local test that, with oMLX running, hits the proxy's `/api/tags`,
   `/api/chat` (stream), `/api/embeddings`, and `/api/pull` and checks Ollama-shaped
   responses. (Runs on-device — needs oMLX.)
 - **Parity check:** with `NOMAD_AI_BACKEND=omlx`, the admin's chat, Easy-Setup
   model pull, and RAG/Wikipedia query all work unchanged.
-- **Regression:** Ollama path (default) unchanged; existing suites green.
+- **Regression:** the Ollama path (existing pre-oMLX behavior) unchanged on the Macs
+  that still get it; existing suites green.
 - **On-device (flagged for Chris):** full oMLX install on a macOS 15 Apple-Silicon
   Mac; chat + RAG + wizard-pull; `nomad backend ollama` round-trip.
 
 ## Files touched
-- **Modify** `install/macos/nomad`: backend selection + `.env` key; `step_omlx_native`
+- **Modify** `install/macos/nomad`: `recommend_backend()` helper + hardware-detected
+  install prompt; backend selection + `.env` key; `step_omlx_native`
   + `step_omlx_proxy` (LaunchAgents); MLX tier map + name map; macOS-15 gate;
   backend-aware `check`/`reset-ollama`/`models`; new `cmd_backend`; help/usage.
 - **Create** `install/macos/omlx-proxy/` (vendored proxy + our `/api/pull`,
