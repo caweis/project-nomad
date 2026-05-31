@@ -4265,6 +4265,8 @@ cmd_uninstall() {
     fi
   done
   pkill -f 'ollama serve' 2>/dev/null || true
+  pkill -f 'omlx serve' 2>/dev/null || true            # oMLX-mode orphan (if plist was pre-removed)
+  pkill -f 'uvicorn src.main:app' 2>/dev/null || true  # oMLX proxy orphan
   pkill -f 'dns-sd -R NOMAD Command Center' 2>/dev/null || true
   for plist in "$LA_PLIST" "$PATCHER_PLIST" "$KIWIX_SELF_HEAL_PLIST" "$BONJOUR_PLIST" "$HOST_BRIDGE_PLIST" \
                "$OMLX_PLIST" "$PROXY_PLIST" "$EMBED_PLIST"; do
