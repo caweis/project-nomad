@@ -4686,6 +4686,8 @@ Set NOMAD_BUNDLE_DIR in $ENV_FILE or reinstall."
 # oMLX-mode reset: bounce proxy + oMLX + embed agents, reusing the wedged-drive
 # probe (now over mlx-models). Mirrors the native reset's bootout->restart->wait.
 _reset_omlx_stack() {
+  # mode ignored for oMLX (no internal/drive split — mlx-models always on the data
+  # drive); accepted for signature parity with the native reset.
   local mode="${1:-auto}"
   section "Resetting oMLX stack (proxy :11434, oMLX :8000, embed :11435)"
   local data_root; data_root="$(grep '^NOMAD_DATA_ROOT=' "$ENV_FILE" | cut -d= -f2-)"
@@ -4697,12 +4699,18 @@ _reset_omlx_stack() {
   for label in "$PROXY_LABEL" "$OMLX_LABEL" "$EMBED_LABEL"; do
     launchctl bootout "$LA_TARGET/$label" 2>/dev/null || true
   done
+  # bootout isn't guaranteed to synchronously kill the process — kill orphans that
+  # could keep holding :8000/:11434 so the re-bootstrap below can bind cleanly.
   pkill -f "omlx serve" 2>/dev/null || true
-  sleep 1
+  pkill -f "uvicorn src.main:app" 2>/dev/null || true
+  sleep 2
+  # step_omlx_native polls :8000 for up to 30s before returning, so by the time the
+  # proxy starts oMLX is reachable; this outer poll confirms the full proxy chain.
   step_omlx_native
   step_ollama_embed
   step_omlx_proxy
-  local d=$(( $(date +%s) + 30 ))
+  local d
+  d=$(( $(date +%s) + 30 ))
   while [[ $(date +%s) -lt $d ]]; do
     curl -fsS --max-time 2 http://127.0.0.1:11434/api/tags >/dev/null 2>&1 && { ok "oMLX stack back up"; return 0; }
     sleep 1
