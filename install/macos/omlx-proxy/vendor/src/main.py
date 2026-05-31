@@ -203,6 +203,8 @@ app.include_router(embeddings.router, prefix="/v1", tags=["embeddings"])
 app.include_router(metrics.router, prefix="/v1", tags=["metrics"])
 
 # Also include Ollama-style endpoints
+from src.routers import nomad_pull  # noqa: E402
+app.include_router(nomad_pull.router, prefix="/api", tags=["nomad-pull"])
 app.include_router(chat.router, prefix="/api", tags=["ollama-chat"])
 app.include_router(models.router, prefix="/api", tags=["ollama-mode"])
 app.include_router(embeddings.router, prefix="/api", tags=["ollama-embeddings"])
