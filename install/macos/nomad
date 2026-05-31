@@ -3690,11 +3690,14 @@ cmd_models() {
       # Ollama (which isn't the active chat backend). Route pulls through the
       # proxy on :11434 instead so oMLX translates them to MLX format.
       if [[ "$BACKEND" == "omlx" ]]; then
-        local m
+        local m body
         for m in $to_pull; do
           log "pulling (MLX) $m via proxy…"
-          curl -fsS -X POST http://127.0.0.1:11434/api/pull \
-            -H 'Content-Type: application/json' -d "{\"name\":\"$m\"}" \
+          body="$(jq -nc --arg n "$m" '{name:$n}')"   # safe JSON (handles odd chars)
+          # -fS (not -s): surface errors AND stream the proxy's NDJSON progress so
+          # the user sees download advancement during a multi-GB MLX pull.
+          curl -fS -X POST http://127.0.0.1:11434/api/pull \
+            -H 'Content-Type: application/json' -d "$body" \
             --no-buffer || warn "pull failed for $m"
         done
         return 0
