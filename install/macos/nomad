@@ -4753,17 +4753,26 @@ cmd_backend() {
         die "oMLX requires Apple Silicon + macOS 15+ — cannot switch on this Mac."
       fi
       if [[ "$target" == "$BACKEND" ]]; then log "already on '$target'"; return 0; fi
-      _env_upsert NOMAD_AI_BACKEND "$target"
+      # Unload every AI LaunchAgent and kill orphan processes first. bootout isn't
+      # synchronous, so a lingering process (e.g. chat-Ollama still on :11434 during
+      # an ollama→omlx switch) would make the target's bootstrap fail to bind.
       local label
+      for label in "$LA_LABEL" "$PROXY_LABEL" "$OMLX_LABEL" "$EMBED_LABEL"; do
+        launchctl bootout "$LA_TARGET/$label" 2>/dev/null || true
+      done
+      pkill -f "omlx serve" 2>/dev/null || true
+      pkill -f "uvicorn src.main:app" 2>/dev/null || true
+      pkill -f "ollama serve" 2>/dev/null || true
+      sleep 2
+      # Bring up the target stack; these step_* die() on hard failure. Only after
+      # they succeed do we rewrite .env — so a mid-switch failure never leaves the
+      # config claiming a backend that isn't actually running.
       if [[ "$target" == "omlx" ]]; then
-        launchctl bootout "$LA_TARGET/$LA_LABEL" 2>/dev/null || true   # unload chat-Ollama :11434
         step_omlx_native; step_ollama_embed; step_omlx_proxy
       else
-        for label in "$PROXY_LABEL" "$OMLX_LABEL" "$EMBED_LABEL"; do
-          launchctl bootout "$LA_TARGET/$label" 2>/dev/null || true
-        done
         step_ollama_native
       fi
+      _env_upsert NOMAD_AI_BACKEND "$target"
       BACKEND="$target"
       ok "switched backend → $target (admin still talks to :11434; models on disk are preserved)"
       log "run 'nomad check stack' to confirm health, 'nomad models pull auto' to ensure models"
