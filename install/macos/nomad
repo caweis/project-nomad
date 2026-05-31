@@ -357,6 +357,7 @@ backend_eligible() {
   arch="$(_nomad_arch)"; major="$(_nomad_os_major)"
   [[ "$arch" == "arm64" && -n "$major" && "$major" -ge 15 ]]
 }
+
 # Hardware-recommended default backend: oMLX when eligible, else Ollama.
 recommend_backend() {
   if backend_eligible; then echo omlx; else echo ollama; fi
