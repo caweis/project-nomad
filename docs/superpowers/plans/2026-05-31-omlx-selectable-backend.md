@@ -467,7 +467,7 @@ step_omlx_native() {
   <key>KeepAlive</key>
   <dict><key>SuccessfulExit</key> <false/></dict>
   <key>ThrottleInterval</key> <integer>10</integer>
-  <key>ExitTimeOut</key>      <integer>30</integer>
+  <key>ExitTimeout</key>      <integer>30</integer>
   <key>StandardOutPath</key>  <string>${HOME}/Library/Logs/nomad-omlx.out.log</string>
   <key>StandardErrorPath</key> <string>${HOME}/Library/Logs/nomad-omlx.err.log</string>
 </dict>

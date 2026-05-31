@@ -1636,10 +1636,10 @@ LAUNCH_EOF
        restart-loops at full CPU. 10s is the launchd doc default but worth
        being explicit. -->
   <key>ThrottleInterval</key> <integer>10</integer>
-  <!-- ExitTimeOut: how long launchd waits between SIGTERM and SIGKILL.
+  <!-- ExitTimeout: how long launchd waits between SIGTERM and SIGKILL.
        Default is 20s. We bump to 30s so an in-flight model generation has
        time to finish writing the conversation buffer to disk on shutdown. -->
-  <key>ExitTimeOut</key>      <integer>30</integer>
+  <key>ExitTimeout</key>      <integer>30</integer>
   <key>StandardOutPath</key>   <string>${HOME}/Library/Logs/nomad-ollama.out.log</string>
   <key>StandardErrorPath</key> <string>${HOME}/Library/Logs/nomad-ollama.err.log</string>
 </dict>
@@ -1727,7 +1727,7 @@ step_omlx_native() {
   <key>KeepAlive</key>
   <dict><key>SuccessfulExit</key> <false/></dict>
   <key>ThrottleInterval</key> <integer>10</integer>
-  <key>ExitTimeOut</key>      <integer>30</integer>
+  <key>ExitTimeout</key>      <integer>30</integer>
   <key>StandardOutPath</key>  <string>${HOME}/Library/Logs/nomad-omlx.out.log</string>
   <key>StandardErrorPath</key> <string>${HOME}/Library/Logs/nomad-omlx.err.log</string>
 </dict>
