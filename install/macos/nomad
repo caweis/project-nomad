@@ -4683,6 +4683,34 @@ Set NOMAD_BUNDLE_DIR in $ENV_FILE or reinstall."
   NOMAD_NO_SELF_UPDATE=1 exec /bin/bash "$bundle/nomad" install
 }
 
+# oMLX-mode reset: bounce proxy + oMLX + embed agents, reusing the wedged-drive
+# probe (now over mlx-models). Mirrors the native reset's bootout->restart->wait.
+_reset_omlx_stack() {
+  local mode="${1:-auto}"
+  section "Resetting oMLX stack (proxy :11434, oMLX :8000, embed :11435)"
+  local data_root; data_root="$(grep '^NOMAD_DATA_ROOT=' "$ENV_FILE" | cut -d= -f2-)"
+  local mlx_dir="$data_root/mlx-models"
+  if [[ -n "$mlx_dir" ]] && _probe_wedged "$mlx_dir" 5; then
+    warn "mlx-models path appears wedged ($mlx_dir) — restart the data drive, then re-run"
+  fi
+  local label
+  for label in "$PROXY_LABEL" "$OMLX_LABEL" "$EMBED_LABEL"; do
+    launchctl bootout "$LA_TARGET/$label" 2>/dev/null || true
+  done
+  pkill -f "omlx serve" 2>/dev/null || true
+  sleep 1
+  step_omlx_native
+  step_ollama_embed
+  step_omlx_proxy
+  local d=$(( $(date +%s) + 30 ))
+  while [[ $(date +%s) -lt $d ]]; do
+    curl -fsS --max-time 2 http://127.0.0.1:11434/api/tags >/dev/null 2>&1 && { ok "oMLX stack back up"; return 0; }
+    sleep 1
+  done
+  flag "🔴" "oMLX stack did not come up within 30s" "Check the three nomad-omlx*.err.log files"
+  return 1
+}
+
 # Reset the Ollama LaunchAgent — recovery for "bootstrap failed: 5: Input/output
 # error" or any other stuck-launchd state. Bootout, kill orphan ollama processes,
 # wait for launchd to commit, re-bootstrap, wait for API.
@@ -4702,6 +4730,10 @@ cmd_reset_ollama() {
       *) die "usage: nomad reset-ollama [--internal | --drive]" ;;
     esac
   done
+
+  _load_backend
+  if [[ "$BACKEND" == "omlx" ]]; then _reset_omlx_stack "$mode"; return $?; fi
+  # else: existing native-Ollama reset continues unchanged below.
 
   section "Reset Ollama LaunchAgent"
 
