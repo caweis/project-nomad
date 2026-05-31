@@ -3,7 +3,15 @@
 **Date:** 2026-05-31
 **Branch:** `main`
 **Components:** `install/macos/nomad` (backend selection, oMLX + proxy setup, MLX tiers, backend-aware commands), a vendored Ollama-compat proxy, `install/macos/compose.yaml` (unchanged for the admin), docs/man.
-**Status:** Approved architecture — drafting spec for review.
+**Status:** Approved — implementation plan written (`docs/superpowers/plans/2026-05-31-omlx-selectable-backend.md`).
+
+> **Reconciliation (post-approval, after inspecting upstream `eyalrot/ollama_openai`):**
+> the plan supersedes this spec on four points — the proxy already implements
+> `/api/show`, `/api/version`, and a 501 `/api/pull` (we *replace* the 501, not add);
+> it has a built-in `MODEL_MAPPING_FILE` so the Ollama→mlx map is a single JSON
+> source and the "parallel MLX tier table" is dropped (reuse `TIER_*`, DRY); oMLX
+> serves a single `:8000` (we target it, keep a `:8080` fallback probe). See the
+> plan's "Spec ↔ reality reconciliation" section.
 
 ---
 
