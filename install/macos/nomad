@@ -1685,6 +1685,25 @@ Manual recovery:
   die "Ollama did not start — check ~/Library/Logs/nomad-ollama.err.log"
 }
 
+# Poll an HTTP endpoint until it answers, showing a live elapsed-seconds counter on
+# one line so a long startup never looks hung. Returns 0 on success, 1 on timeout.
+# Usage: _wait_http_counter <url> <timeout_secs> <label>
+_wait_http_counter() {
+  local url="$1" timeout="${2:-30}" label="${3:-service}"
+  local start; start=$(date +%s)
+  local deadline=$(( start + timeout ))
+  while [[ $(date +%s) -lt $deadline ]]; do
+    if curl -fsS --max-time 2 "$url" >/dev/null 2>&1; then
+      printf "\r\033[K" >&2   # clear the counter line
+      return 0
+    fi
+    printf "\r  …waiting for %s  %ds / %ds" "$label" "$(( $(date +%s) - start ))" "$timeout" >&2
+    sleep 1
+  done
+  printf "\r\033[K" >&2
+  return 1
+}
+
 step_omlx_native() {
   section "Native oMLX (Apple-MLX) on :8000"
   local data_root; data_root="$(grep '^NOMAD_DATA_ROOT=' "$ENV_FILE" | cut -d= -f2-)"
@@ -1693,10 +1712,13 @@ step_omlx_native() {
   local cache_dir="$data_root/mlx-kv-cache"
   mkdir -p "$mlx_dir" "$cache_dir" "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
 
-  # Install oMLX (idempotent). 🔌 VERIFY ON DEVICE: confirm formula name post-tap.
+  # Install oMLX (idempotent).
   if ! command -v omlx >/dev/null 2>&1; then
+    log "installing oMLX via Homebrew — first run downloads ~1.4 GB, this takes a few minutes (brew shows its own progress below)…"
     brew tap jundot/omlx https://github.com/jundot/omlx 2>/dev/null || true
     brew install omlx || die "brew install omlx failed — see https://github.com/jundot/omlx"
+  else
+    ok "oMLX already installed ($(command -v omlx))"
   fi
   local omlx_bin; omlx_bin="$(command -v omlx)"
 
@@ -1763,14 +1785,11 @@ EOF
   done
   [[ -n "$last_err" ]] && die "oMLX bootstrap failed after 3 attempts: $last_err"
 
-  local deadline=$(( $(date +%s) + 30 ))
-  while [[ $(date +%s) -lt $deadline ]]; do
-    if curl -fsS --max-time 2 http://127.0.0.1:8000/v1/models >/dev/null 2>&1; then
-      ok "oMLX responding on :8000"; return 0
-    fi
-    sleep 1
-  done
-  warn "oMLX bootstrapped but not yet answering on :8000 (it may still be starting/loading) — check ~/Library/Logs/nomad-omlx.err.log"
+  if _wait_http_counter "http://127.0.0.1:8000/v1/models" 60 "oMLX on :8000"; then
+    ok "oMLX responding on :8000"
+  else
+    warn "oMLX bootstrapped but not yet answering on :8000 (it may still be loading) — check ~/Library/Logs/nomad-omlx.err.log"
+  fi
 }
 
 step_ollama_embed() {
@@ -1824,9 +1843,13 @@ EOF
   done
   [[ -n "$last_err" ]] && die "embed-Ollama bootstrap failed after 3 attempts: $last_err"
 
-  # Ensure the embedding model exists on this instance (internal disk, so pull
-  # is always local — fast no-op if already present).
-  OLLAMA_HOST=127.0.0.1:11435 OLLAMA_MODELS="$SECRETS_DIR/embed-models" "$ollama_bin" pull nomic-embed-text >/dev/null 2>&1 || \
+  # Wait for the embed server to answer before pulling (it just bootstrapped).
+  _wait_http_counter "http://127.0.0.1:11435/api/tags" 20 "embed Ollama on :11435" || \
+    warn "embed Ollama slow to answer on :11435 — check ~/Library/Logs/nomad-ollama-embed.err.log"
+  # Ensure the embedding model is present (internal disk; fast no-op if already there).
+  # Progress is shown (not suppressed) so the ~270 MB one-time download isn't silent.
+  log "ensuring embedding model nomic-embed-text (~270 MB, one-time download)…"
+  OLLAMA_HOST=127.0.0.1:11435 OLLAMA_MODELS="$SECRETS_DIR/embed-models" "$ollama_bin" pull nomic-embed-text || \
     warn "could not pre-pull nomic-embed-text on embed Ollama — RAG will pull on first use"
 }
 
@@ -1843,8 +1866,10 @@ step_omlx_proxy() {
   # Isolated venv next to the secrets dir (not on the data drive).
   local venv="$SECRETS_DIR/omlx-proxy-venv"
   if [[ ! -x "$venv/bin/uvicorn" ]]; then
+    log "setting up the proxy's Python environment — first run installs dependencies (~1 min)…"
     /usr/bin/python3 -m venv "$venv" || die "python3 venv creation failed"
     "$venv/bin/pip" install --quiet -r "$proxy_dir/vendor/requirements.txt" || die "proxy deps install failed"
+    ok "proxy Python environment ready"
   fi
 
   # I2: pre-check :11434 — boot out any stale proxy agent before writing new plist
@@ -1904,6 +1929,12 @@ EOF
     sleep $((attempt * 2))
   done
   [[ -n "$last_err" ]] && die "proxy bootstrap failed after 3 attempts: $last_err"
+
+  if _wait_http_counter "http://127.0.0.1:11434/api/tags" 30 "proxy on :11434"; then
+    ok "proxy responding on :11434 (admin reaches it via host.docker.internal)"
+  else
+    warn "proxy bootstrapped but not yet answering on :11434 — check ~/Library/Logs/nomad-omlx-proxy.err.log"
+  fi
 }
 
 # Symlink ourselves into brew's bin dir so `nomad <cmd>` works without the
