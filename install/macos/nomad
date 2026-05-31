@@ -4675,6 +4675,21 @@ _resolve_bundle_dir() {
   if [[ -n "$recorded" ]]; then echo "$recorded"; else echo "$HERE"; fi
 }
 
+# Self-heal a moved bundle. If the script we're actually running ($HERE) lives in a
+# different dir than .env records, the running script is authoritative (it's what the
+# user invoked) — rewrite NOMAD_BUNDLE_DIR to $HERE. Without this, `nomad update`/
+# `reinstall` resolve + re-exec the *recorded* bundle, so re-bootstrapping to a new
+# location and then running the new bundle's nomad would silently bounce back to the
+# old one. Call before any bundle-relative work in update/reinstall.
+_reconcile_bundle_dir() {
+  [[ -f "$ENV_FILE" ]] || return 0
+  local recorded; recorded="$(grep '^NOMAD_BUNDLE_DIR=' "$ENV_FILE" | cut -d= -f2-)"
+  [[ -n "$recorded" && "$recorded" != "$HERE" ]] || return 0
+  warn "bundle moved — .env recorded '$recorded' but you're running from '$HERE'; updating .env to here"
+  /usr/bin/sed -i '' "s|^NOMAD_BUNDLE_DIR=.*|NOMAD_BUNDLE_DIR=$HERE|" "$ENV_FILE" 2>/dev/null \
+    || warn "could not rewrite NOMAD_BUNDLE_DIR in $ENV_FILE"
+}
+
 # Is $1 inside a git working tree? (bundle dir itself or its parent has .git)
 _bundle_is_git() {
   local d="$1"
@@ -4712,6 +4727,7 @@ cmd_update() {
   done
 
   section "Update NOMAD"
+  _reconcile_bundle_dir   # if the bundle moved, trust the script we're actually running
   local bundle; bundle="$(_resolve_bundle_dir)"
   [[ -d "$bundle" ]] || die "bundle dir not found: $bundle
 Set NOMAD_BUNDLE_DIR in $ENV_FILE or reinstall."
