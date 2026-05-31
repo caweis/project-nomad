@@ -780,50 +780,60 @@ check_install() {
     inv_missing "Docker daemon" "comes with OrbStack"
   fi
 
-  # --- Ollama (binary, agent, port, API) ---
-  if command -v ollama >/dev/null 2>&1; then
-    inv_ok "Ollama binary" "$(ollama --version 2>&1 | head -1 | sed 's/^.*version //')"
+  # --- AI agents (backend-aware) ---
+  _load_backend
+  if [[ "$BACKEND" == "omlx" ]]; then
+    # In oMLX mode the native-Ollama LaunchAgent is intentionally unloaded and
+    # :11434 is owned by the proxy (loopback only). All AI-agent health checks
+    # are already covered by 'nomad check stack'; skip them here to avoid
+    # contradicting that command.
+    inv_ok "AI agents" "validated by 'nomad check stack' (oMLX backend)"
   else
-    inv_missing "Ollama binary" "brew install ollama"
-  fi
-
-  if [[ -f "$LA_PLIST" ]]; then
-    if launchctl print "$LA_TARGET/$LA_LABEL" >/dev/null 2>&1; then
-      local lstate; lstate="$(launchctl print "$LA_TARGET/$LA_LABEL" 2>/dev/null | awk -F' = ' '/^\tstate/{print $2;exit}' | tr -d ' ')"
-      inv_ok "Ollama LaunchAgent" "loaded (state=${lstate:-?})"
+    # --- Ollama (binary, agent, port, API) — native Ollama mode only ---
+    if command -v ollama >/dev/null 2>&1; then
+      inv_ok "Ollama binary" "$(ollama --version 2>&1 | head -1 | sed 's/^.*version //')"
     else
-      inv_broken "Ollama LaunchAgent" "plist present but not loaded — nomad reset-ollama"
+      inv_missing "Ollama binary" "brew install ollama"
     fi
-  else
-    inv_missing "Ollama LaunchAgent" "would write $LA_PLIST"
-  fi
 
-  if curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
-    # Split capture from parse so a curl failure isn't reported as "0 models"
-    # — that's how the API-down case used to render, indistinguishable from a
-    # responsive API with no models installed.
-    local tags_json n_models
-    tags_json="$(curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags 2>/dev/null)"
-    if [[ -z "$tags_json" ]]; then
-      inv_broken "Ollama API" "/api/tags reachable then transient-failed — investigate"
-    else
-      n_models="$(jq '.models | length' 2>/dev/null <<<"$tags_json")"
-      if [[ -z "$n_models" || "$n_models" == "null" ]]; then
-        inv_broken "Ollama API" "/api/tags returned unparseable JSON"
+    if [[ -f "$LA_PLIST" ]]; then
+      if launchctl print "$LA_TARGET/$LA_LABEL" >/dev/null 2>&1; then
+        local lstate; lstate="$(launchctl print "$LA_TARGET/$LA_LABEL" 2>/dev/null | awk -F' = ' '/^\tstate/{print $2;exit}' | tr -d ' ')"
+        inv_ok "Ollama LaunchAgent" "loaded (state=${lstate:-?})"
       else
-        inv_ok "Ollama API" "responding on :11434, ${n_models} model(s)"
+        inv_broken "Ollama LaunchAgent" "plist present but not loaded — nomad reset-ollama"
       fi
-    fi
-  else
-    inv_missing "Ollama API" "needs LaunchAgent running"
-  fi
-
-  if lsof -nP -iTCP:11434 -sTCP:LISTEN >/dev/null 2>&1; then
-    local bind; bind="$(lsof -nP -iTCP:11434 -sTCP:LISTEN | awk 'NR==2{print $9}')"
-    if [[ "$bind" == *"127.0.0.1:11434"* ]]; then
-      inv_broken "Ollama port binding" "$bind — containers can't reach via host.docker.internal"
     else
-      inv_ok "Ollama port binding" "$bind"
+      inv_missing "Ollama LaunchAgent" "would write $LA_PLIST"
+    fi
+
+    if curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+      # Split capture from parse so a curl failure isn't reported as "0 models"
+      # — that's how the API-down case used to render, indistinguishable from a
+      # responsive API with no models installed.
+      local tags_json n_models
+      tags_json="$(curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags 2>/dev/null)"
+      if [[ -z "$tags_json" ]]; then
+        inv_broken "Ollama API" "/api/tags reachable then transient-failed — investigate"
+      else
+        n_models="$(jq '.models | length' 2>/dev/null <<<"$tags_json")"
+        if [[ -z "$n_models" || "$n_models" == "null" ]]; then
+          inv_broken "Ollama API" "/api/tags returned unparseable JSON"
+        else
+          inv_ok "Ollama API" "responding on :11434, ${n_models} model(s)"
+        fi
+      fi
+    else
+      inv_missing "Ollama API" "needs LaunchAgent running"
+    fi
+
+    if lsof -nP -iTCP:11434 -sTCP:LISTEN >/dev/null 2>&1; then
+      local bind; bind="$(lsof -nP -iTCP:11434 -sTCP:LISTEN | awk 'NR==2{print $9}')"
+      if [[ "$bind" == *"127.0.0.1:11434"* ]]; then
+        inv_broken "Ollama port binding" "$bind — containers can't reach via host.docker.internal"
+      else
+        inv_ok "Ollama port binding" "$bind"
+      fi
     fi
   fi
 

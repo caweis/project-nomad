@@ -59,3 +59,14 @@ async def test_chat_pull_emits_error_ndjson_when_download_unreachable(monkeypatc
     lines = [json.loads(l) async for l in nomad_pull._pull_stream("foo:7b")]
     assert lines[-1]["status"] == "error"
     assert "unreachable" in lines[-1]["error"]
+
+
+@pytest.mark.asyncio
+async def test_unmapped_model_is_refused(monkeypatch):
+    """An unmapped name (resolver returns '') yields a terminal error with 'refusing to pull'."""
+    monkeypatch.setattr(nomad_pull, "_resolve_mlx_repo", lambda name: "")
+    monkeypatch.setattr(nomad_pull, "_is_embedding", lambda name: False)
+    lines = [json.loads(l) async for l in nomad_pull._pull_stream("totally-arbitrary-model")]
+    assert lines[-1]["status"] == "error"
+    assert "refusing to pull" in lines[-1]["error"]
+    assert "unmapped" in lines[-1]["error"]

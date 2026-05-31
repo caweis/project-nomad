@@ -28,12 +28,24 @@ def _is_embedding(name: str) -> bool:
 
 
 def _resolve_mlx_repo(name: str) -> str:
-    mapping = {}
+    """Return the trusted HuggingFace repo for *name*, or "" if not allowed.
+
+    Allowed means:
+    - the name is an explicit key in model_map.json (trusted, curated list), OR
+    - the name is already a namespaced mlx-community/… repo (trusted org).
+
+    Anything else returns "" to signal "not allowed" — callers must refuse it.
+    """
+    mapping: dict = {}
     try:
         mapping = _get_settings().load_model_mappings() or {}
     except Exception:
         mapping = {}
-    return mapping.get(name, name)
+    if name in mapping:
+        return mapping[name]
+    if name.startswith("mlx-community/"):
+        return name
+    return ""
 
 
 def _ndjson(obj: dict) -> str:
@@ -79,6 +91,15 @@ async def _pull_stream(name: str):
         return
 
     repo = _resolve_mlx_repo(name)
+    if not repo:
+        yield _ndjson({
+            "status": "error",
+            "error": (
+                f"refusing to pull unmapped model '{name}' "
+                "(not in model_map.json and not an mlx-community repo)"
+            ),
+        })
+        return
     yield _ndjson({"status": "pulling manifest"})
     async with httpx.AsyncClient(timeout=httpx.Timeout(connect=5.0, read=None, write=10.0, pool=5.0)) as client:
         try:
