@@ -1,14 +1,16 @@
 # oMLX On-Device Verification — Ship-Gate Checklist
 
-The installer recommends oMLX by default on eligible Macs (Apple Silicon + macOS 15).
-This means the majority of eligible users are routed through the newer proxy + oMLX path
-on first install, without ever seeing an Ollama prompt. Because the integration — brew tap,
-launchd, the oMLX runtime, HuggingFace pulls, and RAG parity — can only be exercised on
-real hardware, this checklist is a hard prerequisite before that default ships.
+`recommend_backend()` in `install/macos/nomad` returns **oMLX on eligible Macs**
+(Apple Silicon + macOS 15+) — the approved default. The install picker shows that as
+the recommended choice (the user can still type `ollama`), so most eligible users land
+on the newer proxy + oMLX path. Because the integration — brew tap, launchd, the oMLX
+runtime, HuggingFace pulls, and RAG parity — can only be exercised on real hardware,
+this checklist must be run promptly on a macOS 15 Apple-Silicon Mac to confirm that
+default is safe.
 
-**If any item below fails, set the installer default back to Ollama
-(`hw_recommended_backend()` returns `ollama` unconditionally) until the issue is resolved
-and every box is checked.**
+**If any item below fails, change `recommend_backend()` to return `ollama`
+unconditionally (a one-line edit) until the issue is resolved and every box is checked —
+do not leave eligible users defaulted onto a path with a failing item.**
 
 ---
 
@@ -150,7 +152,8 @@ and every box is checked.**
 
 ## Closing
 
-Until every box above is checked, the safe configuration is **Ollama recommended by
-default**. Flipping `hw_recommended_backend()` in `install/macos/nomad` to return `omlx`
-on eligible hardware is gated on this checklist passing in full on a macOS 15 Apple-Silicon
-Mac. No partial passes — every item must resolve before the default ships.
+`recommend_backend()` already returns `omlx` on eligible hardware (the approved default).
+This checklist is the confirmation that the default is safe — run it in full on a macOS 15
+Apple-Silicon Mac. If any item fails, revert `recommend_backend()` to return `ollama`
+unconditionally until it's fixed. No partial passes — every item must resolve for the
+oMLX-by-default recommendation to stand.
