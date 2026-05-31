@@ -1827,6 +1827,8 @@ step_secrets() {
       printf "APPLE_GPU_MODEL=%s\n" "$apple_gpu"  >> "$ENV_FILE"
     grep -qE "^HOST_PLATFORM=" "$ENV_FILE" || \
       printf "HOST_PLATFORM=darwin\n" >> "$ENV_FILE"
+    grep -qE "^NOMAD_AI_BACKEND=" "$ENV_FILE" || \
+      printf "NOMAD_AI_BACKEND=%s\n" "${BACKEND:-ollama}" >> "$ENV_FILE"
   else
     cat > "$ENV_FILE" <<EOF
 NOMAD_DATA_ROOT=${DATA_ROOT_RESOLVED}
