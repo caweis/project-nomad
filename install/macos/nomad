@@ -432,6 +432,12 @@ resolve_lean_models() {
 # Ports we rely on — system-check looks for collisions
 NOMAD_PORTS="8080 9999 11434"
 
+# launchctl bootstrap stderr capture — mktemp (not a fixed /tmp path) to avoid
+# symlink/clobber + info-leak on multi-user macOS. Explicit /tmp/nomad-* template
+# (not `mktemp -t`, which honors $TMPDIR → /var/folders) so the cleanup below
+# still finds it; it's also added to the `rm` line by name to be safe.
+NOMAD_BOOTSTRAP_LOG="$(mktemp /tmp/nomad-bootstrap.XXXXXX 2>/dev/null || echo /tmp/nomad-bootstrap.log)"
+
 # ─── output helpers ───────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
   C_OK=$'\033[0;32m'; C_WARN=$'\033[0;33m'; C_ERR=$'\033[0;31m'
@@ -1677,12 +1683,12 @@ EOF
   # in some transient state; sleep + bootout-again + retry is the documented dance.
   local attempt last_err=""
   for attempt in 1 2 3; do
-    if launchctl bootstrap "$LA_TARGET" "$LA_PLIST" 2>/tmp/nomad-bootstrap.log; then
+    if launchctl bootstrap "$LA_TARGET" "$LA_PLIST" 2>"$NOMAD_BOOTSTRAP_LOG"; then
       last_err=""
       ok "LaunchAgent bootstrapped"
       break
     fi
-    last_err="$(cat /tmp/nomad-bootstrap.log)"
+    last_err="$(cat "$NOMAD_BOOTSTRAP_LOG")"
     warn "bootstrap attempt $attempt failed: $last_err"
     if echo "$last_err" | grep -q "Input/output error"; then
       launchctl bootout "$LA_TARGET/$LA_LABEL" 2>/dev/null || true
@@ -1799,10 +1805,10 @@ EOF
   launchctl bootout "$LA_TARGET/$OMLX_LABEL" 2>/dev/null || true
   local last_err=""
   for attempt in 1 2 3; do
-    if launchctl bootstrap "$LA_TARGET" "$OMLX_PLIST" 2>/tmp/nomad-bootstrap.log; then
+    if launchctl bootstrap "$LA_TARGET" "$OMLX_PLIST" 2>"$NOMAD_BOOTSTRAP_LOG"; then
       last_err=""; ok "oMLX LaunchAgent bootstrapped on :8000"; break
     fi
-    last_err="$(cat /tmp/nomad-bootstrap.log)"
+    last_err="$(cat "$NOMAD_BOOTSTRAP_LOG")"
     warn "oMLX bootstrap attempt $attempt failed: $last_err"
     launchctl bootout "$LA_TARGET/$OMLX_LABEL" 2>/dev/null || true
     sleep $((attempt * 2))
@@ -1857,10 +1863,10 @@ EOF
   launchctl bootout "$LA_TARGET/$EMBED_LABEL" 2>/dev/null || true
   local last_err=""
   for attempt in 1 2 3; do
-    if launchctl bootstrap "$LA_TARGET" "$EMBED_PLIST" 2>/tmp/nomad-bootstrap.log; then
+    if launchctl bootstrap "$LA_TARGET" "$EMBED_PLIST" 2>"$NOMAD_BOOTSTRAP_LOG"; then
       last_err=""; ok "embed-only Ollama on :11435"; break
     fi
-    last_err="$(cat /tmp/nomad-bootstrap.log)"
+    last_err="$(cat "$NOMAD_BOOTSTRAP_LOG")"
     warn "embed-Ollama bootstrap attempt $attempt failed: $last_err"
     launchctl bootout "$LA_TARGET/$EMBED_LABEL" 2>/dev/null || true
     sleep $((attempt * 2))
@@ -1950,10 +1956,10 @@ EOF
   launchctl bootout "$LA_TARGET/$PROXY_LABEL" 2>/dev/null || true
   local last_err=""
   for attempt in 1 2 3; do
-    if launchctl bootstrap "$LA_TARGET" "$PROXY_PLIST" 2>/tmp/nomad-bootstrap.log; then
+    if launchctl bootstrap "$LA_TARGET" "$PROXY_PLIST" 2>"$NOMAD_BOOTSTRAP_LOG"; then
       last_err=""; ok "proxy bootstrapped on :11434"; break
     fi
-    last_err="$(cat /tmp/nomad-bootstrap.log)"
+    last_err="$(cat "$NOMAD_BOOTSTRAP_LOG")"
     warn "proxy bootstrap attempt $attempt failed: $last_err"
     launchctl bootout "$LA_TARGET/$PROXY_LABEL" 2>/dev/null || true
     sleep $((attempt * 2))
@@ -4281,8 +4287,9 @@ cmd_reinstall() {
     docker image prune -f >/dev/null 2>&1 || true
   fi
 
-  # Clean any /tmp scratch from previous runs
-  rm -f /tmp/nomad-*.log /tmp/nomad-*.result /tmp/nomad-pull.log /tmp/nomad-bootstrap.log 2>/dev/null || true
+  # Clean any /tmp scratch from previous runs (mktemp bootstrap log has no .log
+  # suffix, so remove it by name as well as the legacy fixed-path globs)
+  rm -f /tmp/nomad-*.log /tmp/nomad-*.result /tmp/nomad-pull.log /tmp/nomad-bootstrap.log "$NOMAD_BOOTSTRAP_LOG" 2>/dev/null || true
 
   echo
   log "starting fresh install in 3 seconds (Ctrl-C to abort)..."
@@ -5051,11 +5058,11 @@ Run: bash nomad install"
   log "bootstrapping LaunchAgent"
   local attempt last_err=""
   for attempt in 1 2 3; do
-    if launchctl bootstrap "$LA_TARGET" "$LA_PLIST" 2>/tmp/nomad-bootstrap.log; then
+    if launchctl bootstrap "$LA_TARGET" "$LA_PLIST" 2>"$NOMAD_BOOTSTRAP_LOG"; then
       last_err=""
       break
     fi
-    last_err="$(cat /tmp/nomad-bootstrap.log)"
+    last_err="$(cat "$NOMAD_BOOTSTRAP_LOG")"
     warn "bootstrap attempt $attempt failed: $last_err"
     launchctl bootout "$LA_TARGET/$LA_LABEL" 2>/dev/null || true
     sleep $((attempt * 2))
