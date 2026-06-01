@@ -119,6 +119,7 @@ class ChatTranslator(
         self,
         openai_response: Union[OpenAIChatResponse, OpenAIStreamResponse],
         original_request: Union[OllamaGenerateRequest, OllamaChatRequest],
+        elapsed_ns: Optional[int] = None,
     ) -> Union[OllamaResponse, OllamaStreamResponse]:
         """
         Translate OpenAI response back to Ollama format.
@@ -126,6 +127,11 @@ class ChatTranslator(
         Args:
             openai_response: OpenAI chat completion response
             original_request: The original Ollama request for context
+            elapsed_ns: Measured wall-clock time of the upstream oMLX request, in
+                nanoseconds. When provided (non-streaming only), the real time is
+                reported so a downstream benchmark computes actual tok/s instead of
+                an artifact of the legacy hardcoded placeholders. None preserves the
+                legacy placeholder durations (back-compat).
 
         Returns:
             Ollama format response
@@ -142,7 +148,7 @@ class ChatTranslator(
 
             # Handle non-streaming response
             return self._translate_non_streaming_response(
-                openai_response, original_request
+                openai_response, original_request, elapsed_ns=elapsed_ns
             )
 
         except TranslationError:
@@ -576,6 +582,7 @@ class ChatTranslator(
         self,
         openai_response: OpenAIChatResponse,
         original_request: Union[OllamaGenerateRequest, OllamaChatRequest],
+        elapsed_ns: Optional[int] = None,
     ) -> OllamaResponse:
         """
         Translate non-streaming OpenAI response to Ollama format.
@@ -583,6 +590,8 @@ class ChatTranslator(
         Args:
             openai_response: OpenAI chat completion response
             original_request: Original Ollama request
+            elapsed_ns: Measured wall-clock time of the upstream oMLX request, in
+                nanoseconds. See translate_response for semantics.
 
         Returns:
             Ollama response
@@ -641,9 +650,21 @@ class ChatTranslator(
             response.prompt_eval_count = openai_response.usage.prompt_tokens
             response.eval_count = openai_response.usage.completion_tokens
 
-            # Calculate duration (approximate)
-            response.total_duration = int(1e9)  # 1 second in nanoseconds
-            response.prompt_eval_duration = int(0.5e9)  # 0.5 seconds
-            response.eval_duration = int(0.5e9)  # 0.5 seconds
+            if elapsed_ns is not None:
+                # Report the REAL end-to-end wall-clock time so a downstream
+                # benchmark (tok/s = eval_count / (eval_duration/1e9)) measures
+                # actual decode throughput instead of an artifact. The OpenAI API
+                # exposes no prefill time, so prompt_eval_duration is reported as 0
+                # (unknown) rather than fabricated. total == eval keeps Ollama's
+                # total ≈ load + prompt_eval + eval invariant consistent
+                # (load_duration = 0, prompt_eval_duration = 0).
+                response.total_duration = elapsed_ns
+                response.prompt_eval_duration = 0
+                response.eval_duration = elapsed_ns
+            else:
+                # Legacy placeholders — back-compat for callers that don't measure.
+                response.total_duration = int(1e9)  # 1 second in nanoseconds
+                response.prompt_eval_duration = int(0.5e9)  # 0.5 seconds
+                response.eval_duration = int(0.5e9)  # 0.5 seconds
 
         return response

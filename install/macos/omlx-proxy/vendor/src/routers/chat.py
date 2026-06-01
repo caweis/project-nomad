@@ -6,6 +6,7 @@ for chat completions and text generation.
 """
 
 import json
+import time
 from collections.abc import AsyncGenerator
 from typing import Union
 
@@ -395,17 +396,20 @@ async def generate(
                     },
                 )
             else:
-                # Make non-streaming request
+                # Make non-streaming request — time ONLY the upstream oMLX call so
+                # the benchmark sees real decode throughput, not the translation.
+                _t0 = time.perf_counter()
                 response = await make_openai_request(
                     client, openai_request, stream=False
                 )
+                elapsed_ns = int((time.perf_counter() - _t0) * 1e9)
 
                 # Parse response
                 openai_response = OpenAIChatResponse(**response.json())
 
                 # Translate response back to Ollama format
                 ollama_response = translator.translate_response(
-                    openai_response, request
+                    openai_response, request, elapsed_ns=elapsed_ns
                 )
 
                 return JSONResponse(
@@ -492,17 +496,20 @@ async def ollama_chat(
                     },
                 )
             else:
-                # Make non-streaming request
+                # Make non-streaming request — time ONLY the upstream oMLX call so
+                # the benchmark sees real decode throughput, not the translation.
+                _t0 = time.perf_counter()
                 response = await make_openai_request(
                     client, openai_request, stream=False
                 )
+                elapsed_ns = int((time.perf_counter() - _t0) * 1e9)
 
                 # Parse response
                 openai_response = OpenAIChatResponse(**response.json())
 
                 # Translate response back to Ollama format
                 ollama_response = translator.translate_response(
-                    openai_response, request
+                    openai_response, request, elapsed_ns=elapsed_ns
                 )
 
                 return JSONResponse(
