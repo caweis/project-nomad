@@ -4051,6 +4051,28 @@ _upgrade_compose_one() {
   ok "$svc upgraded"
 }
 
+# Surface which admin image build is now running. CI bakes the git SHA
+# (org.opencontainers.image.revision), version, and build date into the image's
+# OCI labels, so one `docker image inspect` tells you exactly which commit is
+# deployed — handy for confirming a fix landed once the registry catches up.
+_print_admin_image_build() {
+  local img; img="${NOMAD_ADMIN_IMAGE:-ghcr.io/caweis/project-nomad-macos-arm64:edge}"
+  local rev ver created digest
+  rev="$(docker image inspect "$img" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' 2>/dev/null)"
+  ver="$(docker image inspect "$img" --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' 2>/dev/null)"
+  created="$(docker image inspect "$img" --format '{{ index .Config.Labels "org.opencontainers.image.created" }}' 2>/dev/null)"
+  digest="$(docker image inspect "$img" --format '{{ if .RepoDigests }}{{ index .RepoDigests 0 }}{{ end }}' 2>/dev/null)"
+  local short_rev="${rev:0:7}"
+  local short_dig="${digest#*@sha256:}"; short_dig="${short_dig:0:12}"
+  if [[ -n "${rev}${ver}${created}" ]]; then
+    ok "admin image: ${ver:-edge}${short_rev:+ · rev ${short_rev}}${created:+ · built ${created}}${short_dig:+ · sha256:${short_dig}}"
+  elif [[ -n "$short_dig" ]]; then
+    ok "admin image: ${img##*/} · sha256:${short_dig}"
+  else
+    log "admin image: ${img} (build metadata unavailable)"
+  fi
+}
+
 _upgrade_compose_stack() {
   local check="$1"
   if [[ "$check" == "1" ]]; then
@@ -4063,6 +4085,7 @@ _upgrade_compose_stack() {
   log "recreating containers with new images..."
   dc up -d
   ok "compose stack upgraded"
+  _print_admin_image_build
 }
 
 _upgrade_admin_spawned_one() {
