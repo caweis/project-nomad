@@ -3,6 +3,7 @@ import logger from '@adonisjs/core/services/logger'
 import transmit from '@adonisjs/transmit/services/main'
 import si from 'systeminformation'
 import axios from 'axios'
+import http from 'node:http'
 import { DateTime } from 'luxon'
 import BenchmarkResult from '#models/benchmark_result'
 import BenchmarkSetting from '#models/benchmark_setting'
@@ -54,6 +55,34 @@ const SYSBENCH_CONTAINER_NAME = 'nomad_benchmark_sysbench'
 // Reference model for AI benchmark - small but meaningful
 const AI_BENCHMARK_MODEL = 'llama3.2:1b'
 const AI_BENCHMARK_PROMPT = 'Explain recursion in programming in exactly 100 words.'
+
+// The benchmark runs inside the long-lived worker process. A pooled keep-alive
+// socket to the Ollama-compat proxy goes stale whenever the proxy restarts
+// (nomad update / upgrade / reset-ollama all bounce it); the next benchmark
+// reuses the dead socket -> instant ECONNRESET on the health check, which skips
+// the ENTIRE AI benchmark (observed on the oMLX backend). Dial a fresh,
+// non-keep-alive connection for these calls (and bypass any proxy env) so each
+// benchmark opens a clean socket, then retry once on a transient reset.
+const BENCH_HTTP_AGENT = new http.Agent({ keepAlive: false })
+const BENCH_AXIOS_OPTS = {
+  httpAgent: BENCH_HTTP_AGENT,
+  proxy: false as const,
+  headers: { Connection: 'close' },
+}
+
+async function benchRequestWithRetry<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn()
+  } catch (error: any) {
+    // A stale-socket reset (or the proxy still coming back up) is transient —
+    // one clean retry on a fresh connection clears it. Real outages still throw.
+    if (error?.code === 'ECONNRESET' || error?.code === 'ECONNREFUSED') {
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      return await fn()
+    }
+    throw error
+  }
+}
 
 // Reference scores for normalization (calibrated to 0-100 scale)
 // These represent "expected" scores for a mid-range system (score ~50)
@@ -707,7 +736,9 @@ export class BenchmarkService {
 
     // Check if Ollama is available
     try {
-      await axios.get(`${ollamaAPIURL}/api/tags`, { timeout: 5000 })
+      await benchRequestWithRetry(() =>
+        axios.get(`${ollamaAPIURL}/api/tags`, { timeout: 5000, ...BENCH_AXIOS_OPTS })
+      )
     } catch (error) {
       const errorCode = error.code || error.response?.status || 'unknown'
       throw new Error(`Ollama is not running or not accessible (${errorCode}). Ensure AI Assistant is installed and running.`)
@@ -723,14 +754,16 @@ export class BenchmarkService {
     // Run inference benchmark
     const startTime = Date.now()
 
-      const response = await axios.post(
-        `${ollamaAPIURL}/api/generate`,
-        {
-          model: AI_BENCHMARK_MODEL,
-          prompt: AI_BENCHMARK_PROMPT,
-          stream: false,
-        },
-        { timeout: 120000 }
+      const response = await benchRequestWithRetry(() =>
+        axios.post(
+          `${ollamaAPIURL}/api/generate`,
+          {
+            model: AI_BENCHMARK_MODEL,
+            prompt: AI_BENCHMARK_PROMPT,
+            stream: false,
+          },
+          { timeout: 120000, ...BENCH_AXIOS_OPTS }
+        )
       )
 
       const endTime = Date.now()
