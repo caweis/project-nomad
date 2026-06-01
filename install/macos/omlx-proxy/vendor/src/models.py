@@ -297,6 +297,19 @@ class OllamaShowResponse(BaseModel):
     model_info: Dict[str, Any] = Field(
         default_factory=dict, description="Additional model info"
     )
+    # NOMAD/oMLX: real Ollama returns a `capabilities` array here; the upstream
+    # proxy omitted it. The admin calls `modelInfo.capabilities.includes('thinking')`
+    # with NO null guard before every chat (checkModelHasThinking), so a missing
+    # array becomes `undefined.includes(...)` → TypeError → the admin's streaming
+    # chat handler swallows it as {"error":true} and every RAG chat dies with
+    # "Sorry, there was an error". We report ["completion"] (the MLX backend serves
+    # text-completion chat models). We intentionally do NOT claim "thinking": that
+    # would make the admin send Ollama's `think` param, which oMLX's OpenAI API
+    # does not accept — trading this bug for a new one.
+    capabilities: List[str] = Field(
+        default_factory=lambda: ["completion"],
+        description="Ollama model capabilities (e.g. completion, tools, thinking).",
+    )
 
 
 class OllamaPullResponse(BaseModel):
