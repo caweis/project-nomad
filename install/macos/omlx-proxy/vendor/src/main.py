@@ -199,6 +199,9 @@ async def general_exception_handler(request: Request, exc: Exception) -> JSONRes
 app.include_router(version.router, prefix="/v1", tags=["version"])
 app.include_router(chat.router, prefix="/v1", tags=["chat"])
 app.include_router(models.router, prefix="/v1", tags=["models"])
+# nomad_embed must precede the upstream embeddings router at /v1 so OpenAI-style
+# RAG embedding calls go to the embed Ollama, not oMLX (which has no embed model).
+app.include_router(nomad_embed.router, prefix="/v1", tags=["nomad-embed-v1"])
 app.include_router(embeddings.router, prefix="/v1", tags=["embeddings"])
 app.include_router(metrics.router, prefix="/v1", tags=["metrics"])
 

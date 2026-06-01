@@ -1847,10 +1847,14 @@ EOF
   _wait_http_counter "http://127.0.0.1:11435/api/tags" 20 "embed Ollama on :11435" || \
     warn "embed Ollama slow to answer on :11435 — check ~/Library/Logs/nomad-ollama-embed.err.log"
   # Ensure the embedding model is present (internal disk; fast no-op if already there).
-  # Progress is shown (not suppressed) so the ~270 MB one-time download isn't silent.
-  log "ensuring embedding model nomic-embed-text (~270 MB, one-time download)…"
-  OLLAMA_HOST=127.0.0.1:11435 OLLAMA_MODELS="$SECRETS_DIR/embed-models" "$ollama_bin" pull nomic-embed-text || \
-    warn "could not pre-pull nomic-embed-text on embed Ollama — RAG will pull on first use"
+  # The admin's RAG requests nomic-embed-text:v1.5 specifically, so pull that exact
+  # tag (plus the bare name for any caller that uses it). Progress is shown.
+  local em
+  for em in nomic-embed-text:v1.5 nomic-embed-text; do
+    log "ensuring embedding model $em (one-time download)…"
+    OLLAMA_HOST=127.0.0.1:11435 OLLAMA_MODELS="$SECRETS_DIR/embed-models" "$ollama_bin" pull "$em" || \
+      warn "could not pre-pull $em on embed Ollama — RAG will pull on first use"
+  done
 }
 
 step_omlx_proxy() {

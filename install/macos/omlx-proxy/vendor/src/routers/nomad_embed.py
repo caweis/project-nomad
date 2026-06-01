@@ -1,8 +1,15 @@
-"""Route /api/embeddings to the embed-only Ollama (hybrid backend).
+"""Route embeddings to the embed-only Ollama (hybrid backend).
 
-Keeps embedding vectors bit-identical to what Qdrant already holds, so a backend
-switch never forces a reindex. Chat/generation still go to oMLX via the other
-routers; only embeddings are diverted here.
+The admin generates RAG embeddings against this proxy; we divert them to a small
+embed-only Ollama (nomic-embed-text) instead of oMLX, so vectors stay bit-identical
+to what Qdrant holds and a backend switch never forces a reindex.
+
+Both API styles are intercepted: the Ollama style (/api/embeddings) AND the
+OpenAI style (/v1/embeddings). The admin's RAG client uses /v1/embeddings — if we
+only caught /api, it would fall through to oMLX, which serves no embedding model
+(observed as: "POST /v1/embeddings -> 404: Model 'nomic-embed-text:v1.5' not found").
+The request is forwarded to the matching endpoint on the embed Ollama so the
+response shape (OpenAI vs Ollama) is preserved for the caller.
 """
 import os
 import httpx
@@ -13,9 +20,9 @@ router = APIRouter()
 _EMBED = os.getenv("NOMAD_EMBED_URL", "http://127.0.0.1:11435")
 
 
-async def _forward(body: dict) -> dict:
+async def _forward(target_path: str, body: dict) -> dict:
     async with httpx.AsyncClient(timeout=httpx.Timeout(connect=5.0, read=120.0, write=10.0, pool=5.0)) as client:
-        r = await client.post(f"{_EMBED}/api/embeddings", json=body)
+        r = await client.post(f"{_EMBED}{target_path}", json=body)
         r.raise_for_status()
         return r.json()
 
@@ -23,8 +30,11 @@ async def _forward(body: dict) -> dict:
 @router.post("/embeddings")
 async def embeddings(request: Request):
     body = await request.json()
+    # Preserve the caller's API style so the response shape matches what it expects:
+    # /v1/embeddings (OpenAI) -> embed Ollama /v1/embeddings; otherwise Ollama /api.
+    target = "/v1/embeddings" if "/v1/" in request.url.path else "/api/embeddings"
     try:
-        result = await _forward(body)
+        result = await _forward(target, body)
     except httpx.HTTPStatusError as e:
         # Propagate the embed Ollama's status + a trimmed body so failures aren't 200s.
         raise HTTPException(status_code=e.response.status_code,
