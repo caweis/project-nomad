@@ -73,6 +73,20 @@ nomad update     # fetch the latest bundle and reinstall in place — no data lo
 
 Full reference: [`install/macos/README.md`](./install/macos/README.md), or `man nomad`.
 
+## Troubleshooting
+
+`nomad check` (or `nomad check stack`) reports the health of every service; logs live in `~/Library/Logs/nomad-*.log`. A few specific things:
+
+- **`nomad` runs the wrong tool.** If HashiCorp's `nomad` is also on your PATH, `which nomad` may point there. Ours installs to `~/Applications/project-nomad`; run it explicitly as `bash ~/Applications/project-nomad/install/macos/nomad <command>`, or re-run the install one-liner to re-point the `nomad` symlink.
+
+- **`nomad update` or `self-update` returns a 404.** An older install can be pinned to a retired branch. Run `NOMAD_BRANCH=main nomad self-update` once (or just re-run the install one-liner); both land you on `main`, which is the default and self-heals afterward.
+
+- **AI chat returns an error on the oMLX backend.** A chat embeds your query before generating, so all three oMLX-mode services must be up. Check `nomad check stack` — the proxy (`:11434`), oMLX (`:8000`), and the embed-only Ollama (`:11435`) should all be green. If one is down, `nomad reset-ollama` rebuilds the stack. Logs: `~/Library/Logs/nomad-omlx*.err.log`.
+
+- **The System page shows a generic CPU** (e.g. "Apple Silicon (10-core)" instead of your exact chip). The admin can't read the host chip from inside its container, so the installer injects it; `nomad update` re-probes and refreshes that.
+
+- **The benchmark can't find a model to run.** On the oMLX backend, model pulls are restricted to the curated map; if a model the admin asks for isn't mapped, `nomad update` to the latest, then retry.
+
 ## Lineage
 
 - [Crosstalk-Solutions/project-nomad](https://github.com/Crosstalk-Solutions/project-nomad) — upstream
