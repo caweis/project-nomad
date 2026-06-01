@@ -430,7 +430,7 @@ resolve_lean_models() {
 }
 
 # Ports we rely on — system-check looks for collisions
-NOMAD_PORTS="8080 9999 11434 3306 6379"
+NOMAD_PORTS="8080 9999 11434"
 
 # ─── output helpers ───────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
