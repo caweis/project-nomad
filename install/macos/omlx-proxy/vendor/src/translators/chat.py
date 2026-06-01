@@ -177,14 +177,21 @@ class ChatTranslator(
             # Parse the chunk if it's a string (SSE data)
             if isinstance(openai_chunk, str):
                 if openai_chunk.strip() == "[DONE]":
-                    # Final chunk - return done response
-                    return {
+                    # Final chunk - return done response. The carrying field
+                    # depends on the ORIGINAL endpoint: /api/chat clients (incl.
+                    # the ollama JS client the NOMAD admin uses) read
+                    # `message.content`; /api/generate clients read `response`.
+                    final: Dict[str, Any] = {
                         "model": original_request.model,
                         "created_at": self.get_iso_timestamp(),
-                        "response": "",
                         "done": True,
                         "done_reason": "stop",
                     }
+                    if isinstance(original_request, OllamaChatRequest):
+                        final["message"] = {"role": "assistant", "content": ""}
+                    else:
+                        final["response"] = ""
+                    return final
 
                 # Skip empty chunks
                 if not openai_chunk.strip():
@@ -219,25 +226,36 @@ class ChatTranslator(
                             delta["function_call"]
                         )
 
-            # Build Ollama streaming response
-            response = {
+            # Build Ollama streaming response. The field carrying the text
+            # differs by endpoint: /api/chat → message.content (what the ollama
+            # JS client and the NOMAD admin read); /api/generate → response.
+            # The upstream translator always emitted `response`, so /api/chat
+            # streaming rendered blank in chat clients (empty assistant bubble).
+            # Shape it by the original request type.
+            response: Dict[str, Any] = {
                 "model": self.reverse_map_model_name(
                     openai_chunk.get("model", original_request.model)
                     if isinstance(openai_chunk, dict)
                     else original_request.model
                 ),
                 "created_at": self.get_iso_timestamp(),
-                "response": content,
                 "done": finish_reason is not None,
             }
+
+            if isinstance(original_request, OllamaChatRequest):
+                message: Dict[str, Any] = {"role": "assistant", "content": content}
+                # Ollama nests tool calls inside the message for /api/chat.
+                if tool_calls:
+                    message["tool_calls"] = tool_calls
+                response["message"] = message
+            else:
+                response["response"] = content
+                if tool_calls:
+                    response["tool_calls"] = tool_calls
 
             # Add finish reason if present
             if finish_reason:
                 response["done_reason"] = finish_reason
-
-            # Add tool calls if present (Phase 2 feature)
-            if tool_calls:
-                response["tool_calls"] = tool_calls
 
             return response
 
