@@ -2122,10 +2122,25 @@ step_secrets() {
     # Backfill new keys for envs created before the split / Apple-chip injection
     grep -qE "^NOMAD_STATE_ROOT=" "$ENV_FILE" || \
       printf "NOMAD_STATE_ROOT=%s\n" "$NOMAD_STATE_ROOT_DEFAULT" >> "$ENV_FILE"
-    grep -qE "^APPLE_CHIP_MODEL=" "$ENV_FILE" || \
-      printf "APPLE_CHIP_MODEL=%s\n" "$apple_chip" >> "$ENV_FILE"
-    grep -qE "^APPLE_GPU_MODEL=" "$ENV_FILE" || \
-      printf "APPLE_GPU_MODEL=%s\n" "$apple_gpu"  >> "$ENV_FILE"
+    # Refresh host hardware on every install (not just backfill-if-missing): the
+    # probe is authoritative, and a stale/empty value from a prior install would
+    # otherwise leave the admin's System page + benchmark on the generic
+    # "Apple Silicon (N-core)" fallback instead of the real chip name. Only refresh
+    # when the probe actually returned something, so a failed probe can't blank it.
+    if [[ -n "$apple_chip" ]]; then
+      if grep -qE "^APPLE_CHIP_MODEL=" "$ENV_FILE"; then
+        /usr/bin/sed -i '' "s|^APPLE_CHIP_MODEL=.*|APPLE_CHIP_MODEL=$apple_chip|" "$ENV_FILE"
+      else
+        printf "APPLE_CHIP_MODEL=%s\n" "$apple_chip" >> "$ENV_FILE"
+      fi
+    fi
+    if [[ -n "$apple_gpu" ]]; then
+      if grep -qE "^APPLE_GPU_MODEL=" "$ENV_FILE"; then
+        /usr/bin/sed -i '' "s|^APPLE_GPU_MODEL=.*|APPLE_GPU_MODEL=$apple_gpu|" "$ENV_FILE"
+      else
+        printf "APPLE_GPU_MODEL=%s\n" "$apple_gpu" >> "$ENV_FILE"
+      fi
+    fi
     grep -qE "^HOST_PLATFORM=" "$ENV_FILE" || \
       printf "HOST_PLATFORM=darwin\n" >> "$ENV_FILE"
     grep -qE "^NOMAD_AI_BACKEND=" "$ENV_FILE" || \
