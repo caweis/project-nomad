@@ -21,9 +21,10 @@ export function assertNotPrivateUrl(urlString: string): void {
     /^0\.0\.0\.0$/,
     /^169\.254\.\d+\.\d+$/, // Link-local / cloud metadata
     /^\[::1\]$/,
-    /^\[?fe80:/i, // IPv6 link-local
+    /^\[?fe[89ab][0-9a-f]:/i, // IPv6 link-local fe80::/10 (fe80–febf)
     /^\[::ffff:/i, // IPv4-mapped IPv6 (e.g. [::ffff:7f00:1] = 127.0.0.1)
     /^\[::\]$/, // IPv6 all-zeros (equivalent to 0.0.0.0)
+    /^\[fd00:ec2:[0:]*:?254\]$/i, // AWS IPv6 EC2 IMDS fd00:ec2::254 (+ expanded form)
   ]
 
   if (blockedPatterns.some((re) => re.test(hostname))) {
