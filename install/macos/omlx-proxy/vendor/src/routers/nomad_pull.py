@@ -19,6 +19,7 @@ oMLX contract (verified on-device against omlx 0.3.12):
 import asyncio
 import json
 import os
+import re
 from typing import Optional
 
 import httpx
@@ -56,6 +57,16 @@ def _resolve_mlx_repo(name: str) -> str:
     if name in mapping:
         return mapping[name]
     if name.startswith("mlx-community/"):
+        # Defense-in-depth: don't outsource validation of the user-supplied repo
+        # to HuggingFace downstream. Reject path traversal, nested namespaces, and
+        # any char outside the safe HF-repo set before forwarding.
+        if (
+            ".." in name
+            or name.count("/") != 1
+            or any(c.isspace() for c in name)
+            or not re.fullmatch(r"[A-Za-z0-9._/-]+", name)
+        ):
+            return ""
         return name
     return ""
 
