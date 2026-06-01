@@ -270,10 +270,16 @@ async def root() -> Dict[str, Any]:
 
 
 def main():
-    """Main entry point for the CLI."""
+    """Local-dev entry point only (`python -m src.main`).
+
+    NOT the production path: in NOMAD the proxy is launched by the LaunchAgent as
+    `uvicorn src.main:app --host 0.0.0.0`, so the real bind is 0.0.0.0 (containers
+    reach it via host.docker.internal). The 127.0.0.1 below applies only to a
+    developer running this module directly.
+    """
     uvicorn.run(
         "src.main:app",
-        host="127.0.0.1",
+        host="127.0.0.1",  # local-dev only; production binds 0.0.0.0 via the LaunchAgent
         port=settings.PROXY_PORT,
         reload=settings.DEBUG,
         log_level=settings.LOG_LEVEL.lower(),

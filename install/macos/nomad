@@ -814,9 +814,10 @@ check_install() {
   _load_backend
   if [[ "$BACKEND" == "omlx" ]]; then
     # In oMLX mode the native-Ollama LaunchAgent is intentionally unloaded and
-    # :11434 is owned by the proxy (loopback only). All AI-agent health checks
-    # are already covered by 'nomad check stack'; skip them here to avoid
-    # contradicting that command.
+    # :11434 is owned by the proxy, which binds 0.0.0.0 (containers reach it via
+    # host.docker.internal); only oMLX :8000 and the embed Ollama :11435 are
+    # loopback-bound. All AI-agent health checks are already covered by
+    # 'nomad check stack'; skip them here to avoid contradicting that command.
     inv_ok "AI agents" "validated by 'nomad check stack' (oMLX backend)"
   else
     # --- Ollama (binary, agent, port, API) — native Ollama mode only ---
