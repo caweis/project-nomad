@@ -2356,6 +2356,17 @@ _model_size_gb() {
   esac
 }
 
+# Approximate total download size (GB, whole number) for a space-separated
+# model list — sums _model_size_gb across the set, skipping unknowns ("?").
+# step_pull_models uses this instead of the full-tier tier_size_gb constant so
+# the header reflects the ACTUAL selection: a lean 'dreamy' pull is ~106 GB,
+# not the 215 GB the full tier would imply.
+_models_size_gb() {
+  local _sizes="" _m
+  for _m in $1; do _sizes+=" $(_model_size_gb "$_m")"; done
+  awk -v list="$_sizes" 'BEGIN{n=split(list,a," ");s=0;for(i=1;i<=n;i++){if(a[i] ~ /^[0-9.]+$/)s+=a[i]} printf "%d",(s+0.5)}'
+}
+
 # One-liner blurb per model for the picker. Helps the user understand what
 # they're actually getting before downloading 10+ GB.
 _model_blurb() {
@@ -2559,9 +2570,11 @@ step_pull_models() {
   [[ "$SKIP_MODELS" -eq 1 ]] && return 0
   local resolved_tier="$TIER"
   [[ "$resolved_tier" == "auto" ]] && resolved_tier="$(auto_tier)"
-  local size_gb; size_gb="$(tier_size_gb "$resolved_tier")"
+  # Size the header off the ACTUAL set being pulled (lean or full), not the
+  # full-tier constant — otherwise a lean pull overstates the download badly.
+  local size_gb; size_gb="$(_models_size_gb "$MODELS")"
 
-  section "Model pulls — tier '$resolved_tier' (~${size_gb} GB total)"
+  section "Model pulls — tier '$resolved_tier' (~${size_gb} GB)"
   log "models: $MODELS"
   log "you can open http://localhost:8080 now — models stream into admin as they finish"
   echo

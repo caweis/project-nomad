@@ -71,6 +71,20 @@ for t in tiny small medium large xl dreamy; do
   check "lean[$t] has embeddings" "$r" "yes"
 done
 
+echo "== model-set size reflects the actual selection (lean vs full) =="
+load
+# medium lean = llama3.1:8b(4.9) + qwen2.5-coder:14b(9.0) + qwen3:14b(9.3) + nomic-embed-text(0.3) = 23.5 → 24
+check "medium lean size sum"   "$(_models_size_gb "$(resolve_lean_models medium)")" "24"
+check "unknown model skipped"  "$(_models_size_gb 'llama3.1:8b bogus-model')"       "5"
+check "empty set is 0 GB"      "$(_models_size_gb '')"                                "0"
+# lean must never claim a larger download than the full tier it subsets
+for t in tiny small medium large xl dreamy; do
+  lean_s="$(_models_size_gb "$(resolve_lean_models "$t")")"
+  full_s="$(_models_size_gb "$(resolve_tier_models "$t")")"
+  [[ "$lean_s" -le "$full_s" ]] && r=yes || r=no
+  check "lean[$t] size <= full[$t] size" "$r" "yes"
+done
+
 echo
 echo "RESULTS: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]]
