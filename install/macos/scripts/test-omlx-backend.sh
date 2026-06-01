@@ -58,6 +58,19 @@ load
 ENV_FILE="$SECRETS_DIR/.env"; echo "NOMAD_AI_BACKEND=omlx" > "$ENV_FILE"
 check "show reads .env" "$(cmd_backend show 2>/dev/null | tr -d '\n' | grep -oE 'omlx|ollama' | head -1)" "omlx"
 
+echo "== lean model sets are strict subsets of their tier =="
+load
+for t in tiny small medium large xl dreamy; do
+  lean="$(resolve_lean_models "$t")"
+  full="$(resolve_tier_models "$t")"
+  ok_sub=yes
+  for m in $lean; do echo " $full " | grep -q " $m " || ok_sub=no; done
+  check "lean[$t] ⊆ tier[$t]" "$ok_sub" "yes"
+  # lean must include the embedding model (RAG)
+  echo " $lean " | grep -q " nomic-embed-text " && r=yes || r=no
+  check "lean[$t] has embeddings" "$r" "yes"
+done
+
 echo
 echo "RESULTS: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]]

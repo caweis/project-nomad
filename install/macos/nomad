@@ -314,6 +314,15 @@ TIER_LARGE="llama3.1:8b qwen3:14b qwen2.5-coder:32b gemma3:27b mistral-small:24b
 TIER_XL="llama3.1:8b qwen3:32b qwen2.5-coder:32b llama3.3:70b deepseek-r1:32b gemma3:27b mistral-small:24b nomic-embed-text mxbai-embed-large"
 TIER_DREAMY="llama3.1:8b qwen3:32b qwen2.5:72b qwen2.5-coder:32b llama3.3:70b deepseek-r1:32b deepseek-r1:70b mistral-small:24b gemma3:27b phi4:14b nomic-embed-text mxbai-embed-large"
 
+# Lean variants — one best model per category (chat + coding + reasoning + embeddings),
+# a strict subset of each tier. Offered as an alternative to pulling the whole tier.
+TIER_TINY_LEAN="llama3.2:3b nomic-embed-text"
+TIER_SMALL_LEAN="llama3.1:8b qwen2.5-coder:7b nomic-embed-text"
+TIER_MEDIUM_LEAN="llama3.1:8b qwen2.5-coder:14b qwen3:14b nomic-embed-text"
+TIER_LARGE_LEAN="llama3.1:8b qwen2.5-coder:32b qwen3:14b nomic-embed-text"
+TIER_XL_LEAN="llama3.3:70b qwen2.5-coder:32b deepseek-r1:32b nomic-embed-text"
+TIER_DREAMY_LEAN="llama3.3:70b qwen2.5-coder:32b deepseek-r1:70b nomic-embed-text"
+
 # Approx pull-size estimate per tier (GB) — used only for the confirm prompt
 tier_size_gb() {
   case "$1" in
@@ -401,6 +410,21 @@ resolve_tier_models() {
     large)  echo "$TIER_LARGE"  ;;
     xl)     echo "$TIER_XL"     ;;
     dreamy) echo "$TIER_DREAMY" ;;
+    *) die "unknown tier: $tier (valid: auto|tiny|small|medium|large|xl|dreamy)" ;;
+  esac
+}
+
+# Resolve a tier name to its LEAN model list (one per category). "auto" = auto_tier.
+resolve_lean_models() {
+  local tier="${1:-auto}"
+  [[ "$tier" == "auto" ]] && tier="$(auto_tier)"
+  case "$tier" in
+    tiny)   echo "$TIER_TINY_LEAN"   ;;
+    small)  echo "$TIER_SMALL_LEAN"  ;;
+    medium) echo "$TIER_MEDIUM_LEAN" ;;
+    large)  echo "$TIER_LARGE_LEAN"  ;;
+    xl)     echo "$TIER_XL_LEAN"     ;;
+    dreamy) echo "$TIER_DREAMY_LEAN" ;;
     *) die "unknown tier: $tier (valid: auto|tiny|small|medium|large|xl|dreamy)" ;;
   esac
 }
@@ -2432,6 +2456,28 @@ prompt_for_models() {
       warn "didn't understand '$choice' — using auto-tier '$auto_t'"
       ;;
   esac
+
+  # Lean vs full: one model per category, or the whole tier.
+  if [[ "${SKIP_MODELS:-0}" -ne 1 ]]; then
+    local _t="$TIER"; [[ "$_t" == "auto" ]] && _t="$(auto_tier)"
+    local _lean _full
+    _lean="$(resolve_lean_models "$_t")"
+    _full="$(resolve_tier_models "$_t")"
+    echo
+    echo "  Download set for tier '$_t':"
+    echo "    [1] Lean — one model per category (chat + coding + reasoning + embeddings):"
+    echo "        $_lean"
+    echo "    [2] All  — every model in this tier:"
+    echo "        $_full"
+    echo
+    read -r -p "  Choice [1]: " _mc
+    _mc="$(echo "$_mc" | tr '[:upper:]' '[:lower:]' | xargs)"
+    case "$_mc" in
+      ""|1|lean) MODELS="$_lean"; log "model set: lean (one per category)" ;;
+      2|all)     MODELS="$_full"; log "model set: full tier" ;;
+      *)         warn "didn't understand '$_mc' — using lean"; MODELS="$_lean" ;;
+    esac
+  fi
   echo
 }
 
