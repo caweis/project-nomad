@@ -50,6 +50,9 @@ export default class ServiceSeeder extends BaseSeeder {
       source_repo: 'https://github.com/qdrant/qdrant',
       container_command: null,
       container_config: JSON.stringify({
+        // Disable Qdrant's anonymous usage telemetry — NOMAD is offline-first
+        // and ships zero-telemetry by default (upstream 0c76a19).
+        Env: ['QDRANT__TELEMETRY_DISABLED=true'],
         HostConfig: {
           RestartPolicy: { Name: 'unless-stopped' },
           Binds: [`${ServiceSeeder.NOMAD_STORAGE_ABS_PATH}/qdrant:/qdrant/storage`],
