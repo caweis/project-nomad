@@ -29,7 +29,7 @@ Admin lands at `http://localhost:8080`, or `http://nomad.local:8080` from any de
 
 The admin home page has tiles for:
 
-- **AI Assistant** — local Ollama chat, runs on the Mac's Metal GPU.
+- **AI Assistant** — local AI chat on the Mac's Metal GPU (Ollama, or oMLX if you chose that backend).
 - **Information Library** — Wikipedia (your choice of size, from 50 MB to 96 GB), plus reference works on medicine, mechanics, cooking, survival, anything else you download.
 - **Education Platform** — Kolibri (Khan Academy and other coursework).
 - **Maps** — offline regional maps.
@@ -38,6 +38,21 @@ The admin home page has tiles for:
 - **Data Tools** — CyberChef for encoding / encryption / data conversion.
 
 Reachable from other devices on the same network. The data drive can be unplugged for travel and the management plane keeps running; plug back in to restore content. Plug the drive into any other Apple Silicon Mac and double-click `install-nomad.command` at the drive root to set up NOMAD there from the bundled installer (no internet needed for the install code itself).
+
+## Models
+
+The installer pulls a starter set of AI models sized to your Mac's RAM. To see what's installed and add more later:
+
+```bash
+nomad models list                       # installed models, plus the size tiers and the one auto-detected for this Mac
+nomad models pull medium                # pull a whole tier: tiny | small | medium | large | xl | dreamy
+nomad models pull qwen3:32b gemma3:27b  # pull specific models by name
+nomad upgrade-models                    # refresh installed models to their latest tags
+```
+
+Tiers scale with RAM, from about 3 GB (`tiny`) to about 215 GB (`dreamy`); `nomad models list` prints each tier's size. Models stream into the AI Assistant as they finish, so earlier ones are usable while larger ones download.
+
+The model names are the same whichever backend you run. On Ollama, `nomad models pull` fetches the GGUF build; on the oMLX backend it fetches the MLX build through the local proxy. Either way the AI Assistant tile and the API on `:11434` see the models the same way, so switching backends doesn't change how you manage them.
 
 ## What's different from upstream
 
