@@ -34,6 +34,12 @@ export default function ModelsPage(props: {
   // the page hides container-management buttons (Reinstall, GPU "Fix") and
   // shows a positive Metal-accelerated banner instead.
   isNativeOllama: boolean
+  // Which AI backend the host CLI selected ('omlx' | 'ollama'). Both backends
+  // set OLLAMA_HOST (so isNativeOllama is true for both), but only 'ollama'
+  // serves chat from Ollama. On 'omlx', chat runs on Apple MLX and Ollama is
+  // the embeddings-only sidecar — so the banner must be labeled accordingly and
+  // must NOT offer an "Update Ollama" button (chat isn't Ollama there).
+  aiBackend?: string
 }) {
   const { aiAssistantName } = usePage<{ aiAssistantName: string }>().props
   const { isInstalled } = useServiceInstalledStatus(SERVICE_NAMES.OLLAMA)
@@ -252,10 +258,26 @@ export default function ModelsPage(props: {
           {/* Positive banner replaces the GPU-passthrough warnings on native
               Ollama — the macOS distro runs Ollama as a Homebrew LaunchAgent
               with direct Metal access; there's no Docker passthrough to fail.
-              Update path goes through host-command-bridge — admin posts to
-              /api/host-commands/upgrade-ollama, the LaunchAgent runs
-              `nomad upgrade ollama` on the host. */}
-          {props.isNativeOllama && (
+              Both backends set OLLAMA_HOST (so isNativeOllama is true for both),
+              so we split on aiBackend to label the banner accurately:
+              - 'omlx': chat runs on Apple MLX (oMLX) over Metal; Ollama is the
+                embeddings-only sidecar. No "Update Ollama" button — updating
+                Ollama wouldn't update the chat engine, so the button would
+                mislead. Engines are managed from the `nomad` CLI on the host.
+              - 'ollama' (default): chat + embeddings both served by native
+                Homebrew Ollama. Update path goes through host-command-bridge —
+                admin posts to /api/host-commands/upgrade-ollama, the LaunchAgent
+                runs `nomad upgrade ollama` on the host. */}
+          {props.isNativeOllama && props.aiBackend === 'omlx' && (
+            <Alert
+              type="success"
+              variant="bordered"
+              title="Apple MLX (oMLX) — Metal-accelerated"
+              message={`${aiAssistantName} runs on Apple's MLX engine (oMLX) using the GPU directly (Metal). Embeddings are served by a local Ollama sidecar. Manage the AI engines from the \`nomad\` CLI on the host (\`nomad upgrade\`, \`nomad backend\`).`}
+              className="!mt-6"
+            />
+          )}
+          {props.isNativeOllama && props.aiBackend !== 'omlx' && (
             <Alert
               type="success"
               variant="bordered"

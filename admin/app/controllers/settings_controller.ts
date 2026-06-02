@@ -5,6 +5,7 @@ import { MapService } from '#services/map_service';
 import { OllamaService } from '#services/ollama_service';
 import { SystemService } from '#services/system_service';
 import { getSettingSchema, updateSettingSchema } from '#validators/settings';
+import env from '#start/env';
 import { inject } from '@adonisjs/core';
 import type { HttpContext } from '@adonisjs/core/http'
 
@@ -82,6 +83,12 @@ export default class SettingsController {
             // AI Assistant" banner + button. Forcing a Docker reinstall against
             // a native Homebrew Ollama install just produces a misleading error.
             isNativeOllama: DockerService.isNativeOllama(),
+            // Which backend the host CLI selected ('omlx' | 'ollama'). Both set
+            // OLLAMA_HOST (so isNativeOllama is true for both), but only the
+            // 'ollama' backend serves chat from Ollama — on 'omlx', chat runs on
+            // Apple MLX and Ollama is just the embeddings sidecar. The page uses
+            // this to label the banner accurately. Defaults to 'ollama'.
+            aiBackend: env.get('NOMAD_AI_BACKEND') ?? 'ollama',
         });
     }
 

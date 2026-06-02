@@ -95,6 +95,11 @@ services:
       # Verified by reading /app/app/services/docker_service.js inside the
       # running proximasan image (2026-05-09).
       - OLLAMA_HOST=http://host.docker.internal:11434
+      # Which AI backend the host CLI selected (omlx = Apple MLX chat + Ollama
+      # embeddings sidecar; ollama = native Homebrew Ollama for both). The nomad
+      # CLI persists this as NOMAD_AI_BACKEND in the --env-file. Admin reads it to
+      # label the AI Assistant banner accurately. Defaults to ollama if unset.
+      - NOMAD_AI_BACKEND=${NOMAD_AI_BACKEND:-ollama}
     depends_on:
       mysql: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -154,6 +159,7 @@ services:
       - APPLE_GPU_MODEL=${APPLE_GPU_MODEL:-}
       - HOST_PLATFORM=${HOST_PLATFORM:-darwin}
       - OLLAMA_HOST=http://host.docker.internal:11434
+      - NOMAD_AI_BACKEND=${NOMAD_AI_BACKEND:-ollama}
     depends_on:
       mysql: { condition: service_healthy }
       redis: { condition: service_healthy }

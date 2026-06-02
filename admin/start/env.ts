@@ -74,6 +74,18 @@ export default await Env.create(new URL('../', import.meta.url), {
 
   /*
   |----------------------------------------------------------
+  | Which AI backend the host `nomad` CLI selected.
+  | 'omlx'   = Apple MLX serves chat (Metal) + Ollama is the
+  |            embeddings-only sidecar.
+  | 'ollama' = native Homebrew Ollama serves chat + embeddings.
+  | Forwarded by compose from the --env-file. Optional so the
+  | validator doesn't throw when absent; callers default to 'ollama'.
+  |----------------------------------------------------------
+  */
+  NOMAD_AI_BACKEND: Env.schema.enum.optional(['omlx', 'ollama'] as const),
+
+  /*
+  |----------------------------------------------------------
   | Apple Silicon chip / GPU model overrides (macOS host).
   | Inside Docker, systeminformation cannot read the exact chip
   | name from the host. The macOS installer probes the host with
