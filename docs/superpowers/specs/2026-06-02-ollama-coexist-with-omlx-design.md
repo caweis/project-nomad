@@ -53,7 +53,7 @@ Two complementary layers:
 | D9 | Coding model **USER-DEFINED**; nomad shows a RAM-advised menu (install-detected RAM) with honest capability notes (8B weak for agentic coding; Qwen2.5-Coder / Devstral as coding-tuned), user selects, optional `--pull`. **No forced model.** | Per Chris. | Auto-pick/auto-pull. |
 | **D10** | **Deployment-aware, secure-by-default.** App on the **mini** → loopback. App on **another Mac** → reach the mini over a **secure tunnel** (SSH `-L` [no deps] or **Tailscale** [recommended UX]); endpoints stay **loopback-bound**. Raw `0.0.0.0` LAN exposure is an **explicit, warned opt-in** only (it breaks the loopback→`skip_api_key_verification` safety). | Maxim 8 — security by design / least exposure; preserves the no-auth-because-loopback posture for all users. | Defaulting to LAN exposure for remote access. |
 | D11 | Recommended app = **Agent!** (`macos26/agent`: native, chat + agentic coding + Mac automation, local Ollama/LM Studio, signed, macOS 26.4.1+). Alternatives documented: **Zed** (AI editor; local agentic is finicky) and **Claude Code on local models** (Anthropic-API; CLI). | Closest "Claude for macOS" shape; gates met. ⚠️ solo-maintainer (bus-factor 1) — hence recommend-not-bundle (D7). | Hard-bundling one app. |
-| D12 | Delivery: a **`nomad ai-clients`** helper (working name) + an **install-flow offer** + a Mac doc/man entry. | Discoverable, install-grade, configure-scope. | Docs only. |
+| D12 | Delivery: a **`nomad ai-clients`** helper (working name) + an **install-flow offer** + a **dedicated FAQ/help page** (`/docs/mac-ai-clients`) + man entry. The helper hands you a *recipe* (official download link + exact config + tunnel command), optionally runs an app's *own* official installer (Zed brew cask, Claude Code npm); it never re-hosts a third-party binary. | Discoverable, install-grade, configure-scope; license-clean (Agent! binary is author-reserved). | Docs only; nomad hosting/serving the binary. |
 | D13 | Install integration: the installer **offers** (skippable, idempotent) to print/set up the unified-app config — RAM-advised model menu, app recommendation, local-or-tunnel connection details. | "It's for the install too." | Post-install only. |
 
 ## 5. Target architecture (omlx mode)
@@ -82,7 +82,8 @@ Layer 2 (unified app — you install; nomad configures):
 - `nomad ai-clients` subcommand: read install-time RAM → model menu (tiers + honesty); `--model/--engine/--pull`; emit app configs (Agent! / Zed / Claude-Code) for local **and** tunnel connection; print the secure-access guidance.
 - Secure remote access: helper + doc for SSH `-L` and Tailscale to the mini's loopback endpoints; raw-`0.0.0.0` opt-in path gated behind an explicit flag + warning.
 - Install-flow offer (D13): skippable step that surfaces the above.
-- Mac doc page + `nomad help`/man entry. **No admin code changes** (app is external).
+- **Dedicated FAQ/help page** at `/docs/mac-ai-clients`: new `admin/docs/mac-ai-clients.md` (Markdoc), auto-discovered by `DocsService`; add a `DOC_ORDER` slot (~17) + optional `TITLE_OVERRIDES` entry in `admin/app/services/docs_service.ts` (one line each) so it slots beside the other `mac-*` pages. Ships with the admin image. Covers: recommended apps, the `nomad ai-clients` recipe, local-vs-secure-tunnel connection (D10), the user-defined model menu (D9), and the honest model-quality note.
+- A `nomad help`/man entry for `nomad ai-clients`. Beyond the one-line `DOC_ORDER` edit, no admin code changes (the app itself is external).
 
 ## 7. Risks & mitigations
 
