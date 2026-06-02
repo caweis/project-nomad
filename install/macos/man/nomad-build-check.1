@@ -1,0 +1,50 @@
+.Dd 2026-06-02
+.Dt NOMAD-BUILD-CHECK 1
+.Os
+.Sh NAME
+.Nm nomad-build-check
+.Nd report whether the latest admin image build is ready to pull
+.Sh SYNOPSIS
+.Nm nomad build-check
+.Sh DESCRIPTION
+.Nm nomad build-check
+reports whether the admin container image
+.Pq Li :edge
+has finished building for the latest commit on
+.Li main ,
+so you know whether an
+.Ic nomad upgrade
+will pull new code or re-pull the image you already have.
+.Pp
+It is read-only. It queries the public GitHub Actions API for the most recent
+admin-image build and inspects the locally deployed image's revision label, then
+prints the
+.Li origin/main
+HEAD, the latest completed build revision, and the deployed image revision,
+followed by a verdict: a build is still running
+.Pq wait ,
+the deployed image already matches the latest build
+.Pq up to date ,
+or the latest build is complete and ready to pull. No image is pulled and no
+container is recreated.
+.Pp
+Proxy and
+.Nm nomad
+script changes ship via
+.Ic nomad update
+and never require an image build; this command concerns only the admin image
+deployed by
+.Ic nomad upgrade .
+.Pp
+.Ic nomad build-status
+is an alias for this command.
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic nomad build-check
+Show admin-image build readiness before running
+.Ic nomad upgrade .
+.El
+.Sh SEE ALSO
+.Xr nomad 1 ,
+.Xr nomad-upgrade 1 ,
+.Xr nomad-update 1
