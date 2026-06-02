@@ -1,100 +1,109 @@
-# Design Spec — Native Ollama co-existing with oMLX
+# Design Spec — Native Ollama co-existence + local AI clients (chat GUI + coding agent)
 
-- **Status:** Draft for review
+- **Status:** Draft for review — **v2** (expanded from coexistence-only to two layers)
 - **Date:** 2026-06-02
 - **Scope:** macOS/Apple-Silicon distribution layer — `install/macos/**`, `admin/**`
-- **Mode affected:** `NOMAD_AI_BACKEND=omlx` only (the `ollama` backend already runs native Ollama on `:11434` and is unaffected)
+- **Mode affected:** `NOMAD_AI_BACKEND=omlx` primarily (`ollama` mode largely unaffected)
 
 ## 1. Goal
 
-Run a full **general-purpose native Ollama** (CLI + any UI), using the user's **already-downloaded models**, **alongside** nomad's oMLX stack — each independently usable. The native Ollama owns the standard port `:11434` (zero-config tooling); nomad's oMLX-compat proxy and the admin move to `:11436`.
+Two complementary layers:
+
+- **Layer 1 — backend co-existence:** run a full general-purpose native Ollama (CLI + your existing models) *alongside* nomad's oMLX stack. Native Ollama owns the standard `:11434`; the oMLX-compat proxy and the admin's `OLLAMA_HOST` move to `:11436`.
+- **Layer 2 — local AI clients:** make it trivial to run a **ChatGPT-style chat GUI** (Open WebUI) **and** a **Claude-Code-like coding agent** (OpenCode/Aider) over your local models. nomad **configures** (reachable endpoints + ready-to-paste client configs + a RAM-advised, **user-defined** model menu + docs); **you install the clients**.
 
 ## 2. User intent (from brainstorming)
 
-- "Both, fully independent" — native Ollama and oMLX coexisting, each usable on its own.
-- Native Ollama must use already-downloaded models with **no re-download**. Confirmed: the user's models live in the standard **`~/.ollama/models`** (contains `llama3.1`); nomad's data-root `ollama-models` directory is empty.
-- UI: **BYO** (Ollama.app, Enchanted, Open WebUI) — documented, not bundled.
+- "Both, fully independent" backends (native Ollama + oMLX).
+- A chat GUI (GPT-like) **and** a coding agent (Claude-Code-like agentic file/command ops) over local models — "both."
+- Use **already-downloaded models** where possible: `llama3.1` lives in `~/.ollama/models`; nomad's data-root `ollama-models` dir is empty.
+- Scope: **configure, not bundle** — nomad wires it up + recommends; the user installs the clients.
+- RAM is **detected at install** → drives the model advice (no fixed number).
+- The coding model is **user-defined** — nomad advises by RAM + capability; the **user chooses**; nomad never silently forces or swaps a model.
+- UI: BYO, documented (no bundling).
 
-## 3. Current state (the constraints that shape the design)
+## 3. Current state (constraints)
 
-- nomad has **two mutually-exclusive AI backends** selected by `NOMAD_AI_BACKEND`. Only one backend's daemons run at a time; both compete for `:11434`.
-- A **full general-purpose Ollama already exists**: `step_ollama_native` / LaunchAgent `com.projectnomad.ollama`, binds `0.0.0.0:11434`, `OLLAMA_MODELS` resolved by `ollama-launcher.sh` to `$NOMAD_DATA_ROOT/ollama-models` (fallback `~/.ollama/models`). In `omlx` mode it is **deliberately unloaded** and the proxy squats `:11434`.
-- In `omlx` mode the running daemons are: `com.projectnomad.omlx` (`127.0.0.1:8000`), `com.projectnomad.ollama-proxy` (`uvicorn … --host 0.0.0.0 --port 11434`, translates Ollama API → OpenAI, upstream `OPENAI_API_BASE_URL=127.0.0.1:8000/v1`, `NOMAD_EMBED_URL=127.0.0.1:11435`), and `com.projectnomad.ollama-embed` (`127.0.0.1:11435`, `OLLAMA_MODELS=$SECRETS_DIR/embed-models`, RAG only).
-- The **admin only understands one `OLLAMA_HOST`** (`http://host.docker.internal:11434`, hardcoded in `compose.yaml` for both admin and worker, plus the `ai.remoteOllamaUrl` kv_store seed). It has no concept of two backends — it chats/embeds/benchmarks against whatever speaks the Ollama API at `OLLAMA_HOST`.
+- Two **mutually-exclusive** AI backends selected by `NOMAD_AI_BACKEND`; both compete for `:11434`.
+- A **general-purpose Ollama already exists** (`step_ollama_native` / `com.projectnomad.ollama`, `0.0.0.0:11434`, `OLLAMA_MODELS` → `$NOMAD_DATA_ROOT/ollama-models`, fallback `~/.ollama/models`). In omlx mode it is **deliberately unloaded** and the proxy squats `:11434`.
+- omlx-mode daemons: `omlx` (`127.0.0.1:8000`), `ollama-proxy` (`0.0.0.0:11434`, Ollama→OpenAI translation, upstream `:8000/v1` + `NOMAD_EMBED_URL=:11435`), `ollama-embed` (`127.0.0.1:11435`, `OLLAMA_MODELS=$SECRETS_DIR/embed-models`, RAG only).
+- The **admin understands only one `OLLAMA_HOST`** (`http://host.docker.internal:11434`, hardcoded in `compose.yaml` ×2 + the `ai.remoteOllamaUrl` kv_store seed). It chats/embeds/benchmarks against whatever speaks the Ollama API there.
 
-## 4. Decisions & rationale
+## 4. Decisions
 
-| # | Decision | Rationale | Rejected alternative |
-|---|----------|-----------|----------------------|
-| D1 | Native Ollama owns standard `:11434`; proxy moves to `:11436` (**Approach ①**) | The CLI and all UIs expect `localhost:11434`. The component that already adapts via an env var (the internal proxy, reached only by the admin) should yield the standard port — no ongoing `OLLAMA_HOST` friction for the user. | ② nomad keeps `:11434`, Ollama on a side port (ongoing `OLLAMA_HOST` friction). |
-| D2 | Admin `OLLAMA_HOST` → `:11436` (follows the proxy) — **Option A** | The admin must keep chatting with **oMLX**, which is what `NOMAD_AI_BACKEND=omlx` means. | **Option B** (admin stays on `:11434`) would silently make the admin chat with native Ollama, contradicting the backend label — defeats the oMLX project. |
-| D3 | Coexisting Ollama `OLLAMA_MODELS=~/.ollama/models`, configurable via `.env` | That's where the user's `llama3.1` already is — zero re-download, zero move. Standard Ollama location, so future CLI pulls land there too. | data-root `ollama-models` (empty; would not show existing models). |
-| D4 | Bind default `127.0.0.1:11434` (loopback) **in omlx mode** | Least exposure; a native UI (Ollama.app/Enchanted) works on loopback. ⚠️ The *same* agent must keep `0.0.0.0` in `ollama` backend mode (the admin reaches it via `host.docker.internal` there) — so the bind is **mode-aware**: `0.0.0.0` in ollama mode (status quo, admin reach), loopback default in omlx mode (admin uses the proxy, not this agent). | `0.0.0.0` default in omlx mode (unnecessary exposure). Documented opt-in toggle to `0.0.0.0` for a Docker UI (Open WebUI) that needs `host.docker.internal`. |
-| D5 | Reuse `com.projectnomad.ollama`; make it **coexist** (not mutually exclusive) in omlx mode | It is already a general Ollama with rename-safe model resolution. | A new parallel agent (duplication). |
-| D6 | UI: **BYO**, documented; no bundle | Approach ① makes any Ollama UI zero-config; keeps the build small and avoids extra RAM/Metal contention on the mini. | Approach ③ (bundle Open WebUI as an admin app). |
+### Layer 1 — backend (unchanged from v1)
+
+| # | Decision | Rationale | Rejected |
+|---|----------|-----------|----------|
+| D1 | Native Ollama owns `:11434`; proxy → `:11436` (Approach ①) | CLI/UIs expect `localhost:11434`; the env-configured internal proxy yields the standard port. | ② Ollama on a side port (ongoing `OLLAMA_HOST` friction). |
+| D2 | Admin `OLLAMA_HOST` → `:11436` (follows proxy) — **Option A** | Admin keeps chatting with **oMLX**, which is what `NOMAD_AI_BACKEND=omlx` means. | **B** (admin on `:11434` → silently chats native Ollama; defeats oMLX). |
+| D3 | Coexisting Ollama `OLLAMA_MODELS=~/.ollama/models`, configurable | Where `llama3.1` already is — zero re-download/move; standard location. | data-root dir (empty). |
+| D4 | Bind default loopback **in omlx mode**; **mode-aware** | Least exposure; the *same* agent stays `0.0.0.0` in ollama mode (admin reach). Toggle to `0.0.0.0` when a Docker client needs it (see D10). | `0.0.0.0` default in omlx mode (needless exposure). |
+| D5 | Reuse `com.projectnomad.ollama`; make it **coexist** (not mutually exclusive) in omlx mode | Already a general Ollama with rename-safe model resolution. | New parallel agent (dup). |
+| D6 | UI/clients: **BYO**, documented; no bundle | Keeps build small; the ecosystem is rich (see Layer 2). | Bundling (Approach ③). |
+
+### Layer 2 — local AI clients
+
+| # | Decision | Rationale | Rejected |
+|---|----------|-----------|----------|
+| D7 | Scope = **configure, not bundle** | User's choice; smaller, flexible build. nomad delivers endpoints + configs + model menu + docs, not running clients. | Fully-managed (bundle Open WebUI + agent + auto-pull). |
+| D8 | Clients can target **both** engines; nomad ships configs for each. Recommended pairing: chat GUI → existing models on Ollama `:11434`; coding agent → oMLX `:8000` (continuous batching; purpose-built for OpenCode/Codex). | Honors "use already-downloaded models" for chat while giving the agent the better engine; user can mix freely. | Forcing a single engine. |
+| D9 | Coding model is **USER-DEFINED**. nomad uses install-detected RAM to present a *menu* of viable options per tier with honest capability notes (`llama3.1:8b` weak for agentic coding; Qwen2.5-Coder / Devstral as coding-tuned options), but the **user selects**; nomad wires configs to the chosen model and optionally pulls it. **No forced/auto model.** | Per Chris — user-defined. | nomad auto-picking/auto-pulling a model. |
+| D10 | Docker-client reachability: Open WebUI in Docker reaches host engines via `host.docker.internal`, requiring the target to bind reachably. The configure step handles/documents the bind (expose oMLX, or flip the general Ollama to `0.0.0.0` per D4) **only when a Docker client is used**. Host-side agents use loopback. | Correctness for a Dockerized chat GUI without needless default exposure. | Always `0.0.0.0`. |
+| D11 | Client presets: chat GUI = **Open WebUI**; coding agent = **OpenCode** (primary; oMLX one-click-configures it) or **Aider** (alt). Configs adaptable to Cline/Continue. | Best-fit, documented. | Picking one and excluding alternatives. |
+| D12 | Delivery: a **`nomad ai-clients`** helper (working name) that prints the RAM-advised model menu + ready-to-paste configs + the Docker-bind note; plus a Mac doc + man entry. | Single discoverable entry point; configure-scope. | Scattering setup across docs only. |
 
 ## 5. Target architecture (omlx mode)
 
 ```
-you (ollama CLI / native UI)  ──►  127.0.0.1:11434   com.projectnomad.ollama
-                                                       (general chat Ollama, OLLAMA_MODELS=~/.ollama/models)
+Layer 1 (backend):
+  you (ollama CLI / native UI) ──► 127.0.0.1:11434  com.projectnomad.ollama   (your models, OLLAMA_MODELS=~/.ollama/models)
+  admin (Docker) ──:11436──►       :11436            com.projectnomad.ollama-proxy ──► :8000 oMLX ──► :11435 embed (RAG)
 
-admin (Docker) ──OLLAMA_HOST=host.docker.internal:11436──►  :11436  com.projectnomad.ollama-proxy
-                                                                       ├──► 127.0.0.1:8000   com.projectnomad.omlx
-                                                                       └──► 127.0.0.1:11435  com.projectnomad.ollama-embed (RAG)
+Layer 2 (clients — you install, nomad configures):
+  Open WebUI (Docker)  ──host.docker.internal:11434──►  native Ollama (chat over your existing models)
+  OpenCode / Aider (host CLI) ──127.0.0.1:8000──►       oMLX (your USER-CHOSEN coding model)
+        (both targets configurable; nomad ships configs for each engine)
 ```
 
-Four daemons coexisting. The admin's chat/RAG/benchmark path on oMLX is **behaviorally unchanged** — only the proxy's port number moves.
+## 6. Change surface
 
-## 6. Change surface (grouped; line numbers per the 2026-06-02 audit, re-verify at edit time)
+**Layer 1** (line numbers per the 2026-06-02 audit; re-verify at edit time):
+- Proxy `11434→11436`: plist `nomad:1967`; omlx-mode probes/waits `~684/687/1946/2007/2008/5053/5076`.
+- Admin repoint: `compose.yaml:97,161` → `:11436`; `nomad:3537` seed + a one-time idempotent `UPDATE` (seed is `IF NULL/''`-guarded at `:3539`, won't auto-update); `admin/.env.example:24-25`, `admin/start/env.ts:70` docs. No admin code change.
+- Run general Ollama in omlx mode: add to omlx install (`~3675-3678`), `cmd_backend` omlx branch (`~5114`), `_reset_omlx_stack`; **remove** it from omlx bootout loops (`~5103-5108`, `~5060-5066`); set its `OLLAMA_MODELS` (D3) + mode-aware bind (D4); boot the old proxy off `:11434` first.
+- Pull-routing: omlx-mode `nomad models pull` → `:11436` (`nomad:3857/3859/3887`, probe `:3820`; audit `2328/2361/3831`).
+- Housekeeping: `NOMAD_PORTS` (`:437`) add `11436` (+ `11435 8000`); inventory comments/logic (`~819-872`); man pages (`nomad-backend.1`, `nomad.1:244`, `nomad-reset-ollama.1`).
 
-**A. Move the proxy `11434 → 11436`**
-- `install/macos/nomad:1967` — proxy LaunchAgent `--port 11434` → `11436`. (Optional dev parity: `omlx-proxy/vendor/src/config.py:29` default; non-load-bearing in prod.)
-- Repoint every **omlx-mode** proxy probe/health/wait that assumed `:11434`: `nomad` lines ~684/687 (`check_stack`), ~1946/2007/2008 (proxy bootstrap wait + pre-check `lsof`), ~5053/5076 (`_reset_omlx_stack` text + final poll).
-
-**B. Repoint the admin to the proxy's new port (Option A)**
-- `install/macos/compose.yaml:97` (admin) and `:161` (worker) — `OLLAMA_HOST=http://host.docker.internal:11436`.
-- `install/macos/nomad:3537` — `ai.remoteOllamaUrl` seed → `:11436`. ⚠️ The seed is guarded `IF(value IS NULL OR '')` (`:3539`), so an existing install **will not** auto-update — add a one-time idempotent `UPDATE` to migrate any existing `…:11434` value to `…:11436`.
-- `admin/.env.example:24-25` and `admin/start/env.ts:70` doc comment — update the documented value.
-- No admin **code** change: `docker_service.ts` uses `OLLAMA_HOST` verbatim (no port parsing); `isNativeOllama()` still true.
-
-**C. Run the general Ollama in omlx mode (coexist, don't exclude)**
-- Add `com.projectnomad.ollama` to the omlx install path (~`nomad:3675-3678`), `cmd_backend` omlx branch (~`:5114`), and `_reset_omlx_stack`.
-- **Remove** the general-Ollama bootout from the omlx switch paths: `cmd_backend` (~`:5103-5108`) and `_reset_omlx_stack` (~`:5060-5066`) — otherwise it is killed on every `nomad backend omlx` (symptom: the user's CLI Ollama dies on backend switch).
-- Set its `OLLAMA_MODELS` to the configured value (D3) and bind to the configured address (D4). Keep its existing `:11434` free-the-port logic (`~:1533-1547`); ensure the proxy's old `:11434` instance is booted out **first** during migration so the user never sees the `confirm` "kill process on :11434?" prompt (`~:1539`).
-
-**D. Pull-routing (critical)**
-- `nomad models pull` in omlx mode must POST to the proxy on **`:11436`**, not `:11434` (now native Ollama): `nomad:3857/3859/3887` (`/api/pull`) and the probe at `:3820`. Audit omlx-guarded model probes `:2328/2361/3831`.
-
-**E. Housekeeping**
-- `nomad:437` `NOMAD_PORTS` — add `11436` (and finally `11435 8000`, currently missing from the collision check).
-- `nomad:819-825` — the "native-Ollama intentionally unloaded / proxy owns :11434" inventory comment + logic: in omlx mode `:11434` is now the general Ollama and the proxy is `:11436`; the native-Ollama inventory block (`~:826-872`) should run in omlx mode too.
-- Man pages: `nomad-backend.1` (daemon list `:52-79`, `:130` proxy port), `nomad.1:244`, `nomad-reset-ollama.1:15`. Add the coexistence topology.
-- BYO-UI docs (a new short section / Mac doc): point a UI at `localhost:11434`; how to flip the bind to `0.0.0.0` for a Docker UI.
-- `quick-chat.sh` / Field Desk (`NOMAD_OLLAMA_PORT=11434`, `nomad:5656/5658`): leave on `:11434` — they should use the general Ollama.
+**Layer 2:**
+- New `nomad ai-clients` subcommand: reuse the install-time RAM probe → print the model menu (tiers + honesty); accept `--model` / `--engine {omlx|ollama}` / `--pull`; emit ready-to-paste Open WebUI + OpenCode/Aider configs templated to the chosen model+engine; print the Docker-bind note.
+- Docker Open WebUI reachability: the D4/D10 bind toggle (expose oMLX `:8000` or flip the general Ollama to `0.0.0.0`) when the user opts for a Docker chat GUI.
+- Mac doc page + `nomad help`/man entry. **No admin code changes** (clients are external).
 
 ## 7. Risks & mitigations
 
-- **Pull-routing miss** → in omlx mode a `pull` hitting `:11434` would land in native Ollama, never reaching oMLX. *Mitigation:* §6.D audit; verify a `nomad models pull` lands an MLX model via the proxy.
-- **kv_store drift** → `ai.remoteOllamaUrl` won't auto-update on existing installs. *Mitigation:* idempotent `UPDATE` migration (§6.B).
-- **Bootout loops** kill the general Ollama on backend switch. *Mitigation:* §6.C de-exclusion; verify `nomad backend omlx` leaves `:11434` Ollama running.
-- **Two Ollama daemons** (general `:11434` + embed `:11435`) — keep **separate** `OLLAMA_MODELS` (`~/.ollama/models` vs `$SECRETS_DIR/embed-models`); never share one dir between running daemons (blob-write race on pulls).
-- **`host.docker.internal` reachability** — only the proxy (`:11436`) needs the container-reachable `0.0.0.0` bind; the general Ollama can stay loopback (admin doesn't talk to it).
-- **NOMAD_PORTS blind spot** — adding `:11436` without `:11435/:8000` perpetuates a gap; add all three.
-- **Migration sequencing** — bootout the old `:11434` proxy before starting the general Ollama there, to avoid the scary kill prompt.
+- **Pull-routing miss** (omlx-mode pull hitting `:11434` lands in native Ollama, not oMLX) → §6 audit + verify an MLX pull via `:11436`.
+- **kv_store seed drift** → idempotent `UPDATE` for `ai.remoteOllamaUrl`.
+- **Bootout loops** kill the general Ollama on switch → de-exclude (§6); verify `nomad backend omlx` leaves `:11434` Ollama running.
+- **Two Ollama daemons** (general `:11434` + embed `:11435`) → keep **separate** `OLLAMA_MODELS`; never share a dir between running daemons.
+- **Model-quality expectation** → honest RAM-advised menu (D9) + user-defined choice; docs are explicit that an 8B model ≠ Claude Code.
+- **RAM contention** → oMLX + chosen coding model + (Docker) Open WebUI + embed + native Ollama is heavy; the RAM-advised menu caps realistic model size; doc warns about concurrent load.
+- **Docker bind exposure** → flip to `0.0.0.0` only when a Docker client needs it (D10); default stays least-exposure.
 
-## 8. Verification plan
+## 8. Verification
 
-- `bash -n install/macos/nomad`; `cd admin && npm run typecheck`; `bash install/macos/scripts/test-manpages.sh` (drift guard).
-- Live, omlx mode: (1) `ollama run llama3.1` against `:11434` works with existing model; (2) admin chat still streams from **oMLX** (proxy on `:11436`); (3) KB ingestion / RAG still green (embed `:11435`); (4) benchmark runs; (5) `nomad backend omlx` does **not** kill the `:11434` Ollama; (6) `nomad models pull <mlx>` reaches oMLX via `:11436`; (7) `nomad` system-check shows all four daemons; (8) a native UI pointed at `localhost:11434` lists `llama3.1`.
-- Regression: `ollama`-backend mode unchanged.
+- `bash -n install/macos/nomad`; `cd admin && npm run typecheck`; `bash install/macos/scripts/test-manpages.sh`.
+- **Layer 1 (live, omlx mode):** (1) `ollama run llama3.1` on `:11434` uses the existing model; (2) admin chat still streams from **oMLX** (proxy `:11436`); (3) KB/RAG green; (4) benchmark runs; (5) `nomad backend omlx` does **not** kill `:11434` Ollama; (6) `nomad models pull <mlx>` reaches oMLX via `:11436`; (7) system-check shows all four daemons. Regression: `ollama` mode unchanged.
+- **Layer 2:** `nomad ai-clients` prints a correct RAM-fit menu + valid configs; `--pull` pulls the **user-chosen** model on the chosen engine; a manually-installed Open WebUI reaches the engine and lists the model; OpenCode/Aider edits a file via the chosen local model.
 
 ## 9. Out of scope
 
-- `NOMAD_AI_BACKEND=ollama` mode (already native Ollama on `:11434`).
-- Bundling/managing a UI (Approach ③).
-- Changes to oMLX or embed-Ollama internals beyond port/wiring.
+- Bundling/running the clients (Open WebUI container, agent install) — the rejected fully-managed scope (D7).
+- Building a custom UI.
+- **Auto-forcing/auto-pulling a model without user choice** (D9).
+- `ollama`-backend mode behavior changes beyond Layer 1.
 
 ## 10. Open questions
 
-- None blocking. Default coexisting `OLLAMA_MODELS=~/.ollama/models`; expose `NOMAD_OLLAMA_MODELS` (or equivalent) in `.env` for users who keep models elsewhere (final env-var name to be fixed in the implementation plan).
+- Final helper name (`nomad ai-clients` working).
+- Exact per-RAM-tier menu contents (finalized in the implementation plan; kept current with what's pullable). Model **selection** is the user's; the menu is advisory only.
