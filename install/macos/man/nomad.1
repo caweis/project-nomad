@@ -1,7 +1,7 @@
 .\" Manpage for nomad
 .\" Source: github.com/caweis/project-nomad-mac-bundle (or current location)
 .\" Format: mandoc / mdoc — render with `man nomad` after install
-.Dd May 9, 2026
+.Dd June 1, 2026
 .Dt NOMAD 1
 .Os
 .Sh NAME
@@ -171,6 +171,10 @@ Upgrade admin/ollama/everything.
 .It Cm update
 Fetch the latest bundle and reinstall in place.
 .Xr nomad-update 1 .
+.It Cm build-check | build-status
+Report whether the latest admin image build is ready to pull (read-only).
+.Xr nomad-build-check 1 ,
+.Xr nomad-build-status 1 .
 .It Cm clean
 Safe cleanup of logs, dangling images, partial ZIMs.
 .Xr nomad-clean 1 .
@@ -328,6 +332,8 @@ Apache-2.0.
 .Xr nomad-api 1 ,
 .Xr nomad-upgrade 1 ,
 .Xr nomad-update 1 ,
+.Xr nomad-build-check 1 ,
+.Xr nomad-build-status 1 ,
 .Xr nomad-clean 1 ,
 .Xr nomad-fix-kiwix 1 ,
 .Xr nomad-install-bridge 1 ,
