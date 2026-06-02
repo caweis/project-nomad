@@ -4051,6 +4051,47 @@ _upgrade_compose_one() {
   ok "$svc upgraded"
 }
 
+# `nomad build-check` — is the latest admin :edge image built and ready to pull?
+# Read-only: queries the public GitHub Actions API (curl + jq) and inspects the
+# locally-deployed image. No pull, no recreate. Ends the "run upgrade just to find
+# the build wasn't ready yet" cycle.
+cmd_build_check() {
+  local repo="caweis/project-nomad"
+  local wf="Build macOS-distribution admin image"
+  local api="https://api.github.com/repos/$repo"
+  section "Build readiness — admin :edge image"
+  if ! command -v jq >/dev/null 2>&1; then warn "jq not found — cannot query CI"; return 1; fi
+  if ! curl -fsS --max-time 6 https://api.github.com >/dev/null 2>&1; then
+    warn "GitHub API unreachable (offline?) — cannot check build status"; return 1
+  fi
+
+  local head; head="$(curl -fsSL --max-time 8 "$api/commits/main" 2>/dev/null | jq -r '.sha // ""')"
+  local run; run="$(curl -fsSL --max-time 8 "$api/actions/runs?per_page=30" 2>/dev/null \
+    | jq -r --arg wf "$wf" '[.workflow_runs[] | select(.name==$wf)] | (.[0] // {}) | "\(.status//"")|\(.conclusion//"")|\(.head_sha//"")|\(.created_at//"")"')"
+  local b_status="${run%%|*}"; local r="${run#*|}"
+  local b_concl="${r%%|*}"; r="${r#*|}"
+  local b_sha="${r%%|*}"; local b_created="${r#*|}"
+
+  local img="${NOMAD_ADMIN_IMAGE:-ghcr.io/caweis/project-nomad-macos-arm64:edge}"
+  local dep_rev; dep_rev="$(docker image inspect "$img" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' 2>/dev/null)"
+  local dep_short="${dep_rev:0:7}"; [[ -z "$dep_short" ]] && dep_short="(none pulled yet)"
+
+  echo "  origin/main HEAD:     ${head:0:7}"
+  echo "  latest image build:   rev ${b_sha:0:7}  (${b_status:-?}${b_concl:+/$b_concl})  ${b_created}"
+  echo "  deployed :edge image: rev ${dep_short}"
+  echo
+  if [[ "$b_status" == "in_progress" || "$b_status" == "queued" ]]; then
+    warn "a build is running now — :edge isn't updated yet. Re-check in a few minutes before 'nomad upgrade'."
+  elif [[ -n "$b_concl" && "$b_concl" != "success" ]]; then
+    warn "latest image build did not succeed (${b_concl}) — check CI before upgrading."
+  elif [[ -n "$dep_rev" && "$dep_rev" == "$b_sha" ]]; then
+    ok "deployed image already matches the latest build (rev ${b_sha:0:7}) — you're up to date."
+  else
+    ok "latest image build complete (rev ${b_sha:0:7}) — 'nomad upgrade' will pull it."
+  fi
+  log "proxy/script changes ship via 'nomad update' (no image build needed)."
+}
+
 # Surface which admin image build is now running. CI bakes the git SHA
 # (org.opencontainers.image.revision), version, and build date into the image's
 # OCI labels, so one `docker image inspect` tells you exactly which commit is
@@ -5794,6 +5835,7 @@ case "$CMD" in
   models)          cmd_models   "${EXTRA_ARGS[@]}" ;;
   upgrade)         cmd_upgrade "${EXTRA_ARGS[@]}" ;;
   upgrade-models)  cmd_upgrade_models ;;
+  build-check|build-status) cmd_build_check ;;
   update)          cmd_update "${EXTRA_ARGS[@]}" ;;
   downloads)       cmd_downloads "${EXTRA_ARGS[@]:-list}" ;;
   zim)             cmd_zim       "${EXTRA_ARGS[@]:-list}" ;;
