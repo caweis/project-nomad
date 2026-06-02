@@ -17,6 +17,10 @@
 #   bash nomad models [list|pull [TIER|NAMES...]]
 #                                            # tier: tiny→2GB, small→10, medium→26,
 #                                            # large→65, xl→130, dreamy→215 (Studio)
+#   bash nomad upgrade [SERVICE]             # bare = make everything current:
+#                                            # refresh bundle code first, then
+#                                            # images + engines + stack. With a
+#                                            # SERVICE arg, upgrade just that one.
 #   bash nomad upgrade-models                # pull latest tags of installed
 #   bash nomad downloads [list|cancel ID|remove ID]   # admin's job queue
 #   bash nomad zim wikipedia [state|select VARIANT]   # Wikipedia download state
@@ -3918,7 +3922,16 @@ cmd_models() {
 # safety checks per service. The big footgun: admin's "AI Assistant" Update button
 # tries to update admin's container Ollama (which we don't use), would conflict
 # with our native daemon for :11434. Always use 'nomad upgrade ollama' instead.
+#
+# Bare `nomad upgrade` (the `all` target) ALSO self-updates the bundle code first
+# — it refreshes the on-disk bundle from the latest release (same path as
+# `nomad update`) and re-execs itself, so it can never restart the proxy/stack
+# from a stale script. That makes it the one-command "make everything current:
+# code + images + engines + stack". `nomad upgrade <service>` does NOT self-update.
 cmd_upgrade() {
+  # Preserve the original args so the bare/full-stack path can re-exec the
+  # just-refreshed upgrade code verbatim (e.g. `upgrade --check`).
+  local orig_args=("$@")
   local target="all"
   local force=0
   local check=0
@@ -3931,6 +3944,32 @@ cmd_upgrade() {
       *)       target="$1"; shift ;;
     esac
   done
+
+  # Bare/full-stack upgrade self-updates the bundle CODE first, then re-execs the
+  # refreshed script — so `nomad upgrade` can never restart the proxy/stack from a
+  # stale bundle. This is the difference between "pull images + upgrade engines" and
+  # a complete "make everything current: code + images + engines + stack".
+  #   • Only the bare `all` target self-updates — `upgrade <service>` (kiwix, ollama,
+  #     admin, …) stays fast and never re-execs.
+  #   • NOMAD_NO_SELF_UPDATE=1 (set on the exec below) is the loop guard: the
+  #     re-exec'd process skips this block and proceeds to the actual upgrade work.
+  #   • A failed refresh (offline / codeload unreachable) is non-fatal — we warn and
+  #     proceed with the on-disk bundle so upgrade still works offline.
+  if [[ "$target" == "all" && -z "${NOMAD_NO_SELF_UPDATE:-}" ]]; then
+    _reconcile_bundle_dir   # if the bundle moved, trust the script we're actually running
+    local bundle; bundle="$(_resolve_bundle_dir)"
+    if [[ -d "$bundle" ]]; then
+      section "Refreshing bundle code before full-stack upgrade"
+      if _refresh_bundle_from_main "$bundle"; then
+        log "re-running upgrade on the refreshed bundle"
+        NOMAD_NO_SELF_UPDATE=1 exec /bin/bash "$bundle/nomad" upgrade "${orig_args[@]}"
+      else
+        warn "bundle refresh failed — proceeding with the on-disk bundle (may be stale)"
+      fi
+    else
+      warn "bundle dir not found ($bundle) — skipping code refresh, proceeding with on-disk script"
+    fi
+  fi
 
   ensure_docker_path
   # Compose pulls can run several GB; native-Ollama upgrades trigger a brew
@@ -4899,6 +4938,79 @@ _validate_bundle_subtree() {
   return 0
 }
 
+# Refresh the on-disk bundle at $1 from branch $2 (default main), in place.
+# Two paths, mirroring how the bundle was installed:
+#   • git working copy → fetch + ff-only pull (skipped if the tree is dirty)
+#   • tarball install   → fetch the whole-repo codeload tarball, extract,
+#                         validate the install/macos subtree, rsync-swap it in
+# Returns 0 if the bundle is current (or was successfully refreshed), non-zero
+# if a refresh was attempted but failed (offline, download/extract/swap error,
+# failed validation). Never `die`s — callers decide whether a failure is fatal
+# (`nomad update` aborts; `nomad upgrade` warns and proceeds on-disk so it still
+# works offline). DRY: the single bundle-refresh path shared by both commands,
+# so they can never drift onto different fetch/validate/swap logic.
+_refresh_bundle_from_main() {
+  local bundle="$1"
+  local branch="${2:-${NOMAD_BRANCH:-main}}"
+
+  if _bundle_is_git "$bundle"; then
+    # ── git checkout: pull (unless dirty) ──
+    local repo; repo="$(git -C "$bundle" rev-parse --show-toplevel 2>/dev/null || echo "$bundle")"
+    if _git_tree_dirty "$repo"; then
+      warn "git working tree at $repo has uncommitted changes — skipping pull"
+      warn "commit/stash and re-run to fetch the latest"
+      return 0   # not a hard failure — caller proceeds on the current checkout
+    fi
+    log "git pull origin $branch"
+    git -C "$repo" fetch origin "$branch" 2>/dev/null || warn "fetch failed — using current checkout"
+    git -C "$repo" checkout "$branch" >/dev/null 2>&1 || true
+    if git -C "$repo" pull --ff-only origin "$branch" 2>/tmp/nomad-update-pull.log; then
+      ok "pulled $branch → $(git -C "$repo" rev-parse --short HEAD)"
+    else
+      warn "pull not fast-forward — using current checkout ($(tail -1 /tmp/nomad-update-pull.log))"
+    fi
+    return 0
+  fi
+
+  # ── tarball install: fetch whole-repo tarball, extract, validate, swap ──
+  if ! /usr/bin/curl -fsS --max-time 5 https://api.github.com >/dev/null 2>&1; then
+    warn "offline — cannot fetch bundle refresh. Bundle left untouched."
+    return 1
+  fi
+  local tgz tmpd
+  tgz="$(/usr/bin/mktemp)"; tmpd="$(/usr/bin/mktemp -d)"
+  local url="https://codeload.github.com/caweis/project-nomad/tar.gz/refs/heads/$branch"
+  log "downloading bundle tarball ($branch)"
+  if ! /usr/bin/curl -fsSL --max-time 120 "$url" -o "$tgz"; then
+    /bin/rm -rf "$tgz" "$tmpd"; warn "download failed: $url — bundle left untouched"; return 1
+  fi
+  if ! /usr/bin/tar -xzf "$tgz" -C "$tmpd" 2>/dev/null; then
+    /bin/rm -rf "$tgz" "$tmpd"; warn "extract failed — bundle left untouched"; return 1
+  fi
+  # codeload extracts to a single top dir: project-nomad-<branch-with-dashes>/
+  local sub; sub="$(/usr/bin/find "$tmpd" -type d -path '*/install/macos' -maxdepth 4 | head -1)"
+  if [[ -z "$sub" ]] || ! _validate_bundle_subtree "$sub"; then
+    /bin/rm -rf "$tgz" "$tmpd"; warn "fetched bundle failed validation — current bundle left untouched"; return 1
+  fi
+  log "swapping in validated bundle"
+  # rsync the validated subtree over the bundle (preserves the brew symlink,
+  # which points at $bundle/nomad). --delete keeps the bundle in sync with the
+  # release, but protect runtime drop-ins the bundle accrues.
+  if command -v rsync >/dev/null 2>&1; then
+    if ! rsync -a --delete --exclude '.env-pointer' "$sub"/ "$bundle"/; then
+      /bin/rm -rf "$tgz" "$tmpd"; warn "swap failed — bundle may be partial; reinstall"; return 1
+    fi
+  else
+    if ! /bin/cp -R "$sub"/. "$bundle"/; then
+      /bin/rm -rf "$tgz" "$tmpd"; warn "swap failed — bundle may be partial; reinstall"; return 1
+    fi
+  fi
+  /bin/chmod +x "$bundle/nomad"
+  /bin/rm -rf "$tgz" "$tmpd"
+  ok "bundle refreshed from $branch"
+  return 0
+}
+
 cmd_update() {
   # Flags: --branch NAME. (Dispatcher passes EXTRA_ARGS, whose defensive
   # expansion injects one empty placeholder when no flag was given — absorb it.)
@@ -4918,56 +5030,11 @@ cmd_update() {
 Set NOMAD_BUNDLE_DIR in $ENV_FILE or reinstall."
   ok "active bundle: $bundle"
 
-  if _bundle_is_git "$bundle"; then
-    # ── git checkout: pull (unless dirty) ──
-    local repo; repo="$(git -C "$bundle" rev-parse --show-toplevel 2>/dev/null || echo "$bundle")"
-    if _git_tree_dirty "$repo"; then
-      warn "git working tree at $repo has uncommitted changes — skipping pull"
-      warn "commit/stash and re-run 'nomad update' to fetch the latest"
-    else
-      log "git pull origin $branch"
-      git -C "$repo" fetch origin "$branch" 2>/dev/null || warn "fetch failed — using current checkout"
-      git -C "$repo" checkout "$branch" >/dev/null 2>&1 || true
-      if git -C "$repo" pull --ff-only origin "$branch" 2>/tmp/nomad-update-pull.log; then
-        ok "pulled $branch → $(git -C "$repo" rev-parse --short HEAD)"
-      else
-        warn "pull not fast-forward — using current checkout ($(cat /tmp/nomad-update-pull.log | tail -1))"
-      fi
-    fi
-  else
-    # ── tarball install: fetch whole-repo tarball, extract, validate, swap ──
-    if ! /usr/bin/curl -fsS --max-time 5 https://api.github.com >/dev/null 2>&1; then
-      die "offline — cannot fetch update. Bundle left untouched."
-    fi
-    local tgz tmpd
-    tgz="$(/usr/bin/mktemp)"; tmpd="$(/usr/bin/mktemp -d)"
-    local url="https://codeload.github.com/caweis/project-nomad/tar.gz/refs/heads/$branch"
-    log "downloading bundle tarball ($branch)"
-    if ! /usr/bin/curl -fsSL --max-time 120 "$url" -o "$tgz"; then
-      /bin/rm -rf "$tgz" "$tmpd"; die "download failed: $url — bundle left untouched"
-    fi
-    /usr/bin/tar -xzf "$tgz" -C "$tmpd" 2>/dev/null \
-      || { /bin/rm -rf "$tgz" "$tmpd"; die "extract failed — bundle left untouched"; }
-    # codeload extracts to a single top dir: project-nomad-<branch-with-dashes>/
-    local sub; sub="$(/usr/bin/find "$tmpd" -type d -path '*/install/macos' -maxdepth 4 | head -1)"
-    if [[ -z "$sub" ]] || ! _validate_bundle_subtree "$sub"; then
-      /bin/rm -rf "$tgz" "$tmpd"; die "fetched bundle failed validation — current bundle left untouched"
-    fi
-    log "swapping in validated bundle"
-    # rsync the validated subtree over the bundle (preserves the brew symlink,
-    # which points at $bundle/nomad). --delete keeps the bundle in sync with the
-    # release, but protect runtime drop-ins the bundle accrues.
-    if command -v rsync >/dev/null 2>&1; then
-      rsync -a --delete --exclude '.env-pointer' "$sub"/ "$bundle"/ \
-        || { /bin/rm -rf "$tgz" "$tmpd"; die "swap failed — bundle may be partial; reinstall"; }
-    else
-      /bin/cp -R "$sub"/. "$bundle"/ \
-        || { /bin/rm -rf "$tgz" "$tmpd"; die "swap failed — bundle may be partial; reinstall"; }
-    fi
-    /bin/chmod +x "$bundle/nomad"
-    /bin/rm -rf "$tgz" "$tmpd"
-    ok "bundle refreshed from $branch"
-  fi
+  # `update` treats a failed refresh as fatal — its whole purpose is to fetch the
+  # latest bundle, so there's nothing to fall back to. (The git path never fails;
+  # only the tarball path can — offline / download / extract / swap.)
+  _refresh_bundle_from_main "$bundle" "$branch" \
+    || die "bundle refresh failed — current bundle left untouched (see warning above)"
 
   # ── in-place install via the freshly-updated script (no nuke, no self-update
   #    loop — we just refreshed the bundle ourselves). ──

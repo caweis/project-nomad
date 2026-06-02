@@ -14,9 +14,26 @@
 brings NOMAD components up to date.
 With no
 .Ar TARGET
-it upgrades everything: the compose stack
+it is the one-command
+.Dq make everything current :
+it first refreshes the on-disk bundle
+.Pq the
+.Nm nomad
+script, compose file, man pages, and helper scripts
+from the latest release, then re-runs itself on that refreshed code so it can
+never restart the proxy or stack from a stale bundle.
+It then upgrades everything: the compose stack
 .Pq admin, mysql, redis, dozzle, updater
 and native Ollama, then prints guidance for upgrading admin-spawned services.
+If the bundle refresh cannot reach the network it is skipped with a warning and
+the upgrade proceeds with the on-disk bundle, so
+.Nm nomad upgrade
+still works offline.
+A
+.Ar TARGET
+upgrade
+.Pq see below
+does not refresh the bundle and never re-execs.
 .Pp
 A
 .Ar TARGET
@@ -54,7 +71,7 @@ Use only when you accept the risk of restarting Kiwix mid-write.
 .Sh EXAMPLES
 .Bl -tag -width Ds
 .It Ic nomad upgrade
-Upgrade the full stack and native Ollama.
+Refresh the bundle code, then upgrade the full stack and native Ollama.
 .It Ic nomad upgrade ollama
 Upgrade native Ollama through Homebrew and restart it.
 .It Ic nomad upgrade admin --check
