@@ -6,6 +6,7 @@ and returning appropriate errors for unsupported model management operations.
 """
 
 import hashlib
+import os
 from datetime import datetime, timezone
 from typing import List
 
@@ -116,9 +117,46 @@ async def list_models(fastapi_request: Request) -> JSONResponse:
                 )
                 ollama_models.append(ollama_model)
 
+            # Build the response dict from the oMLX models, then union in the
+            # embed-only Ollama's tags. The embed Ollama serves the RAG embedding
+            # model (e.g. nomic-embed-text:v1.5) that oMLX does not, and its
+            # /api/tags entries already carry real Ollama names, sizes, and digests.
+            # The admin's RAG verification string-matches the embed model by name in
+            # /api/tags, so without this union it never finds it. Guarded so a
+            # transient embed-Ollama hiccup never breaks the oMLX listing.
             models_response = OllamaModelsResponse(models=ollama_models)
+            response_dict = models_response.model_dump()
+
+            embed_url = os.getenv("NOMAD_EMBED_URL")
+            if embed_url:
+                try:
+                    async with httpx.AsyncClient(
+                        timeout=settings.REQUEST_TIMEOUT, verify=verify_ssl
+                    ) as embed_client:
+                        embed_resp = await embed_client.get(f"{embed_url}/api/tags")
+                        embed_resp.raise_for_status()
+                        embed_models = embed_resp.json().get("models", []) or []
+                    existing_names = {
+                        m.get("name") for m in response_dict.get("models", [])
+                    }
+                    for em in embed_models:
+                        if em.get("name") not in existing_names:
+                            response_dict["models"].append(em)
+                            existing_names.add(em.get("name"))
+                except Exception as e:  # noqa: BLE001 - never let the embed union break /api/tags
+                    logger.warning(
+                        "Skipping embed-Ollama tags union (embed query failed)",
+                        extra={
+                            "extra_data": {
+                                "request_id": request_id,
+                                "embed_url": embed_url,
+                                "error": str(e),
+                            }
+                        },
+                    )
+
             return JSONResponse(
-                content=models_response.model_dump(),
+                content=response_dict,
                 headers={"X-Request-ID": request_id},
             )
 
