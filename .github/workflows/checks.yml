@@ -19,7 +19,7 @@ jobs:
   shell-checks:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: nomad syntax
         run: bash -n install/macos/nomad
       - name: Host-command allow-list drift guard
