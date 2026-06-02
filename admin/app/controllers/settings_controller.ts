@@ -43,6 +43,14 @@ export default class SettingsController {
             // both of which refuse with a "manage via CLI" error on native
             // Ollama. Hiding the buttons skips the dead-end UX entirely.
             isNativeOllama: DockerService.isNativeOllama(),
+            // Which backend the host CLI selected ('omlx' | 'ollama'). Both set
+            // OLLAMA_HOST (so isNativeOllama is true for both), so the page needs
+            // this to tell them apart on the "AI Assistant" card: on 'omlx' chat
+            // runs on Apple MLX and Ollama is only the embeddings sidecar, so an
+            // Ollama "Update" must NOT be offered (it wouldn't touch the chat
+            // engine); on 'ollama' the host-side Ollama upgrade IS the chat-engine
+            // update. Defaults to 'ollama'.
+            aiBackend: env.get('NOMAD_AI_BACKEND') ?? 'ollama',
         });
     }
     

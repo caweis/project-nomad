@@ -922,6 +922,20 @@ export class DockerService {
     targetVersion: string
   ): Promise<{ success: boolean; message: string }> {
     try {
+      // Native Ollama (both the 'omlx' and 'ollama' backends set OLLAMA_HOST)
+      // is host-managed. Pulling ollama/ollama here and recreating the
+      // container would bind host :11434 and collide with the native daemon —
+      // exactly the footgun the host CLI used to warn against. The Apps UI
+      // already hides this path for native installs; this guard mirrors
+      // affectContainer's and is defense-in-depth for direct API calls or a
+      // future UI regression. Fail loudly with the correct remediation.
+      if (serviceName === SERVICE_NAMES.OLLAMA && DockerService.isNativeOllama()) {
+        return {
+          success: false,
+          message: `Ollama is running natively (not in Docker). Update it via 'nomad upgrade ollama' on the host, not the admin container.`,
+        }
+      }
+
       const service = await Service.query().where('service_name', serviceName).first()
       if (!service) {
         return { success: false, message: `Service ${serviceName} not found` }

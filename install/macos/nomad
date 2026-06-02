@@ -3919,9 +3919,12 @@ cmd_models() {
 #      manages the lifecycle via Docker socket, but image pulls go through plain docker
 #
 # Each has its own pre-flight + apply pattern. This subcommand wraps them with
-# safety checks per service. The big footgun: admin's "AI Assistant" Update button
-# tries to update admin's container Ollama (which we don't use), would conflict
-# with our native daemon for :11434. Always use 'nomad upgrade ollama' instead.
+# safety checks per service. Admin's "AI Assistant" Update button is now
+# backend-aware (see admin/inertia/pages/settings/apps.tsx): on Apple MLX it
+# shows the MLX engine and offers NO Ollama update (chat is MLX — the AI stack
+# is updated by this command); on native Ollama it runs 'nomad upgrade ollama'
+# for you via the host-command bridge. Either way it no longer pulls a
+# container Ollama or collides with the native daemon on :11434.
 #
 # Bare `nomad upgrade` (the `all` target) ALSO self-updates the bundle code first
 # — it refreshes the on-disk bundle from the latest release (same path as
@@ -3989,12 +3992,11 @@ cmd_upgrade() {
       log "3/3  admin-spawned services"
       cat <<NOTES
   Use 'nomad upgrade <service>' for kiwix/cyberchef/kolibri/flatnotes — each
-  has service-specific safety checks. Or click Update in admin's Apps UI for
-  most services (but NOT AI Assistant — see warning below).
+  has service-specific safety checks. Or click Update in admin's Apps UI.
 
-  ${C_WARN}DO NOT click admin's "AI Assistant" Update button.${C_OFF}
-  That tries to update a container-Ollama we don't use. Run
-  'nomad upgrade ollama' instead — upgrades native Metal Ollama via brew.
+  The "AI Assistant" card is backend-aware: on Apple MLX it shows the MLX
+  engine and updates with 'nomad upgrade' (this command); on native Ollama
+  its Update button runs 'nomad upgrade ollama' for you via the host bridge.
 NOTES
       ;;
 

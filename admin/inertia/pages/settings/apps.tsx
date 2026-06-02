@@ -35,6 +35,12 @@ export default function SettingsPage(props: {
   // the nomad_ollama service row replaces its Start/Stop/Restart/Force
   // Reinstall/Update buttons with a "Native — manage via CLI" pill.
   isNativeOllama: boolean
+  // Which AI backend the host CLI selected ('omlx' | 'ollama'). Both run a
+  // native (Metal) Ollama, so isNativeOllama alone can't distinguish them.
+  // On 'omlx' chat is served by Apple MLX and Ollama is only the embeddings
+  // sidecar, so the "AI Assistant" card must not offer an Ollama "Update"
+  // (it wouldn't update the chat engine). Defaults to 'ollama' when unset.
+  aiBackend?: string
 }) {
   const { openModal, closeAllModals } = useModals()
   const { showError } = useErrorNotification()
@@ -263,16 +269,32 @@ export default function SettingsPage(props: {
     // LaunchAgent (admin POSTs /api/host-commands/upgrade-ollama, which
     // writes a marker file; the bridge runs `nomad upgrade ollama` and
     // writes a result file admin polls).
+    //
+    // Backend split: on 'omlx', chat is served by Apple MLX and this native
+    // Ollama is only the embeddings sidecar — so an Ollama "Update" would NOT
+    // update the chat engine and is misleading (this is the footgun the host
+    // CLI used to warn about). We show the MLX engine and omit the Ollama
+    // Update; the whole AI stack is updated host-side via `nomad upgrade`.
+    // On 'ollama', chat IS Ollama, so the host-side Ollama upgrade is the
+    // correct chat-engine update and stays. "Reset" recovers the host Ollama
+    // engine on both backends (embeddings on omlx, chat on ollama).
     if (props.isNativeOllama && record.service_name === SERVICE_NAMES.OLLAMA) {
+      const isMlx = props.aiBackend === 'omlx'
       return (
         <div className="flex flex-wrap items-center gap-2">
           <span
             className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800"
-            title="Ollama is running natively on this Mac (Metal-accelerated). Container actions don't apply."
+            title={
+              isMlx
+                ? "Chat runs on Apple MLX (Metal-accelerated). The AI stack is host-managed — update it with 'nomad upgrade' on the host. Ollama here serves only embeddings."
+                : "Ollama is running natively on this Mac (Metal-accelerated). Container actions don't apply."
+            }
           >
-            Native (Metal)
+            {isMlx ? 'Apple MLX (Metal)' : 'Native (Metal)'}
           </span>
-          <HostCommandButton cmd="upgrade-ollama" label="Update" disabled={!isOnline} />
+          {!isMlx && (
+            <HostCommandButton cmd="upgrade-ollama" label="Update" disabled={!isOnline} />
+          )}
           <HostCommandButton
             cmd="reset-ollama"
             label="Reset"
