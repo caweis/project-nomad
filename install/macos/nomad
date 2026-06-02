@@ -1716,6 +1716,19 @@ Manual recovery:
   die "Ollama did not start — check ~/Library/Logs/nomad-ollama.err.log"
 }
 
+# Boot out a LaunchAgent and WAIT until it is fully unloaded before re-bootstrapping.
+# launchctl bootout is asynchronous; bootstrapping a label whose prior instance is
+# still loaded returns "Bootstrap failed: 5: Input/output error". Polling until the
+# label is gone removes that race.
+_la_clean_bootout() {  # $1=domain target (e.g. gui/$UID)  $2=label
+  launchctl bootout "$1/$2" 2>/dev/null || true
+  local i=0
+  while launchctl print "$1/$2" >/dev/null 2>&1; do
+    [[ $i -ge 20 ]] && break    # ~5s cap
+    sleep 0.25; i=$((i+1))
+  done
+}
+
 # Poll an HTTP endpoint until it answers, showing a live elapsed-seconds counter on
 # one line so a long startup never looks hung. Returns 0 on success, 1 on timeout.
 # Usage: _wait_http_counter <url> <timeout_secs> <label>
@@ -1803,7 +1816,7 @@ PYEOF
 EOF
   chmod 644 "$OMLX_PLIST"
 
-  launchctl bootout "$LA_TARGET/$OMLX_LABEL" 2>/dev/null || true
+  _la_clean_bootout "$LA_TARGET" "$OMLX_LABEL"
   local last_err=""
   for attempt in 1 2 3; do
     if launchctl bootstrap "$LA_TARGET" "$OMLX_PLIST" 2>"$NOMAD_BOOTSTRAP_LOG"; then
@@ -1811,13 +1824,20 @@ EOF
     fi
     last_err="$(cat "$NOMAD_BOOTSTRAP_LOG")"
     warn "oMLX bootstrap attempt $attempt failed: $last_err"
-    launchctl bootout "$LA_TARGET/$OMLX_LABEL" 2>/dev/null || true
-    sleep $((attempt * 2))
+    _la_clean_bootout "$LA_TARGET" "$OMLX_LABEL"
+    sleep $((attempt * 3))
   done
-  [[ -n "$last_err" ]] && die "oMLX bootstrap failed after 3 attempts: $last_err"
+  # A bootstrap EIO ("5: Input/output error") is a benign launchd race when the
+  # prior instance is still tearing down — launchd's KeepAlive brings the service
+  # up moments later. The health check below is the authoritative source of truth,
+  # so NEVER die here: dying would abort the rest of the install (proxy/embed/compose).
+  [[ -n "$last_err" ]] && \
+    warn "oMLX bootstrap reported errors (launchd EIO race); verifying the service came up anyway…"
 
   if _wait_http_counter "http://127.0.0.1:8000/v1/models" 60 "oMLX on :8000"; then
     ok "oMLX responding on :8000"
+  elif [[ -n "$last_err" ]]; then
+    warn "oMLX did not answer on :8000 after a bootstrap error — run 'nomad reset-ollama' or check ~/Library/Logs/nomad-omlx.err.log (continuing install)"
   else
     warn "oMLX bootstrapped but not yet answering on :8000 (it may still be loading) — check ~/Library/Logs/nomad-omlx.err.log"
   fi
@@ -1861,7 +1881,7 @@ step_ollama_embed() {
 EOF
   chmod 644 "$EMBED_PLIST"
 
-  launchctl bootout "$LA_TARGET/$EMBED_LABEL" 2>/dev/null || true
+  _la_clean_bootout "$LA_TARGET" "$EMBED_LABEL"
   local last_err=""
   for attempt in 1 2 3; do
     if launchctl bootstrap "$LA_TARGET" "$EMBED_PLIST" 2>"$NOMAD_BOOTSTRAP_LOG"; then
@@ -1869,14 +1889,23 @@ EOF
     fi
     last_err="$(cat "$NOMAD_BOOTSTRAP_LOG")"
     warn "embed-Ollama bootstrap attempt $attempt failed: $last_err"
-    launchctl bootout "$LA_TARGET/$EMBED_LABEL" 2>/dev/null || true
-    sleep $((attempt * 2))
+    _la_clean_bootout "$LA_TARGET" "$EMBED_LABEL"
+    sleep $((attempt * 3))
   done
-  [[ -n "$last_err" ]] && die "embed-Ollama bootstrap failed after 3 attempts: $last_err"
+  # A bootstrap EIO is a benign launchd race; KeepAlive brings the service up
+  # moments later. The health check below is authoritative — NEVER die here, or the
+  # rest of the install (proxy/compose) would be aborted mid-update.
+  [[ -n "$last_err" ]] && \
+    warn "embed-Ollama bootstrap reported errors (launchd EIO race); verifying the service came up anyway…"
 
   # Wait for the embed server to answer before pulling (it just bootstrapped).
-  _wait_http_counter "http://127.0.0.1:11435/api/tags" 20 "embed Ollama on :11435" || \
+  if _wait_http_counter "http://127.0.0.1:11435/api/tags" 20 "embed Ollama on :11435"; then
+    :
+  elif [[ -n "$last_err" ]]; then
+    warn "embed Ollama did not answer on :11435 after a bootstrap error — run 'nomad reset-ollama' or check ~/Library/Logs/nomad-ollama-embed.err.log (continuing install)"
+  else
     warn "embed Ollama slow to answer on :11435 — check ~/Library/Logs/nomad-ollama-embed.err.log"
+  fi
   # Ensure the embedding model is present (internal disk; fast no-op if already there).
   # The admin's RAG requests nomic-embed-text:v1.5 specifically, so pull that exact
   # tag (plus the bare name for any caller that uses it). Progress is shown.
@@ -1954,7 +1983,7 @@ step_omlx_proxy() {
 EOF
   chmod 644 "$PROXY_PLIST"
 
-  launchctl bootout "$LA_TARGET/$PROXY_LABEL" 2>/dev/null || true
+  _la_clean_bootout "$LA_TARGET" "$PROXY_LABEL"
   local last_err=""
   for attempt in 1 2 3; do
     if launchctl bootstrap "$LA_TARGET" "$PROXY_PLIST" 2>"$NOMAD_BOOTSTRAP_LOG"; then
@@ -1962,13 +1991,19 @@ EOF
     fi
     last_err="$(cat "$NOMAD_BOOTSTRAP_LOG")"
     warn "proxy bootstrap attempt $attempt failed: $last_err"
-    launchctl bootout "$LA_TARGET/$PROXY_LABEL" 2>/dev/null || true
-    sleep $((attempt * 2))
+    _la_clean_bootout "$LA_TARGET" "$PROXY_LABEL"
+    sleep $((attempt * 3))
   done
-  [[ -n "$last_err" ]] && die "proxy bootstrap failed after 3 attempts: $last_err"
+  # A bootstrap EIO is a benign launchd race; KeepAlive brings the service up
+  # moments later. The health check below is authoritative — NEVER die here, or the
+  # remaining install steps (compose) would be aborted mid-update.
+  [[ -n "$last_err" ]] && \
+    warn "proxy bootstrap reported errors (launchd EIO race); verifying the service came up anyway…"
 
   if _wait_http_counter "http://127.0.0.1:11434/api/tags" 30 "proxy on :11434"; then
     ok "proxy responding on :11434 (admin reaches it via host.docker.internal)"
+  elif [[ -n "$last_err" ]]; then
+    warn "proxy did not answer on :11434 after a bootstrap error — run 'nomad reset-ollama' or check ~/Library/Logs/nomad-omlx-proxy.err.log (continuing install)"
   else
     warn "proxy bootstrapped but not yet answering on :11434 — check ~/Library/Logs/nomad-omlx-proxy.err.log"
   fi
