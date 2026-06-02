@@ -33,6 +33,20 @@ export default class SettingsController {
 
     async apps({ inertia }: HttpContext) {
         const services = await this.systemService.getServices({ installedOnly: false });
+        const isNativeOllama = DockerService.isNativeOllama();
+        const aiBackend = env.get('NOMAD_AI_BACKEND') ?? 'ollama';
+        // The "AI Assistant" Version cell can't use the seeder's container-image
+        // tag (ollama/ollama:0.15.2): on 'omlx' chat runs on Apple MLX (wrong
+        // engine) and on 'ollama' the real version is the host daemon's, not the
+        // bundled tag. On the host-Ollama backend, probe the native daemon's
+        // /api/version so the page shows the actual installed version; on omlx
+        // the frontend shows the engine name ("Apple MLX") so we skip the probe
+        // entirely (it would answer for the embeddings sidecar, not the chat
+        // engine). null/undefined when unreachable — the frontend shows a
+        // neutral placeholder rather than a stale number.
+        const aiAssistantVersion = (isNativeOllama && aiBackend === 'ollama')
+            ? (await this.ollamaService.getNativeServerVersion()) ?? undefined
+            : undefined;
         return inertia.render('settings/apps', {
             system: {
                 services
@@ -42,7 +56,7 @@ export default class SettingsController {
             // routes through DockerService.affectService or updateService,
             // both of which refuse with a "manage via CLI" error on native
             // Ollama. Hiding the buttons skips the dead-end UX entirely.
-            isNativeOllama: DockerService.isNativeOllama(),
+            isNativeOllama,
             // Which backend the host CLI selected ('omlx' | 'ollama'). Both set
             // OLLAMA_HOST (so isNativeOllama is true for both), so the page needs
             // this to tell them apart on the "AI Assistant" card: on 'omlx' chat
@@ -50,7 +64,9 @@ export default class SettingsController {
             // Ollama "Update" must NOT be offered (it wouldn't touch the chat
             // engine); on 'ollama' the host-side Ollama upgrade IS the chat-engine
             // update. Defaults to 'ollama'.
-            aiBackend: env.get('NOMAD_AI_BACKEND') ?? 'ollama',
+            aiBackend,
+            // Real native-daemon version for the host-Ollama backend (see above).
+            aiAssistantVersion,
         });
     }
     

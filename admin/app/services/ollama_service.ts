@@ -182,6 +182,34 @@ export class OllamaService {
     return response.models.filter((model) => !model.name.includes('embed'))
   }
 
+  /**
+   * Fetch the version of the native (host-managed) Ollama daemon via its
+   * /api/version endpoint. The Apps page uses this on the 'ollama' backend to
+   * show the real installed version (e.g. the brew-installed daemon) instead
+   * of the seeder's hardcoded container-image tag, which is stale. Returns
+   * null when OLLAMA_HOST is unset, Ollama is unreachable, or the response is
+   * malformed — callers render a neutral placeholder rather than a misleading
+   * version. Mirrors the /api/tags status probe in DockerService.
+   *
+   * Not meaningful on the 'omlx' backend (chat runs on Apple MLX and the proxy
+   * on :11434 would answer for the embeddings sidecar, not the chat engine),
+   * so callers must gate on the backend before invoking this.
+   */
+  public async getNativeServerVersion(): Promise<string | null> {
+    const host = env.get('OLLAMA_HOST')
+    if (!host) return null
+    try {
+      const response = await axios.get(`${host}/api/version`, { timeout: 3000 })
+      const version = response.data?.version
+      return typeof version === 'string' && version.trim() !== '' ? version.trim() : null
+    } catch (error) {
+      logger.warn(
+        `[OllamaService] Failed to fetch native Ollama version: ${error instanceof Error ? error.message : error}`
+      )
+      return null
+    }
+  }
+
   async getAvailableModels(
     { sort, recommendedOnly, query, limit, force }: { sort?: 'pulls' | 'name'; recommendedOnly?: boolean, query: string | null, limit?: number, force?: boolean } = {
       sort: 'pulls',

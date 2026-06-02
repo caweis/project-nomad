@@ -41,6 +41,12 @@ export default function SettingsPage(props: {
   // sidecar, so the "AI Assistant" card must not offer an Ollama "Update"
   // (it wouldn't update the chat engine). Defaults to 'ollama' when unset.
   aiBackend?: string
+  // Real version of the native Ollama daemon on the 'ollama' backend, probed
+  // server-side from /api/version. The seeder's container-image tag is the
+  // wrong source for the AI Assistant row (see the Version cell below), so the
+  // controller supplies the live value here. Undefined on the 'omlx' backend
+  // (the row shows "Apple MLX" instead) or when the daemon is unreachable.
+  aiAssistantVersion?: string
 }) {
   const { openModal, closeAllModals } = useModals()
   const { showError } = useErrorNotification()
@@ -469,6 +475,21 @@ export default function SettingsPage(props: {
                   title: 'Version',
                   render: (record) => {
                     if (!record.installed) return null
+                    // The AI Assistant version is backend-aware, mirroring the
+                    // Actions cell. The seeder's container-image tag
+                    // (ollama/ollama:0.15.2) is the wrong source on both native
+                    // backends: on 'omlx' chat runs on Apple MLX and Ollama is
+                    // only the embeddings sidecar (wrong engine), and on
+                    // 'ollama' the real version is the host daemon's, supplied
+                    // server-side via aiAssistantVersion. See settings_controller.ts.
+                    if (props.isNativeOllama && record.service_name === SERVICE_NAMES.OLLAMA) {
+                      if (props.aiBackend === 'omlx') {
+                        return <span className="text-gray-600">Apple MLX</span>
+                      }
+                      return (
+                        <span className="text-gray-600">{props.aiAssistantVersion || '—'}</span>
+                      )
+                    }
                     const currentTag = extractTag(record.container_image)
                     if (record.available_update_version) {
                       return (
