@@ -47,6 +47,33 @@ async def test_v1_embeddings_routed_to_embed_ollama(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_api_embed_routed_to_embed_ollama(monkeypatch):
+    """The admin's RAG ingest uses the ollama npm client's .embed(), which POSTs to
+    /api/embed. It must hit the embed Ollama's /api/embed — not fall through to oMLX
+    (no embed model -> 404 -> ingestion fails at 95%)."""
+    captured = {}
+    async def fake_post(self, url, json=None, **kw):
+        captured["url"] = url
+        return httpx.Response(200, json={"embeddings": [[0.1, 0.2]]}, request=httpx.Request("POST", url))
+    monkeypatch.setattr(nomad_embed.httpx.AsyncClient, "post", fake_post)
+    await nomad_embed.embed(_FakeReq({"model": "nomic-embed-text:v1.5", "input": "hi"}, "/api/embed"))
+    assert captured["url"] == "http://embed:11435/api/embed"
+
+
+@pytest.mark.asyncio
+async def test_v1_embed_routed_to_embed_ollama_api_embed(monkeypatch):
+    """Ollama has no /v1/embed, so a /v1/embed call must still forward to the native
+    /api/embed on the embed Ollama."""
+    captured = {}
+    async def fake_post(self, url, json=None, **kw):
+        captured["url"] = url
+        return httpx.Response(200, json={"embeddings": [[0.1]]}, request=httpx.Request("POST", url))
+    monkeypatch.setattr(nomad_embed.httpx.AsyncClient, "post", fake_post)
+    await nomad_embed.embed(_FakeReq({"model": "nomic-embed-text:v1.5", "input": "hi"}, "/v1/embed"))
+    assert captured["url"] == "http://embed:11435/api/embed"
+
+
+@pytest.mark.asyncio
 async def test_embeddings_propagates_upstream_status(monkeypatch):
     from fastapi import HTTPException
     async def fake_post(self, url, json=None, **kw):
