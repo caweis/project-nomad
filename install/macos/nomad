@@ -772,6 +772,36 @@ check_system() {
   fi
 }
 
+# nomad-check probe: run a real 1-token generate against a chat Ollama instance
+# and emit a finding if the llama.cpp runner is missing. /api/tags being up only
+# means the daemon is alive — this is what actually catches a runner-incomplete
+# bottle. Caller passes the severity for a missing runner (🔴 when this instance
+# IS the AI backend, 🟡 when it's the coexisting general Ollama in oMLX mode).
+#   $1 = base url   $2 = label   $3 = severity for runner-missing (default 🔴)
+_check_probe_chat() {
+  local base="$1" label="$2" sev="${3:-🔴}" model verdict
+  model="$(_ollama_first_model "$base")"
+  [[ -z "$model" ]] && { ok "$label — no model to inference-test (pull one to verify the runner)"; return 0; }
+  verdict="$(_ollama_infer_probe "$base" "$model" generate)"
+  case "$verdict" in
+    ok)             ok "$label inference OK (runner healthy, model '$model')" ;;
+    runner-missing) flag "$sev" "$label inference broken — llama.cpp runner (llama-server) missing" "brew reinstall ollama OR https://ollama.com/download/mac, then 'nomad reset-ollama'" ;;
+    *)              flag "🟡" "$label inference probe inconclusive" "${verdict#error:}" ;;
+  esac
+}
+
+# nomad-check probe: run a real /api/embed against an embed Ollama instance.
+#   $1 = base url   $2 = label
+_check_probe_embed() {
+  local base="$1" label="$2" verdict
+  verdict="$(_ollama_infer_probe "$base" "nomic-embed-text" embed)"
+  case "$verdict" in
+    ok)             ok "$label embeddings OK (runner healthy)" ;;
+    runner-missing) flag "🔴" "$label embeddings broken — llama.cpp runner (llama-server) missing" "brew reinstall ollama OR https://ollama.com/download/mac, then 'nomad reset-ollama'" ;;
+    *)              flag "🟡" "$label embed probe inconclusive" "${verdict#error:} (RAG may repair on first use)" ;;
+  esac
+}
+
 check_stack() {
   section "Stack"
   if ! ensure_docker_path; then
@@ -838,17 +868,22 @@ check_stack() {
     fi
     if curl -fsS --max-time 3 http://127.0.0.1:11435/api/tags >/dev/null 2>&1; then
       ok "embed-only Ollama on :11435"
+      _check_probe_embed "http://127.0.0.1:11435" "embed Ollama (:11435)"
     else
       flag "🟡" "embed Ollama not responding on :11435" "RAG embeddings unavailable; check ~/Library/Logs/nomad-ollama-embed.err.log"
     fi
     if curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
       ok "general Ollama on :11434 (coexisting — your models)"
+      # Coexisting convenience in oMLX mode, not the admin's backend → 🟡 if broken.
+      _check_probe_chat "http://127.0.0.1:11434" "general Ollama (:11434)" "🟡"
     else
       flag "🟡" "general Ollama not responding on :11434" "Your local Ollama models/apps are unavailable; check ~/Library/Logs/nomad-ollama.err.log"
     fi
   else
     if curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
       ok "native Ollama responding on :11434"
+      # Native Ollama IS the AI backend here → a missing runner is 🔴.
+      _check_probe_chat "http://127.0.0.1:11434" "native Ollama (:11434)" "🔴"
     else
       flag "🔴" "Native Ollama not responding" "Check ~/Library/Logs/nomad-ollama.err.log"
     fi
@@ -974,11 +1009,20 @@ check_install() {
     # avoid duplicating (and contradicting) that command.
     inv_ok "AI agents" "oMLX + proxy + embed + general Ollama — see 'nomad check stack' (oMLX backend)"
   else
-    # --- Ollama (binary, agent, port, API) — native Ollama mode only ---
+    # --- Ollama (binary, runner, agent, port, API) — native Ollama mode only ---
     if command -v ollama >/dev/null 2>&1; then
       inv_ok "Ollama binary" "$(ollama --version 2>&1 | head -1 | sed 's/^.*version //')"
     else
       inv_missing "Ollama binary" "brew install ollama"
+    fi
+
+    # The llama.cpp runner (llama-server) is what loads GGUF models. A binary
+    # present without it (the incomplete-bottle case) serves /api/tags but 500s
+    # on every load — flag it here so 'nomad install inventory' shows the gap.
+    if _ollama_runner_present; then
+      inv_ok "Ollama runner" "llama-server present (GGUF inference)"
+    else
+      inv_broken "Ollama runner" "llama-server MISSING — brew reinstall ollama or https://ollama.com/download/mac"
     fi
 
     if [[ -f "$LA_PLIST" ]]; then
