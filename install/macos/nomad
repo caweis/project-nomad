@@ -1793,19 +1793,37 @@ step_ollama_native() {
     sleep 2  # let launchd commit
   fi
 
-  # Now free :11434 — any leftover process is an orphan, won't respawn
+  # COEXIST (don't fight): :11434 should be free now (we booted out our agent). If
+  # something still holds it, decide by WHAT it is. The official Ollama.app runs
+  # its OWN server on :11434 — a child of the hidden GUI, not launchd-managed —
+  # off the app binary, which has a working runner, so it's a perfectly good
+  # general Ollama. Our own respawned agent also runs the app binary. Either way,
+  # a holder running the app binary is healthy: leave it and skip our second
+  # daemon. Only a non-app orphan (e.g. the runner-less formula) is offered for
+  # reclaim — and we NEVER abort the reset over :11434 (RAG on :11435 and the
+  # oMLX stack are independent of it).
   if lsof -nP -iTCP:11434 -sTCP:LISTEN >/dev/null 2>&1; then
-    local pid proc
+    local pid proc cmd
     pid="$(lsof -nP -iTCP:11434 -sTCP:LISTEN -F p 2>/dev/null | awk '/^p/{sub(/^p/,"");print;exit}')"
     proc="$(lsof -nP -iTCP:11434 -sTCP:LISTEN -F c 2>/dev/null | awk '/^c/{sub(/^c/,"");print;exit}')"
+    cmd="$(ps -o command= -p "$pid" 2>/dev/null)"
+    case "$cmd" in
+      */Ollama.app/*)
+        ok "general Ollama already serving :11434 off the app binary (working runner) — coexisting; nomad won't run a second one"
+        return 0 ;;
+    esac
     warn "process '$proc' (pid $pid) on :11434 after bootout — likely orphan"
     if confirm "Kill it?"; then
       kill "$pid" 2>/dev/null || true; sleep 1
       lsof -nP -iTCP:11434 -sTCP:LISTEN >/dev/null 2>&1 && kill -9 "$pid" 2>/dev/null || true
       sleep 1
-      lsof -nP -iTCP:11434 -sTCP:LISTEN >/dev/null 2>&1 && die "could not free :11434"
+      if lsof -nP -iTCP:11434 -sTCP:LISTEN >/dev/null 2>&1; then
+        warn "could not free :11434 — leaving the existing server in place (coexist). RAG (:11435) and oMLX are unaffected."
+        return 0
+      fi
     else
-      die ":11434 must be free for native Ollama"
+      warn "leaving :11434 to the existing server (coexist). RAG (:11435) and oMLX are unaffected."
+      return 0
     fi
   fi
 
