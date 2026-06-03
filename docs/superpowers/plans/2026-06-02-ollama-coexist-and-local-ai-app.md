@@ -399,3 +399,24 @@ git commit -m "docs(ai-apps): broaden the AI help page beyond 'AI Assistant' + i
 **Type/name consistency:** `ai-lan-expose on|off` (allow-list, host handler, GUI, drift test) consistent across Tasks 7/8/10. `com.projectnomad.ollama` is the general-Ollama label throughout. Proxy `:11436`, native Ollama `:11434`, oMLX `:8000`, embed `:11435` consistent across all tasks.
 
 **Open items to confirm with Chris during execution:** the broadened help-page title (Task 9 Step 1 placeholder "AI & Local Models"); whether the GUI section lives on `models.tsx` or a new `ai-apps.tsx` (decide after reading the file's size, Task 8 Step 1).
+
+---
+
+## APPENDIX A — Task 1/2 per-site classification (in-depth audit, 2026-06-02)
+
+Authoritative classification of every `:11434` site (re-verify line numbers via grep before editing — they drift). Rule: post-feature `:11434` is ALWAYS the general/native Ollama (user's models) in BOTH modes; only the oMLX **proxy** moves to `:11436`.
+
+### Mechanical edit set — change `11434 → 11436` (24 lines, all proxy-specific):
+`684, 685, 687, 821, 1925, 1945, 1946, 1947, 1951, 1953, 1967, 1994, 2007, 2008, 2010, 2012, 3678, 3857, 3859, 3879, 3887, 5053, 5064, 5076`
+(line 821 + the comments are text/label changes; 1967 is THE uvicorn `--port`; 3857/3879/3887 are the omlx-mode pull path; 5053/5064/5076 are `_reset_omlx_stack`.)
+
+### Everything else STAYS `:11434` (do NOT change):
+native Ollama checks in `check_stack` ollama-branch (700/701) and `cmd_inventory` else-branch (845–867); `quick-chat.sh` heredoc (1273–1316); `step_ollama_native` (1533–1717, incl. bind 1634); `cmd_models list` (3820–3831) + `cmd_upgrade_models` (4235/4242); `_upgrade_native_ollama` (4046–4051); `cmd_reset_ollama` (5210–5261); benchmark container internal port (5386/5393); all Field Desk (5513–5658); `cmd_upgrade` docstring (3927); `cmd_backend` bootout comment (5100).
+
+### CORRECTIONS to the main plan (apply before editing):
+1. **Task 2 must be BACKEND-AWARE (plan bug).** `step_seed_native_ollama_state` (SQL @3537, comment @3516) currently seeds `:11434` unconditionally. Required: seed `http://host.docker.internal:11436` in **omlx** mode, `…:11434` in **ollama** mode. The idempotent UPDATE migration likewise only rewrites `…11434→…11436` **when `$BACKEND == omlx`** (never in ollama mode). Implement via an `if [[ "$BACKEND" == omlx ]]` shell branch around the value.
+2. **Embedding pre-pull (2328/2361) — Task 4 addendum.** `step_pull_embedding_quick` checks/pulls on `:11434`. In omlx mode embeddings live on the embed-Ollama `:11435`. Verify and, in omlx mode, route the embedding check/pull to `:11435` (or skip, since `step_ollama_embed` already pulls `nomic-embed-text`). Read `step_pull_embedding_quick` + `step_ollama_embed` in context first.
+3. **437 / 5120 — Task 5 addendum.** Add `11436` to `NOMAD_PORTS`. Make the `cmd_backend` success message (5120) backend-aware: "admin → :11436" when target=omlx, "→ :11434" when target=ollama (or drop the port).
+
+### OPEN DECISION for Chris — user-facing "AI API" URL banners (2116, 2148, 3706, 3747):
+These print a "your AI API is at http://…:11434" URL to the user (install prompt + completion banners + the hostname-rename docstring). In **omlx** mode there are now two relevant endpoints: the user's **general Ollama** (`:11434`, their models, for Ollama clients/Field Desk) and the **admin/oMLX proxy** (`:11436`). Decision: in omlx mode should these banners show (a) `:11434` only (the user's Ollama), (b) `:11436` only (the admin AI/proxy), or (c) both, labeled? Recommendation: **(c) both, labeled** — "Ollama (your models): :11434 · AI Assistant API (oMLX): :11436" — most accurate; backend-aware (ollama mode shows just `:11434`).
