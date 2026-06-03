@@ -55,7 +55,12 @@ export class ZimService {
     count: number
     query?: string
   }): Promise<ListRemoteZimFilesResponse> {
-    const LIBRARY_BASE_URL = 'https://browse.library.kiwix.org/catalog/v2/entries'
+    // Kiwix moved its OPDS catalog to opds.library.kiwix.org. The previous host,
+    // browse.library.kiwix.org, now returns HTTP 503 for /catalog/* (the apex
+    // library.kiwix.org 301-redirects here). Point straight at the canonical OPDS
+    // host so Content Explorer keeps working. Note: ZIM downloads are unaffected —
+    // the .meta4 acquisition links resolve to a separate host (lbo.download.kiwix.org).
+    const LIBRARY_BASE_URL = 'https://opds.library.kiwix.org/catalog/v2/entries'
 
     const res = await axios.get(LIBRARY_BASE_URL, {
       params: {
