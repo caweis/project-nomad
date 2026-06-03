@@ -21,7 +21,7 @@ import useInternetStatus from '~/hooks/useInternetStatus'
 import Alert from '~/components/Alert'
 import useServiceInstalledStatus from '~/hooks/useServiceInstalledStatus'
 import Input from '~/components/inputs/Input'
-import { IconSearch, IconBooks } from '@tabler/icons-react'
+import { IconSearch, IconBooks, IconCloudOff } from '@tabler/icons-react'
 import useDebounce from '~/hooks/useDebounce'
 import CategoryCard from '~/components/CategoryCard'
 import TierSelectionModal from '~/components/TierSelectionModal'
@@ -79,7 +79,7 @@ export default function ZimRemoteExplorer() {
     enabled: true,
   })
 
-  const { data, fetchNextPage, isFetching, isLoading } =
+  const { data, fetchNextPage, isFetching, isLoading, refetch } =
     useInfiniteQuery<ListRemoteZimFilesResponse>({
       queryKey: ['remote-zim-files', query],
       queryFn: async ({ pageParam = 0 }) => {
@@ -114,6 +114,15 @@ export default function ZimRemoteExplorer() {
     })
   }, [data, downloads])
   const hasMore = useMemo(() => data?.pages[data.pages.length - 1]?.has_more || false, [data])
+
+  // The backend returns a typed `catalog_unavailable` flag (instead of throwing)
+  // when this appliance can't reach the remote Kiwix library — no WAN, or an
+  // upstream error. Only treat the browse area as unavailable when we have no
+  // results to show, so an offline blip mid-scroll doesn't wipe loaded content.
+  const catalogUnavailable = useMemo(
+    () => flatData.length === 0 && (data?.pages.some((page) => page.catalog_unavailable) ?? false),
+    [data, flatData.length]
+  )
 
   const fetchOnBottomReached = useCallback(
     (parentRef?: HTMLDivElement | null) => {
@@ -160,9 +169,8 @@ export default function ZimRemoteExplorer() {
         confirmVariant="primary"
       >
         <p className="text-gray-700">
-          Are you sure you want to download{' '}
-          <strong>{record.title}</strong>? It may take some time for it
-          to be available depending on the file size and your internet connection. The Kiwix
+          Are you sure you want to download <strong>{record.title}</strong>? It may take some time
+          for it to be available depending on the file size and your internet connection. The Kiwix
           application will be restarted after the download is complete.
         </p>
       </StyledModal>,
@@ -307,7 +315,7 @@ export default function ZimRemoteExplorer() {
               Force Refresh Collections
             </StyledButton>
           </div>
-          
+
           {/* Wikipedia Selector */}
           {isLoadingWikipedia ? (
             <div className="mt-8 bg-white rounded-lg border border-gray-200 p-6">
@@ -366,85 +374,109 @@ export default function ZimRemoteExplorer() {
             <p className="text-gray-500 mt-4">No curated content categories available.</p>
           )}
           <StyledSectionHeader title="Browse the Kiwix Library" className="mt-12 mb-4" />
-          <div className="flex justify-start mt-4">
-            <Input
-              name="search"
-              label=""
-              placeholder="Search available ZIM files..."
-              value={queryUI}
-              onChange={(e) => {
-                setQueryUI(e.target.value)
-                debouncedSetQuery(e.target.value)
-              }}
-              className="w-1/3"
-              leftIcon={<IconSearch className="w-5 h-5 text-gray-400" />}
-            />
-          </div>
-          <StyledTable<RemoteZimFileEntry & { actions?: any }>
-            data={flatData.map((i, idx) => {
-              const row = virtualizer.getVirtualItems().find((v) => v.index === idx)
-              return {
-                ...i,
-                height: `${row?.size || 48}px`, // Use the size from the virtualizer
-                translateY: row?.start || 0,
-              }
-            })}
-            ref={tableParentRef}
-            loading={isLoading}
-            columns={[
-              {
-                accessor: 'title',
-              },
-              {
-                accessor: 'author',
-              },
-              {
-                accessor: 'summary',
-              },
-              {
-                accessor: 'updated',
-                render(record) {
-                  return new Intl.DateTimeFormat('en-US', {
-                    dateStyle: 'medium',
-                  }).format(new Date(record.updated))
-                },
-              },
-              {
-                accessor: 'size_bytes',
-                title: 'Size',
-                render(record) {
-                  return formatBytes(record.size_bytes)
-                },
-              },
-              {
-                accessor: 'actions',
-                render(record) {
-                  return (
-                    <div className="flex space-x-2">
-                      <StyledButton
-                        icon={'IconDownload'}
-                        onClick={() => {
-                          confirmDownload(record)
-                        }}
-                      >
-                        Download
-                      </StyledButton>
-                    </div>
-                  )
-                },
-              },
-            ]}
-            className="relative overflow-x-auto overflow-y-auto h-[600px] w-full mt-4"
-            tableBodyStyle={{
-              position: 'relative',
-              height: `${virtualizer.getTotalSize()}px`,
-            }}
-            containerProps={{
-              onScroll: (e) => fetchOnBottomReached(e.currentTarget as HTMLDivElement),
-            }}
-            compact
-            rowLines
-          />
+          {catalogUnavailable ? (
+            <div className="mt-4 flex flex-col items-center justify-center rounded-lg border border-gray-200 bg-white px-6 py-12 text-center">
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-gray-100">
+                <IconCloudOff className="h-6 w-6 text-gray-400" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900">Catalog unavailable</h3>
+              <p className="mt-1 max-w-md text-gray-500">
+                Connect this server to the internet to browse downloadable content. Content you've
+                already downloaded stays available offline.
+              </p>
+              <StyledButton
+                icon="IconRefresh"
+                variant="outline"
+                className="mt-5"
+                loading={isFetching}
+                onClick={() => refetch()}
+              >
+                Retry
+              </StyledButton>
+            </div>
+          ) : (
+            <>
+              <div className="flex justify-start mt-4">
+                <Input
+                  name="search"
+                  label=""
+                  placeholder="Search available ZIM files..."
+                  value={queryUI}
+                  onChange={(e) => {
+                    setQueryUI(e.target.value)
+                    debouncedSetQuery(e.target.value)
+                  }}
+                  className="w-1/3"
+                  leftIcon={<IconSearch className="w-5 h-5 text-gray-400" />}
+                />
+              </div>
+              <StyledTable<RemoteZimFileEntry & { actions?: any }>
+                data={flatData.map((i, idx) => {
+                  const row = virtualizer.getVirtualItems().find((v) => v.index === idx)
+                  return {
+                    ...i,
+                    height: `${row?.size || 48}px`, // Use the size from the virtualizer
+                    translateY: row?.start || 0,
+                  }
+                })}
+                ref={tableParentRef}
+                loading={isLoading}
+                columns={[
+                  {
+                    accessor: 'title',
+                  },
+                  {
+                    accessor: 'author',
+                  },
+                  {
+                    accessor: 'summary',
+                  },
+                  {
+                    accessor: 'updated',
+                    render(record) {
+                      return new Intl.DateTimeFormat('en-US', {
+                        dateStyle: 'medium',
+                      }).format(new Date(record.updated))
+                    },
+                  },
+                  {
+                    accessor: 'size_bytes',
+                    title: 'Size',
+                    render(record) {
+                      return formatBytes(record.size_bytes)
+                    },
+                  },
+                  {
+                    accessor: 'actions',
+                    render(record) {
+                      return (
+                        <div className="flex space-x-2">
+                          <StyledButton
+                            icon={'IconDownload'}
+                            onClick={() => {
+                              confirmDownload(record)
+                            }}
+                          >
+                            Download
+                          </StyledButton>
+                        </div>
+                      )
+                    },
+                  },
+                ]}
+                className="relative overflow-x-auto overflow-y-auto h-[600px] w-full mt-4"
+                tableBodyStyle={{
+                  position: 'relative',
+                  height: `${virtualizer.getTotalSize()}px`,
+                }}
+                containerProps={{
+                  onScroll: (e) => fetchOnBottomReached(e.currentTarget as HTMLDivElement),
+                }}
+                compact
+                rowLines
+              />
+            </>
+          )}
           <ActiveDownloads filetype="zim" withHeader />
         </main>
       </div>

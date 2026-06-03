@@ -16,6 +16,13 @@ export type ListRemoteZimFilesResponse = {
   items: RemoteZimFileEntry[]
   has_more: boolean
   total_count: number
+  /**
+   * Set when the remote OPDS catalog could not be reached — either this
+   * appliance has no WAN connectivity or the upstream Kiwix library returned an
+   * error. The happy path leaves this undefined. The frontend renders a calm
+   * "catalog unavailable" empty-state instead of a generic internal-error toast.
+   */
+  catalog_unavailable?: boolean
 }
 
 export type RawRemoteZimFileEntry = {

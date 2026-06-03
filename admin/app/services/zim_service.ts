@@ -5,7 +5,11 @@ import {
 } from '../../types/zim.js'
 import axios from 'axios'
 import { XMLParser } from 'fast-xml-parser'
-import { isRawListRemoteZimFilesResponse, isRawRemoteZimFileEntry } from '../../util/zim.js'
+import {
+  classifyCatalogFetchError,
+  isRawListRemoteZimFilesResponse,
+  isRawRemoteZimFileEntry,
+} from '../../util/zim.js'
 import logger from '@adonisjs/core/services/logger'
 import { DockerService } from './docker_service.js'
 import { inject } from '@adonisjs/core'
@@ -62,15 +66,30 @@ export class ZimService {
     // the .meta4 acquisition links resolve to a separate host (lbo.download.kiwix.org).
     const LIBRARY_BASE_URL = 'https://opds.library.kiwix.org/catalog/v2/entries'
 
-    const res = await axios.get(LIBRARY_BASE_URL, {
-      params: {
-        start: start,
-        count: count,
-        lang: 'eng',
-        ...(query ? { q: query } : {}),
-      },
-      responseType: 'text',
-    })
+    let res
+    try {
+      res = await axios.get(LIBRARY_BASE_URL, {
+        params: {
+          start: start,
+          count: count,
+          lang: 'eng',
+          ...(query ? { q: query } : {}),
+        },
+        responseType: 'text',
+      })
+    } catch (error) {
+      // Browsing the remote catalog inherently needs WAN, which this offline-first
+      // appliance often lacks. Treat transport/upstream failures as a calm,
+      // typed "unavailable" result so the frontend can render an empty-state
+      // instead of a generic internal-error toast. Genuine faults (malformed
+      // response, local errors) are NOT Axios errors and keep propagating.
+      const reason = classifyCatalogFetchError(error)
+      if (reason === null) {
+        throw error
+      }
+      logger.warn(`[ZimService] Remote ZIM catalog unavailable: ${reason}`)
+      return { items: [], has_more: false, total_count: 0, catalog_unavailable: true }
+    }
 
     const data = res.data
     const parser = new XMLParser({
