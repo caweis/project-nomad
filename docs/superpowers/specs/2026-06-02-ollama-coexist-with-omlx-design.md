@@ -3,7 +3,7 @@
 - **Status:** Draft for review — **v3** (Layer 2 reframed to a unified app + deployment-aware secure access)
 - **Date:** 2026-06-02
 - **Scope:** macOS/Apple-Silicon distribution layer — `install/macos/**`, `admin/**`. Ships in the **installer** (feature for all nomad users).
-- **Mode affected:** `NOMAD_AI_BACKEND=omlx` primarily (`ollama` mode largely unaffected)
+- **Mode affected:** Layer 1 is **omlx-only — a no-op in `ollama` mode** (a native Ollama already owns `:11434` with the user's models there, so there is nothing to "coexist"). Layer 2 is **backend-aware** and works for *both* install types.
 
 ## 1. Goal
 
@@ -49,11 +49,11 @@ Two complementary layers:
 | # | Decision | Rationale | Rejected |
 |---|----------|-----------|----------|
 | D7 | Scope = **configure, recommend; do not bundle** | Ships to all users — won't hard-couple to a third-party (esp. solo-maintainer) binary. nomad emits configs + recommends. | Fully-managed bundle. |
-| D8 | Engines: app can target **both**; configs for each. Suggested: chat → existing models on Ollama `:11434`; agentic coding → oMLX `:8000` (batching; OpenAI+Anthropic). | Honors existing-models for chat; better engine for the agent; user can mix. | Forcing one engine. |
+| D8 | **Backend-aware targeting.** The helper detects `NOMAD_AI_BACKEND`: in **`ollama`** mode the app/agent target native Ollama `:11434` (the *only* engine — the user's models; MLX-backed under Ollama 0.19+; Anthropic-API for Claude Code); in **`omlx`** mode, oMLX `:8000` (coding agent; OpenAI+Anthropic) + Ollama `:11434` (chat over existing models). Configs for whatever exists; user can mix. | Works for **both** install types — not just omlx; honors existing-models for chat. | Assuming oMLX always exists (it doesn't in ollama mode). |
 | D9 | Coding model **USER-DEFINED**; nomad shows a RAM-advised menu (install-detected RAM) with honest capability notes (8B weak for agentic coding; Qwen2.5-Coder / Devstral as coding-tuned), user selects, optional `--pull`. **No forced model.** | Per Chris. | Auto-pick/auto-pull. |
-| **D10** | **Deployment-aware, secure-by-default.** App on the **mini** → loopback. App on **another Mac** → reach the mini over a **secure tunnel** (SSH `-L` [no deps] or **Tailscale** [recommended UX]); endpoints stay **loopback-bound**. Raw `0.0.0.0` LAN exposure is an **explicit, warned opt-in** only (it breaks the loopback→`skip_api_key_verification` safety). | Maxim 8 — security by design / least exposure; preserves the no-auth-because-loopback posture for all users. | Defaulting to LAN exposure for remote access. |
+| **D10** | **Deployment- + endpoint-aware (corrected to the real binds).** Confirmed: the **Ollama-API `:11434`** endpoint is **already `0.0.0.0`** in *both* modes (native Ollama @`nomad:1634`; oMLX proxy @`:1966` — to match native Ollama + let the Dockerized admin reach it via `host.docker.internal`), so it's **already LAN-reachable & unauthenticated** today (pre-existing). **oMLX `:8000`** and **embed `:11435`** are **loopback**. Therefore: an app on `:11434` connects over the LAN as-is (caveat: unauthenticated — see Risks); an app targeting **oMLX `:8000`** from another Mac uses a **secure tunnel** (SSH `-L` / Tailscale) or an explicit, warned opt-in expose; an app on the mini uses loopback for both. | Accurate to the actual binds; a tunnel only where it's genuinely needed (`:8000`). | Claiming `:11434` is loopback (it isn't) — would mis-state the security posture. |
 | D11 | Recommended app = **Agent!** (`macos26/agent`: native, chat + agentic coding + Mac automation, local Ollama/LM Studio, signed, macOS 26.4.1+). Alternatives documented: **Zed** (AI editor; local agentic is finicky) and **Claude Code on local models** (Anthropic-API; CLI). | Closest "Claude for macOS" shape; gates met. ⚠️ solo-maintainer (bus-factor 1) — hence recommend-not-bundle (D7). | Hard-bundling one app. |
-| D12 | Delivery: a **`nomad ai-clients`** helper (working name) + an **install-flow offer** + a **dedicated FAQ/help page** (`/docs/mac-ai-clients`) + man entry. The helper hands you a *recipe* (official download link + exact config + tunnel command), optionally runs an app's *own* official installer (Zed brew cask, Claude Code npm); it never re-hosts a third-party binary. | Discoverable, install-grade, configure-scope; license-clean (Agent! binary is author-reserved). | Docs only; nomad hosting/serving the binary. |
+| D12 | Delivery: a **`nomad ai-clients`** helper (working name) + an **install-flow offer** + **broadening the existing AI help page** (`/docs/mac-ai-assistant`, retitled beyond "AI Assistant", URL kept) + man entry. The helper hands you a *recipe* (official download link + exact config + tunnel command), optionally runs an app's *own* official installer (Zed brew cask, Claude Code npm); it never re-hosts a third-party binary. | Discoverable, install-grade, configure-scope; license-clean (Agent! binary is author-reserved). | Docs only; nomad hosting/serving the binary. |
 | D13 | Install integration: the installer **offers** (skippable, idempotent) to print/set up the unified-app config — RAM-advised model menu, app recommendation, local-or-tunnel connection details. | "It's for the install too." | Post-install only. |
 
 ## 5. Target architecture (omlx mode)
@@ -82,12 +82,13 @@ Layer 2 (unified app — you install; nomad configures):
 - `nomad ai-clients` subcommand: read install-time RAM → model menu (tiers + honesty); `--model/--engine/--pull`; emit app configs (Agent! / Zed / Claude-Code) for local **and** tunnel connection; print the secure-access guidance.
 - Secure remote access: helper + doc for SSH `-L` and Tailscale to the mini's loopback endpoints; raw-`0.0.0.0` opt-in path gated behind an explicit flag + warning.
 - Install-flow offer (D13): skippable step that surfaces the above.
-- **Dedicated FAQ/help page** at `/docs/mac-ai-clients`: new `admin/docs/mac-ai-clients.md` (Markdoc), auto-discovered by `DocsService`; add a `DOC_ORDER` slot (~17) + optional `TITLE_OVERRIDES` entry in `admin/app/services/docs_service.ts` (one line each) so it slots beside the other `mac-*` pages. Ships with the admin image. Covers: recommended apps, the `nomad ai-clients` recipe, local-vs-secure-tunnel connection (D10), the user-defined model menu (D9), and the honest model-quality note.
+- **Broaden the existing AI help page** (`/docs/mac-ai-assistant` — URL/slug kept, no link breakage). Retitle it beyond "AI Assistant" to an AI hub: (a) add a `TITLE_OVERRIDES` entry for `mac-ai-assistant` in `admin/app/services/docs_service.ts` (one line — also fixes the current auto-title "Mac Ai Assistant"), and (b) rewrite/expand the in-page H1 + content of `admin/docs/mac-ai-assistant.md`. Final title TBD (Chris) — e.g. "AI & Local Models". Expanded scope: the built-in assistant **+** using your own local models (oMLX/Ollama coexistence) **+** the unified app (Agent!/Zed/Claude-Code-local) **+** the `nomad ai-clients` recipe **+** local-vs-secure-tunnel connection (D10) **+** the user-defined model menu (D9) **+** the honest model-quality note. (This page is also on the stale-mac-docs rewrite list — broaden + refresh together.)
 - A `nomad help`/man entry for `nomad ai-clients`. Beyond the one-line `DOC_ORDER` edit, no admin code changes (the app itself is external).
 
 ## 7. Risks & mitigations
 
-- **Security — remote exposure** (the big one): raw `0.0.0.0` would expose unauthenticated models. *Mitigation:* loopback + secure tunnel default (D10); raw exposure is explicit/warned only.
+- **Security — remote exposure of oMLX `:8000`:** it's loopback; remote access via tunnel (D10), explicit/warned for any opt-in expose.
+- **Pre-existing `:11434` LAN exposure (flagged, not silently changed):** the Ollama-API endpoint is `0.0.0.0`/**unauthenticated** in *both* modes today (to serve the Dockerized admin via `host.docker.internal`). This feature doesn't change that; the FAQ page should state it plainly. Adding auth or firewalling `:11434` to a trusted interface is a worthwhile **separate hardening follow-up — out of scope here** (it predates this feature and affects the admin path).
 - **Pull-routing miss** → omlx-mode pull → `:11436` audit + verify.
 - **kv_store seed drift** → idempotent `UPDATE`.
 - **Bootout loops** kill general Ollama on switch → de-exclude; verify.
@@ -100,7 +101,8 @@ Layer 2 (unified app — you install; nomad configures):
 
 - `bash -n install/macos/nomad`; `cd admin && npm run typecheck`; `bash install/macos/scripts/test-manpages.sh`.
 - **Layer 1 (live, omlx):** (1) `ollama run llama3.1` on `:11434`; (2) admin chat still streams from **oMLX** (`:11436`); (3) KB/RAG green; (4) benchmark; (5) `nomad backend omlx` doesn't kill `:11434` Ollama; (6) `nomad models pull <mlx>` → `:11436`; (7) system-check shows four daemons. Regression: `ollama` mode unchanged.
-- **Layer 2:** `nomad ai-clients` prints a correct RAM menu + valid configs; `--pull` pulls the **user-chosen** model; a unified app (mini-local) reaches the models; a remote app over **SSH/Tailscale** reaches the loopback endpoints; the model endpoints are **not** reachable on `0.0.0.0` unless the opt-in flag is set.
+- **Layer 2 (omlx mode):** `nomad ai-clients` prints a correct RAM menu + valid configs for oMLX `:8000` (agent) + Ollama `:11434` (chat); `--pull` pulls the **user-chosen** model; a unified app (mini-local) reaches both; a remote app reaches oMLX `:8000` over **SSH/Tailscale**; oMLX `:8000` is **not** on `0.0.0.0` unless the opt-in flag is set.
+- **Layer 2 (ollama mode):** `nomad ai-clients` targets **only** Ollama `:11434` (no oMLX references); the app reaches it local or over the LAN; the helper behaves correctly with no oMLX/proxy present.
 
 ## 9. Out of scope
 
