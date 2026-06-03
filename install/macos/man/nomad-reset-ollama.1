@@ -68,7 +68,39 @@ Reload and force the internal model store.
 .It Ic nomad reset-ollama --drive
 Reload and restore the drive-backed store, once the drive is healthy.
 .El
+.Sh TROUBLESHOOTING
+.Ss Missing llama.cpp runner
+If the Ollama daemon answers
+.Pq Li /api/tags
+but every model load fails with HTTP 500
+.Dq llama-server binary not found ,
+the llama.cpp inference runner is absent from the install.
+A known cause on macOS 26
+.Pq Tahoe
+is the Homebrew ollama
+.Em formula
+bottle, which ships runner-less
+.Pq only the MLX runner ,
+breaking both chat on port 11434 and RAG embeddings on port 11435 while the
+API still looks healthy.
+.Pp
+.Ic nomad check
+flags this with a real inference probe rather than only a port check.
+Reinstalling the formula does not help \(em
+.Ic brew reinstall
+re-pours the same runner-less bottle.
+Restore the runner with the official app, then run
+.Ic nomad reset-ollama :
+.Bl -bullet -compact
+.It
+.Ic brew install --cask ollama
+.Pq the official app bundles a complete runner
+.It
+or download from
+.Lk https://ollama.com/download/mac
+.El
 .Sh SEE ALSO
 .Xr nomad 1 ,
+.Xr nomad-check 1 ,
 .Xr nomad-models 1 ,
 .Xr nomad-upgrade-models 1

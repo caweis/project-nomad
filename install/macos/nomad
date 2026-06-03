@@ -618,23 +618,32 @@ _ollama_first_model() {
   curl -fsS --max-time 3 "$1/api/tags" 2>/dev/null | jq -r '.models[0].name // empty' 2>/dev/null
 }
 
+# One-line remediation for flags / degradation entries. Single source of truth so
+# all call sites stay accurate. NOTE: reinstalling the Homebrew FORMULA does NOT
+# help — its macOS-26 bottle is runner-less and `brew reinstall` re-pours the same
+# stub (proven live 2026-06-02, see plan Appendix C). The fix is the official app.
+_ollama_runner_fix_hint() {
+  printf '%s' "brew install --cask ollama (official app; the formula bottle is runner-less) or https://ollama.com/download/mac, then 'nomad reset-ollama'"
+}
+
 # Loud, actionable remediation block for a missing/broken llama.cpp runner.
 # $1 = short context label (e.g. "general Ollama (:11434)"). Prints to stderr.
-# Surfaces BOTH fixes (brew reinstall and the official installer) per the Task 3
-# judgment call — we recommend, we don't silently switch the install method.
+# Recommends the official app — we do NOT silently switch the install method (the
+# cask migration is tracked separately in plan Appendix C, items 1/2/4).
 _ollama_runner_remediation() {
   local ctx="${1:-Ollama}"
   cat >&2 <<EOF
 ${C_ERR} ✗ ${ctx}: the llama.cpp inference runner (llama-server) is missing.${C_OFF}
 ${C_WARN}   The Ollama daemon answers /api/tags, but every model load fails with
-   HTTP 500 'llama-server binary not found'. This is a known incomplete
-   Homebrew bottle (ollama 0.30.0 shipped only the MLX runner). Chat and RAG
-   embeddings will not work until the runner is restored.
+   HTTP 500 'llama-server binary not found'. On macOS 26 the Homebrew ollama
+   FORMULA bottle ships runner-less (MLX runner only), so chat and RAG
+   embeddings are dead. Reinstalling the formula re-pours the same stub — use
+   the official app instead:
 
-   Fix (either one), then run 'nomad reset-ollama':
-     • brew reinstall ollama          (once Homebrew ships a complete bottle)
-     • Official installer: https://ollama.com/download/mac
-       (download Ollama.app — its bundled runner is complete)${C_OFF}
+     • brew install --cask ollama          (official app — bundled runner is complete)
+     • or download from https://ollama.com/download/mac
+
+   Then run:  nomad reset-ollama${C_OFF}
 EOF
 }
 
@@ -785,7 +794,7 @@ _check_probe_chat() {
   verdict="$(_ollama_infer_probe "$base" "$model" generate)"
   case "$verdict" in
     ok)             ok "$label inference OK (runner healthy, model '$model')" ;;
-    runner-missing) flag "$sev" "$label inference broken — llama.cpp runner (llama-server) missing" "brew reinstall ollama OR https://ollama.com/download/mac, then 'nomad reset-ollama'" ;;
+    runner-missing) flag "$sev" "$label inference broken — llama.cpp runner (llama-server) missing" "$(_ollama_runner_fix_hint)" ;;
     *)              flag "🟡" "$label inference probe inconclusive" "${verdict#error:}" ;;
   esac
 }
@@ -797,7 +806,7 @@ _check_probe_embed() {
   verdict="$(_ollama_infer_probe "$base" "nomic-embed-text" embed)"
   case "$verdict" in
     ok)             ok "$label embeddings OK (runner healthy)" ;;
-    runner-missing) flag "🔴" "$label embeddings broken — llama.cpp runner (llama-server) missing" "brew reinstall ollama OR https://ollama.com/download/mac, then 'nomad reset-ollama'" ;;
+    runner-missing) flag "🔴" "$label embeddings broken — llama.cpp runner (llama-server) missing" "$(_ollama_runner_fix_hint)" ;;
     *)              flag "🟡" "$label embed probe inconclusive" "${verdict#error:} (RAG may repair on first use)" ;;
   esac
 }
@@ -1022,7 +1031,7 @@ check_install() {
     if _ollama_runner_present; then
       inv_ok "Ollama runner" "llama-server present (GGUF inference)"
     else
-      inv_broken "Ollama runner" "llama-server MISSING — brew reinstall ollama or https://ollama.com/download/mac"
+      inv_broken "Ollama runner" "llama-server MISSING — brew install --cask ollama (formula bottle is runner-less) or https://ollama.com/download/mac"
     fi
 
     if [[ -f "$LA_PLIST" ]]; then
@@ -1724,7 +1733,7 @@ _probe_ollama_chat_or_warn() {
     ok) ok "$ctx inference OK (llama.cpp runner healthy)" ;;
     runner-missing)
       _ollama_runner_remediation "$ctx"
-      NOMAD_INSTALL_DEGRADED+=("$ctx inference broken — llama.cpp runner (llama-server) missing; brew reinstall ollama or https://ollama.com/download/mac, then 'nomad reset-ollama'") ;;
+      NOMAD_INSTALL_DEGRADED+=("$ctx inference broken — llama.cpp runner (llama-server) missing; $(_ollama_runner_fix_hint)") ;;
     *) warn "$ctx inference probe inconclusive: ${verdict#error:}" ;;
   esac
 }
@@ -1741,7 +1750,7 @@ step_ollama_native() {
   # once a model exists. Non-fatal so admin/compose still come up.
   if ! _ollama_runner_present; then
     _ollama_runner_remediation "general Ollama (:11434)"
-    NOMAD_INSTALL_DEGRADED+=("Ollama llama.cpp runner (llama-server) missing — chat/RAG inference broken; brew reinstall ollama or https://ollama.com/download/mac, then 'nomad reset-ollama'")
+    NOMAD_INSTALL_DEGRADED+=("Ollama llama.cpp runner (llama-server) missing — chat/RAG inference broken; $(_ollama_runner_fix_hint)")
   fi
 
   # Stop brew-managed service if present (we run our own LaunchAgent)
@@ -2182,7 +2191,7 @@ EOF
     ok) ok "embed Ollama inference OK (RAG embeddings working)" ;;
     runner-missing)
       _ollama_runner_remediation "embed Ollama (:11435)"
-      NOMAD_INSTALL_DEGRADED+=("RAG embeddings broken — embed Ollama llama.cpp runner (llama-server) missing; brew reinstall ollama or https://ollama.com/download/mac, then 'nomad reset-ollama'") ;;
+      NOMAD_INSTALL_DEGRADED+=("RAG embeddings broken — embed Ollama llama.cpp runner (llama-server) missing; $(_ollama_runner_fix_hint)") ;;
     *) warn "embed Ollama inference probe inconclusive: ${_em_probe#error:} (RAG may pull/repair on first use)" ;;
   esac
 }

@@ -1,4 +1,4 @@
-.Dd 2026-05-30
+.Dd 2026-06-02
 .Dt NOMAD-CHECK 1
 .Os
 .Sh NAME
@@ -31,8 +31,15 @@ script lives in, so a run can be reviewed or synced later.
 Check the host: hardware, OS, RAM, and related prerequisites.
 .It Cm stack
 Check the running NOMAD stack and its services.
+For each Ollama instance this runs a real inference probe
+.Pq a one-token generate for chat, an embed for the embed-only daemon
+so a missing llama.cpp runner is caught, not just a responsive
+.Pq Li /api/tags
+port.
 .It Cm install
-Inventory the installation.
+Inventory the installation, including whether the llama.cpp runner
+.Pq Li llama-server
+is present.
 .Cm inventory
 is an accepted alias.
 .It Cm all
