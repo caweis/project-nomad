@@ -522,6 +522,122 @@ ensure_ollama_path() {
   return 1
 }
 
+# ─── Ollama runner health ──────────────────────────────────────────────────────
+# A responsive /api/tags only proves the daemon process is up. It does NOT prove
+# the daemon can run a model: Ollama loads GGUF weights through a separate
+# llama.cpp runner binary (llama-server). Homebrew's ollama 0.30.0 shipped an
+# incomplete bottle that omitted that runner (only mlx_metal_v3 was present), so
+# the daemon served /api/tags fine while EVERY model load returned HTTP 500
+# "error starting llama-server: llama-server binary not found". That broke both
+# chat (:11434) and RAG embeddings (:11435) with no install-time signal — because
+# the only health check was /api/tags. The helpers below close that gap with a
+# static binary pre-flight and a real-inference probe. Found on the mini
+# 2026-06-02 (see docs/superpowers/plans/2026-06-02-ollama-coexist-and-local-ai-app.md).
+
+# Candidate dirs that should contain the llama.cpp runner (llama-server),
+# newline-separated. Brew Cellar covers Homebrew installs (the runner-incomplete
+# bottle case); lib/ollama next to the resolved binary covers the official
+# ollama.com installer. Override in unit tests with NOMAD_TEST_RUNNER_DIRS.
+_ollama_runner_dirs() {
+  if [[ -n "${NOMAD_TEST_RUNNER_DIRS:-}" ]]; then
+    printf '%s\n' "$NOMAD_TEST_RUNNER_DIRS"; return 0
+  fi
+  local brew_prefix bin
+  if brew_prefix="$(brew --prefix 2>/dev/null)" && [[ -n "$brew_prefix" ]]; then
+    printf '%s\n' "$brew_prefix/Cellar/ollama"
+  fi
+  if bin="$(command -v ollama 2>/dev/null)" && [[ -n "$bin" ]]; then
+    # .../bin/ollama → .../lib/ollama (runner dir alongside the binary)
+    printf '%s\n' "$(dirname "$(dirname "$bin")")/lib/ollama"
+  fi
+}
+
+# 0 if the llama.cpp inference runner (llama-server) is present in the Ollama
+# install tree, 1 if absent. A present runner does NOT guarantee it works (use
+# _ollama_infer_probe for that) — this is the fast, model-free pre-flight that
+# catches the incomplete bottle before we bother bootstrapping the LaunchAgent.
+_ollama_runner_present() {
+  local dir
+  while IFS= read -r dir; do
+    [[ -n "$dir" && -d "$dir" ]] || continue
+    find "$dir" -name 'llama-server' -type f -print -quit 2>/dev/null | grep -q . && return 0
+  done < <(_ollama_runner_dirs)
+  return 1
+}
+
+# Pure classifier for an Ollama inference response. Split from the network call
+# so the (fragile) pattern matching is unit-testable with canned payloads.
+#   $1 = HTTP status code   $2 = response body   $3 = kind (generate|embed)
+# Echoes exactly one of: ok | runner-missing | error:<detail>
+_classify_ollama_probe() {
+  local code="$1" body="$2" kind="${3:-generate}"
+  # The signature failure: HTTP 500 whose body names the missing runner. Match the
+  # text regardless of status code so a future error shape that still names
+  # llama-server is caught.
+  if printf '%s' "$body" | grep -qiE 'llama-server|llama/server|error starting llama|runner process has terminated|binary not found'; then
+    echo "runner-missing"; return 0
+  fi
+  if [[ "$code" != "200" ]]; then
+    echo "error:http=${code}:${body:0:140}"; return 0
+  fi
+  case "$kind" in
+    # /api/embed returns "embeddings"; legacy /api/embeddings returns "embedding".
+    embed) printf '%s' "$body" | grep -q '"embedding' && { echo ok; return 0; } ;;
+    *)     printf '%s' "$body" | grep -q '"response"' && { echo ok; return 0; } ;;
+  esac
+  echo "error:unexpected:${body:0:140}"
+}
+
+# Force a real, tiny inference and classify the result. This is the authoritative
+# runner check — it actually exercises llama-server.
+#   $1 = base url (e.g. http://127.0.0.1:11434)
+#   $2 = model name to probe with
+#   $3 = kind: "generate" (chat, 1 token) or "embed" (one vector)
+# Echoes: ok | runner-missing | error:<detail>   (see _classify_ollama_probe)
+_ollama_infer_probe() {
+  local base="$1" model="$2" kind="${3:-generate}" out code body path payload
+  if [[ "$kind" == "embed" ]]; then
+    path="/api/embed"; payload="{\"model\":\"$model\",\"input\":\"ping\"}"
+  else
+    path="/api/generate"; payload="{\"model\":\"$model\",\"prompt\":\"hi\",\"stream\":false,\"options\":{\"num_predict\":1}}"
+  fi
+  # No -f on purpose: we WANT the HTTP 500 body — it names llama-server when the
+  # runner is missing, and -f would discard it. -w appends the status on its own
+  # final line so we can split body from code.
+  out="$(curl -sS --max-time 60 -w $'\n%{http_code}' "$base$path" -d "$payload" 2>&1)" || true
+  code="${out##*$'\n'}"     # last line = status code
+  body="${out%$'\n'*}"      # everything before it = body (or curl error text)
+  _classify_ollama_probe "$code" "$body" "$kind"
+}
+
+# First installed model name on an Ollama instance, empty if none/unreachable.
+# Used to pick a model for the chat inference probe (we can't /api/generate
+# without one). At install time no chat model exists yet, so callers fall back to
+# the static _ollama_runner_present pre-flight; reset/switch/check have models.
+_ollama_first_model() {
+  curl -fsS --max-time 3 "$1/api/tags" 2>/dev/null | jq -r '.models[0].name // empty' 2>/dev/null
+}
+
+# Loud, actionable remediation block for a missing/broken llama.cpp runner.
+# $1 = short context label (e.g. "general Ollama (:11434)"). Prints to stderr.
+# Surfaces BOTH fixes (brew reinstall and the official installer) per the Task 3
+# judgment call — we recommend, we don't silently switch the install method.
+_ollama_runner_remediation() {
+  local ctx="${1:-Ollama}"
+  cat >&2 <<EOF
+${C_ERR} ✗ ${ctx}: the llama.cpp inference runner (llama-server) is missing.${C_OFF}
+${C_WARN}   The Ollama daemon answers /api/tags, but every model load fails with
+   HTTP 500 'llama-server binary not found'. This is a known incomplete
+   Homebrew bottle (ollama 0.30.0 shipped only the MLX runner). Chat and RAG
+   embeddings will not work until the runner is restored.
+
+   Fix (either one), then run 'nomad reset-ollama':
+     • brew reinstall ollama          (once Homebrew ships a complete bottle)
+     • Official installer: https://ollama.com/download/mac
+       (download Ollama.app — its bundled runner is complete)${C_OFF}
+EOF
+}
+
 # Admin → Ollama-API URL the admin/worker containers should hit, derived from the
 # active backend in $ENV_FILE: oMLX mode routes through the proxy on :11436;
 # native-Ollama mode talks to :11434 directly. Single source of truth — dc()
