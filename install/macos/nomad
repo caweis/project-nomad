@@ -599,7 +599,10 @@ _ollama_infer_probe() {
   if [[ "$kind" == "embed" ]]; then
     path="/api/embed"; payload="{\"model\":\"$model\",\"input\":\"ping\"}"
   else
-    path="/api/generate"; payload="{\"model\":\"$model\",\"prompt\":\"hi\",\"stream\":false,\"options\":{\"num_predict\":1}}"
+    # keep_alive:0 → unload right after the probe so a diagnostic 'nomad check'
+    # doesn't pin a (possibly large) chat model in memory for 24h. The load still
+    # exercises llama-server, so the runner check stays valid.
+    path="/api/generate"; payload="{\"model\":\"$model\",\"prompt\":\"hi\",\"stream\":false,\"keep_alive\":0,\"options\":{\"num_predict\":1}}"
   fi
   # No -f on purpose: we WANT the HTTP 500 body — it names llama-server when the
   # runner is missing, and -f would discard it. -w appends the status on its own
@@ -614,8 +617,11 @@ _ollama_infer_probe() {
 # Used to pick a model for the chat inference probe (we can't /api/generate
 # without one). At install time no chat model exists yet, so callers fall back to
 # the static _ollama_runner_present pre-flight; reset/switch/check have models.
+# Trailing `|| true`: the whole script runs under `set -e`, and an unreachable
+# daemon makes curl|jq fail — without it, `model=$(_ollama_first_model)` would
+# abort the caller mid-install/check instead of yielding an empty string.
 _ollama_first_model() {
-  curl -fsS --max-time 3 "$1/api/tags" 2>/dev/null | jq -r '.models[0].name // empty' 2>/dev/null
+  curl -fsS --max-time 3 "$1/api/tags" 2>/dev/null | jq -r '.models[0].name // empty' 2>/dev/null || true
 }
 
 # One-line remediation for flags / degradation entries. Single source of truth so

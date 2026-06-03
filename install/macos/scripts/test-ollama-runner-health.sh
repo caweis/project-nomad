@@ -71,6 +71,24 @@ _ollama_runner_present && r=present || r=absent
 check "present in 2nd of 3 dirs → present" "$r" "present"
 rm -rf "$T"; unset NOMAD_TEST_RUNNER_DIRS
 
+echo "== errexit safety: probe wrappers must not abort under set -e =="
+# The real nomad runs under `set -euo pipefail`. An unreachable daemon makes
+# curl|jq fail, and a bare `model=\$(_ollama_first_model)` would then abort the
+# caller mid-install/check. Run the wrappers in a fresh `set -e` shell against a
+# dead port and assert the shell reaches the end. (This file sources nomad under
+# -uo, NOT -e, so the guard has to be its own errexit subshell.)
+es_out="$(bash -c '
+  set -euo pipefail
+  NOMAD_SOURCE_FOR_TEST=1 source "'"$NOMAD"'" 2>/dev/null
+  FINDINGS=(); NOMAD_INSTALL_DEGRADED=()
+  _probe_ollama_chat_or_warn "http://127.0.0.1:59998" "x" >/dev/null 2>&1
+  _check_probe_chat  "http://127.0.0.1:59998" "x" "RED"  >/dev/null 2>&1
+  _check_probe_embed "http://127.0.0.1:59998" "x"        >/dev/null 2>&1
+  _ollama_first_model "http://127.0.0.1:59998"           >/dev/null 2>&1
+  echo SURVIVED
+' 2>/dev/null)"
+check "wrappers survive set -e against an unreachable daemon" "$es_out" "SURVIVED"
+
 echo
 echo "RESULTS: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]]
