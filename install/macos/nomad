@@ -534,6 +534,22 @@ _admin_ollama_url() {
   [[ "$be" == "omlx" ]] && echo "http://host.docker.internal:11436" || echo "http://host.docker.internal:11434"
 }
 
+# Backend-aware AI-endpoint banner line(s) for install/summary output. $1 = the
+# .local hostname. In omlx mode lists BOTH the user's Ollama (:11434, their
+# models) and the oMLX proxy (:11436, the admin's AI API); in ollama mode lists
+# the single Ollama API (:11434). Relies on the caller's $BACKEND (set during
+# install by prompt_for_backend, and by _load_backend in command contexts) —
+# does NOT call _load_backend itself, which would clobber it before .env exists.
+_ai_endpoint_lines() {
+  local h="${1:-localhost}"
+  if [[ "${BACKEND:-ollama}" == "omlx" ]]; then
+    printf '    http://localhost:11434   http://%s.local:11434  (Ollama — your models)\n' "$h"
+    printf '    http://localhost:11436   http://%s.local:11436  (AI Assistant — oMLX)\n' "$h"
+  else
+    printf '    http://localhost:11434   http://%s.local:11434  (AI API)\n' "$h"
+  fi
+}
+
 # Compose wrapper — base compose.yaml has platform: linux/amd64 baked in for
 # the amd64-only GHCR images, so no override-layering needed. Injects
 # NOMAD_OLLAMA_URL (per-backend) so compose interpolates the admin's OLLAMA_HOST.
@@ -2142,7 +2158,8 @@ step_drop_desktop_tools() {
 # set), so any device on the same WiFi can hit the stack at:
 #   http://nomad.local:8080   Command Center
 #   http://nomad.local:8090   kiwix library
-#   http://nomad.local:11434  Ollama API
+#   http://nomad.local:11434  Ollama API (your models; on the oMLX backend the
+#                             admin's AI Assistant API is also on :11436)
 # Without this, devices have to use the Mac's existing local hostname (often
 # the unwieldy default like "Chriss-Mac-mini.local") or the raw LAN IP.
 #
@@ -2174,7 +2191,7 @@ Currently this Mac is reachable on your network as:
 We can change it to '$target' so devices can reach NOMAD at:
   http://${target}.local:8080   Command Center
   http://${target}.local:8090   Library
-  http://${target}.local:11434  AI API
+$(_ai_endpoint_lines "$target")
 
 Side effect: this Mac shows as '$target' in other Macs' Finder sidebar.
 Reversible later: System Settings → General → About → Local hostname.
@@ -3746,7 +3763,7 @@ ${C_OK}── Admin is up ──${C_OFF}
   From this Mac:           From any device on this WiFi:
     http://localhost:8080    http://${_hostname}.local:8080   (Command Center)
     http://localhost:8090    http://${_hostname}.local:8090   (Library)
-    http://localhost:11434   http://${_hostname}.local:11434  (AI API)
+$(_ai_endpoint_lines "$_hostname")
 
   ${C_HEAD}You can open the admin in your browser now.${C_OFF}
   Models continue pulling below — the admin will see them as they finish.
@@ -3787,7 +3804,7 @@ ${C_OK}════════════════════════�
   This Mac:                          From any device on this WiFi:
     Admin   http://localhost:8080      http://${_hostname}.local:8080
     Library http://localhost:8090      http://${_hostname}.local:8090
-    Ollama  http://localhost:11434     http://${_hostname}.local:11434
+$(_ai_endpoint_lines "$_hostname")
   Models pulled: ${_models_count} (Metal-accelerated)
 
   ${C_HEAD}AI Assistant works directly — open admin and try it now.${C_OFF}
@@ -5172,7 +5189,11 @@ cmd_backend() {
       fi
       _env_upsert NOMAD_AI_BACKEND "$target"
       BACKEND="$target"
-      ok "switched backend → $target (admin still talks to :11434; models on disk are preserved)"
+      if [[ "$target" == "omlx" ]]; then
+        ok "switched backend → omlx (admin's AI now via the oMLX proxy on :11436; your Ollama stays on :11434)"
+      else
+        ok "switched backend → ollama (admin's AI on native Ollama :11434; models on disk are preserved)"
+      fi
       log "run 'nomad check stack' to confirm health, 'nomad models pull auto' to ensure models"
       ;;
     *) die "usage: nomad backend [show|ollama|omlx]" ;;
