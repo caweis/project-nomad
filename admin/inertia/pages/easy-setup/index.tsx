@@ -111,7 +111,10 @@ const CURATED_MAP_COLLECTIONS_KEY = 'curated-map-collections'
 const CURATED_CATEGORIES_KEY = 'curated-categories'
 const WIKIPEDIA_STATE_KEY = 'wikipedia-state'
 
-export default function EasySetupWizard(props: { system: { services: ServiceSlim[] } }) {
+export default function EasySetupWizard(props: {
+  system: { services: ServiceSlim[] }
+  aiBackend: 'ollama' | 'omlx'
+}) {
   const { aiAssistantName } = usePage<{ aiAssistantName: string }>().props
   const CORE_CAPABILITIES = buildCoreCapabilities(aiAssistantName)
 
@@ -166,6 +169,22 @@ export default function EasySetupWizard(props: { system: { services: ServiceSlim
     },
     refetchOnWindowFocus: false,
   })
+
+  // Models already present in Ollama, used to badge recommended models as
+  // installed (parity with the Wikipedia card's "Installed" state). On the omlx
+  // backend this reflects the coexisting general Ollama, not the MLX chat engine.
+  const { data: installedModels } = useQuery({
+    queryKey: ['installed-ollama-models'],
+    queryFn: () => api.getInstalledModels(),
+    refetchOnWindowFocus: false,
+  })
+
+  // Match by base name ("llama3.1:8b" -> "llama3.1") since the wizard pulls the
+  // bare model name and Ollama stores it under a concrete tag.
+  const installedModelBaseNames = useMemo(
+    () => new Set((installedModels ?? []).map((m) => m.name.split(':')[0])),
+    [installedModels]
+  )
 
   // Fetch Wikipedia options and current state
   const { data: wikipediaState, isLoading: isLoadingWikipedia } = useQuery({
@@ -823,70 +842,96 @@ export default function EasySetupWizard(props: { system: { services: ServiceSlim
               </div>
             </div>
 
+            {props.aiBackend === 'omlx' && (
+              <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                Your AI Assistant runs on <strong>Apple MLX (Metal-accelerated)</strong>. The models
+                below are optional general Ollama models that run alongside it and are not required
+                for the Assistant.
+              </div>
+            )}
+
             {isLoadingRecommendedModels ? (
               <div className="flex justify-center py-12">
                 <LoadingSpinner />
               </div>
             ) : recommendedModels && recommendedModels.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {recommendedModels.map((model) => (
-                  <div
-                    key={model.name}
-                    onClick={() => isOnline && toggleAiModel(model.name)}
-                    className={classNames(
-                      'p-4 rounded-lg border-2 transition-all cursor-pointer',
-                      selectedAiModels.includes(model.name)
-                        ? 'border-desert-green bg-desert-green shadow-md'
-                        : 'border-desert-stone-light bg-white hover:border-desert-green hover:shadow-sm',
-                      !isOnline && 'opacity-50 cursor-not-allowed'
-                    )}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <h4
-                          className={classNames(
-                            'text-lg font-semibold mb-1',
-                            selectedAiModels.includes(model.name) ? 'text-white' : 'text-gray-900'
-                          )}
-                        >
-                          {model.name}
-                        </h4>
-                        <p
-                          className={classNames(
-                            'text-sm mb-2',
-                            selectedAiModels.includes(model.name) ? 'text-white' : 'text-gray-600'
-                          )}
-                        >
-                          {model.description}
-                        </p>
-                        {model.tags?.[0]?.size && (
-                          <div
+                {recommendedModels.map((model) => {
+                  const isSelected = selectedAiModels.includes(model.name)
+                  const installed = installedModelBaseNames.has(model.name)
+                  return (
+                    <div
+                      key={model.name}
+                      onClick={() => isOnline && !installed && toggleAiModel(model.name)}
+                      className={classNames(
+                        'p-4 rounded-lg border-2 transition-all',
+                        installed
+                          ? 'border-desert-stone-light bg-gray-50 cursor-default'
+                          : isSelected
+                            ? 'border-desert-green bg-desert-green shadow-md cursor-pointer'
+                            : 'border-desert-stone-light bg-white hover:border-desert-green hover:shadow-sm cursor-pointer',
+                        !isOnline && !installed && 'opacity-50 cursor-not-allowed'
+                      )}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h4
+                              className={classNames(
+                                'text-lg font-semibold',
+                                installed
+                                  ? 'text-gray-700'
+                                  : isSelected
+                                    ? 'text-white'
+                                    : 'text-gray-900'
+                              )}
+                            >
+                              {model.name}
+                            </h4>
+                            {installed && (
+                              <span className="text-xs bg-desert-green text-white px-2 py-0.5 rounded-full flex items-center gap-1">
+                                <IconCheck size={12} />
+                                Installed
+                              </span>
+                            )}
+                          </div>
+                          <p
                             className={classNames(
-                              'text-xs',
-                              selectedAiModels.includes(model.name)
-                                ? 'text-green-100'
-                                : 'text-gray-500'
+                              'text-sm mb-2',
+                              installed ? 'text-gray-600' : isSelected ? 'text-white' : 'text-gray-600'
                             )}
                           >
-                            Size: {model.tags[0].size}
+                            {model.description}
+                          </p>
+                          {model.tags?.[0]?.size && (
+                            <div
+                              className={classNames(
+                                'text-xs',
+                                installed
+                                  ? 'text-gray-500'
+                                  : isSelected
+                                    ? 'text-green-100'
+                                    : 'text-gray-500'
+                              )}
+                            >
+                              Size: {model.tags[0].size}
+                            </div>
+                          )}
+                        </div>
+                        {!installed && (
+                          <div
+                            className={classNames(
+                              'ml-4 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all flex-shrink-0',
+                              isSelected ? 'border-white bg-white' : 'border-desert-stone'
+                            )}
+                          >
+                            {isSelected && <IconCheck size={16} className="text-desert-green" />}
                           </div>
                         )}
                       </div>
-                      <div
-                        className={classNames(
-                          'ml-4 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all flex-shrink-0',
-                          selectedAiModels.includes(model.name)
-                            ? 'border-white bg-white'
-                            : 'border-desert-stone'
-                        )}
-                      >
-                        {selectedAiModels.includes(model.name) && (
-                          <IconCheck size={16} className="text-desert-green" />
-                        )}
-                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             ) : (
               <div className="text-center py-8 bg-gray-50 rounded-lg">

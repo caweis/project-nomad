@@ -3,6 +3,7 @@ import { ZimService } from '#services/zim_service'
 import { CollectionManifestService } from '#services/collection_manifest_service'
 import { inject } from '@adonisjs/core'
 import type { HttpContext } from '@adonisjs/core/http'
+import env from '#start/env'
 
 @inject()
 export default class EasySetupController {
@@ -17,6 +18,10 @@ export default class EasySetupController {
       system: {
         services: services,
       },
+      // Drives backend-aware copy in the wizard (e.g. the AI Models step notes
+      // that chat runs on Apple MLX, with Ollama models coexisting). Mirrors the
+      // pattern in settings_controller; defaults to 'ollama' when unset.
+      aiBackend: env.get('NOMAD_AI_BACKEND') ?? 'ollama',
     })
   }
 
