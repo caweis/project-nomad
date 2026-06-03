@@ -522,3 +522,16 @@ Spots to update (re-verify lines via grep `'(AI API)'|'Ollama API'|'switched bac
 **Spawned task chips:** "Verify Ollama runner at install" (now superseded/expanded by Appendix C — the Ollama fix IS this) · "Fix AI Assistant version display" (earlier, separate — may already be merged; verify).
 
 **Standing constraints:** develop on main; subagents ≥ sonnet; **in-depth code verification** (per-site classify + `bash -n`/`test-*.sh`/`tsc` + diff review, NOT blind sed — it caught the seed bug + the runner-less Ollama); Workflow multi-agent tool needs explicit opt-in; security posture (oMLX `:8000` + embed `:11435` loopback; `:11434`/`:11436` are `0.0.0.0` for admin reach; LAN-expose is opt-in).
+
+---
+
+## APPENDIX C-bis — System Update buttons + `nomad upgrade ollama` (part of the Ollama fix)
+
+The admin **System Update** page (`/settings/update`, `inertia/pages/settings/update.tsx`) has three host-command-bridge buttons (all in the allow-list `admin/constants/host_commands.ts`):
+- **Update Command Center** → `upgrade-admin` → `nomad upgrade admin` (admin image). OK as-is.
+- **Update AI Assistant** → `upgrade-ollama` → `nomad upgrade ollama` → `_upgrade_native_ollama` → `brew upgrade ollama` (the **formula**). ⚠ On macOS 26 this upgrades the runner-less stub — so the button does NOT fix Ollama. **The Ollama fix (Appendix C) MUST also update the `upgrade-ollama` host path** to use the official app (`brew upgrade --cask ollama`, or re-run the official installer) + re-verify the runner, so this button actually repairs/updates Ollama.
+- **Update Everything** → `upgrade-all` → `nomad upgrade` (full self-updating stack). Inherits the above once `_upgrade_native_ollama` is fixed.
+
+**Testing-regime coverage:** `nomad selftest` (Appendix D) should include a bridge round-trip — dispatch a benign allow-listed host command (e.g. a dry-run `upgrade --check`) and confirm it executes + returns a result — so the System Update buttons (and the Phase-2 `ai-lan-expose` toggle, same mechanism) are verified, not just assumed. The bridge LaunchAgent being alive is a precondition to check.
+
+**Quick manual verify (any time):** click **Update Command Center** (safe admin re-pull) and confirm it completes; or from a Terminal `nomad upgrade --check` (dry run). Confirm the host-command-bridge LaunchAgent is loaded if a button hangs.
