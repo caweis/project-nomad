@@ -681,10 +681,10 @@ check_stack() {
   # AI backend — omlx or native Ollama
   _load_backend
   if [[ "$BACKEND" == "omlx" ]]; then
-    if curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
-      ok "oMLX proxy responding on :11434"
+    if curl -fsS --max-time 3 http://127.0.0.1:11436/api/tags >/dev/null 2>&1; then
+      ok "oMLX proxy responding on :11436"
     else
-      flag "🔴" "oMLX proxy not responding on :11434" "Check ~/Library/Logs/nomad-omlx-proxy.err.log; run 'nomad reset-ollama'"
+      flag "🔴" "oMLX proxy not responding on :11436" "Check ~/Library/Logs/nomad-omlx-proxy.err.log; run 'nomad reset-ollama'"
     fi
     if curl -fsS --max-time 3 http://127.0.0.1:8000/v1/models >/dev/null 2>&1; then
       ok "oMLX serving on :8000"
@@ -818,7 +818,7 @@ check_install() {
   _load_backend
   if [[ "$BACKEND" == "omlx" ]]; then
     # In oMLX mode the native-Ollama LaunchAgent is intentionally unloaded and
-    # :11434 is owned by the proxy, which binds 0.0.0.0 (containers reach it via
+    # :11436 is owned by the proxy, which binds 0.0.0.0 (containers reach it via
     # host.docker.internal); only oMLX :8000 and the embed Ollama :11435 are
     # loopback-bound. All AI-agent health checks are already covered by
     # 'nomad check stack'; skip them here to avoid contradicting that command.
@@ -1922,7 +1922,7 @@ EOF
 }
 
 step_omlx_proxy() {
-  section "Ollama-compat proxy on :11434 → oMLX :8000"
+  section "Ollama-compat proxy on :11436 → oMLX :8000"
   local bundle; bundle="$(grep '^NOMAD_BUNDLE_DIR=' "$ENV_FILE" | cut -d= -f2-)"
   [[ -z "$bundle" ]] && die "NOMAD_BUNDLE_DIR not set in $ENV_FILE — reinstall to record it"
   # NOMAD_BUNDLE_DIR ($bundle) is the dir that holds the nomad script itself
@@ -1942,15 +1942,15 @@ step_omlx_proxy() {
     ok "proxy Python environment ready"
   fi
 
-  # I2: pre-check :11434 — boot out any stale proxy agent before writing new plist
-  if lsof -nP -iTCP:11434 -sTCP:LISTEN >/dev/null 2>&1; then
-    warn ":11434 already in use — booting out any stale proxy agent"
+  # I2: pre-check :11436 — boot out any stale proxy agent before writing new plist
+  if lsof -nP -iTCP:11436 -sTCP:LISTEN >/dev/null 2>&1; then
+    warn ":11436 already in use — booting out any stale proxy agent"
     launchctl bootout "$LA_TARGET/$PROXY_LABEL" 2>/dev/null || true
   fi
 
-  # The proxy binds 0.0.0.0:11434 — the admin container reaches it via Docker's
+  # The proxy binds 0.0.0.0:11436 — the admin container reaches it via Docker's
   # host.docker.internal exactly as it reaches native Ollama (which also binds
-  # 0.0.0.0:11434). Same network exposure as today's Ollama backend, no worse.
+  # 0.0.0.0:11436). Same network exposure as today's Ollama backend, no worse.
   # oMLX (:8000) and the embed Ollama (:11435) stay loopback — only the proxy
   # talks to them, host-local.
   cat > "$PROXY_PLIST" <<EOF
@@ -1964,7 +1964,7 @@ step_omlx_proxy() {
     <string>${venv}/bin/uvicorn</string>
     <string>src.main:app</string>
     <string>--host</string> <string>0.0.0.0</string>
-    <string>--port</string> <string>11434</string>
+    <string>--port</string> <string>11436</string>
   </array>
   <key>WorkingDirectory</key> <string>${proxy_dir}/vendor</string>
   <key>EnvironmentVariables</key>
@@ -1991,7 +1991,7 @@ EOF
   local last_err=""
   for attempt in 1 2 3; do
     if launchctl bootstrap "$LA_TARGET" "$PROXY_PLIST" 2>"$NOMAD_BOOTSTRAP_LOG"; then
-      last_err=""; ok "proxy bootstrapped on :11434"; break
+      last_err=""; ok "proxy bootstrapped on :11436"; break
     fi
     last_err="$(cat "$NOMAD_BOOTSTRAP_LOG")"
     warn "proxy bootstrap attempt $attempt failed: $last_err"
@@ -2004,12 +2004,12 @@ EOF
   [[ -n "$last_err" ]] && \
     warn "proxy bootstrap reported errors (launchd EIO race); verifying the service came up anyway…"
 
-  if _wait_http_counter "http://127.0.0.1:11434/api/tags" 30 "proxy on :11434"; then
-    ok "proxy responding on :11434 (admin reaches it via host.docker.internal)"
+  if _wait_http_counter "http://127.0.0.1:11436/api/tags" 30 "proxy on :11436"; then
+    ok "proxy responding on :11436 (admin reaches it via host.docker.internal)"
   elif [[ -n "$last_err" ]]; then
-    warn "proxy did not answer on :11434 after a bootstrap error — run 'nomad reset-ollama' or check ~/Library/Logs/nomad-omlx-proxy.err.log (continuing install)"
+    warn "proxy did not answer on :11436 after a bootstrap error — run 'nomad reset-ollama' or check ~/Library/Logs/nomad-omlx-proxy.err.log (continuing install)"
   else
-    warn "proxy bootstrapped but not yet answering on :11434 — check ~/Library/Logs/nomad-omlx-proxy.err.log"
+    warn "proxy bootstrapped but not yet answering on :11436 — check ~/Library/Logs/nomad-omlx-proxy.err.log"
   fi
 }
 
@@ -3675,7 +3675,7 @@ cmd_install() {
   if [[ "$BACKEND" == "omlx" ]]; then
     step_omlx_native
     step_ollama_embed       # embed-only Ollama on :11435 (chat-Ollama agent stays unloaded)
-    step_omlx_proxy         # proxy owns :11434
+    step_omlx_proxy         # proxy owns :11436
   else
     step_ollama_native      # today's behavior
   fi
@@ -3854,9 +3854,9 @@ cmd_models() {
     pull)
       shift
       _load_backend
-      [[ "$BACKEND" == "omlx" ]] && log "AI backend: oMLX (models pulled as MLX via the proxy on :11434)"
+      [[ "$BACKEND" == "omlx" ]] && log "AI backend: oMLX (models pulled as MLX via the proxy on :11436)"
       ensure_ollama_path || die "ollama not found anywhere — run 'nomad install' first"
-      if ! curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+      if ! curl -fsS --max-time 3 http://127.0.0.1:11436/api/tags >/dev/null 2>&1; then
         die "native Ollama not responding — run 'nomad reset-ollama'"
       fi
       prevent_sleep  # 80 GB+ pulls can run an hour — don't let the Mac sleep
@@ -3876,7 +3876,7 @@ cmd_models() {
       fi
       # oMLX backend: the ollama binary would bypass the proxy and hit native
       # Ollama (which isn't the active chat backend). Route pulls through the
-      # proxy on :11434 instead so oMLX translates them to MLX format.
+      # proxy on :11436 instead so oMLX translates them to MLX format.
       if [[ "$BACKEND" == "omlx" ]]; then
         local m body
         for m in $to_pull; do
@@ -3884,7 +3884,7 @@ cmd_models() {
           body="$(jq -nc --arg n "$m" '{name:$n}')"   # safe JSON (handles odd chars)
           # -fS (not -s): surface errors AND stream the proxy's NDJSON progress so
           # the user sees download advancement during a multi-GB MLX pull.
-          curl -fS -X POST http://127.0.0.1:11434/api/pull \
+          curl -fS -X POST http://127.0.0.1:11436/api/pull \
             -H 'Content-Type: application/json' -d "$body" \
             --no-buffer || warn "pull failed for $m"
         done
@@ -5050,7 +5050,7 @@ _reset_omlx_stack() {
   # mode ignored for oMLX (no internal/drive split — mlx-models always on the data
   # drive); accepted for signature parity with the native reset.
   local mode="${1:-auto}"
-  section "Resetting oMLX stack (proxy :11434, oMLX :8000, embed :11435)"
+  section "Resetting oMLX stack (proxy :11436, oMLX :8000, embed :11435)"
   local data_root; data_root="$(grep '^NOMAD_DATA_ROOT=' "$ENV_FILE" | cut -d= -f2-)"
   local mlx_dir="$data_root/mlx-models"
   if [[ -n "$mlx_dir" ]] && _probe_wedged "$mlx_dir" 5; then
@@ -5061,7 +5061,7 @@ _reset_omlx_stack() {
     launchctl bootout "$LA_TARGET/$label" 2>/dev/null || true
   done
   # bootout isn't guaranteed to synchronously kill the process — kill orphans that
-  # could keep holding :8000/:11434 so the re-bootstrap below can bind cleanly.
+  # could keep holding :8000/:11436 so the re-bootstrap below can bind cleanly.
   pkill -f "omlx serve" 2>/dev/null || true
   pkill -f "uvicorn src.main:app" 2>/dev/null || true
   sleep 2
@@ -5073,7 +5073,7 @@ _reset_omlx_stack() {
   local d
   d=$(( $(date +%s) + 30 ))
   while [[ $(date +%s) -lt $d ]]; do
-    curl -fsS --max-time 2 http://127.0.0.1:11434/api/tags >/dev/null 2>&1 && { ok "oMLX stack back up"; return 0; }
+    curl -fsS --max-time 2 http://127.0.0.1:11436/api/tags >/dev/null 2>&1 && { ok "oMLX stack back up"; return 0; }
     sleep 1
   done
   flag "🔴" "oMLX stack did not come up within 30s" "Check the three nomad-omlx*.err.log files"
