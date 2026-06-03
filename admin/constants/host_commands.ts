@@ -10,6 +10,7 @@
  */
 export const HOST_COMMANDS = [
   'upgrade-ollama',
+  'upgrade-omlx',
   'upgrade-admin',
   'upgrade-all',
   'reset-ollama',

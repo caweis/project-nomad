@@ -132,6 +132,10 @@ export default class SettingsController {
             // compose.yml image tag — check logs"). The right path on the
             // macOS distro is `nomad upgrade compose` on the host.
             isNativeOllama: DockerService.isNativeOllama(),
+            // Backend-aware "Update AI Assistant": on omlx the chat engine is
+            // Apple MLX (host action upgrade-omlx); on ollama it's native Ollama
+            // (upgrade-ollama). Defaults to 'ollama' when unset.
+            aiBackend: env.get('NOMAD_AI_BACKEND') ?? 'ollama',
         });
     }
 

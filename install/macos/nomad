@@ -3641,6 +3641,7 @@ run_cmd() {
   # install/macos/scripts/test-host-command-allowlist.sh (CI).
   case "$cmd" in
     upgrade-ollama)  "$NOMAD_BIN" upgrade ollama ;;
+    upgrade-omlx)    "$NOMAD_BIN" upgrade omlx ;;
     upgrade-admin)   "$NOMAD_BIN" upgrade admin ;;
     upgrade-all)     "$NOMAD_BIN" upgrade ;;
     reset-ollama)    "$NOMAD_BIN" reset-ollama ;;
@@ -4300,6 +4301,10 @@ NOTES
       _upgrade_native_ollama "$check"
       ;;
 
+    omlx|nomad_omlx)
+      _upgrade_omlx "$check"
+      ;;
+
     kiwix|nomad_kiwix|nomad_kiwix_server)
       _upgrade_kiwix "$force" "$check"
       ;;
@@ -4364,6 +4369,38 @@ _upgrade_native_ollama() {
     tail -20 "$err_log" | sed 's/^/  /'
   fi
   log "recovery: try 'nomad reset-ollama', or 'tail -f $err_log' to watch the daemon retry"
+  return 1
+}
+
+# Upgrade the oMLX (Apple MLX) chat engine: brew-upgrade the omlx binary, then
+# re-bootstrap the whole oMLX stack so the new binary actually serves. Mirrors
+# _upgrade_native_ollama but for the omlx backend; embeddings and the coexisting
+# general Ollama come back as part of _reset_omlx_stack.
+_upgrade_omlx() {
+  local check="$1"
+  if ! command -v brew >/dev/null 2>&1; then
+    warn "Homebrew not found — can't upgrade oMLX"
+    return 1
+  fi
+  local current
+  current="$(brew list --versions omlx 2>/dev/null | awk '{print $2}')"
+  log "current oMLX: ${current:-not installed via brew}"
+  if [[ "$check" == "1" ]]; then
+    log "(pass --check off to apply: brew update + brew upgrade omlx + reset oMLX stack)"
+    return 0
+  fi
+  log "running brew update + brew upgrade omlx..."
+  brew update >/dev/null 2>&1 || warn "brew update returned non-zero (network? tap?) — continuing with cached formulas"
+  if ! brew upgrade omlx 2>&1 | tail -10; then
+    warn "brew upgrade omlx exited non-zero"
+    return 1
+  fi
+  ok "oMLX upgraded (or already at latest)"
+  log "restarting oMLX stack so the new binary serves..."
+  if _reset_omlx_stack "auto"; then
+    ok "oMLX now at: $(brew list --versions omlx 2>/dev/null | awk '{print $2}')"
+    return 0
+  fi
   return 1
 }
 

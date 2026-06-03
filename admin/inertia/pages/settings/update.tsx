@@ -232,6 +232,9 @@ export default function SystemUpdatePage(props: {
   // crosstalk-solutions), so the Start Update button is replaced with a
   // host-CLI hint card pointing at `nomad upgrade admin`.
   isNativeOllama: boolean
+  // Drives which host action the "Update AI Assistant" button dispatches:
+  // omlx -> upgrade-omlx (Apple MLX engine), ollama -> upgrade-ollama.
+  aiBackend: 'ollama' | 'omlx'
 }) {
   const { addNotification } = useNotifications()
 
@@ -465,7 +468,10 @@ export default function SystemUpdatePage(props: {
                   <p className="text-sm font-semibold text-gray-700 mb-3">Run an update:</p>
                   <div className="flex flex-wrap items-center gap-3 mb-3">
                     <HostCommandButton cmd="upgrade-admin" label="Update Command Center" />
-                    <HostCommandButton cmd="upgrade-ollama" label="Update AI Assistant" />
+                    <HostCommandButton
+                      cmd={props.aiBackend === 'omlx' ? 'upgrade-omlx' : 'upgrade-ollama'}
+                      label="Update AI Assistant"
+                    />
                     <HostCommandButton cmd="upgrade-all" label="Update Everything" />
                   </div>
                   <p className="text-xs text-gray-600">

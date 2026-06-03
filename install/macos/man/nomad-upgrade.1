@@ -43,6 +43,13 @@ upgrades native Metal Ollama through Homebrew and restarts its LaunchAgent.
 A
 .Ar TARGET
 of
+.Cm omlx
+upgrades the Apple MLX chat engine through Homebrew and re-bootstraps the oMLX
+stack (oMLX server, compat proxy, embed-only Ollama, and the coexisting general
+Ollama).
+A
+.Ar TARGET
+of
 .Cm admin ,
 .Cm mysql ,
 .Cm redis ,
@@ -74,6 +81,8 @@ Use only when you accept the risk of restarting Kiwix mid-write.
 Refresh the bundle code, then upgrade the full stack and native Ollama.
 .It Ic nomad upgrade ollama
 Upgrade native Ollama through Homebrew and restart it.
+.It Ic nomad upgrade omlx
+Upgrade the Apple MLX chat engine and re-bootstrap the oMLX stack.
 .It Ic nomad upgrade admin --check
 Report whether the admin service has an update available, without applying it.
 .El
