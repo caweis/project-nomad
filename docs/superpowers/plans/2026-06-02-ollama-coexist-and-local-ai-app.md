@@ -458,3 +458,29 @@ Spots to update (re-verify lines via grep `'(AI API)'|'Ollama API'|'switched bac
 **B3. Man-page CONTENT** (drift guard already passes — this is accuracy, not drift): `nomad-backend.1` (daemon list + ports — now proxy :11436 + general Ollama coexisting on :11434 in omlx), `nomad.1`, `nomad-reset-ollama.1`.
 
 ### Then PHASE 2 (main plan Tasks 7–10): host-command `ai-lan-expose` + allow-list, admin GUI section, broadened `mac-ai-assistant` help page. Build AFTER Phase 1 is live-verified on the mini (Task 6 checklist).
+
+---
+
+## APPENDIX C — Ollama runner-less on macOS 26 (Tahoe) → switch nomad to the official app (BLOCKER, found 2026-06-02)
+
+**Diagnosis (proven live):** Homebrew's `ollama` **formula** 0.30.0 `arm64_tahoe` bottle is a **runner-less stub** (31 MB, only `mlx_metal_v3` in libexec, NO `llama-server`). The daemon serves `/api/tags` (so tags-only health checks pass) but every GGUF load 500s: `llama-server binary not found … Run 'cmake … build …' first`. This breaks **chat (:11434) AND RAG embeddings (:11435)** machine-wide. `brew reinstall` re-pours the same stub. The admin's *chat* still works only because it's oMLX/MLX (:8000), which doesn't use the Ollama runner.
+
+**Fix proven:** the official Ollama app (cask `brew install --cask ollama`, binary `/Applications/Ollama.app/Contents/Resources/ollama`) bundles the complete Metal + llama.cpp runner. Standalone `serve` on a temp port generated `OK` with the user's `llama3.1:8b-instruct-q8_0` from `~/.ollama/models`. **So: use the official app, not the formula, on macOS.**
+
+**Resolution sites in `install/macos/nomad` (re-verify via grep):**
+- `ensure_ollama_path` ~514-516 + the early check loop ~1257 (candidate paths `/opt/homebrew/bin/ollama` `/usr/local/bin/ollama`)
+- `brew install ollama` ~1296, 1302, 1549 (the formula)
+- `ollama_bin="$(command -v ollama)"` ~1585 (step_ollama_native launcher) and ~1902 (step_ollama_embed); baked into the plists/launcher at write time.
+
+**Fix design:**
+1. **Install via the cask** (`brew install --cask ollama`) on macOS — the formula is runner-incomplete on Tahoe. (Keep a formula fallback only if it actually ships `llama-server`.)
+2. **`_resolve_ollama_bin` helper** preferring the app binary (`/Applications/Ollama.app/Contents/Resources/ollama`, then `~/Applications/...`, then `command -v ollama`) AND requiring the runner present (`find` for `llama-server` near the binary). Use it at the resolution sites so the launchers bake the working binary.
+3. **Runner verification** after install — `die`/`warn` loudly if no `llama-server` (this is the original hardening ask; it would have caught this at install).
+4. **⚠ App auto-server wrinkle (needs live iteration on the mini):** the official app may register a login-item / menu-bar server on `:11434`. nomad must run the app's binary **headless via its own LaunchAgent** (as the proof did) and ensure the app's own auto-server does NOT also bind `:11434` (disable the login item, or `defaults`/`launchctl disable` the app's agent). Verify no double-bind.
+5. Regenerate launchers (step_ollama_native/embed rewrite plists) on `nomad update`/`reset`; both the general (:11434) and embed (:11435) agents must use the app binary.
+
+**Verify:** generation on :11434 returns text; embed on :11435 returns a vector; `nomad check` AI section green; no `:11434` double-bind; RAG ingestion clears.
+
+**Manual stopgap (chat only, non-persistent):** `launchctl bootout gui/$(id -u)/com.projectnomad.ollama` then run `/Applications/Ollama.app/Contents/Resources/ollama serve` with `OLLAMA_HOST=127.0.0.1:11434 OLLAMA_MODELS=~/.ollama/models`. Dies on logout; nomad reset/update restores the broken formula agent until the code fix lands.
+
+**Priority: this BLOCKS chat + RAG + Phase 2. Implement before Phase 2.**
