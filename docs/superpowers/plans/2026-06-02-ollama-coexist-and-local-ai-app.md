@@ -485,6 +485,15 @@ Spots to update (re-verify lines via grep `'(AI API)'|'Ollama API'|'switched bac
 
 **Priority: this BLOCKS chat + RAG + Phase 2. Implement before Phase 2.**
 
+**STATUS (2026-06-02) — detection/hardening slice (#3) LANDED.** The runner-verify + real-inference probe is in (statically verified: `bash -n` + all `test-*.sh` green, incl. new `test-ollama-runner-health.sh` 14/14):
+- `dad83fb` — shared helpers: `_ollama_runner_present`/`_ollama_runner_dirs` (static `llama-server` check, brew Cellar + `lib/ollama`), `_classify_ollama_probe` (pure, tested), `_ollama_infer_probe` (real generate/embed), `_ollama_first_model`, `_ollama_runner_remediation`, `_ollama_runner_fix_hint`.
+- `bcb808d` — install wiring: static pre-flight after `brew install` + post-bootstrap 1-token generate in `step_ollama_native`; `/api/embed` probe after the pull in `step_ollama_embed`. Non-fatal (loud `warn` + sticky `NOMAD_INSTALL_DEGRADED`) since these run before admin/compose.
+- `c2ffda4` — `nomad check` (stack) + `inventory` now run real inference probes (🔴 when the daemon IS the backend, 🟡 for the coexisting general Ollama in oMLX mode) and an `inv_broken` runner line — not just `/api/tags`.
+- man pages: `nomad-check.1` (probe behavior) + `nomad-reset-ollama.1` (TROUBLESHOOTING: runner-less formula → official app).
+- **Remediation wording corrected to the live finding:** all hints now say `brew install --cask ollama` / official app, and explicitly note `brew reinstall` of the formula re-pours the same stub. The task's original "recommend brew reinstall" wording was superseded by this Appendix's proof.
+
+**STILL OPEN (BLOCKER for chat/RAG — needs LIVE mini iteration):** items #1 (cask install in place of the formula), #2 (`_resolve_ollama_bin` to bake the app binary into the launchers), #4 (app auto-server `:11434` double-bind), #5 (regenerate launchers on update/reset). The hardening above will now *detect and loudly report* the broken state until that migration lands; it does not yet *fix* the install method.
+
 ---
 
 ## APPENDIX D — Testing regime (decisions, 2026-06-02)
@@ -535,3 +544,19 @@ The admin **System Update** page (`/settings/update`, `inertia/pages/settings/up
 **Testing-regime coverage:** `nomad selftest` (Appendix D) should include a bridge round-trip — dispatch a benign allow-listed host command (e.g. a dry-run `upgrade --check`) and confirm it executes + returns a result — so the System Update buttons (and the Phase-2 `ai-lan-expose` toggle, same mechanism) are verified, not just assumed. The bridge LaunchAgent being alive is a precondition to check.
 
 **Quick manual verify (any time):** click **Update Command Center** (safe admin re-pull) and confirm it completes; or from a Terminal `nomad upgrade --check` (dry run). Confirm the host-command-bridge LaunchAgent is loaded if a button hangs.
+
+### C-bis UPDATE — "Update AI Assistant" is BACKEND-DEPENDENT (same bug class as 129a416)
+
+The System Update "Update AI Assistant" button → `upgrade-ollama` is wrong in **omlx mode**: there the AI Assistant *is* oMLX, so updating it should update the **oMLX stack**, not the Ollama formula (which is just embeddings + the coexisting general Ollama there). It must be backend-aware — exactly like the Apps-page button fixed in `129a416`, and the `ai-lan-expose` toggle.
+
+Confirmed gaps (re-verify lines):
+- `cmd_upgrade` has **no `omlx)` arm** (only `all`/`ollama|nomad_ollama`/`kiwix…`/`admin|mysql|redis|dozzle|updater`, ~4273-4308) — there is no `nomad upgrade omlx` to dispatch to yet.
+- `update.tsx` (~234) receives `isNativeOllama` but **not** `aiBackend`; `settings_controller.update()` doesn't pass it.
+
+Fix scope (folds into Phase 2 / the admin host-command work; do alongside the Appendix-C Ollama fix):
+1. **nomad:** add an `omlx)` arm to `cmd_upgrade` → upgrade the oMLX stack (brew upgrade the `omlx` binary + `_reset_omlx_stack`).
+2. **allow-list:** add `upgrade-omlx` to `admin/constants/host_commands.ts` + the `run_cmd` case in `nomad` + `test-host-command-allowlist.sh`.
+3. **controller:** `settings_controller.update()` passes `aiBackend`.
+4. **update.tsx:** "Update AI Assistant" dispatches `upgrade-omlx` (omlx) / `upgrade-ollama` (ollama), relabeled per engine ("Apple MLX" vs "Ollama"). (And `upgrade-ollama` itself switches to the cask per C-bis.)
+
+Reaffirms the lesson: a control whose correct *action* varies by backend must be backend-aware, or it's a bug. (preferences/anti-patterns drawer 24f581c8.)
