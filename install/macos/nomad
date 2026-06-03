@@ -522,6 +522,20 @@ ensure_ollama_path() {
   return 1
 }
 
+# Resolve an ollama binary that carries a WORKING llama.cpp runner. On macOS 26
+# the Homebrew formula bottle is runner-less (every model load 500s with
+# "llama-server binary not found"), but the official Ollama.app ships a binary
+# whose runner is provided at runtime and works — proven on the mini 2026-06-03:
+# the app binary embedded a vector in 0.3s while the formula 500'd. Prefer the
+# app binary; fall back to whatever is on PATH (ollama-mode, or hosts without the
+# app). Override in tests / by hand with NOMAD_OLLAMA_BIN.
+_resolve_ollama_bin() {
+  if [[ -n "${NOMAD_OLLAMA_BIN:-}" ]]; then printf '%s\n' "$NOMAD_OLLAMA_BIN"; return 0; fi
+  local app="/Applications/Ollama.app/Contents/Resources/ollama"
+  [[ -x "$app" ]] && { printf '%s\n' "$app"; return 0; }
+  command -v ollama 2>/dev/null
+}
+
 # ─── Ollama runner health ──────────────────────────────────────────────────────
 # A responsive /api/tags only proves the daemon process is up. It does NOT prove
 # the daemon can run a model: Ollama loads GGUF weights through a separate
@@ -557,6 +571,11 @@ _ollama_runner_dirs() {
 # _ollama_infer_probe for that) — this is the fast, model-free pre-flight that
 # catches the incomplete bottle before we bother bootstrapping the LaunchAgent.
 _ollama_runner_present() {
+  # The official Ollama.app provides its runner at runtime (not a static file we
+  # can find on disk) and it is proven to work — so when we would run the app
+  # binary, report the runner present and let the functional _ollama_infer_probe
+  # be authoritative. Avoids a misleading "runner missing" pre-flight on the app.
+  case "$(_resolve_ollama_bin)" in /Applications/Ollama.app/*) return 0 ;; esac
   local dir
   while IFS= read -r dir; do
     [[ -n "$dir" && -d "$dir" ]] || continue
@@ -1792,7 +1811,7 @@ step_ollama_native() {
 
   # Write LaunchAgent — binds 0.0.0.0 so containers can reach via host.docker.internal
   mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
-  local ollama_bin; ollama_bin="$(command -v ollama)"
+  local ollama_bin; ollama_bin="$(_resolve_ollama_bin)"
   # Compute MAX_LOADED_MODELS from RAM — controls how many models stay hot in
   # unified memory. Higher = faster model switching, more memory pressure.
   local ram_gb max_loaded
@@ -2115,7 +2134,8 @@ EOF
 
 step_ollama_embed() {
   section "Embed-only Ollama on :11435 (hybrid embeddings for oMLX)"
-  local ollama_bin; ollama_bin="$(command -v ollama)" || die "ollama not found — install step must run first"
+  local ollama_bin; ollama_bin="$(_resolve_ollama_bin)"
+  [[ -n "$ollama_bin" ]] || die "ollama not found — install step must run first"
   # Embed model lives on the internal disk so RAG embeddings survive a data-drive unplug; vectors are bit-identical (same weights regardless of disk).
   mkdir -p "$SECRETS_DIR/embed-models"
   mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
