@@ -484,3 +484,41 @@ Spots to update (re-verify lines via grep `'(AI API)'|'Ollama API'|'switched bac
 **Manual stopgap (chat only, non-persistent):** `launchctl bootout gui/$(id -u)/com.projectnomad.ollama` then run `/Applications/Ollama.app/Contents/Resources/ollama serve` with `OLLAMA_HOST=127.0.0.1:11434 OLLAMA_MODELS=~/.ollama/models`. Dies on logout; nomad reset/update restores the broken formula agent until the code fix lands.
 
 **Priority: this BLOCKS chat + RAG + Phase 2. Implement before Phase 2.**
+
+---
+
+## APPENDIX D — Testing regime (decisions, 2026-06-02)
+
+**Why now:** the system is 4 daemons × 2 backends × (brew-formula | official-app). The gap that bit us (runner-less Ollama): health checks verified **liveness** (`/api/tags` answered) while **function** (generate/embed) was dead. **Guiding principle: test function, not liveness.**
+
+**Decisions (Chris):**
+- **Live host:** the **mini**, via a `nomad selftest` command. CI can't run the full stack (no Apple-Silicon/Metal/models on GitHub runners) → CI keeps the static/unit layer only.
+- **Triggers:** **manual `nomad selftest` + a pre/post-deploy gate** (`nomad update`/`upgrade` runs selftest after deploying, flags 🔴 on functional failure — would have caught the runner-less Ollama). (Scheduled/cron not chosen; optional later.)
+- **Build order:** **Ollama fix → Phase 2 → `selftest`.** Formalize the full regime last — BUT bake the functional runner-verify + generate/embed probe into the Ollama fix (that's the first slice).
+
+**Three layers:**
+1. **Static/CI** (extend `checks.yml`): `bash -n`, **shellcheck** on `nomad`, `tsc`, drift guards, **+ unit tests for the pure-logic helpers** (`_resolve_ollama_bin`, `_admin_ollama_url`, backend/port decisions — stubbed env, no daemons).
+2. **Functional smoke — `nomad selftest`** (live, mini): per active backend — topology (4 daemons) · admin→correct port · **runner present** · **real generate→text** · **real embed→vector** · coexistence (`:11434`+`:11436`) · backend-switch round-trip (+ doesn't kill `:11434`) · a real KB ingest for e2e RAG.
+3. **Regression anchors** (permanent cases): runner-present-after-install · generate-returns-text · embed-returns-vector · switch-doesn't-kill-`:11434` · admin-`OLLAMA_HOST`-matches-backend · seed-is-backend-aware.
+
+---
+
+## POST-COMPACT RESUME — START HERE (2026-06-02 EOD)
+
+**State:** design fully converged; **Phase 1 SHIPPED + LIVE-VERIFIED** on the mini; **one blocker open** (broken brew Ollama). Repo `caweis/project-nomad`, develop on `main`. Deploy host = the Mac mini; the agent can't SSH it — Chris runs live checks + pastes output.
+
+**Durable docs:**
+- Spec: `docs/superpowers/specs/2026-06-02-ollama-coexist-with-omlx-design.md` (v3, decisions D1–D14).
+- Plan: THIS file + Appendix A (per-site `:11434` classification), B (banner decision + Phase-1 cosmetics — DONE), C (**Ollama-on-Tahoe blocker + proven fix spec**), D (testing regime).
+
+**Done + on origin/main** (Phase 1 = Ollama↔oMLX coexistence, omlx mode):
+`17b6164` proxy 11434→11436 · `76a07d2` backend-aware admin URL · `64c55f5` general Ollama coexists · `5860e75` embed-skip+ports · `9b4337c` B1 banners · `b16b149` B2 check/inventory · `ba757ef` B3 man pages. Live: 5/6 checks green (topology, coexistence, ports, loopback bind, admin→`:11436`). Check 6 (generation) failed → root cause = broken brew Ollama, NOT Phase 1.
+
+**NEXT ACTIONS, in order (Chris's chosen build order):**
+1. **[BLOCKER] Ollama fix — see Appendix C.** Brew ollama *formula* on macOS 26 (`arm64_tahoe`) is a runner-less stub (no `llama-server`) → all GGUF inference dead (chat `:11434` + RAG embed `:11435`). PROVEN fix: official Ollama app (`brew install --cask ollama`, binary `/Applications/Ollama.app/Contents/Resources/ollama` — generated "OK" standalone). Implement `_resolve_ollama_bin` (prefer app binary w/ runner), cask install, runner-verify at install, handle the app's own auto-server `:11434` conflict (**needs LIVE iteration on the mini**), regenerate launchers. Bake in the functional checks = first slice of the testing regime.
+2. **Phase 2 — Layer 2 GUI** (main plan Tasks 7–10): admin "Use from other devices / Connect an app" section + `ai-lan-expose` host-command + allow-list + broadened `mac-ai-assistant` help page. After the Ollama fix (Phase 2 is moot until Ollama generates).
+3. **Testing regime — `nomad selftest`** (Appendix D): mini-only; manual + pre/post-deploy gate.
+
+**Spawned task chips:** "Verify Ollama runner at install" (now superseded/expanded by Appendix C — the Ollama fix IS this) · "Fix AI Assistant version display" (earlier, separate — may already be merged; verify).
+
+**Standing constraints:** develop on main; subagents ≥ sonnet; **in-depth code verification** (per-site classify + `bash -n`/`test-*.sh`/`tsc` + diff review, NOT blind sed — it caught the seed bug + the runner-less Ollama); Workflow multi-agent tool needs explicit opt-in; security posture (oMLX `:8000` + embed `:11435` loopback; `:11434`/`:11436` are `0.0.0.0` for admin reach; LAN-expose is opt-in).
