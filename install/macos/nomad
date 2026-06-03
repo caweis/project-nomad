@@ -725,6 +725,11 @@ check_stack() {
     else
       flag "🟡" "embed Ollama not responding on :11435" "RAG embeddings unavailable; check ~/Library/Logs/nomad-ollama-embed.err.log"
     fi
+    if curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+      ok "general Ollama on :11434 (coexisting — your models)"
+    else
+      flag "🟡" "general Ollama not responding on :11434" "Your local Ollama models/apps are unavailable; check ~/Library/Logs/nomad-ollama.err.log"
+    fi
   else
     if curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
       ok "native Ollama responding on :11434"
@@ -846,12 +851,12 @@ check_install() {
   # --- AI agents (backend-aware) ---
   _load_backend
   if [[ "$BACKEND" == "omlx" ]]; then
-    # In oMLX mode the native-Ollama LaunchAgent is intentionally unloaded and
-    # :11436 is owned by the proxy, which binds 0.0.0.0 (containers reach it via
-    # host.docker.internal); only oMLX :8000 and the embed Ollama :11435 are
-    # loopback-bound. All AI-agent health checks are already covered by
-    # 'nomad check stack'; skip them here to avoid contradicting that command.
-    inv_ok "AI agents" "validated by 'nomad check stack' (oMLX backend)"
+    # oMLX backend: the admin's AI is oMLX (:8000) behind the proxy (:11436); the
+    # embed Ollama (:11435) serves RAG embeddings; and the general Ollama (:11434,
+    # your models) now runs ALONGSIDE oMLX (loopback by default). All four are
+    # health-checked by 'nomad check stack'; skip the per-daemon detail here to
+    # avoid duplicating (and contradicting) that command.
+    inv_ok "AI agents" "oMLX + proxy + embed + general Ollama — see 'nomad check stack' (oMLX backend)"
   else
     # --- Ollama (binary, agent, port, API) — native Ollama mode only ---
     if command -v ollama >/dev/null 2>&1; then
