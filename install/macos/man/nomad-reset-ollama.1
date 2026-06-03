@@ -1,4 +1,4 @@
-.Dd 2026-05-30
+.Dd 2026-06-02
 .Dt NOMAD-RESET-OLLAMA 1
 .Os
 .Sh NAME
@@ -16,6 +16,18 @@ processes, confirms port 11434 is free, re-bootstraps the agent, and waits
 for the API to come back up.
 Reach for it when Ollama is wedged, after an upgrade, or when the model store
 has changed.
+.Pp
+On the oMLX backend,
+.Nm
+resets the whole oMLX stack instead \(em the oMLX server
+.Pq Li :8000 ,
+the Ollama-compat proxy
+.Pq Li :11436 ,
+the embed-only Ollama
+.Pq Li :11435 ,
+and the coexisting general Ollama
+.Pq Li :11434 \(em
+re-bootstrapping each and waiting for the proxy to answer.
 .Pp
 Before touching launchd,
 .Nm

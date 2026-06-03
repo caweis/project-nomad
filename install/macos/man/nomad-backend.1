@@ -1,4 +1,4 @@
-.Dd 2026-05-31
+.Dd 2026-06-02
 .Dt NOMAD-BACKEND 1
 .Os
 .Sh NAME
@@ -28,11 +28,20 @@ Delivers higher throughput on Apple Silicon.
 Requires Apple Silicon and macOS 15 (Sequoia) or later.
 .El
 .Pp
-Switching backends tears down every active AI LaunchAgent and kills any
-orphan inference processes before bringing up the target stack.
-The admin layer (a container) continues to reach inference at
+Switching backends tears down the AI LaunchAgents the target needs to
+re-bootstrap and kills any orphan inference processes before bringing up the
+target stack.
+Switching to oMLX leaves the user's general Ollama
+.Pq Li :11434
+running \(em it coexists with oMLX rather than being replaced.
+The admin layer (a container) reaches inference at
 .Li host.docker.internal:11434
-regardless of which backend is active.
+under the Ollama backend and at
+.Li host.docker.internal:11436
+under the oMLX backend.
+The switch is transparent: the active backend drives the admin's
+.Ev OLLAMA_HOST
+automatically, so no admin reconfiguration is required.
 Models on disk are preserved both ways: MLX weights
 .Pq Pa ${NOMAD_DATA_ROOT}/mlx-models
 and Ollama weights
@@ -45,8 +54,8 @@ until the new stack is fully running.
 A mid-switch failure therefore leaves the recorded backend unchanged rather
 than claiming a backend that is not actually serving.
 .Sh oMLX PROCESS TOPOLOGY
-Under the oMLX backend, three processes run simultaneously:
-.Bl -tag -width "embed-only Ollama"
+Under the oMLX backend, four processes run simultaneously:
+.Bl -tag -width "Ollama-compat proxy"
 .It oMLX server
 Listens on
 .Li 127.0.0.1:8000
@@ -55,14 +64,16 @@ Model weights are stored on the data drive under
 .Pa ${NOMAD_DATA_ROOT}/mlx-models .
 .It Ollama-compat proxy
 Listens on
-.Li 0.0.0.0:11434
-\(em the same bind the native Ollama agent uses, so the admin container reaches it
-via
-.Li host.docker.internal:11434
-unchanged \(em and translates the Ollama API into oMLX requests forwarded to the
-loopback oMLX server on
+.Li 0.0.0.0:11436
+and translates the Ollama API into oMLX requests forwarded to the loopback oMLX
+server on
 .Li :8000 .
-No admin configuration changes are required when switching backends.
+The admin container reaches it via
+.Li host.docker.internal:11436 ;
+the admin's
+.Ev OLLAMA_HOST
+is set automatically from the active backend, so no manual configuration is
+required when switching.
 .It Embed-only Ollama
 Listens on
 .Li 127.0.0.1:11435
@@ -73,10 +84,18 @@ so that RAG embeddings survive a data-drive unplug.
 Because the same weights serve both backends, Qdrant vector indices built
 under Ollama remain valid under oMLX and vice versa; no reindex is required
 when switching.
+.It General Ollama
+Listens on
+.Li 127.0.0.1:11434
+.Pq loopback by default
+and serves the user's own Ollama models, coexisting with oMLX.
+This is the standard Ollama endpoint local tools and apps expect; it is
+independent of the admin, whose AI runs on oMLX via the proxy.
 .El
 .Pp
 Under the plain Ollama backend, only native Ollama runs, listening on
-.Li 0.0.0.0:11434 .
+.Li 0.0.0.0:11434 ,
+and it is the admin's inference endpoint directly.
 .Sh OPTIONS
 .Bl -tag -width Ds
 .It Cm show
@@ -127,11 +146,12 @@ Kept on internal storage so it survives a data-drive unplug.
 .It Pa ~/Library/LaunchAgents/com.projectnomad.omlx.plist
 oMLX server LaunchAgent (port 8000).
 .It Pa ~/Library/LaunchAgents/com.projectnomad.ollama-proxy.plist
-Ollama-compat proxy LaunchAgent (port 11434, oMLX backend only).
+Ollama-compat proxy LaunchAgent (port 11436, oMLX backend only).
 .It Pa ~/Library/LaunchAgents/com.projectnomad.ollama-embed.plist
 Embed-only Ollama LaunchAgent (port 11435, oMLX backend only).
 .It Pa ~/Library/LaunchAgents/com.projectnomad.ollama.plist
-Native Ollama LaunchAgent (port 11434, Ollama backend).
+General Ollama LaunchAgent (port 11434) \(em the chat backend under the Ollama
+backend, and the user's coexisting model server under the oMLX backend.
 .El
 .Sh EXAMPLES
 .Bl -tag -width Ds
