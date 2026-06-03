@@ -420,3 +420,41 @@ native Ollama checks in `check_stack` ollama-branch (700/701) and `cmd_inventory
 
 ### OPEN DECISION for Chris — user-facing "AI API" URL banners (2116, 2148, 3706, 3747):
 These print a "your AI API is at http://…:11434" URL to the user (install prompt + completion banners + the hostname-rename docstring). In **omlx** mode there are now two relevant endpoints: the user's **general Ollama** (`:11434`, their models, for Ollama clients/Field Desk) and the **admin/oMLX proxy** (`:11436`). Decision: in omlx mode should these banners show (a) `:11434` only (the user's Ollama), (b) `:11436` only (the admin AI/proxy), or (c) both, labeled? Recommendation: **(c) both, labeled** — "Ollama (your models): :11434 · AI Assistant API (oMLX): :11436" — most accurate; backend-aware (ollama mode shows just `:11434`).
+
+---
+
+## APPENDIX B — Phase 1 status + banner decision (2026-06-02)
+
+### DONE + pushed (statically verified: bash -n, test-reset-ollama 23/23, test-manpages, test-host-command-allowlist):
+- Task 1 `17b6164` — proxy 11434→11436 (24 sites)
+- Task 2 `76a07d2` — backend-aware admin URL (`_admin_ollama_url` + `dc()` injection + compose `${NOMAD_OLLAMA_URL:-…}` ×2 + self-guarding `ai.remoteOllamaUrl` seed/migration)
+- Task 3 `64c55f5` — general Ollama runs alongside oMLX (bootout de-exclusion, mode-aware loopback bind + `~/.ollama/models`, started in install/reset/switch; `BACKEND=$target` before switch steps)
+- Task 4 + ports `5860e75` — skip `:11434` embedding pre-pull in omlx mode; `NOMAD_PORTS` += `11435 11436 8000`
+
+### REMAINING Phase 1 — cosmetic/docs only (functional core is complete):
+
+**B1. Banner URLs — DECISION: "both, labeled".** In omlx mode show BOTH the user's Ollama (`:11434`, their models) AND the oMLX proxy (`:11436`, admin AI), labeled; in ollama mode show just `:11434`. Add a DRY helper and use it at all spots:
+```bash
+# Backend-aware AI-endpoint banner line(s). $1 = hostname for the .local URL.
+_ai_endpoint_lines() {
+  local h="${1:-localhost}"; _load_backend 2>/dev/null || true
+  if [[ "${BACKEND:-ollama}" == "omlx" ]]; then
+    printf '    http://localhost:11434   http://%s.local:11434  (Ollama — your models)\n' "$h"
+    printf '    http://localhost:11436   http://%s.local:11436  (AI Assistant API — oMLX)\n' "$h"
+  else
+    printf '    http://localhost:11434   http://%s.local:11434  (AI API)\n' "$h"
+  fi
+}
+```
+Spots to update (re-verify lines via grep `'(AI API)'|'Ollama API'|'switched backend'`):
+  - **~2145** docstring comment in `step_set_local_hostname` (`# http://nomad.local:11434  Ollama API`) — note both endpoints.
+  - **~2177** interactive rename prompt (`http://${target}.local:11434  AI API`) — use the helper (via `$(_ai_endpoint_lines "$target")` in the heredoc).
+  - **~3749** "Admin is up" banner — replace the hardcoded `(AI API)` line with `$(_ai_endpoint_lines "$_hostname")`.
+  - **completion-summary banner** (the second `…localhost:11434 … ${_hostname}.local:11434` block, originally ~3747; grep to locate) — same helper.
+  - **~5175** `cmd_backend` success msg `"…admin still talks to :11434…"` → backend-aware (`:11436` when target=omlx, `:11434` when ollama), or drop the port.
+
+**B2. omlx inventory** (`cmd_inventory`, ~818–875): make the native-Ollama inventory block run in omlx mode too (so `nomad` system-check reports all four daemons: omlx :8000, embed :11435, proxy :11436, general Ollama :11434). The `:11436` comment at ~821 is already correct (Task 1).
+
+**B3. Man-page CONTENT** (drift guard already passes — this is accuracy, not drift): `nomad-backend.1` (daemon list + ports — now proxy :11436 + general Ollama coexisting on :11434 in omlx), `nomad.1`, `nomad-reset-ollama.1`.
+
+### Then PHASE 2 (main plan Tasks 7–10): host-command `ai-lan-expose` + allow-list, admin GUI section, broadened `mac-ai-assistant` help page. Build AFTER Phase 1 is live-verified on the mini (Task 6 checklist).
