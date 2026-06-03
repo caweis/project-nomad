@@ -5332,10 +5332,20 @@ _refresh_bundle_from_main() {
     warn "offline — cannot fetch bundle refresh. Bundle left untouched."
     return 1
   fi
+  # Resolve the commit we're about to land on, for troubleshooting a bad upgrade
+  # ("which build am I on now?"). codeload branch tarballs don't embed the SHA,
+  # so ask the API we just confirmed reachable. Best-effort — surfaced on the
+  # download + success lines below; never fails the refresh over it.
+  local _rev="" _rev_date="" _meta
+  _meta="$(/usr/bin/curl -fsS --max-time 8 "https://api.github.com/repos/caweis/project-nomad/commits/$branch" 2>/dev/null || true)"
+  if [[ -n "$_meta" ]] && command -v jq >/dev/null 2>&1; then
+    _rev="$(printf '%s' "$_meta" | jq -r '.sha // empty' 2>/dev/null | cut -c1-7 || true)"
+    _rev_date="$(printf '%s' "$_meta" | jq -r '.commit.committer.date // empty' 2>/dev/null || true)"
+  fi
   local tgz tmpd
   tgz="$(/usr/bin/mktemp)"; tmpd="$(/usr/bin/mktemp -d)"
   local url="https://codeload.github.com/caweis/project-nomad/tar.gz/refs/heads/$branch"
-  log "downloading bundle tarball ($branch)"
+  log "downloading bundle tarball ($branch${_rev:+ · rev $_rev})"
   if ! /usr/bin/curl -fsSL --max-time 120 "$url" -o "$tgz"; then
     /bin/rm -rf "$tgz" "$tmpd"; warn "download failed: $url — bundle left untouched"; return 1
   fi
@@ -5362,7 +5372,7 @@ _refresh_bundle_from_main() {
   fi
   /bin/chmod +x "$bundle/nomad"
   /bin/rm -rf "$tgz" "$tmpd"
-  ok "bundle refreshed from $branch"
+  ok "bundle refreshed from $branch${_rev:+ · rev $_rev}${_rev_date:+ · committed $_rev_date}"
   return 0
 }
 
