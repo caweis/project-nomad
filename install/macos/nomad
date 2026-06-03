@@ -522,9 +522,22 @@ ensure_ollama_path() {
   return 1
 }
 
+# Admin → Ollama-API URL the admin/worker containers should hit, derived from the
+# active backend in $ENV_FILE: oMLX mode routes through the proxy on :11436;
+# native-Ollama mode talks to :11434 directly. Single source of truth — dc()
+# injects it into compose interpolation (OLLAMA_HOST=${NOMAD_OLLAMA_URL:-…}) and
+# step_seed reuses it. Because dc() recomputes it every compose up, OLLAMA_HOST
+# self-corrects on the next 'nomad upgrade' — no separate migration needed for it.
+_admin_ollama_url() {
+  local be=""
+  [[ -f "$ENV_FILE" ]] && be="$(grep '^NOMAD_AI_BACKEND=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true)"
+  [[ "$be" == "omlx" ]] && echo "http://host.docker.internal:11436" || echo "http://host.docker.internal:11434"
+}
+
 # Compose wrapper — base compose.yaml has platform: linux/amd64 baked in for
-# the amd64-only GHCR images, so no override-layering needed.
-dc() { docker compose -f "$COMPOSE_BASE" --env-file "$ENV_FILE" "$@"; }
+# the amd64-only GHCR images, so no override-layering needed. Injects
+# NOMAD_OLLAMA_URL (per-backend) so compose interpolates the admin's OLLAMA_HOST.
+dc() { NOMAD_OLLAMA_URL="$(_admin_ollama_url)" docker compose -f "$COMPOSE_BASE" --env-file "$ENV_FILE" "$@"; }
 
 # ─── sudo bootstrap ───────────────────────────────────────────────────────────
 sudo_bootstrap() {
@@ -3532,12 +3545,21 @@ step_seed_native_ollama_state() {
 
   local db_pw; db_pw="$(grep '^DB_PASSWORD=' "$ENV_FILE" | cut -d= -f2-)"
   local sql_err; sql_err="$(mktemp)"
+  # Backend-aware admin URL: omlx -> proxy :11436, ollama -> native :11434.
+  local ollama_url; ollama_url="$(_admin_ollama_url)"
   if echo '
 INSERT INTO kv_store (`key`, value, created_at, updated_at)
-VALUES ("ai.remoteOllamaUrl", "http://host.docker.internal:11434", NOW(), NOW()) AS new
+VALUES ("ai.remoteOllamaUrl", "'"$ollama_url"'", NOW(), NOW()) AS new
 ON DUPLICATE KEY UPDATE
   value      = IF(kv_store.value IS NULL OR kv_store.value = "", new.value, kv_store.value),
   updated_at = NOW();
+-- Migrate an existing install off the old :11434 default when the backend now
+-- routes elsewhere (omlx -> :11436). No-op in ollama mode (url == old default)
+-- and no-op if the user customized the value (only the exact old default matches).
+UPDATE kv_store SET value = "'"$ollama_url"'", updated_at = NOW()
+WHERE `key` = "ai.remoteOllamaUrl"
+  AND value = "http://host.docker.internal:11434"
+  AND "'"$ollama_url"'" <> "http://host.docker.internal:11434";
 UPDATE services SET installed = 1, installation_status = "idle", updated_at = NOW()
 WHERE service_name = "nomad_ollama" AND installed = 0;
 -- Suppress the home-page "Use the setup wizard!" highlight. The wizard is

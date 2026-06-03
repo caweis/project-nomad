@@ -68,6 +68,7 @@ export default await Env.create(new URL('../', import.meta.url), {
   | an Ollama Docker container. Useful on macOS where native
   | Ollama can use Metal GPU acceleration.
   | Example: http://host.docker.internal:11434
+  | (oMLX backend uses :11436; the macOS installer sets it per backend.)
   |----------------------------------------------------------
   */
   OLLAMA_HOST: Env.schema.string.optional(),
