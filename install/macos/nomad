@@ -1660,10 +1660,45 @@ step_orbstack() {
   die "docker daemon never came up. Open OrbStack.app, finish first-run, re-run 'nomad install'"
 }
 
+# Install-context chat probe: run a real 1-token inference and surface a missing
+# runner loudly (warn + sticky NOMAD_INSTALL_DEGRADED) without aborting the rest
+# of the install — step_ollama_native runs BEFORE admin/compose, so a die here
+# would take the whole stack down over a brew-bottle bug. No-op (with a note)
+# when no chat model exists yet, since at install time models are pulled later;
+# the static _ollama_runner_present pre-flight is the signal in that window.
+#   $1 = base url   $2 = context label
+_probe_ollama_chat_or_warn() {
+  local base="$1" ctx="${2:-Ollama}" model verdict
+  model="$(_ollama_first_model "$base")"
+  if [[ -z "$model" ]]; then
+    log "inference probe skipped for $ctx — no model installed yet (verified after first pull)"
+    return 0
+  fi
+  log "inference probe: 1-token generate on $ctx via '$model'…"
+  verdict="$(_ollama_infer_probe "$base" "$model" generate)"
+  case "$verdict" in
+    ok) ok "$ctx inference OK (llama.cpp runner healthy)" ;;
+    runner-missing)
+      _ollama_runner_remediation "$ctx"
+      NOMAD_INSTALL_DEGRADED+=("$ctx inference broken — llama.cpp runner (llama-server) missing; brew reinstall ollama or https://ollama.com/download/mac, then 'nomad reset-ollama'") ;;
+    *) warn "$ctx inference probe inconclusive: ${verdict#error:}" ;;
+  esac
+}
+
 step_ollama_native() {
   section "Native Ollama (Metal)"
   command -v ollama >/dev/null 2>&1 || brew install ollama
   ok "ollama $(ollama --version 2>/dev/null | head -1)"
+
+  # Pre-flight: the llama.cpp runner (llama-server) must actually be on disk.
+  # Homebrew's ollama 0.30.0 bottle shipped without it, which makes the daemon
+  # serve /api/tags while every model load 500s. Warn loudly + record a sticky
+  # degradation now; the post-bootstrap inference probe below is authoritative
+  # once a model exists. Non-fatal so admin/compose still come up.
+  if ! _ollama_runner_present; then
+    _ollama_runner_remediation "general Ollama (:11434)"
+    NOMAD_INSTALL_DEGRADED+=("Ollama llama.cpp runner (llama-server) missing — chat/RAG inference broken; brew reinstall ollama or https://ollama.com/download/mac, then 'nomad reset-ollama'")
+  fi
 
   # Stop brew-managed service if present (we run our own LaunchAgent)
   if launchctl list 2>/dev/null | grep -q homebrew.mxcl.ollama; then
@@ -1880,7 +1915,13 @@ Manual recovery:
   log "waiting for Ollama API on :11434..."
   local deadline=$(( $(date +%s) + 30 ))
   while [[ $(date +%s) -lt $deadline ]]; do
-    curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1 && { ok "Ollama API responding"; return 0; }
+    if curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+      ok "Ollama API responding"
+      # /api/tags up ≠ inference works. Force a real generate to catch a missing
+      # llama.cpp runner (no-op if no model pulled yet — see the wrapper).
+      _probe_ollama_chat_or_warn "http://127.0.0.1:11434" "general Ollama (:11434)"
+      return 0
+    fi
     sleep 1
   done
   die "Ollama did not start — check ~/Library/Logs/nomad-ollama.err.log"
@@ -2085,6 +2126,21 @@ EOF
     OLLAMA_HOST=127.0.0.1:11435 OLLAMA_MODELS="$SECRETS_DIR/embed-models" "$ollama_bin" pull "$em" || \
       warn "could not pre-pull $em on embed Ollama — RAG will pull on first use"
   done
+
+  # Authoritative RAG check: a responsive /api/tags does NOT prove the embed
+  # runner works (the same incomplete-bottle failure breaks embeddings). The
+  # model was just pulled, so a real /api/embed now is decisive. Loud + sticky on
+  # failure; never fatal (the rest of the install must still complete).
+  log "inference probe: 1-vector /api/embed on embed Ollama (:11435)…"
+  local _em_probe
+  _em_probe="$(_ollama_infer_probe "http://127.0.0.1:11435" "nomic-embed-text" embed)"
+  case "$_em_probe" in
+    ok) ok "embed Ollama inference OK (RAG embeddings working)" ;;
+    runner-missing)
+      _ollama_runner_remediation "embed Ollama (:11435)"
+      NOMAD_INSTALL_DEGRADED+=("RAG embeddings broken — embed Ollama llama.cpp runner (llama-server) missing; brew reinstall ollama or https://ollama.com/download/mac, then 'nomad reset-ollama'") ;;
+    *) warn "embed Ollama inference probe inconclusive: ${_em_probe#error:} (RAG may pull/repair on first use)" ;;
+  esac
 }
 
 step_omlx_proxy() {
