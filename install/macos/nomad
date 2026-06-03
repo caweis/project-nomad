@@ -434,7 +434,7 @@ resolve_lean_models() {
 }
 
 # Ports we rely on — system-check looks for collisions
-NOMAD_PORTS="8080 9999 11434"
+NOMAD_PORTS="8080 9999 11434 11435 11436 8000"
 
 # launchctl bootstrap stderr capture — mktemp (not a fixed /tmp path) to avoid
 # symlink/clobber + info-leak on multi-user macOS. Explicit /tmp/nomad-* template
@@ -2385,6 +2385,10 @@ pull_one_model() {
 # foreground pull finishes the chat models.
 step_pull_embedding_quick() {
   [[ "$SKIP_MODELS" -eq 1 ]] && return 0
+  # In omlx mode embeddings live on the embed-only Ollama (:11435), pre-pulled by
+  # step_ollama_embed — the general Ollama on :11434 doesn't serve RAG, so this
+  # :11434 pre-pull would just duplicate the model onto the wrong daemon. Skip it.
+  [[ "${BACKEND:-ollama}" == "omlx" ]] && { ok "embeddings handled by the embed-only Ollama on :11435"; return 0; }
   local m="nomic-embed-text"
   # Skip if already present
   if curl -fsS http://127.0.0.1:11434/api/tags 2>/dev/null \
