@@ -100,6 +100,7 @@ export class DocsService {
 
   private static readonly TITLE_OVERRIDES: Record<string, string> = {
     'faq': 'FAQ',
+    'mac-ai-assistant': 'AI & Local Models',
   }
 
   private prettify(filename: string) {
