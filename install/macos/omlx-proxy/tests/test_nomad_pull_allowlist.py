@@ -33,6 +33,19 @@ def test_clean_mlx_community_repo_resolves():
     assert nomad_pull._resolve_mlx_repo("mlx-community/Foo-4bit") == "mlx-community/Foo-4bit"
 
 
+def test_bare_basename_from_tags_resolves():
+    # /api/tags lists the bare repo basename; pulling it must resolve back to
+    # the curated mlx-community repo (symmetry: list == pullable).
+    assert (
+        nomad_pull._resolve_mlx_repo("Meta-Llama-3.1-8B-Instruct-4bit")
+        == _MAPPING["llama3.1:8b"]
+    )
+
+
+def test_unknown_bare_basename_is_rejected():
+    assert nomad_pull._resolve_mlx_repo("Totally-Not-A-Model-4bit") == ""
+
+
 @pytest.mark.parametrize(
     "name",
     [

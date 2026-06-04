@@ -56,6 +56,14 @@ def _resolve_mlx_repo(name: str) -> str:
         mapping = {}
     if name in mapping:
         return mapping[name]
+    # Symmetry: /api/tags advertises the bare repo basenames of these mapped
+    # values (e.g. "Qwen3-32B-4bit" for "mlx-community/Qwen3-32B-4bit"). Accept
+    # those by reverse-looking-up the curated map's values, so anything we list
+    # as available is also pullable. The candidate equals a curated value's
+    # basename, so it is already trusted — no extra char validation needed.
+    for repo in mapping.values():
+        if isinstance(repo, str) and "/" in repo and repo.rsplit("/", 1)[-1] == name:
+            return repo
     if name.startswith("mlx-community/"):
         # Defense-in-depth: don't outsource validation of the user-supplied repo
         # to HuggingFace downstream. Reject path traversal, nested namespaces, and
