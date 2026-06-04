@@ -182,3 +182,17 @@ async def pull(request: Request):
     body = await request.json()
     name = body.get("name") or body.get("model") or ""
     return StreamingResponse(_pull_stream(name), media_type="application/x-ndjson")
+
+
+@router.get("/nomad/pullable")
+async def pullable():
+    """List the Ollama-style model names the proxy can resolve to MLX (the
+    curated model_map.json keys). The admin uses this in oMLX mode to mark which
+    catalog models are available as MLX — single source of truth = model_map.json.
+    """
+    try:
+        mapping = _get_settings().load_model_mappings() or {}
+    except Exception:
+        mapping = {}
+    names = sorted(k for k in mapping.keys() if k != "_comment")
+    return {"models": names}

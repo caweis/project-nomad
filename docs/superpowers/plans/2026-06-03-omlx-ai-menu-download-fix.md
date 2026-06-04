@@ -64,19 +64,26 @@ Whatever `/api/tags` lists as available MUST be pullable via `/api/pull`. Achiev
 - [ ] **Step 4 — run pytest** (`install/macos/omlx-proxy/tests/`), confirm green (existing allow-list rejections still hold — `_comment` value has no `/` basename collision; unsafe names still rejected by the existing tests).
 - [ ] **Step 5 — commit.**
 
-## Task 2 — Admin: oMLX-aware available-models in the AI menu
+## Task 2 — Admin: show full catalog, disable the non-MLX-available (oMLX mode)
 
+**Decision (Chris, 2026-06-03):** keep the full live catalog visible in oMLX mode; grey out / annotate models that aren't available as MLX ("not available as MLX yet"). This needs the admin to know which catalog models the proxy can serve — single source of truth is the proxy's `model_map.json`, exposed via a new endpoint (Task 2a).
+
+### Task 2a — Proxy: expose the pullable set  ✅ DONE (this session)
+- `GET /api/nomad/pullable` in `nomad_pull.py` returns `{"models": [<model_map keys>]}` (the Ollama-style names the proxy can resolve to MLX). Single source = `model_map.json`. The admin uses this to compute MLX-availability.
+
+### Task 2b — Admin: availability flag + render
 **Files:**
-- Modify: `admin/app/services/ollama_service.ts` (`getAvailableModels`, ~line 213) — in oMLX mode, return the proxy-pullable set (derive from `/api/tags` / the proxy's catalog) instead of the remote Ollama catalog. Map each to a `NomadOllamaModel` whose `tags[0].name` is the exact pullable name (the oMLX basename).
-- Modify: `admin/app/controllers/easy_setup_controller.ts` + `settings_controller.ts` if they need to pass `aiBackend` to the picker (they already pass it per `de5c019`/`a30d7bb` — verify).
-- Test: `admin` typecheck + a unit check of the oMLX branch via `npx tsx` (japa hangs locally).
+- Modify: `admin/app/services/ollama_service.ts` (`getAvailableModels`, ~213) — in oMLX mode (`env.get('NOMAD_AI_BACKEND')==='omlx'`), fetch `GET <OLLAMA_HOST>/api/nomad/pullable`, then annotate each catalog `NomadOllamaModel` with `mlxAvailable: boolean` = its family (base name) appears among the pullable keys' families (split key on `:`). Keep the full catalog; do NOT drop entries. Ollama backend path unchanged.
+- Modify: `admin/types/ollama.ts` — add optional `mlxAvailable?: boolean` to `NomadOllamaModel`.
+- Modify: `admin/inertia/pages/easy-setup/index.tsx` + `admin/inertia/pages/settings/models.tsx` — when `mlxAvailable === false`, render the card disabled (non-selectable) with a "Not available as MLX yet" annotation.
+- Modify (error propagation): `admin/app/services/ollama_service.ts` `downloadModel` catch (~88–94) — surface the actual error (the stream `error` frame / thrown message) instead of generic "Failed to download model."; thread through `DownloadModelJob` `failedReason` so the UI explains *why*.
+- Verify: `cd admin && npm run typecheck` clean; logic of the availability annotation via `npx tsx`; render check on the mini.
 
-- [ ] **Step 1** — read `getAvailableModels` (213–330) and the `/api/tags` shape (already known: `{models:[{name, ...}]}`). Decide the oMLX catalog shape (one `NomadOllamaModel` per pullable basename; `name`=basename, `tags:[{name: basename, size, …}]`).
-- [ ] **Step 2** — implement the oMLX branch (guard on `env.get('NOMAD_AI_BACKEND')==='omlx'`), returning the pullable set; keep the Ollama path unchanged.
-- [ ] **Step 3** — verify exact pullable names round-trip: the name the card sends == a name the proxy resolver now accepts (Task 1).
-- [ ] **Step 4 — error propagation:** in `ollama_service.ts` `downloadModel` (catch ~88–94), surface the actual error (the proxy's stream `error` frame / the thrown message) instead of the generic "Failed to download model." So a nonexistent/unmapped name (e.g. `gemma4:latest`) yields "model not available" rather than an opaque failure. Thread it through `DownloadModelJob` `failedReason` so the UI can show it.
-- [ ] **Step 5** — `cd admin && npm run typecheck` clean.
-- [ ] **Step 6 — commit.**
+- [ ] availability flag derivation (family match against `/api/nomad/pullable`)
+- [ ] `mlxAvailable?` type addition
+- [ ] disable + annotate unavailable cards (both pages)
+- [ ] error propagation through downloadModel → failedReason
+- [ ] typecheck + tsx logic check + commit
 
 ## Task 3 — Easy-Setup sends the exact name, not the base
 

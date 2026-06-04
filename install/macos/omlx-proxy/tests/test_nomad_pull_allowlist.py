@@ -46,6 +46,12 @@ def test_unknown_bare_basename_is_rejected():
     assert nomad_pull._resolve_mlx_repo("Totally-Not-A-Model-4bit") == ""
 
 
+def test_pullable_lists_map_keys_excluding_comment():
+    import asyncio
+    res = asyncio.run(nomad_pull.pullable())
+    assert res == {"models": ["llama3.1:8b"]}
+
+
 @pytest.mark.parametrize(
     "name",
     [
