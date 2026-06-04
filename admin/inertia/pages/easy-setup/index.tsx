@@ -179,8 +179,10 @@ export default function EasySetupWizard(props: {
     refetchOnWindowFocus: false,
   })
 
-  // Match by base name ("llama3.1:8b" -> "llama3.1") since the wizard pulls the
-  // bare model name and Ollama stores it under a concrete tag.
+  // Match by base name ("llama3.1:8b" -> "llama3.1") since recommended cards are
+  // keyed by the model's base name. (Downloads resolve to a concrete tag — or
+  // the curated MLX key on the oMLX backend — at dispatch; see
+  // resolveDownloadTarget.)
   const installedModelBaseNames = useMemo(
     () => new Set((installedModels ?? []).map((m) => m.name.split(':')[0])),
     [installedModels]
@@ -213,6 +215,19 @@ export default function EasySetupWizard(props: {
     setSelectedAiModels((prev) =>
       prev.includes(modelName) ? prev.filter((m) => m !== modelName) : [...prev, modelName]
     )
+  }
+
+  // Selection is keyed by the catalog model's display name; resolve it to the
+  // name the active backend can actually pull at dispatch time. oMLX: the
+  // curated MLX key (mlxPullName) — a model with none is never selectable.
+  // Ollama: a concrete tag rather than the size-ambiguous base name, matching
+  // the Settings page. Falls back to the given name if the model isn't found.
+  const resolveDownloadTarget = (modelName: string): string => {
+    const model = recommendedModels?.find((m) => m.name === modelName)
+    if (props.aiBackend === 'omlx') {
+      return model?.mlxPullName ?? modelName
+    }
+    return model?.tags?.[0]?.name ?? modelName
   }
 
   // Category/tier handlers
@@ -409,7 +424,7 @@ export default function EasySetupWizard(props: {
       const downloadPromises = [
         ...selectedMapCollections.map((slug) => api.downloadMapCollection(slug)),
         ...categoryTierPromises,
-        ...selectedAiModels.map((modelName) => api.downloadModel(modelName)),
+        ...selectedAiModels.map((modelName) => api.downloadModel(resolveDownloadTarget(modelName))),
       ]
 
       await Promise.all(downloadPromises)
@@ -859,18 +874,25 @@ export default function EasySetupWizard(props: {
                 {recommendedModels.map((model) => {
                   const isSelected = selectedAiModels.includes(model.name)
                   const installed = installedModelBaseNames.has(model.name)
+                  // oMLX backend: only models with a curated mlx-community build
+                  // are pullable. Show the rest, but disabled + annotated, so the
+                  // catalog stays honest ("show all, disable the unavailable").
+                  const mlxUnavailable = props.aiBackend === 'omlx' && !model.mlxPullName
+                  const disabled = installed || mlxUnavailable
                   return (
                     <div
                       key={model.name}
-                      onClick={() => isOnline && !installed && toggleAiModel(model.name)}
+                      onClick={() => isOnline && !disabled && toggleAiModel(model.name)}
                       className={classNames(
                         'p-4 rounded-lg border-2 transition-all',
                         installed
                           ? 'border-desert-stone-light bg-gray-50 cursor-default'
-                          : isSelected
-                            ? 'border-desert-green bg-desert-green shadow-md cursor-pointer'
-                            : 'border-desert-stone-light bg-white hover:border-desert-green hover:shadow-sm cursor-pointer',
-                        !isOnline && !installed && 'opacity-50 cursor-not-allowed'
+                          : mlxUnavailable
+                            ? 'border-desert-stone-light bg-gray-50 cursor-not-allowed opacity-60'
+                            : isSelected
+                              ? 'border-desert-green bg-desert-green shadow-md cursor-pointer'
+                              : 'border-desert-stone-light bg-white hover:border-desert-green hover:shadow-sm cursor-pointer',
+                        !isOnline && !disabled && 'opacity-50 cursor-not-allowed'
                       )}
                     >
                       <div className="flex items-start justify-between">
@@ -892,6 +914,11 @@ export default function EasySetupWizard(props: {
                               <span className="text-xs bg-desert-green text-white px-2 py-0.5 rounded-full flex items-center gap-1">
                                 <IconCheck size={12} />
                                 Installed
+                              </span>
+                            )}
+                            {mlxUnavailable && (
+                              <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">
+                                Not available as MLX yet
                               </span>
                             )}
                           </div>
@@ -917,8 +944,18 @@ export default function EasySetupWizard(props: {
                               Size: {model.tags[0].size}
                             </div>
                           )}
+                          {props.aiBackend === 'omlx' && model.mlxPullName && (
+                            <div
+                              className={classNames(
+                                'text-xs mt-0.5',
+                                isSelected ? 'text-green-100' : 'text-gray-500'
+                              )}
+                            >
+                              MLX build: {model.mlxPullName}
+                            </div>
+                          )}
                         </div>
-                        {!installed && (
+                        {!disabled && (
                           <div
                             className={classNames(
                               'ml-4 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all flex-shrink-0',

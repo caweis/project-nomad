@@ -375,9 +375,19 @@ export default function ModelsPage(props: {
                 accessor: 'name',
                 title: 'Name',
                 render(record) {
+                  // oMLX: a model with no curated mlx-community build can't be
+                  // pulled by the proxy — flag it here and disable its installs.
+                  const mlxUnavailable = props.aiBackend === 'omlx' && !record.mlxPullName
                   return (
                     <div className="flex flex-col">
-                      <p className="text-lg font-semibold">{record.name}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-lg font-semibold">{record.name}</p>
+                        {mlxUnavailable && (
+                          <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">
+                            Not available as MLX yet
+                          </span>
+                        )}
+                      </div>
                       <p className="text-sm text-gray-500">{record.description}</p>
                     </div>
                   )
@@ -395,8 +405,18 @@ export default function ModelsPage(props: {
             data={availableModelData?.models || []}
             loading={isFetching}
             expandable={{
-              expandedRowRender: (record) => (
+              expandedRowRender: (record) => {
+                const isOmlx = props.aiBackend === 'omlx'
+                const mlxUnavailable = isOmlx && !record.mlxPullName
+                return (
                 <div className="pl-14">
+                  {isOmlx && (
+                    <p className="mb-2 text-sm text-gray-500">
+                      {mlxUnavailable
+                        ? 'Not available as MLX yet — this model has no Apple-MLX build in the catalog.'
+                        : `Installs the MLX-optimized build: ${record.mlxPullName}`}
+                    </p>
+                  )}
                   <div className="bg-white overflow-hidden">
                     <table className="min-w-full divide-y divide-gray-200">
                       <thead className="bg-white">
@@ -444,16 +464,19 @@ export default function ModelsPage(props: {
                               <td className="px-6 py-4 whitespace-nowrap">
                                 <StyledButton
                                   variant={isInstalled ? 'danger' : 'primary'}
+                                  disabled={!isInstalled && mlxUnavailable}
                                   onClick={() => {
-                                    if (!isInstalled) {
-                                      handleInstallModel(tag.name)
-                                    } else {
+                                    if (isInstalled) {
                                       confirmDeleteModel(tag.name)
+                                    } else if (!mlxUnavailable) {
+                                      // oMLX: send the curated MLX key (mlxPullName),
+                                      // not the catalog tag, so the proxy resolves it.
+                                      handleInstallModel(isOmlx ? (record.mlxPullName ?? tag.name) : tag.name)
                                     }
                                   }}
                                   icon={isInstalled ? 'IconTrash' : 'IconDownload'}
                                 >
-                                  {isInstalled ? 'Delete' : 'Install'}
+                                  {isInstalled ? 'Delete' : mlxUnavailable ? 'Not in MLX' : 'Install'}
                                 </StyledButton>
                               </td>
                             </tr>
@@ -463,7 +486,8 @@ export default function ModelsPage(props: {
                     </table>
                   </div>
                 </div>
-              ),
+                )
+              },
             }}
           />
           <div className="flex justify-center mt-6">

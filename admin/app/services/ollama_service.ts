@@ -2,6 +2,7 @@ import { inject } from '@adonisjs/core'
 import { ChatRequest, Ollama } from 'ollama'
 import { NomadOllamaModel } from '../../types/ollama.js'
 import { FALLBACK_RECOMMENDED_OLLAMA_MODELS, MODEL_DESCRIPTION_OVERRIDES } from '../../constants/ollama.js'
+import { withMlxPullNames } from '../../util/mlx.js'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import logger from '@adonisjs/core/services/logger'
@@ -86,11 +87,15 @@ export class OllamaService {
       logger.info(`[OllamaService] Model "${model}" downloaded successfully.`)
       return { success: true, message: 'Model downloaded successfully.' }
     } catch (error) {
-      logger.error(
-        `[OllamaService] Failed to download model "${model}": ${error instanceof Error ? error.message : error
-        }`
-      )
-      return { success: false, message: 'Failed to download model.' }
+      // Surface the real reason instead of swallowing it into a generic string.
+      // On the oMLX backend the proxy streams an Ollama-style error frame (e.g.
+      // "refusing to pull unmapped model 'X' (...)") which ollama-js rethrows as
+      // the iterator's error — propagating it lets DownloadModelJob carry it into
+      // the job's failedReason so the user/logs see WHY, not just "failed".
+      const message =
+        error instanceof Error && error.message ? error.message : 'Failed to download model.'
+      logger.error(`[OllamaService] Failed to download model "${model}": ${message}`)
+      return { success: false, message }
     }
   }
 
@@ -210,6 +215,33 @@ export class OllamaService {
     }
   }
 
+  /**
+   * oMLX mode only: fetch the proxy's pullable set — the model_map.json keys it
+   * can resolve to MLX — via GET <OLLAMA_HOST>/api/nomad/pullable. Used to
+   * annotate the catalog with mlxPullName. Returns null when OLLAMA_HOST is
+   * unset or the proxy is unreachable/malformed; callers then skip annotation
+   * (the UI degrades to "all selectable" rather than hiding everything on a
+   * transient blip). Mirrors the defensive null-return of getNativeServerVersion.
+   */
+  private async fetchMlxPullableKeys(): Promise<string[] | null> {
+    const host = env.get('OLLAMA_HOST')
+    if (!host) return null
+    try {
+      const response = await axios.get<{ models?: unknown }>(`${host}/api/nomad/pullable`, {
+        timeout: 3000,
+      })
+      const models = response.data?.models
+      return Array.isArray(models)
+        ? models.filter((m): m is string => typeof m === 'string')
+        : null
+    } catch (error) {
+      logger.warn(
+        `[OllamaService] Failed to fetch MLX pullable set: ${error instanceof Error ? error.message : error}`
+      )
+      return null
+    }
+  }
+
   async getAvailableModels(
     { sort, recommendedOnly, query, limit, force }: { sort?: 'pulls' | 'name'; recommendedOnly?: boolean, query: string | null, limit?: number, force?: boolean } = {
       sort: 'pulls',
@@ -219,16 +251,34 @@ export class OllamaService {
     }
   ): Promise<{ models: NomadOllamaModel[], hasMore: boolean } | null> {
     try {
-      const models = await this.retrieveAndRefreshModels(sort, force)
+      // oMLX mode: the catalog is the full Ollama library, but the proxy can
+      // only pull the curated mlx-community conversions. Annotate each model
+      // with the exact pullable key (mlxPullName) so the UI disables models with
+      // no MLX build and sends a name the proxy resolves. Fetched once per call;
+      // on the 'ollama' backend (or a transient proxy blip) this is null and
+      // every model stays selectable, exactly as before this feature.
+      const pullableKeys =
+        env.get('NOMAD_AI_BACKEND') === 'omlx' ? await this.fetchMlxPullableKeys() : null
+
+      let models = await this.retrieveAndRefreshModels(sort, force)
       if (!models) {
         // If we fail to get models from the API, return the fallback recommended models
         logger.warn(
           '[OllamaService] Returning fallback recommended models due to failure in fetching available models'
         )
         return {
-          models: FALLBACK_RECOMMENDED_OLLAMA_MODELS,
+          models: pullableKeys
+            ? withMlxPullNames(FALLBACK_RECOMMENDED_OLLAMA_MODELS, pullableKeys)
+            : FALLBACK_RECOMMENDED_OLLAMA_MODELS,
           hasMore: false
         }
+      }
+
+      // Carry mlxPullName through every downstream branch (full / query /
+      // recommended) — the recommended path spreads each model object, so the
+      // annotation survives the tag-trimming map below.
+      if (pullableKeys) {
+        models = withMlxPullNames(models, pullableKeys)
       }
 
       if (!recommendedOnly) {

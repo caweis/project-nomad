@@ -6,6 +6,17 @@ export type NomadOllamaModel = {
   model_last_updated: string
   first_seen: string
   tags: NomadOllamaModelTag[]
+  /**
+   * oMLX backend only: the exact model_map.json key the oMLX proxy can pull
+   * for this model — the smallest pullable MLX variant whose family (base name)
+   * matches. Set by OllamaService.getAvailableModels when NOMAD_AI_BACKEND ===
+   * 'omlx'; left undefined on the 'ollama' backend (where every catalog model
+   * is pullable directly). When this is undefined in oMLX mode, the model has
+   * no MLX conversion and its install controls are disabled in the UI. The UI
+   * sends this value (not the catalog name/tag) so a selectable model always
+   * resolves at the proxy — see the symmetry contract in nomad_pull.py.
+   */
+  mlxPullName?: string
 }
 
 export type NomadOllamaModelTag = {
