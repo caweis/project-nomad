@@ -3062,6 +3062,7 @@ step_compose_up() {
   # during uninstall (containers kept running), then .env was regenerated
   # with new passwords, then `dc up -d` left the old containers in place.
   # --force-recreate is cheap on a fresh stack and necessary on a stale one.
+  _reconcile_open_webui
   dc up -d --force-recreate
   ok "containers up"
 }
@@ -4570,6 +4571,20 @@ _print_admin_image_build() {
   fi
 }
 
+# One-time migration: an Open WebUI container started by hand (named exactly
+# 'open-webui', e.g. from the docs' initial `docker run`) pre-dates the
+# compose-managed service (nomad_open-webui) and squats port 3000 — which would
+# make `dc up -d` fail to create the managed one. Remove the stray manual
+# container if present; its named 'open-webui' volume (accounts + chats) is
+# preserved because we never pass -v. No-op when absent / already migrated, so a
+# plain `nomad upgrade` / `nomad update` just works.
+_reconcile_open_webui() {
+  if docker inspect open-webui >/dev/null 2>&1; then
+    log "migrating the manual open-webui container to the compose-managed one (data volume kept)…"
+    docker rm -f open-webui >/dev/null 2>&1 || true
+  fi
+}
+
 _upgrade_compose_stack() {
   local check="$1"
   if [[ "$check" == "1" ]]; then
@@ -4577,6 +4592,7 @@ _upgrade_compose_stack() {
     log "(pass --check off to apply: dc pull + dc up -d)"
     return 0
   fi
+  _reconcile_open_webui
   log "pulling latest compose images..."
   dc pull || { warn "compose pull failed"; return 1; }
   log "recreating containers with new images..."

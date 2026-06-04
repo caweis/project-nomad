@@ -72,9 +72,11 @@ Pull a different tier any time with `nomad models pull large` — it adds to wha
 
 ---
 
-## Use your own models / connect a desktop app
+## Chat & connect apps
 
-NOMAD exposes standard local-AI APIs you can point other tools at — a chat/coding desktop app, a notebook, or your own scripts:
+**Built-in chat (recommended).** NOMAD includes **Open WebUI** — a polished, ChatGPT-style chat over your local models — at **`http://nomad.local:3000`** from any device on your network. Nothing to install; the appliance manages it. First visit creates a local account (first user = admin).
+
+To connect *other* tools (a coding agent, a notebook, your own scripts), NOMAD also exposes standard local-AI APIs you can point them at:
 
 - **Ollama API** at `http://localhost:11434`. In oMLX mode, the MLX chat engine is also reachable through the Ollama-compatible proxy at `http://localhost:11436`.
 - **OpenAI / Anthropic-compatible API** (oMLX) at `http://localhost:8000`.
