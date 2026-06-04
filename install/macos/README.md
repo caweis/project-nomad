@@ -40,7 +40,7 @@ CONFIGURABLE — typically external, cold content
   ${NOMAD_DATA_ROOT}/quick-chat.html/sh     portable chat UI for any Mac
 ```
 
-Drive-eject is safe. MySQL and Redis keep running because their data is internal. Admin keeps responding. Content services (Kiwix, Kolibri, etc.) can't spawn until the drive returns. Native Ollama keeps any already-loaded model in RAM via `OLLAMA_KEEP_ALIVE=30m`. To replug: plug the drive back in, then `nomad up`.
+Drive-eject is safe. MySQL and Redis keep running because their data is internal. Admin keeps responding. Content services (Kiwix, Kolibri, etc.) can't spawn until the drive returns. Native Ollama keeps any already-loaded model in RAM via `OLLAMA_KEEP_ALIVE=24h`. To replug: plug the drive back in, then `nomad up`.
 
 Drive renames are safe too. The Ollama LaunchAgent runs through a wrapper script (`~/.config/project-nomad/ollama-launcher.sh`) that resolves the data drive at runtime: tries the configured path from `.env`, falls back to scanning `/Volumes/*` for any drive containing `project-nomad/ollama-models`, and finally falls back to `~/.ollama/models`. Plug into a Mac with the drive renamed (`/Volumes/MyDrive 1` instead of `/Volumes/MyDrive`) — Ollama still finds the models.
 

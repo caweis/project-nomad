@@ -39,14 +39,14 @@ MySQL and Redis run as containers inside OrbStack (Docker on Mac), and OrbStack 
 
 ## Unplugging the drive
 
-The Command Center keeps running when the drive is unplugged, because MySQL and Redis are on internal disk. The AI Assistant keeps any already-loaded model in RAM for `OLLAMA_KEEP_ALIVE=30m`, so chat continues working for up to 30 minutes after the drive disappears.
+The Command Center keeps running when the drive is unplugged, because MySQL and Redis are on internal disk. The AI Assistant keeps any already-loaded model in RAM (`OLLAMA_KEEP_ALIVE=24h` in the installed NOMAD daemon), so chat keeps working after the drive disappears for as long as that model stays resident — as long as you don't ask for a model that has to be loaded from the now-missing drive.
 
 What stops working when the drive is out:
 
 - **Information Library** pages — Kiwix can't reach the ZIM files.
 - **Maps** — the offline tiles aren't reachable.
 - **Workshop** — the STL files can't be opened.
-- **AI Assistant after the 30-minute keep-alive expires** — Ollama would need to load a model from disk, but the model files are on the unplugged drive. The chat shows an error.
+- **AI Assistant once the loaded model is evicted** — after the keep-alive window passes, or if you switch to a model that isn't already in RAM, Ollama has to load it from disk; the model files are on the unplugged drive, so the chat shows an error.
 
 When you re-plug the drive, a periodic kiwix-self-heal LaunchAgent (running every 60 seconds) notices that new or changed ZIM files have appeared and reloads Kiwix. Maps and Workshop pick up on their next request. There's no global drive-watcher — each service recovers on its own pass.
 
@@ -66,7 +66,13 @@ Two paths, depending on whether the destination Mac already has N.O.M.A.D. insta
 
 ### Destination Mac already has N.O.M.A.D.
 
-Plug the drive in. The other Mac's N.O.M.A.D. picks it up — Kiwix sees the new ZIM files (after the next self-heal pass), Ollama sees the new models, Workshop sees the new STLs. If the data-root path is different between Macs (e.g., one drive mounted as `/Volumes/DriveA` and another as `/Volumes/DriveA 1`), the drive-resolution code in `ollama-launcher.sh` and the `nomad` CLI handles it by scanning `/Volumes/` for any drive containing the `project-nomad/` directory.
+Plug the drive in. What picks up on its own, and what needs a nudge:
+
+- **AI models** — immediate. The Ollama launcher scans `/Volumes/` at startup, so the drive's models are visible to the running daemon with no action from you.
+- **Information Library (ZIM)** — automatic *if Kiwix is already installed and running* on that Mac: the kiwix-self-heal LaunchAgent (every 60 seconds) reloads Kiwix to serve the drive's ZIM files. If Kiwix was never installed on this Mac there's no container to heal — install it first.
+- **Workshop (STL)** — **not** automatic. The STL catalog lives in this Mac's database, not on the drive, so run `nomad stl scan` (or the Rescan button in Workshop) to index the drive's STL files.
+
+If the drive mounts under a different path on the second Mac (e.g. `/Volumes/DriveA` vs `/Volumes/DriveA 1`), the drive-resolution logic — in both the generated Ollama launcher and the `nomad` CLI — handles it by scanning `/Volumes/` for any drive containing a `project-nomad/` directory.
 
 If you want the second Mac to actually USE this drive going forward (rather than its own), point its `.env` at the new path:
 
@@ -117,4 +123,4 @@ The drive is your backup, but the drive can fail. If you care about the data, he
 
 The notes live on the drive at `storage/flatnotes/`. Your STL library is at `storage/stl-library/`. RAG uploads are at `storage/kb_uploads/`. Time Machine handles these correctly. So does `rsync` to a second drive, or a `tar` or `zip` archive — they're just files.
 
-The MySQL database on internal disk holds the system configuration (which apps are installed, where ZIMs live in the catalog, RAG embedding indices) but not user-authored content. If you wipe and reinstall, the system rebuilds the catalog from what's on the drive. The data drive itself is the durable record.
+The MySQL database on internal disk holds system configuration — which apps are installed, plus the Workshop STL catalog — but not user-authored content. The ZIM and Maps lists are read from the drive on each request, so they rebuild automatically. RAG embeddings live in Qdrant, whose storage is on the **drive** at `storage/qdrant/`, so they travel with it. The one exception is the Workshop STL catalog: it's database-resident, so after a wipe-and-reinstall, run `nomad stl scan` to re-index the drive's STL files. The data drive itself is the durable record.
