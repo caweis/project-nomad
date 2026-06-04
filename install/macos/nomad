@@ -2067,6 +2067,10 @@ step_omlx_native() {
   if ! command -v omlx >/dev/null 2>&1; then
     log "installing oMLX via Homebrew — first run downloads ~1.4 GB, this takes a few minutes (brew shows its own progress below)…"
     brew tap jundot/omlx https://github.com/jundot/omlx 2>/dev/null || true
+    # Homebrew 5.2/6.0 will ignore untrusted third-party taps by default; trust this
+    # one explicitly so install/upgrade keep working. Best-effort: 'brew trust' is a
+    # no-op on brews that predate it, so never fail the install over it.
+    brew trust --formula jundot/omlx/omlx 2>/dev/null || true
     brew install omlx || die "brew install omlx failed — see https://github.com/jundot/omlx"
   else
     ok "oMLX already installed ($(command -v omlx))"
@@ -4428,6 +4432,10 @@ _upgrade_omlx() {
     return 0
   fi
   log "running brew update + brew upgrade omlx..."
+  # Keep the third-party tap trusted (Homebrew 5.2/6.0 ignores untrusted taps by
+  # default) so the upgrade isn't silently skipped — covers installs predating the
+  # install-time trust. Best-effort: no-op on older brews.
+  brew trust --formula jundot/omlx/omlx 2>/dev/null || true
   brew update >/dev/null 2>&1 || warn "brew update returned non-zero (network? tap?) — continuing with cached formulas"
   if ! brew upgrade omlx 2>&1 | tail -10; then
     warn "brew upgrade omlx exited non-zero"
