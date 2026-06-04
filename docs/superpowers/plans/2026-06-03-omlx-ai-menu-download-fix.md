@@ -71,7 +71,19 @@ Whatever `/api/tags` lists as available MUST be pullable via `/api/pull`. Achiev
 ### Task 2a — Proxy: expose the pullable set  ✅ DONE (this session)
 - `GET /api/nomad/pullable` in `nomad_pull.py` returns `{"models": [<model_map keys>]}` (the Ollama-style names the proxy can resolve to MLX). Single source = `model_map.json`. The admin uses this to compute MLX-availability.
 
-### Task 2b — Admin: availability flag + render
+### Refinement (Chris, 2026-06-04) — resolve a pull-name, not a boolean
+
+Audit found the plan's family-match **boolean** breaks the plan's own symmetry
+goal: a model can match a pullable family yet have no pullable key at its
+recommended size (e.g. `deepseek-r1` — catalog shows `:1.5b`, but the only MLX
+builds are `:32b`/`:70b`; `qwen2.5-coder` — small Ollama tags, mapped only at
+7b+). Family-match would show such models "available," then the download would
+refuse. Chris chose **Option B**: annotate each catalog model with
+`mlxPullName` — the *exact* smallest pullable `model_map` key for its family —
+so **availability ⟺ pullability**, and the UI sends `mlxPullName` (never the
+catalog name/tag). A selectable model always resolves at the proxy.
+
+### Task 2b — Admin: availability flag + render  ✅ DONE (`70b818d`)
 **Files:**
 - Modify: `admin/app/services/ollama_service.ts` (`getAvailableModels`, ~213) — in oMLX mode (`env.get('NOMAD_AI_BACKEND')==='omlx'`), fetch `GET <OLLAMA_HOST>/api/nomad/pullable`, then annotate each catalog `NomadOllamaModel` with `mlxAvailable: boolean` = its family (base name) appears among the pullable keys' families (split key on `:`). Keep the full catalog; do NOT drop entries. Ollama backend path unchanged.
 - Modify: `admin/types/ollama.ts` — add optional `mlxAvailable?: boolean` to `NomadOllamaModel`.
@@ -79,20 +91,20 @@ Whatever `/api/tags` lists as available MUST be pullable via `/api/pull`. Achiev
 - Modify (error propagation): `admin/app/services/ollama_service.ts` `downloadModel` catch (~88–94) — surface the actual error (the stream `error` frame / thrown message) instead of generic "Failed to download model."; thread through `DownloadModelJob` `failedReason` so the UI explains *why*.
 - Verify: `cd admin && npm run typecheck` clean; logic of the availability annotation via `npx tsx`; render check on the mini.
 
-- [ ] availability flag derivation (family match against `/api/nomad/pullable`)
-- [ ] `mlxAvailable?` type addition
-- [ ] disable + annotate unavailable cards (both pages)
-- [ ] error propagation through downloadModel → failedReason
-- [ ] typecheck + tsx logic check + commit
+- [x] **pull-name derivation** — pure `resolveMlxPullName`/`withMlxPullNames` in `admin/util/mlx.ts` (smallest pullable key whose family == model.name); fetched once per `getAvailableModels` via `fetchMlxPullableKeys` (oMLX-gated, fails open on a proxy blip)
+- [x] `mlxPullName?: string` type addition (`admin/types/ollama.ts`) — supersedes the planned `mlxAvailable` boolean (presence = availability)
+- [x] disable + annotate unavailable cards (both pages) + show the MLX target on enabled cards
+- [x] error propagation — `downloadModel` returns the real error message → `DownloadModelJob` `failedReason` (was swallowed into a generic string)
+- [x] typecheck clean; resolver unit-tested (`tests/unit/mlx.spec.ts` for CI; standalone Node check 15/15 locally, since the Japa app-boot needs DB/Redis)
 
-## Task 3 — Easy-Setup sends the exact name, not the base
+## Task 3 — Easy-Setup sends the exact name, not the base  ✅ DONE (`70b818d`)
 
 **Files:**
-- Modify: `admin/inertia/pages/easy-setup/index.tsx` (~line 412 download dispatch, ~line 865 `toggleAiModel(model.name)`).
+- Modified: `admin/inertia/pages/easy-setup/index.tsx` (download dispatch + `toggleAiModel`).
 
-- [ ] **Step 1** — change the selection/dispatch to use the specific tag name (`model.tags[0].name`) rather than `model.name`, so the dispatched `modelName` is a pullable string in both backends. (Settings already uses `tag.name`.)
-- [ ] **Step 2** — `cd admin && npm run typecheck` clean.
-- [ ] **Step 3 — commit.**
+- [x] Selection stays keyed by the display name; a new `resolveDownloadTarget` maps it at dispatch — oMLX → `mlxPullName`, Ollama → `tags[0].name` (not the size-ambiguous base name; matches Settings).
+- [x] `npm run typecheck` clean.
+- [x] committed (`70b818d`, same commit as Task 2b — one coherent admin-side change).
 
 ## Task 4 — Verify end-to-end
 
