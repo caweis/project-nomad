@@ -2585,13 +2585,16 @@ EOF
   fi
 }
 
-# Pull a single model via Ollama's HTTP API, rendering our own progress line.
-# Args: model name, current index, total count, overall start timestamp.
+# Pull a single model via an Ollama-compatible HTTP API, rendering our own
+# progress line. Works against native Ollama (:11434) or the oMLX proxy (:11436)
+# — both speak the same /api/pull NDJSON (status/total/completed).
+# Args: model name, current index, total count, overall start timestamp,
+#       [endpoint base URL — defaults to http://127.0.0.1:11434].
 # Always-visible counter format:
 #   [2/4] qwen3:14b      pulling   42%   3845 MB / 9100 MB    elapsed 1m23s   total 4m07s
 # Falls back to per-line output (no \r) when stdout isn't a TTY (logging/piped).
 pull_one_model() {
-  local m="$1" idx="$2" tot="$3" overall_start="$4"
+  local m="$1" idx="$2" tot="$3" overall_start="$4" endpoint="${5:-http://127.0.0.1:11434}"
   local model_start; model_start="$(date +%s)"
   local last_pct=-1 last_status=""
   local cr; [[ -t 1 ]] && cr=$'\r' || cr=$'\n'
@@ -2650,7 +2653,7 @@ pull_one_model() {
       last_status="$status"
     fi
   done < <(
-    curl -fsSN -X POST http://127.0.0.1:11434/api/pull \
+    curl -fsSN -X POST "$endpoint/api/pull" \
       -H 'Content-Type: application/json' \
       -d "{\"name\":\"$m\",\"stream\":true}" 2>"$stderr_file"
     echo $? > "$rc_file"
@@ -4219,16 +4222,30 @@ cmd_models() {
       # Ollama (which isn't the active chat backend). Route pulls through the
       # proxy on :11436 instead so oMLX translates them to MLX format.
       if [[ "$BACKEND" == "omlx" ]]; then
-        local m body
+        # Route MLX pulls through the same progress renderer as native pulls,
+        # pointed at the oMLX proxy (:11436). The proxy emits Ollama-shape
+        # /api/pull NDJSON, so pull_one_model collapses it into one live
+        # progress line instead of dumping raw JSON to the terminal.
+        local m i=0 total ok_count=0 fail_count=0 overall_start
+        total="$(echo "$to_pull" | wc -w | tr -d ' ')"
+        overall_start="$(date +%s)"
         for m in $to_pull; do
-          log "pulling (MLX) $m via proxy…"
-          body="$(jq -nc --arg n "$m" '{name:$n}')"   # safe JSON (handles odd chars)
-          # -fS (not -s): surface errors AND stream the proxy's NDJSON progress so
-          # the user sees download advancement during a multi-GB MLX pull.
-          curl -fS -X POST http://127.0.0.1:11436/api/pull \
-            -H 'Content-Type: application/json' -d "$body" \
-            --no-buffer || warn "pull failed for $m"
+          i=$((i+1))
+          if pull_one_model "$m" "$i" "$total" "$overall_start" "http://127.0.0.1:11436"; then
+            ok "[$i/$total] $m ready"
+            ok_count=$((ok_count+1))
+          else
+            warn "[$i/$total] $m FAILED — retry: nomad models pull $m"
+            fail_count=$((fail_count+1))
+          fi
         done
+        local total_dur=$(( $(date +%s) - overall_start ))
+        if [[ "$fail_count" -eq 0 ]]; then
+          ok "all $ok_count MLX model(s) pulled in $((total_dur / 60))m$((total_dur % 60))s"
+        else
+          warn "$ok_count succeeded, $fail_count failed in $((total_dur / 60))m$((total_dur % 60))s"
+          [[ "$ok_count" -eq 0 ]] && exit 1
+        fi
         return 0
       fi
       local ok_count=0 fail_count=0
