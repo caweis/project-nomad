@@ -24,6 +24,10 @@ The proxy's `_resolve_mlx_repo` (`install/macos/omlx-proxy/vendor/src/routers/no
 
 `/api/tags` advertises **oMLX basenames** (e.g. `Qwen3-32B-4bit`, `gemma-3-12b-it-4bit`) — the basenames of the `model_map` *values* (`mlx-community/Qwen3-32B-4bit`, …). So there is a clean, deterministic correspondence between what `/api/tags` lists and the curated map — no heuristic needed.
 
+### Update 2026-06-03 (post-redis confirmation)
+
+The actual stuck job (`ab8648f2f475fdbe`) was `{"modelName":"gemma4:latest"}` — a **nonexistent** model (there is no Gemma 4). That pull would fail on any backend; the proxy correctly refuses it. So the *immediate* failure Chris saw was a bad name, NOT proof the menu fails for valid models. However, the namespace bug above is still **code-proven** for valid models (Easy-Setup base names + quant-suffixed tags miss the clean map keys), so this fix stands. Added scope: the admin swallows the proxy's real error (`refusing to pull unmapped model …`) into a generic "Failed to download model." — surface the actual stream error so a typo like `gemma4` gives useful feedback (Task 2).
+
 ## Design — symmetry
 
 Whatever `/api/tags` lists as available MUST be pullable via `/api/pull`. Achieve it with three coordinated changes:
@@ -34,7 +38,7 @@ Whatever `/api/tags` lists as available MUST be pullable via `/api/pull`. Achiev
 
 ---
 
-## Task 1 — Proxy: reverse-lookup bare oMLX basenames
+## Task 1 — Proxy: reverse-lookup bare oMLX basenames  ✅ DONE (34a0a2c, verified 8 cases)
 
 **Files:**
 - Modify: `install/macos/omlx-proxy/vendor/src/routers/nomad_pull.py` (`_resolve_mlx_repo`, ~line 43)
@@ -70,8 +74,9 @@ Whatever `/api/tags` lists as available MUST be pullable via `/api/pull`. Achiev
 - [ ] **Step 1** — read `getAvailableModels` (213–330) and the `/api/tags` shape (already known: `{models:[{name, ...}]}`). Decide the oMLX catalog shape (one `NomadOllamaModel` per pullable basename; `name`=basename, `tags:[{name: basename, size, …}]`).
 - [ ] **Step 2** — implement the oMLX branch (guard on `env.get('NOMAD_AI_BACKEND')==='omlx'`), returning the pullable set; keep the Ollama path unchanged.
 - [ ] **Step 3** — verify exact pullable names round-trip: the name the card sends == a name the proxy resolver now accepts (Task 1).
-- [ ] **Step 4** — `cd admin && npm run typecheck` clean.
-- [ ] **Step 5 — commit.**
+- [ ] **Step 4 — error propagation:** in `ollama_service.ts` `downloadModel` (catch ~88–94), surface the actual error (the proxy's stream `error` frame / the thrown message) instead of the generic "Failed to download model." So a nonexistent/unmapped name (e.g. `gemma4:latest`) yields "model not available" rather than an opaque failure. Thread it through `DownloadModelJob` `failedReason` so the UI can show it.
+- [ ] **Step 5** — `cd admin && npm run typecheck` clean.
+- [ ] **Step 6 — commit.**
 
 ## Task 3 — Easy-Setup sends the exact name, not the base
 
