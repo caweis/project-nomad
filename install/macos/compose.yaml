@@ -219,6 +219,30 @@ services:
       - ${NOMAD_DATA_ROOT}:/opt/project-nomad
       - nomad-update-shared:/shared
 
+  # Open WebUI — polished, browser-based chat UI (ChatGPT-style) over the local
+  # models, reachable from any LAN device at http://nomad.local:3000. Talks to
+  # the host's Ollama (:11434 — the user's own models) via host.docker.internal.
+  # Accounts + chat history live in the named 'open-webui' volume. The image
+  # ships its own HEALTHCHECK, so none is declared here. Independent of the AI
+  # backend: it serves whatever models the user has pulled into Ollama.
+  open-webui:
+    image: ${NOMAD_OPEN_WEBUI_IMAGE:-ghcr.io/open-webui/open-webui:main}
+    pull_policy: always
+    container_name: nomad_open-webui
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "3000:8080"
+    environment:
+      - OLLAMA_BASE_URL=${OPEN_WEBUI_OLLAMA_URL:-http://host.docker.internal:11434}
+    volumes:
+      - open-webui:/app/backend/data
+
 volumes:
   nomad-update-shared:
     driver: local
+  open-webui:
+    # Explicit name (not project-prefixed) so it reuses the volume created by the
+    # initial manual `docker run` — preserves the user's account + chat history.
+    name: open-webui

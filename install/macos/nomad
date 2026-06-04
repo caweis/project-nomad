@@ -434,7 +434,8 @@ resolve_lean_models() {
 }
 
 # Ports we rely on — system-check looks for collisions
-NOMAD_PORTS="8080 9999 11434 11435 11436 8000"
+# 3000 = Open WebUI (browser chat UI, compose-managed)
+NOMAD_PORTS="8080 9999 3000 11434 11435 11436 8000"
 
 # launchctl bootstrap stderr capture — mktemp (not a fixed /tmp path) to avoid
 # symlink/clobber + info-leak on multi-user macOS. Explicit /tmp/nomad-* template
