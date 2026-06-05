@@ -85,3 +85,21 @@ export type CheckLatestVersionResult = {
   latestVersion: string,
   message?: string
 }
+
+/**
+ * Result of GET /api/system/candidate-drive. `available` is true only when the
+ * host's drive-detect agent has written a marker for a non-active, full-library
+ * project-nomad drive that can be adopted. When false, the other fields are
+ * absent and the banner renders nothing.
+ */
+export type CandidateDriveResponse =
+  | { available: false }
+  | {
+      available: true
+      /** The drive's `…/project-nomad` data-root path on the host. */
+      path: string
+      /** Volume label, used in the banner copy. */
+      label: string
+      /** ISO-8601 UTC timestamp the host detected the drive. */
+      detectedAt?: string
+    }

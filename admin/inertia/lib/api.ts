@@ -2,7 +2,7 @@ import axios, { AxiosInstance } from 'axios'
 import { ListRemoteZimFilesResponse, ListZimFilesResponse } from '../../types/zim'
 import { ServiceSlim } from '../../types/services'
 import { FileEntry } from '../../types/files'
-import { CheckLatestVersionResult, SystemInformationResponse, SystemUpdateStatus } from '../../types/system'
+import { CandidateDriveResponse, CheckLatestVersionResult, SystemInformationResponse, SystemUpdateStatus } from '../../types/system'
 import { DownloadJobWithProgress, WikipediaState } from '../../types/downloads'
 import { EmbedJobWithProgress } from '../../types/rag'
 import type { CategoryWithStatus, CollectionWithStatus, ContentUpdateCheckResult, ResourceUpdateInfo } from '../../types/collections'
@@ -424,6 +424,13 @@ class API {
   async getSystemInfo() {
     return catchInternal(async () => {
       const response = await this.client.get<SystemInformationResponse>('/system/info')
+      return response.data
+    })()
+  }
+
+  async getCandidateDrive() {
+    return catchInternal(async () => {
+      const response = await this.client.get<CandidateDriveResponse>('/system/candidate-drive')
       return response.data
     })()
   }

@@ -4,9 +4,10 @@ import { DockerService } from '#services/docker_service'
 import { ServiceSlim } from '../../types/services.js'
 import logger from '@adonisjs/core/services/logger'
 import si from 'systeminformation'
-import { GpuHealthStatus, NomadDiskInfo, NomadDiskInfoRaw, SystemInformationResponse } from '../../types/system.js'
+import { CandidateDriveResponse, GpuHealthStatus, NomadDiskInfo, NomadDiskInfoRaw, SystemInformationResponse } from '../../types/system.js'
 import { SERVICE_NAMES } from '../../constants/service_names.js'
 import { readFileSync } from 'fs'
+import fs from 'node:fs/promises'
 import path, { join } from 'path'
 import { getAllFilesystems, getFile } from '../utils/fs.js'
 import axios from 'axios'
@@ -15,6 +16,14 @@ import KVStore from '#models/kv_store'
 import { KV_STORE_SCHEMA, KVStoreKey } from '../../types/kv_store.js'
 import { isNewerVersion } from '../utils/version.js'
 
+
+// Marker the host's drive-detect agent writes when a non-active, full-library
+// project-nomad drive is plugged in (and removes otherwise). Lives on the
+// bind-mounted storage volume — `process.cwd()` is /app in the container, so
+// this resolves to /app/storage/.candidate-drive.json (host
+// ${NOMAD_DATA_ROOT}/storage/.candidate-drive.json). Same base as
+// ollama_service.ts's MODELS_CACHE_FILE.
+const CANDIDATE_DRIVE_FILE = path.join(process.cwd(), 'storage', '.candidate-drive.json')
 
 @inject()
 export class SystemService {
@@ -65,6 +74,50 @@ export class SystemService {
 
     logger.warn('All internet status check attempts failed.')
     return false
+  }
+
+  /**
+   * Reads the candidate-drive marker the host's drive-detect agent maintains.
+   * The marker exists ONLY when a non-active, full-library project-nomad drive
+   * is plugged in, so "marker present" ⟺ "a drive is available to adopt".
+   *
+   * Fully defensive: a missing file (ENOENT), an unreadable file, or
+   * unparseable / malformed JSON all return `{ available: false }`. It never
+   * throws, so the polling banner degrades to "no drive" rather than erroring.
+   */
+  async getCandidateDrive(): Promise<CandidateDriveResponse> {
+    let raw: string
+    try {
+      raw = await fs.readFile(CANDIDATE_DRIVE_FILE, 'utf-8')
+    } catch {
+      // ENOENT (no drive) is the common case; any other read error is also
+      // treated as "no candidate" — never surface an error to the banner.
+      return { available: false }
+    }
+
+    try {
+      const parsed = JSON.parse(raw)
+      // Only trust the marker if it carries the two fields the banner needs.
+      if (
+        parsed &&
+        typeof parsed === 'object' &&
+        typeof parsed.path === 'string' &&
+        parsed.path.trim() !== '' &&
+        typeof parsed.label === 'string' &&
+        parsed.label.trim() !== ''
+      ) {
+        return {
+          available: true,
+          path: parsed.path,
+          label: parsed.label,
+          detectedAt: typeof parsed.detected_at === 'string' ? parsed.detected_at : undefined,
+        }
+      }
+    } catch {
+      // Malformed JSON — fall through to "no candidate".
+    }
+
+    return { available: false }
   }
 
   async getNvidiaSmiInfo(): Promise<Array<{ vendor: string; model: string; vram: number; }> | { error: string } | 'OLLAMA_NOT_FOUND' | 'BAD_RESPONSE' | 'UNKNOWN_ERROR'> {

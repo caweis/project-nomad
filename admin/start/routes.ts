@@ -172,6 +172,7 @@ router
   .group(() => {
     router.get('/debug-info', [SystemController, 'getDebugInfo'])
     router.get('/info', [SystemController, 'getSystemInfo'])
+    router.get('/candidate-drive', [SystemController, 'getCandidateDrive'])
     router.get('/internet-status', [SystemController, 'getInternetStatus'])
     router.get('/services', [SystemController, 'getServices'])
     router.post('/services/affect', [SystemController, 'affectService'])

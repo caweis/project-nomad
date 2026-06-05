@@ -25,6 +25,10 @@ export default class SystemController {
         return await this.systemService.getSystemInfo();
     }
 
+    async getCandidateDrive({ }: HttpContext) {
+        return await this.systemService.getCandidateDrive();
+    }
+
     async getServices({ }: HttpContext) {
         return await this.systemService.getServices({ installedOnly: true });
     }
