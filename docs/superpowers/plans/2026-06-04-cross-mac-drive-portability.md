@@ -1,6 +1,6 @@
 ---
 type: implementation-plan
-status: ready-to-execute
+status: implemented (host+admin) — all static gates green; pending push + T9 mini-verify
 date: 2026-06-04
 project: project-nomad (macOS/Apple-Silicon fork)
 feature: Cross-Mac drive portability — detect + offer-to-adopt + auto-reconcile
