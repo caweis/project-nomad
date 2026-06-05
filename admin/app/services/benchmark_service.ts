@@ -751,51 +751,93 @@ export class BenchmarkService {
       throw new Error(`Model does not exist and failed to download: ${modelResponse.message}`)
     }
 
-    // Run inference benchmark
-    const startTime = Date.now()
-
-      const response = await benchRequestWithRetry(() =>
-        axios.post(
-          `${ollamaAPIURL}/api/generate`,
-          {
-            model: AI_BENCHMARK_MODEL,
-            prompt: AI_BENCHMARK_PROMPT,
-            stream: false,
-          },
-          { timeout: 120000, ...BENCH_AXIOS_OPTS }
-        )
+    // Run inference benchmark.
+    //
+    // We measure TTFT and steady-state tok/s from STREAMED chunk-arrival
+    // timestamps on this (client) side — identically for every backend — and
+    // deliberately ignore the backends' self-reported durations. Native Ollama
+    // reports a decode-only eval_duration, but the oMLX proxy fabricates
+    // eval_duration from the FULL upstream wall-clock (model load + prefill +
+    // decode), which made oMLX look far slower than it actually is. A warm-up
+    // pass first loads the model so its load cost is excluded for both backends
+    // (Ollama keeps models warm via keep-alive; oMLX would otherwise cold-load).
+    try {
+      await axios.post(
+        `${ollamaAPIURL}/api/generate`,
+        { model: AI_BENCHMARK_MODEL, prompt: 'warm up', stream: false, options: { num_predict: 1 } },
+        { timeout: 120000, ...BENCH_AXIOS_OPTS }
       )
+    } catch {
+      // Warm-up is best-effort — the timed run below still works if it fails.
+    }
 
-      const endTime = Date.now()
-      const totalTime = (endTime - startTime) / 1000 // seconds
+    const startTime = Date.now()
+    let firstTokenTime = 0
+    let lastTokenTime = 0
+    let streamedChunks = 0
+    let finalEvalCount = 0
 
-      // Ollama returns eval_count (tokens generated) and eval_duration (nanoseconds)
-      if (response.data.eval_count && response.data.eval_duration) {
-        const tokenCount = response.data.eval_count
-        const evalDurationSeconds = response.data.eval_duration / 1e9
-        const tokensPerSecond = tokenCount / evalDurationSeconds
+    // Plain axios (not benchRequestWithRetry) so the retry wrapper can't consume
+    // the stream body; connectivity is already validated by the /api/tags check
+    // and the warm-up above.
+    const streamResponse = await axios.post(
+      `${ollamaAPIURL}/api/generate`,
+      { model: AI_BENCHMARK_MODEL, prompt: AI_BENCHMARK_PROMPT, stream: true },
+      { timeout: 120000, ...BENCH_AXIOS_OPTS, responseType: 'stream' }
+    )
 
-        // Time to first token from prompt_eval_duration
-        const ttft = response.data.prompt_eval_duration
-          ? response.data.prompt_eval_duration / 1e6 // Convert to ms
-          : (totalTime * 1000) / 2 // Estimate if not available
-
-        return {
-          ai_tokens_per_second: Math.round(tokensPerSecond * 100) / 100,
-          ai_model_used: AI_BENCHMARK_MODEL,
-          ai_time_to_first_token: Math.round(ttft * 100) / 100,
+    await new Promise<void>((resolve, reject) => {
+      const stream = streamResponse.data as NodeJS.ReadableStream
+      let buffer = ''
+      stream.on('data', (chunk: Buffer) => {
+        buffer += chunk.toString('utf8')
+        let nl = buffer.indexOf('\n')
+        while (nl >= 0) {
+          const line = buffer.slice(0, nl).trim()
+          buffer = buffer.slice(nl + 1)
+          nl = buffer.indexOf('\n')
+          if (!line) continue
+          let obj: { response?: string; eval_count?: number; error?: string }
+          try {
+            obj = JSON.parse(line)
+          } catch {
+            continue // ignore partial / non-JSON lines
+          }
+          if (obj.error) {
+            reject(new Error(obj.error))
+            return
+          }
+          if (typeof obj.response === 'string' && obj.response.length > 0) {
+            const now = Date.now()
+            if (!firstTokenTime) firstTokenTime = now
+            lastTokenTime = now
+            streamedChunks++
+          }
+          if (obj.eval_count) finalEvalCount = obj.eval_count
         }
-      }
+      })
+      stream.on('end', () => resolve())
+      stream.on('error', reject)
+    })
 
-      // Fallback calculation
-      const estimatedTokens = response.data.response?.split(' ').length * 1.3 || 100
-      const tokensPerSecond = estimatedTokens / totalTime
+    if (!firstTokenTime) {
+      throw new Error('AI benchmark produced no output tokens')
+    }
 
-      return {
-        ai_tokens_per_second: Math.round(tokensPerSecond * 100) / 100,
-        ai_model_used: AI_BENCHMARK_MODEL,
-        ai_time_to_first_token: Math.round((totalTime * 1000) / 2),
-      }
+    // Token count: the backend's eval_count when present, else streamed chunks.
+    // Decode rate: tokens over the wall-clock span from first to last token
+    // (prefill excluded). TTFT: first token arrival minus request start (prefill
+    // only — model load was excluded by the warm-up pass).
+    const tokenCount = finalEvalCount || streamedChunks
+    const decodeSeconds = Math.max((lastTokenTime - firstTokenTime) / 1000, 0.001)
+    const tokensPerSecond = tokenCount / decodeSeconds
+    const ttftMs = firstTokenTime - startTime
+
+    return {
+      ai_tokens_per_second: Math.round(tokensPerSecond * 100) / 100,
+      ai_model_used: AI_BENCHMARK_MODEL,
+      ai_time_to_first_token: Math.round(ttftMs * 100) / 100,
+    }
     } catch (error) {
       throw new Error(`AI benchmark failed: ${error.message}`)
     }
