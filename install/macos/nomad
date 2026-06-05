@@ -3819,6 +3819,7 @@ set -uo pipefail
 ENV_FILE="$1"
 NOMAD_BIN="$2"
 SECRETS_DIR="$3"
+COMPOSE_BASE="$4"
 LOG="$HOME/Library/Logs/nomad-drive-detect.action.log"
 
 log() { /usr/bin/printf '[%s] %s\n' "$(/bin/date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG"; }
@@ -3876,7 +3877,55 @@ else
   fi
 fi
 
-# ── Job 2: eject-revert ── (added by Task 4)
+# ── Job 2: eject-revert ───────────────────────────────────────────────────
+# If the active data-root drive has been ejected (its path is gone) AND a
+# previous root was saved (NOMAD_PREV_DATA_ROOT, set by `nomad adopt-drive`),
+# fall back to that previous root so this Mac returns to its own library.
+# WatchPaths(/Volumes) fires on unmount, so this runs promptly; the 60s
+# backstop covers any missed event. Guarded: only reverts when the active
+# drive is actually gone, a prev root is set, and the prev root still exists.
+if [[ ! -d "$DATA_ROOT" ]]; then
+  PREV_ROOT="$(/usr/bin/grep '^NOMAD_PREV_DATA_ROOT=' "$ENV_FILE" | /usr/bin/cut -d= -f2-)"
+  if [[ -n "$PREV_ROOT" && -d "$PREV_ROOT" ]]; then
+    log "active data root gone ($DATA_ROOT) — reverting to previous root: $PREV_ROOT"
+
+    # Re-point NOMAD_DATA_ROOT to the previous root and drop the saved prev
+    # marker (inline edit, mirrors the host script's _env_upsert / delete).
+    /usr/bin/sed -i.bak \
+      -e "s|^NOMAD_DATA_ROOT=.*|NOMAD_DATA_ROOT=$PREV_ROOT|" \
+      -e "/^NOMAD_PREV_DATA_ROOT=/d" \
+      "$ENV_FILE" 2>/dev/null && /bin/rm -f "$ENV_FILE.bak"
+
+    # Restart the content stack so containers re-bind to the previous root's
+    # storage/. --force-recreate is required because the bind-mount source just
+    # changed in .env. Locate docker the same way kiwix-self-heal does.
+    if ! command -v docker >/dev/null 2>&1; then
+      for d in /opt/homebrew/bin/docker /usr/local/bin/docker /Applications/OrbStack.app/Contents/MacOS/xbin/docker; do
+        [[ -x "$d" ]] && { export PATH="$(dirname "$d"):$PATH"; break; }
+      done
+    fi
+    if command -v docker >/dev/null 2>&1 && docker version >/dev/null 2>&1; then
+      # AI backend determines the admin's OLLAMA_HOST interpolation (matches the
+      # host `dc` wrapper). Default to native Ollama if unset.
+      be="$(/usr/bin/grep '^NOMAD_AI_BACKEND=' "$ENV_FILE" 2>/dev/null | /usr/bin/cut -d= -f2- || true)"
+      if [[ "$be" == "omlx" ]]; then ollama_url="http://host.docker.internal:11436"; else ollama_url="http://host.docker.internal:11434"; fi
+      NOMAD_OLLAMA_URL="$ollama_url" docker compose -f "$COMPOSE_BASE" --env-file "$ENV_FILE" up -d --force-recreate \
+        >> "$LOG" 2>&1 || log "revert: dc up -d --force-recreate returned non-zero"
+    else
+      log "revert: docker not reachable — stack will rebind on next 'nomad up'"
+    fi
+
+    # Reconcile the catalog so it reflects the reverted root, not the absent
+    # drive's files (STL prune cleans the drive's phantom rows). Delegate to the
+    # host nomad binary — it re-takes its own lock; release ours first so the
+    # two don't race over the same work.
+    /bin/rm -rf "$LOCK" 2>/dev/null || true
+    trap - EXIT
+    "$NOMAD_BIN" reconcile >> "$LOG" 2>&1 || log "revert: reconcile returned non-zero"
+    log "revert complete — active library is now $PREV_ROOT"
+    exit 0
+  fi
+fi
 
 exit 0
 DRIVE_DETECT_EOF
@@ -3901,6 +3950,7 @@ DRIVE_DETECT_EOF
     <string>${ENV_FILE}</string>
     <string>${nomad_bin}</string>
     <string>${SECRETS_DIR}</string>
+    <string>${COMPOSE_BASE}</string>
   </array>
   <key>WatchPaths</key>
   <array>
