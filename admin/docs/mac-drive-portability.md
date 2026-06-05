@@ -66,21 +66,20 @@ Two paths, depending on whether the destination Mac already has N.O.M.A.D. insta
 
 ### Destination Mac already has N.O.M.A.D.
 
-Plug the drive in. What picks up on its own, and what needs a nudge:
+Plug the drive in. Within a few seconds N.O.M.A.D. detects it and shows an **"Adopt this drive?"** banner across the Command Center and Settings:
 
-- **AI models** — immediate. The Ollama launcher scans `/Volumes/` at startup, so the drive's models are visible to the running daemon with no action from you.
-- **Information Library (ZIM)** — automatic *if Kiwix is already installed and running* on that Mac: the kiwix-self-heal LaunchAgent (every 60 seconds) reloads Kiwix to serve the drive's ZIM files. If Kiwix was never installed on this Mac there's no container to heal — install it first.
-- **Workshop (STL)** — **not** automatic. The STL catalog lives in this Mac's database, not on the drive, so run `nomad stl scan` (or the Rescan button in Workshop) to index the drive's STL files.
+> **A NOMAD drive is plugged in** — Use '<drive-name>' as this Mac's library?
 
-If the drive mounts under a different path on the second Mac (e.g. `/Volumes/DriveA` vs `/Volumes/DriveA 1`), the drive-resolution logic — in both the generated Ollama launcher and the `nomad` CLI — handles it by scanning `/Volumes/` for any drive containing a `project-nomad/` directory.
+Click **Adopt this drive** and N.O.M.A.D. takes care of the rest:
 
-If you want the second Mac to actually USE this drive going forward (rather than its own), point its `.env` at the new path:
+1. It re-points this Mac's data root at the drive and restarts the content services so they bind to the drive's `storage/`. This is a brief blip — a few seconds of downtime while the stack recreates.
+2. It then reconciles the catalog against the drive's files, so the drive's **entire** library shows up — Information Library (ZIM), Workshop (STL), Maps, and AI models all appear, with no manual rescan. In particular you do **not** need to run `nomad stl scan` — the adopt flow runs the Workshop index for you.
 
-```
-nomad install --data-root /Volumes/<drive-name>/project-nomad
-```
+The whole adopt usually takes under a minute. The banner is dismissible if you'd rather not adopt; ignore it and this Mac keeps using its own library, with only the drive's AI models visible (the Ollama launcher scans `/Volumes/` independently).
 
-That rewires N.O.M.A.D. on the second Mac to use this drive as its primary data root.
+If the drive mounts under a different path on the second Mac (e.g. `/Volumes/DriveA` vs `/Volumes/DriveA 1`), the detection and adopt logic handle it — they scan `/Volumes/` for a drive carrying a `project-nomad/` library, so the path it mounts at doesn't matter.
+
+**Drive-wins while plugged; ejecting reverts.** Adopting makes the drive this Mac's active library for as long as it stays plugged in. When you eject the drive, N.O.M.A.D. notices it's gone and reverts to this Mac's own library — restarting the content stack and re-reconciling so the catalog reflects the internal library again, with no phantom entries for the now-absent drive. Until that revert completes, the same "Unplugging the drive" behavior above applies (content services error until the revert finishes).
 
 ### Destination Mac doesn't have N.O.M.A.D. yet
 
