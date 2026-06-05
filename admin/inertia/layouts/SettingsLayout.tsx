@@ -13,6 +13,7 @@ import {
 } from '@tabler/icons-react'
 import { usePage } from '@inertiajs/react'
 import StyledSidebar from '~/components/StyledSidebar'
+import CandidateDriveBanner from '~/components/CandidateDriveBanner'
 import { getServiceLink } from '~/lib/navigation'
 import useServiceInstalledStatus from '~/hooks/useServiceInstalledStatus'
 import { SERVICE_NAMES } from '../../constants/service_names'
@@ -49,7 +50,10 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
   return (
     <div className="min-h-screen flex flex-row bg-stone-50/90">
       <StyledSidebar title="Settings" items={navigation} />
-      {children}
+      <div className="flex-1 flex flex-col min-w-0">
+        <CandidateDriveBanner />
+        {children}
+      </div>
     </div>
   )
 }

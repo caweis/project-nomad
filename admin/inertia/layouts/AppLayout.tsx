@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import Footer from '~/components/Footer'
+import CandidateDriveBanner from '~/components/CandidateDriveBanner'
 import ChatButton from '~/components/chat/ChatButton'
 import ChatModal from '~/components/chat/ChatModal'
 import useServiceInstalledStatus from '~/hooks/useServiceInstalledStatus'
@@ -33,7 +34,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           "text-desert-green font-semibold h-[1.5px] bg-desert-green border-none",
           window.location.pathname !== '/home' ? "mt-12 md:mt-0" : "mt-0"
         )} />
-      <div className="flex-1 w-full bg-desert">{children}</div>
+      <div className="flex-1 w-full bg-desert">
+        <CandidateDriveBanner />
+        {children}
+      </div>
       <Footer />
 
       {aiAssistantInstalled && (
