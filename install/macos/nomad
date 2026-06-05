@@ -3710,6 +3710,7 @@ run_cmd() {
     upgrade-all)     "$NOMAD_BIN" upgrade ;;
     reset-ollama)    "$NOMAD_BIN" reset-ollama ;;
     fix-kiwix)       "$NOMAD_BIN" fix-kiwix ;;
+    adopt-drive)     "$NOMAD_BIN" adopt-drive ;;
     self-update)     "$NOMAD_BIN" self-update ;;
     *)               echo "DISALLOWED cmd: $cmd" >&2; return 126 ;;
   esac

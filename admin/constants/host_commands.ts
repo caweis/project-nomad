@@ -15,6 +15,7 @@ export const HOST_COMMANDS = [
   'upgrade-all',
   'reset-ollama',
   'fix-kiwix',
+  'adopt-drive',
   'self-update',
 ] as const
 
