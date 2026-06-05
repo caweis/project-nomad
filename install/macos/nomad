@@ -291,6 +291,23 @@ HOST_BRIDGE_LABEL="com.projectnomad.host-command-bridge"
 HOST_BRIDGE_PLIST="$HOME/Library/LaunchAgents/${HOST_BRIDGE_LABEL}.plist"
 HOST_BRIDGE_SCRIPT="$SECRETS_DIR/host-command-bridge.sh"
 
+# Sixth LaunchAgent: cross-Mac drive-detect. Plug a `project-nomad` data drive
+# into another NOMAD Mac and this agent notices it and offers to adopt its
+# library. launchd has no on-mount/on-unmount trigger, so the agent fires on
+# WatchPaths(/Volumes) (mount + unmount both touch /Volumes) with a 60s
+# StartInterval backstop. The script (lock-guarded, idempotent):
+#   • detects a non-active full-library drive → writes the candidate marker
+#     ${NOMAD_DATA_ROOT}/storage/.candidate-drive.json (admin reads it via the
+#     bind-mounted /app/storage and surfaces an Adopt banner); else removes it.
+#   • eject-revert: if the active data-root drive is gone and a previous root
+#     was saved (NOMAD_PREV_DATA_ROOT), reverts .env + restarts the stack +
+#     reconciles the catalog so the Mac falls back to its own library cleanly.
+# Adoption itself is never automatic — the agent only detects; the user clicks
+# Adopt, which runs `nomad adopt-drive` via the host-command bridge.
+DRIVE_DETECT_LABEL="com.projectnomad.drive-detect"
+DRIVE_DETECT_PLIST="$HOME/Library/LaunchAgents/${DRIVE_DETECT_LABEL}.plist"
+DRIVE_DETECT_SCRIPT="$SECRETS_DIR/drive-detect.sh"
+
 OMLX_LABEL="com.projectnomad.omlx"
 OMLX_PLIST="$HOME/Library/LaunchAgents/${OMLX_LABEL}.plist"
 PROXY_LABEL="com.projectnomad.ollama-proxy"
@@ -3777,6 +3794,138 @@ EOF
   fi
 }
 
+# Cross-Mac drive-detect LaunchAgent. Writes a self-contained drive-detect.sh
+# and a plist that fires on WatchPaths(/Volumes) (mount + unmount both touch it)
+# with a 60s StartInterval backstop. Mirrors step_install_host_command_bridge:
+# quoted heredoc (nothing expands at install time), install-time values passed
+# as ProgramArguments, chmod 644 plist, bootout-first, launchctl bootstrap.
+step_install_drive_detect() {
+  section "Cross-Mac drive-detect LaunchAgent (detect + offer-to-adopt portable libraries)"
+
+  cat > "$DRIVE_DETECT_SCRIPT" <<'DRIVE_DETECT_EOF'
+#!/usr/bin/env bash
+# drive-detect.sh — fired by launchd on WatchPaths(/Volumes) + every 60s.
+# Two jobs (lock-guarded, idempotent):
+#   1. Detect a plugged-in, non-active FULL-LIBRARY project-nomad drive and
+#      write a candidate marker the admin reads to offer an Adopt banner; if no
+#      such drive is present, remove the marker.
+#   2. Eject-revert: if the active data-root drive has gone away and a previous
+#      root was saved, revert to it (handled via `nomad reconcile`/revert path).
+# Adoption is never automatic — this script only ever DETECTS. The user clicks
+# Adopt, which runs `nomad adopt-drive` via the host-command bridge.
+
+set -uo pipefail
+
+ENV_FILE="$1"
+NOMAD_BIN="$2"
+SECRETS_DIR="$3"
+LOG="$HOME/Library/Logs/nomad-drive-detect.action.log"
+
+log() { /usr/bin/printf '[%s] %s\n' "$(/bin/date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG"; }
+
+# mkdir-based lock — a mount storm or an overlapping 60s tick must not run two
+# passes at once. Stale locks (owning pid gone) are reclaimed.
+LOCK="$SECRETS_DIR/.lock-drive-detect"
+if ! mkdir "$LOCK" 2>/dev/null; then
+  owner=""
+  [[ -f "$LOCK/pid" ]] && owner="$(cat "$LOCK/pid" 2>/dev/null)"
+  if [[ -n "$owner" ]] && ! kill -0 "$owner" 2>/dev/null; then
+    rm -rf "$LOCK" 2>/dev/null || true
+    mkdir "$LOCK" 2>/dev/null || exit 0
+  else
+    exit 0   # another pass is running — skip this tick
+  fi
+fi
+echo $$ > "$LOCK/pid" 2>/dev/null || true
+trap 'rm -rf "$LOCK" 2>/dev/null || true' EXIT
+
+[[ -f "$ENV_FILE" ]] || exit 0
+DATA_ROOT="$(/usr/bin/grep '^NOMAD_DATA_ROOT=' "$ENV_FILE" | /usr/bin/cut -d= -f2-)"
+[[ -n "$DATA_ROOT" ]] || exit 0
+
+MARKER="$DATA_ROOT/storage/.candidate-drive.json"
+
+# ── Job 1: candidate detection ────────────────────────────────────────────
+# A candidate is a /Volumes/* drive with project-nomad/storage (a full library)
+# whose project-nomad path is NOT the current active data root.
+candidate=""
+for v in /Volumes/*; do
+  cand="$v/project-nomad"
+  [[ -d "$cand/storage" ]] || continue       # full library only (not models-only)
+  [[ "$cand" == "$DATA_ROOT" ]] && continue   # already the active root
+  candidate="$cand"
+  break
+done
+
+if [[ -n "$candidate" ]]; then
+  label="$(/usr/bin/basename "$(/usr/bin/dirname "$candidate")")"   # the /Volumes/<name>
+  detected_at="$(/bin/date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  # Only the storage/ dir is bind-mounted into admin, so the marker must live
+  # under the ACTIVE data root's storage (the one admin already mounts).
+  if [[ -d "$DATA_ROOT/storage" ]]; then
+    tmp="$(/usr/bin/mktemp)"
+    /usr/bin/printf '{"path":"%s","label":"%s","detected_at":"%s"}\n' \
+      "$candidate" "$label" "$detected_at" > "$tmp"
+    /bin/mv "$tmp" "$MARKER" 2>/dev/null || /bin/rm -f "$tmp"
+    log "candidate drive present: $candidate (label=$label)"
+  fi
+else
+  if [[ -f "$MARKER" ]]; then
+    /bin/rm -f "$MARKER" 2>/dev/null || true
+    log "no candidate drive — marker cleared"
+  fi
+fi
+
+# ── Job 2: eject-revert ── (added by Task 4)
+
+exit 0
+DRIVE_DETECT_EOF
+  chmod 755 "$DRIVE_DETECT_SCRIPT"
+  ok "drive-detect script: $DRIVE_DETECT_SCRIPT"
+
+  # Resolve nomad binary path via the symlink (survives self-update bundle moves).
+  local nomad_bin; nomad_bin="$(command -v nomad 2>/dev/null || echo "$HERE/nomad")"
+
+  # LaunchAgent — WatchPaths(/Volumes) fires on mount + unmount; StartInterval
+  # 60 is the backstop for missed events / boot. launchd has NO StartOnMount.
+  cat > "$DRIVE_DETECT_PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>            <string>${DRIVE_DETECT_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>${DRIVE_DETECT_SCRIPT}</string>
+    <string>${ENV_FILE}</string>
+    <string>${nomad_bin}</string>
+    <string>${SECRETS_DIR}</string>
+  </array>
+  <key>WatchPaths</key>
+  <array>
+    <string>/Volumes</string>
+  </array>
+  <key>StartInterval</key>    <integer>60</integer>
+  <key>RunAtLoad</key>        <true/>
+  <key>StandardOutPath</key>  <string>${HOME}/Library/Logs/nomad-drive-detect.out.log</string>
+  <key>StandardErrorPath</key><string>${HOME}/Library/Logs/nomad-drive-detect.err.log</string>
+</dict>
+</plist>
+EOF
+  chmod 644 "$DRIVE_DETECT_PLIST"
+
+  if launchctl print "$LA_TARGET/$DRIVE_DETECT_LABEL" >/dev/null 2>&1; then
+    launchctl bootout "$LA_TARGET/$DRIVE_DETECT_LABEL" 2>/dev/null || true
+    sleep 1
+  fi
+  if launchctl bootstrap "$LA_TARGET" "$DRIVE_DETECT_PLIST" 2>/dev/null; then
+    ok "drive-detect loaded (WatchPaths /Volumes + 60s backstop — offers to adopt plugged-in libraries)"
+  else
+    warn "couldn't bootstrap drive-detect — plugging in a NOMAD drive won't surface an Adopt banner"
+  fi
+}
+
 # Build a ZIM file from install/macos/help/ HTML content + drop into the data
 # drive's kiwix storage. kiwix-serve picks it up on its next startup (or via
 # the kiwix-self-heal LaunchAgent's auto-reload pass). Result: distribution
@@ -4036,6 +4185,7 @@ cmd_install() {
   step_install_kiwix_self_heal     # background daemon that quarantines partial ZIMs so kiwix never crash-loops
   step_install_bonjour_advertise   # advertise admin via mDNS so other devices find it in Safari Bonjour menu
   step_install_host_command_bridge # admin UI -> host nomad commands (Upgrade Ollama button etc.)
+  step_install_drive_detect        # detect a plugged-in NOMAD library drive + offer to adopt it (cross-Mac portability)
   step_build_distro_help_zim       # build distribution help ZIM, drop into kiwix's library so it's browsable in the UI
 
   # Admin is now usable. Print the URL banner BEFORE the long model pull so the
@@ -4960,7 +5110,7 @@ cmd_uninstall() {
 
   # 3. Bootout LaunchAgents + kill any orphan ollama
   for label in "$LA_LABEL" "$PATCHER_LABEL" "$KIWIX_SELF_HEAL_LABEL" "$BONJOUR_LABEL" "$HOST_BRIDGE_LABEL" \
-               "$OMLX_LABEL" "$PROXY_LABEL" "$EMBED_LABEL"; do
+               "$DRIVE_DETECT_LABEL" "$OMLX_LABEL" "$PROXY_LABEL" "$EMBED_LABEL"; do
     if launchctl print "$LA_TARGET/$label" >/dev/null 2>&1; then
       launchctl bootout "$LA_TARGET/$label" 2>/dev/null || true
       sleep 1
@@ -4971,10 +5121,10 @@ cmd_uninstall() {
   pkill -f 'uvicorn src.main:app' 2>/dev/null || true  # oMLX proxy orphan
   pkill -f 'dns-sd -R NOMAD Command Center' 2>/dev/null || true
   for plist in "$LA_PLIST" "$PATCHER_PLIST" "$KIWIX_SELF_HEAL_PLIST" "$BONJOUR_PLIST" "$HOST_BRIDGE_PLIST" \
-               "$OMLX_PLIST" "$PROXY_PLIST" "$EMBED_PLIST"; do
+               "$DRIVE_DETECT_PLIST" "$OMLX_PLIST" "$PROXY_PLIST" "$EMBED_PLIST"; do
     [[ -f "$plist" ]] && rm -f "$plist" && ok "removed $plist"
   done
-  for script in "$PATCHER_SCRIPT" "$KIWIX_SELF_HEAL_SCRIPT" "$HOST_BRIDGE_SCRIPT"; do
+  for script in "$PATCHER_SCRIPT" "$KIWIX_SELF_HEAL_SCRIPT" "$HOST_BRIDGE_SCRIPT" "$DRIVE_DETECT_SCRIPT"; do
     [[ -f "$script" ]] && rm -f "$script"
   done
   # oMLX-stack generated artifacts: proxy venv + embed model cache
@@ -5303,6 +5453,67 @@ _resolve_drive_models() {
     fi
   done
   echo ""
+}
+
+# Resolve a plugged-in FULL-LIBRARY candidate drive for cross-Mac adoption.
+# Mirrors _resolve_drive_models, but matches `project-nomad/storage` (a full
+# library — ZIM/STL/Maps/Qdrant), NOT just `ollama-models` (models already
+# cross over via the launcher's own /Volumes scan, so a models-only drive is
+# not a candidate). Echoes the `…/project-nomad` path of the first matching
+# drive, or "" if none. Excludes:
+#   • the drive whose project-nomad path == the current NOMAD_DATA_ROOT (it's
+#     already the active root — nothing to adopt).
+#   • models-only drives (no storage/ dir).
+# Argument-free and resolves the drive on the host — the web layer never passes
+# a path, so the adopt bridge command stays injection-free.
+_resolve_candidate_drive() {
+  local configured=""
+  [[ -f "$ENV_FILE" ]] && configured="$(grep '^NOMAD_DATA_ROOT=' "$ENV_FILE" | cut -d= -f2-)"
+  local v cand
+  for v in /Volumes/*; do
+    cand="$v/project-nomad"
+    # Require a full library (storage/), not a models-only drive.
+    [[ -d "$cand/storage" ]] || continue
+    # Skip the drive that's already the active data root.
+    [[ -n "$configured" && "$cand" == "$configured" ]] && continue
+    echo "$cand"; return 0
+  done
+  echo ""
+}
+
+# Lock guard for long-running host actions (drive-detect.sh, reconcile,
+# adopt-drive). A mount storm or an overlapping 60s WatchPaths tick must never
+# launch two restarts/scans at once. mkdir is atomic on every filesystem, so it
+# is a portable mutex with no flock dependency. Stale locks (process gone) are
+# reclaimed. Usage:
+#   _acquire_lock NAME || return/exit   # caller decides; sets _LOCK_DIR on success
+#   ... work ...
+#   _release_lock
+_LOCK_DIR=""
+_acquire_lock() {
+  local name="$1"
+  local lock="$SECRETS_DIR/.lock-$name"
+  if mkdir "$lock" 2>/dev/null; then
+    echo $$ > "$lock/pid" 2>/dev/null || true
+    _LOCK_DIR="$lock"
+    return 0
+  fi
+  # Lock exists — reclaim if the owning process is gone.
+  local owner=""
+  [[ -f "$lock/pid" ]] && owner="$(cat "$lock/pid" 2>/dev/null)"
+  if [[ -n "$owner" ]] && ! kill -0 "$owner" 2>/dev/null; then
+    rm -rf "$lock" 2>/dev/null || true
+    if mkdir "$lock" 2>/dev/null; then
+      echo $$ > "$lock/pid" 2>/dev/null || true
+      _LOCK_DIR="$lock"
+      return 0
+    fi
+  fi
+  return 1
+}
+_release_lock() {
+  [[ -n "$_LOCK_DIR" ]] && rm -rf "$_LOCK_DIR" 2>/dev/null || true
+  _LOCK_DIR=""
 }
 
 # Resolve the active install bundle dir. Precedence: NOMAD_BUNDLE_DIR in .env
