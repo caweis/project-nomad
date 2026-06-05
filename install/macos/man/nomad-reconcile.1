@@ -1,0 +1,57 @@
+.Dd 2026-06-04
+.Dt NOMAD-RECONCILE 1
+.Os
+.Sh NAME
+.Nm nomad-reconcile
+.Nd re-sync the catalog to the current data root
+.Sh SYNOPSIS
+.Nm nomad reconcile
+.Sh DESCRIPTION
+.Nm nomad reconcile
+re-synchronizes the catalog with the files under the active
+.Sy NOMAD_DATA_ROOT .
+The catalog
+.Pq MySQL
+lives on this Mac's internal disk and stays there even after the data root
+changes, so after adopting or reverting a drive the catalog must be brought
+back in line with whatever files are actually present.
+It takes no arguments and is idempotent.
+.Pp
+The command performs the following steps:
+.Bl -enum -width Ds
+.It
+Brings the content stack up against the current data root
+.Pq Ic docker compose up -d .
+.It
+Waits for the admin service to be reachable.
+.It
+Triggers a Workshop
+.Pq STL
+rescan, which adds catalog rows for files now present and removes rows for
+files that are gone.
+The rescan runs only after the admin service is up against the correct data
+root, so it never prunes the catalog against a stale or unmounted library.
+.It
+Runs the Kiwix self-heal pass so the Information Library reloads any ZIM files
+the current data root carries
+.Pq see Xr nomad-fix-kiwix 1 .
+.El
+.Pp
+.Nm nomad reconcile
+does not change which services are marked installed: the admin service derives
+that from the live container list on its own, so reconcile leaves it alone.
+It runs automatically as the final step of
+.Xr nomad-adopt-drive 1
+and when a drive is ejected and the previous library is restored; run it by
+hand if the catalog ever looks out of step with the files on the active data
+root.
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic nomad reconcile
+Re-sync the catalog to the files under the active data root.
+.El
+.Sh SEE ALSO
+.Xr nomad 1 ,
+.Xr nomad-adopt-drive 1 ,
+.Xr nomad-fix-kiwix 1 ,
+.Xr nomad-stl 1

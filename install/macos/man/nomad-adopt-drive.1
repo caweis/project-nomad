@@ -1,0 +1,71 @@
+.Dd 2026-06-04
+.Dt NOMAD-ADOPT-DRIVE 1
+.Os
+.Sh NAME
+.Nm nomad-adopt-drive
+.Nd adopt a plugged-in NOMAD library drive as this Mac's library
+.Sh SYNOPSIS
+.Nm nomad adopt-drive
+.Sh DESCRIPTION
+.Nm nomad adopt-drive
+makes a plugged-in
+.Sy project-nomad
+data drive the active library for this Mac, so its entire library
+.Pq Information Library, Workshop, Maps, AI models
+appears here.
+It takes no arguments: it re-scans
+.Pa /Volumes
+for a single drive carrying a full
+.Pa project-nomad/storage
+library and adopts that one.
+A drive that carries only AI models
+.Pq no Pa storage No directory
+is not adopted, because models already cross over to any Mac on their own.
+.Pp
+The command runs the following steps, and is idempotent
+.Pq adopting the drive that is already active is a no-op :
+.Bl -enum -width Ds
+.It
+Saves the current data root as
+.Sy NOMAD_PREV_DATA_ROOT
+so the library can be restored automatically when the drive is ejected.
+.It
+Re-points
+.Sy NOMAD_DATA_ROOT
+to the drive's
+.Pa project-nomad
+path.
+.It
+Restarts the content stack
+.Pq Ic docker compose up -d --force-recreate
+so the containers re-bind to the drive's
+.Pa storage
+directory.
+.It
+Waits for the admin service to come back up against the new data root.
+.It
+Reconciles the catalog to the drive's files
+.Pq see Xr nomad-reconcile 1 ,
+so the Workshop, Information Library, Maps, and models all surface.
+.El
+.Pp
+Only one data root is active at a time, so adopting a drive replaces the
+previous library for as long as the drive stays plugged in.
+Eject the drive and this Mac reverts to its own library automatically.
+The drive's catalog
+.Pq MySQL
+stays on this Mac's internal disk; the drive carries the files, which is why
+the reconcile step is needed.
+.Pp
+This command is also exposed in the Command Center as the
+.Dq Adopt this drive
+button, which runs it on the host through the host-command bridge.
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic nomad adopt-drive
+Adopt the single plugged-in NOMAD library drive and surface its full library.
+.El
+.Sh SEE ALSO
+.Xr nomad 1 ,
+.Xr nomad-reconcile 1 ,
+.Xr nomad-up 1
