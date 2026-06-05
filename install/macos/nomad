@@ -6088,6 +6088,138 @@ cmd_system() {
   esac
 }
 
+# Adopt a plugged-in cross-Mac NOMAD library drive: re-point the active data
+# root to it, restart the content stack so containers re-bind to the drive's
+# storage/, then reconcile the catalog so the full library (ZIM + STL + Maps +
+# models) surfaces. Idempotent + lock-guarded.
+#
+# Argument-free by design — it re-resolves the single candidate drive itself
+# (_resolve_candidate_drive), so the host-command bridge never passes a path
+# from the web layer (no injection surface; matches the existing bridge model).
+#
+# Eject-revert relies on NOMAD_PREV_DATA_ROOT, saved here before the re-point,
+# so the drive-detect agent can fall back to this Mac's own library on unmount.
+cmd_adopt_drive() {
+  section "Adopt cross-Mac NOMAD library drive"
+
+  if ! _acquire_lock adopt; then
+    warn "another adopt/reconcile is already running — skipping"
+    return 0
+  fi
+  # shellcheck disable=SC2064
+  trap '_release_lock' RETURN
+
+  ensure_docker_path
+
+  local drive; drive="$(_resolve_candidate_drive)"
+  [[ -n "$drive" ]] || die "no plugged-in NOMAD library drive found to adopt.
+Plug in a drive that contains a 'project-nomad/storage' library and try again."
+
+  local current=""
+  [[ -f "$ENV_FILE" ]] && current="$(grep '^NOMAD_DATA_ROOT=' "$ENV_FILE" | cut -d= -f2-)"
+  [[ -n "$current" ]] || die "NOMAD_DATA_ROOT not set in $ENV_FILE — run 'nomad install' first"
+
+  if [[ "$drive" == "$current" ]]; then
+    ok "drive $drive is already the active data root — nothing to adopt"
+    return 0
+  fi
+
+  log "adopting drive: $drive (was: $current)"
+
+  # 1. Save the current root so eject-revert can fall back to it.
+  _env_upsert NOMAD_PREV_DATA_ROOT "$current"
+  # 2. Re-point the active data root to the drive.
+  _env_upsert NOMAD_DATA_ROOT "$drive"
+
+  # 3. Restart the content stack so containers re-bind to the drive's storage/.
+  #    --force-recreate is required: a plain `up -d` won't rebuild containers
+  #    whose bind-mount source (NOMAD_DATA_ROOT) just changed in .env.
+  log "restarting content stack against the adopted drive..."
+  dc up -d --force-recreate || warn "dc up -d --force-recreate returned non-zero — continuing"
+
+  # 4. Wait for admin to be reachable against the NEW root.
+  api_check_up
+
+  # 5. Reconcile the catalog to the drive's files (STL scan runs only now that
+  #    admin is up against the new root — see cmd_reconcile R2 note). We release
+  #    our lock first so reconcile can take its own (locks aren't reentrant).
+  _release_lock
+  cmd_reconcile
+
+  # 6. Clear the candidate marker — the drive is now the active root, so the
+  #    drive-detect agent would clear it on its next pass anyway; do it eagerly
+  #    so the Adopt banner disappears immediately.
+  rm -f "$drive/storage/.candidate-drive.json" 2>/dev/null || true
+  rm -f "$current/storage/.candidate-drive.json" 2>/dev/null || true
+
+  ok "adopted $drive — its full library is now this Mac's active library"
+}
+
+# Reconcile the catalog to the files under the CURRENT NOMAD_DATA_ROOT. The
+# catalog (MySQL) lives on internal disk and stays there even after adopting a
+# drive, so it must be re-synced to whatever data root is active. Called
+# standalone, from `nomad adopt-drive`, and from the drive-detect eject-revert
+# path. Idempotent + lock-guarded.
+#
+# CRITICAL ORDERING (R2): StlScannerService.scan() PRUNES catalog rows for files
+# that are missing on disk. So the STL scan must run ONLY AFTER admin is fully up
+# against the (possibly new) data root — otherwise it would prune the catalog
+# against an empty/old mount and wipe it. Hence: bring the stack up, wait for
+# api_check_up to confirm admin is reachable, THEN post the scan.
+#
+# Reconcile does NOT touch services.installed (R3): admin's
+# _syncContainersWithDatabase() auto-corrects that flag from the live container
+# list on every getServices(). Setting it here would fight that sync.
+cmd_reconcile() {
+  section "Reconcile catalog to current data root"
+
+  if ! _acquire_lock reconcile; then
+    warn "another reconcile/adopt is already running — skipping"
+    return 0
+  fi
+  # shellcheck disable=SC2064
+  trap '_release_lock' RETURN
+
+  ensure_docker_path
+
+  local data_root=""
+  [[ -f "$ENV_FILE" ]] && data_root="$(grep '^NOMAD_DATA_ROOT=' "$ENV_FILE" | cut -d= -f2-)"
+  [[ -n "$data_root" ]] || die "NOMAD_DATA_ROOT not set in $ENV_FILE — run 'nomad install' first"
+  log "reconciling against data root: $data_root"
+
+  # 1. Bring the content stack up against the current data root. Idempotent —
+  #    no-op for already-running containers, starts any that aren't up.
+  dc up -d || warn "dc up -d returned non-zero — continuing to wait for admin"
+
+  # 2. Wait for admin to be reachable against this data root BEFORE the STL scan
+  #    (R2 ordering). api_check_up dies if admin never comes up.
+  api_check_up
+
+  # 3. STL: trigger the admin-side Workshop rescan. This adds rows for the
+  #    drive's STL files AND prunes rows for files no longer present — exactly
+  #    what a clean adopt/revert needs. Safe now that admin is up against the
+  #    correct root.
+  log "triggering Workshop (STL) rescan..."
+  local stl_result
+  if stl_result="$(api_post /api/workshop/scan '' 2>&1)"; then
+    echo "$stl_result" | jq . 2>/dev/null || echo "$stl_result"
+    ok "STL catalog reconciled"
+  else
+    warn "Workshop rescan failed: $stl_result"
+  fi
+
+  # 4. ZIM / Maps are filesystem-scanned on request; just make sure Kiwix is
+  #    healthy and serving the drive's ZIMs. Reuse the self-heal pass (the same
+  #    logic `nomad fix-kiwix` and the 60s LaunchAgent run) — it's silent when
+  #    kiwix is healthy and auto-reloads when new ZIMs appeared.
+  if [[ -x "$KIWIX_SELF_HEAL_SCRIPT" ]] && docker inspect nomad_kiwix_server >/dev/null 2>&1; then
+    log "running Kiwix self-heal pass (reload if drive's ZIMs differ)..."
+    "$KIWIX_SELF_HEAL_SCRIPT" || true
+  fi
+
+  ok "reconcile complete — catalog reflects $data_root"
+}
+
 # Manual trigger of the kiwix self-heal pass (the LaunchAgent runs this every
 # 60s automatically; this command does the same work immediately + verbosely).
 # Useful for: quick fix when you don't want to wait for the next 60s tick;
@@ -6602,6 +6734,8 @@ case "$CMD" in
   backend)         cmd_backend "${EXTRA_ARGS[@]}" ;;
   reset-ollama)    cmd_reset_ollama "${EXTRA_ARGS[@]}" ;;
   fix-kiwix)       cmd_fix_kiwix ;;
+  adopt-drive)     cmd_adopt_drive ;;
+  reconcile)       cmd_reconcile ;;
   clean)           cmd_clean "${EXTRA_ARGS[@]}" ;;
   uninstall)       cmd_uninstall ;;
   reinstall)       cmd_reinstall ;;
