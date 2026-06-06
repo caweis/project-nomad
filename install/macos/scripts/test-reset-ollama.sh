@@ -37,7 +37,10 @@ check "MARKER_FILE under temp SECRETS_DIR" "$MARKER_FILE" "$TMP/.force-internal-
 echo "== disk-gate tier selector =="
 load   # tier_size_gb is defined near the top of nomad, available after source
 check "dreamy + 200 → xl"      "$(_select_pull_tier dreamy 200)" "xl"
-check "dreamy + 50  → medium"  "$(_select_pull_tier dreamy 50)"  "medium"
+# medium grew to ~51 GB after the MoE work added qwen3:30b-a3b (17 GB) to it,
+# so with the 10 GB headroom medium needs a ~61 GB budget; 50 now downshifts to small.
+check "dreamy + 70  → medium"  "$(_select_pull_tier dreamy 70)"  "medium"
+check "dreamy + 50  → small"   "$(_select_pull_tier dreamy 50)"  "small"
 check "medium + 100 → medium"  "$(_select_pull_tier medium 100)" "medium"
 check "medium + 5   → none"    "$(_select_pull_tier medium 5)"   "none"
 check "tiny + 13    → tiny"    "$(_select_pull_tier tiny 13)"    "tiny"
