@@ -52,6 +52,33 @@ async def test_chat_pull_emits_progress_then_success(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_completed_with_no_bytes_emits_100pct_sentinel(monkeypatch):
+    """oMLX may report a model already-complete with NO byte counts. The stream
+    must STILL emit a downloading frame at 100% (sentinel total/completed=1) so
+    the admin's progress guard (`if chunk.completed && chunk.total`) fires once —
+    otherwise the UI shows 0 progress and the download looks instant."""
+    async def fake_post(url, json=None, **kw):
+        return httpx.Response(200, json={"success": True, "task": {"repo_id": _REPO, "status": "completed"}})
+
+    async def fake_get(url, **kw):
+        # completed immediately, no total_size / downloaded_size
+        return httpx.Response(200, json={"tasks": [
+            {"repo_id": _REPO, "status": "completed", "created_at": 1}]})
+
+    monkeypatch.setattr(nomad_pull, "_resolve_mlx_repo", lambda name: _REPO)
+    monkeypatch.setattr(nomad_pull, "_is_embedding", lambda name: False)
+    monkeypatch.setattr(nomad_pull.httpx.AsyncClient, "post", lambda self, url, **k: fake_post(url, **k))
+    monkeypatch.setattr(nomad_pull.httpx.AsyncClient, "get", lambda self, url, **k: fake_get(url, **k))
+    monkeypatch.setattr(nomad_pull, "_POLL_INTERVAL", 0)
+
+    lines = [json.loads(l) async for l in nomad_pull._pull_stream("llama3.1:8b")]
+    dl = [l for l in lines if l["status"] == "downloading"]
+    assert dl, "a downloading frame is emitted even with no byte counts"
+    assert dl[-1]["total"] == 1 and dl[-1]["completed"] == 1, "sentinel 100% frame"
+    assert [l["status"] for l in lines][-2:] == ["verifying", "success"]
+
+
+@pytest.mark.asyncio
 async def test_chat_pull_emits_error_on_failed_task(monkeypatch):
     async def fake_post(url, json=None, **kw):
         return httpx.Response(200, json={"success": True, "task": {"repo_id": _REPO, "status": "pending"}})

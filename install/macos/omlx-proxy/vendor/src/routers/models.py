@@ -90,6 +90,23 @@ async def list_models(fastapi_request: Request) -> JSONResponse:
             # Parse OpenAI response
             openai_response = OpenAIModelsResponse(**response.json())
 
+            # Build a reverse index from MLX repo basename -> Ollama tag so the
+            # listing advertises the same Ollama-style names the admin's catalog
+            # uses (e.g. "qwen3:30b-a3b"), not the bare oMLX repo basename
+            # (e.g. "Qwen3-30B-A3B-4bit-DWQ"). Without this the admin's
+            # installed-vs-catalog match never fires and nothing shows installed.
+            try:
+                mappings = settings.load_model_mappings() or {}
+            except Exception:  # noqa: BLE001 - a bad map file must not break listing
+                mappings = {}
+            basename_to_tag = {
+                value.rsplit("/", 1)[-1]: key
+                for key, value in mappings.items()
+                if isinstance(key, str)
+                and key != "_comment"
+                and isinstance(value, str)
+            }
+
             # Transform to Ollama format
             ollama_models: List[OllamaModelInfo] = []
             for model in openai_response.data:
@@ -101,9 +118,13 @@ async def list_models(fastapi_request: Request) -> JSONResponse:
                     model.created, tz=timezone.utc
                 ).isoformat()
 
+                # Reverse-map the oMLX repo basename to its Ollama tag; fall back
+                # to the raw id when no curated mapping exists.
+                ollama_name = basename_to_tag.get(model.id, model.id)
+
                 ollama_model = OllamaModelInfo(  # type: ignore[call-arg]
-                    name=model.id,
-                    model=model.id,
+                    name=ollama_name,
+                    model=ollama_name,
                     modified_at=modified_at,
                     size=0,  # Size not available from OpenAI API
                     digest=f"sha256:{digest_hash}",
