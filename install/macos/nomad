@@ -329,18 +329,18 @@ EMBED_PLIST="$HOME/Library/LaunchAgents/${EMBED_LABEL}.plist"
 #   nomic-embed-text ~0.3GB   mxbai-embed-large ~0.7GB
 
 TIER_TINY="llama3.2:3b gemma3:1b nomic-embed-text"
-TIER_SMALL="llama3.1:8b qwen2.5-coder:7b gemma3:4b nomic-embed-text"
-TIER_MEDIUM="llama3.1:8b qwen3:14b qwen2.5-coder:14b gemma3:12b nomic-embed-text"
-TIER_LARGE="llama3.1:8b qwen3:14b qwen2.5-coder:32b gemma3:27b mistral-small:24b nomic-embed-text"
+TIER_SMALL="llama3.1:8b deepseek-v2:16b qwen2.5-coder:7b gemma3:4b nomic-embed-text"
+TIER_MEDIUM="llama3.1:8b qwen3:14b qwen3:30b-a3b qwen2.5-coder:14b gemma3:12b nomic-embed-text"
+TIER_LARGE="llama3.1:8b qwen3:14b qwen3:30b-a3b qwen2.5-coder:32b gemma3:27b mistral-small:24b nomic-embed-text"
 TIER_XL="llama3.1:8b qwen3:32b qwen2.5-coder:32b llama3.3:70b deepseek-r1:32b gemma3:27b mistral-small:24b nomic-embed-text mxbai-embed-large"
-TIER_DREAMY="llama3.1:8b qwen3:32b qwen2.5:72b qwen2.5-coder:32b llama3.3:70b deepseek-r1:32b deepseek-r1:70b mistral-small:24b gemma3:27b phi4:14b nomic-embed-text mxbai-embed-large"
+TIER_DREAMY="llama3.1:8b qwen3:32b qwen3:30b-a3b qwen3-coder:30b-a3b qwen2.5:72b qwen2.5-coder:32b llama3.3:70b deepseek-r1:32b deepseek-r1:70b mistral-small:24b gemma3:27b phi4:14b nomic-embed-text mxbai-embed-large"
 
 # Lean variants — one best model per category (chat + coding + reasoning + embeddings),
 # a strict subset of each tier. Offered as an alternative to pulling the whole tier.
 TIER_TINY_LEAN="llama3.2:3b nomic-embed-text"
 TIER_SMALL_LEAN="llama3.1:8b qwen2.5-coder:7b nomic-embed-text"
-TIER_MEDIUM_LEAN="llama3.1:8b qwen2.5-coder:14b qwen3:14b nomic-embed-text"
-TIER_LARGE_LEAN="llama3.1:8b qwen2.5-coder:32b qwen3:14b nomic-embed-text"
+TIER_MEDIUM_LEAN="llama3.1:8b qwen2.5-coder:14b qwen3:30b-a3b nomic-embed-text"
+TIER_LARGE_LEAN="llama3.1:8b qwen2.5-coder:32b qwen3:30b-a3b nomic-embed-text"
 TIER_XL_LEAN="llama3.3:70b qwen2.5-coder:32b deepseek-r1:32b nomic-embed-text"
 TIER_DREAMY_LEAN="llama3.3:70b qwen2.5-coder:32b deepseek-r1:70b nomic-embed-text"
 
@@ -348,11 +348,11 @@ TIER_DREAMY_LEAN="llama3.3:70b qwen2.5-coder:32b deepseek-r1:70b nomic-embed-tex
 tier_size_gb() {
   case "$1" in
     tiny)   echo 3   ;;
-    small)  echo 13  ;;
-    medium) echo 34  ;;
-    large)  echo 65  ;;
+    small)  echo 22  ;;
+    medium) echo 51  ;;
+    large)  echo 82  ;;
     xl)     echo 147 ;;
-    dreamy) echo 215 ;;
+    dreamy) echo 249 ;;
     *)      echo "?" ;;
   esac
 }

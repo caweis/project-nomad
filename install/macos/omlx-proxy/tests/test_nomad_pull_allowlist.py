@@ -63,3 +63,40 @@ def test_pullable_lists_map_keys_excluding_comment():
 )
 def test_unsafe_or_untrusted_names_are_rejected(name):
     assert nomad_pull._resolve_mlx_repo(name) == ""
+
+
+def test_moe_tag_and_dwq_basename_resolve(monkeypatch):
+    # An MoE key has a hyphenated tag ("30b-a3b") and a DWQ basename. Both the
+    # exact key AND the bare repo basename /api/tags advertises must resolve
+    # (the symmetry contract), exercising the reverse-lookup on a hyphen-heavy
+    # basename — the curated Qwen3-30B-A3B MoE shape.
+    mapping = {"qwen3:30b-a3b": "mlx-community/Qwen3-30B-A3B-4bit-DWQ"}
+
+    class _Settings:
+        def load_model_mappings(self):
+            return mapping
+
+    monkeypatch.setattr(nomad_pull, "_get_settings", lambda: _Settings())
+    assert nomad_pull._resolve_mlx_repo("qwen3:30b-a3b") == "mlx-community/Qwen3-30B-A3B-4bit-DWQ"
+    assert (
+        nomad_pull._resolve_mlx_repo("Qwen3-30B-A3B-4bit-DWQ")
+        == "mlx-community/Qwen3-30B-A3B-4bit-DWQ"
+    )
+
+
+def test_real_model_map_has_curated_moe_entries():
+    # Guard the real curated config: the MoE / right-sized picks must stay mapped
+    # to existing mlx-community repos, and every non-embedding value must be an
+    # mlx-community repo (the proxy refuses anything else).
+    import json
+    import pathlib
+
+    path = pathlib.Path(__file__).resolve().parents[1] / "config" / "model_map.json"
+    m = json.loads(path.read_text())
+    assert m["qwen3:30b-a3b"] == "mlx-community/Qwen3-30B-A3B-4bit-DWQ"
+    assert m["qwen3-coder:30b-a3b"] == "mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit"
+    assert m["deepseek-v2:16b"] == "mlx-community/DeepSeek-V2-Lite-Chat-4bit-mlx"
+    for key, value in m.items():
+        if key == "_comment" or "embed" in key:
+            continue
+        assert value.startswith("mlx-community/"), f"{key} -> {value} is not an mlx-community repo"

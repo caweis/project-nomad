@@ -18,6 +18,9 @@
   "qwen2.5:72b": "mlx-community/Qwen2.5-72B-Instruct-4bit",
   "phi4:14b": "mlx-community/phi-4-4bit",
   "deepseek-r1:70b": "mlx-community/DeepSeek-R1-Distill-Llama-70B-4bit",
+  "qwen3:30b-a3b": "mlx-community/Qwen3-30B-A3B-4bit-DWQ",
+  "qwen3-coder:30b-a3b": "mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit",
+  "deepseek-v2:16b": "mlx-community/DeepSeek-V2-Lite-Chat-4bit-mlx",
   "nomic-embed-text": "nomic-embed-text",
   "mxbai-embed-large": "mxbai-embed-large"
 }
