@@ -4156,6 +4156,11 @@ step_seed_native_ollama_state() {
   local sql_err; sql_err="$(mktemp)"
   # Backend-aware admin URL: omlx -> proxy :11436, ollama -> native :11434.
   local ollama_url; ollama_url="$(_admin_ollama_url)"
+  # Capture the current value first so we only restart admin when the URL actually
+  # changes — a routine update shouldn't bounce admin (drop the web chat) for a
+  # no-op re-seed. The idempotent seed SQL below always runs regardless.
+  local _cur_url
+  _cur_url="$(echo 'SELECT value FROM kv_store WHERE `key`="ai.remoteOllamaUrl";' | dc exec -T -e MYSQL_PWD="$db_pw" mysql mysql -u nomad_user -N nomad 2>/dev/null | tail -1 | tr -d '[:space:]')"
   if echo '
 INSERT INTO kv_store (`key`, value, created_at, updated_at)
 VALUES ("ai.remoteOllamaUrl", "'"$ollama_url"'", NOW(), NOW()) AS new
@@ -4184,8 +4189,12 @@ ON DUPLICATE KEY UPDATE
 ' | dc exec -T -e MYSQL_PWD="$db_pw" mysql mysql -u nomad_user nomad >/dev/null 2>"$sql_err"; then
     rm -f "$sql_err"
     ok "seeded kv_store + services.nomad_ollama"
-    dc restart admin >/dev/null
-    sleep 5
+    if [[ -n "$_cur_url" && "$_cur_url" == "$ollama_url" ]]; then
+      ok "admin AI URL unchanged ($ollama_url) — admin not restarted"
+    else
+      dc restart admin >/dev/null
+      sleep 5
+    fi
     return 0
   fi
 
@@ -5870,8 +5879,21 @@ Set NOMAD_BUNDLE_DIR in $ENV_FILE or reinstall."
 
   # ── in-place install via the freshly-updated script (no nuke, no self-update
   #    loop — we just refreshed the bundle ourselves). ──
-  log "running in-place install to relink script + man pages and refresh the stack"
-  NOMAD_NO_SELF_UPDATE=1 exec /bin/bash "$bundle/nomad" install
+  # An update is NOT a fresh install: reuse the recorded config so it never
+  # re-interrogates the user for data root / backend / model set. Models already
+  # on disk stay (--no-models skips both the picker AND any re-pull); the smart
+  # service gates keep oMLX/embed/proxy from bouncing when unchanged. (.env lives
+  # off-bundle, so these survive the bundle swap. step_data_root uses a non-empty
+  # --data-root verbatim — no /project-nomad re-append — so the recorded full path
+  # is correct.)
+  local _dr _be
+  _dr="$(grep '^NOMAD_DATA_ROOT=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true)"
+  _be="$(grep '^NOMAD_AI_BACKEND=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true)"
+  local _flags=(--no-models)
+  [[ -n "$_dr" ]] && _flags+=(--data-root "$_dr")
+  [[ -n "$_be" ]] && _flags+=(--backend "$_be")
+  log "in-place refresh (reusing config: data-root=${_dr:-default}, backend=${_be:-auto}; models unchanged)"
+  NOMAD_NO_SELF_UPDATE=1 exec /bin/bash "$bundle/nomad" install "${_flags[@]}"
 }
 
 # oMLX-mode reset: bounce proxy + oMLX + embed agents, reusing the wedged-drive
