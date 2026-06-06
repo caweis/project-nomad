@@ -2747,6 +2747,10 @@ _model_size_gb() {
     qwen2.5:72b)              echo "47"  ;;
     deepseek-r1:70b)          echo "43"  ;;
     llama3.3:70b)             echo "43"  ;;
+    qwen3:30b-a3b)            echo "17"  ;;
+    qwen3-coder:30b-a3b)      echo "17"  ;;
+    deepseek-v2:16b)          echo "9"   ;;
+    hermes-4:14b)             echo "8.3" ;;
     *)                        echo "?"   ;;
   esac
 }
@@ -2786,6 +2790,10 @@ _model_blurb() {
     deepseek-r1:70b)    echo "70B reasoning model — slow, strong at math/logic" ;;
     mistral-small:24b)  echo "Mistral 24B chat — balanced general-purpose" ;;
     phi4:14b)           echo "Microsoft Phi-4 — strong on reasoning at 14B" ;;
+    qwen3:30b-a3b)      echo "Qwen3 MoE — 30B total / ~3B active; big-model quality, small-model speed" ;;
+    qwen3-coder:30b-a3b) echo "Qwen3-Coder MoE — 30B / ~3B active; strong coding at ~3B speed" ;;
+    deepseek-v2:16b)    echo "DeepSeek-V2-Lite MoE — 16B / ~2.4B active; fast chat, fits 16 GB" ;;
+    hermes-4:14b)       echo "Hermes 4 14B — direct, low-refusal answers (verify safety-critical)" ;;
     *)                  echo "" ;;
   esac
 }
