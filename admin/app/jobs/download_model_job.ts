@@ -85,17 +85,19 @@ export class DownloadModelJob {
     const queue = queueService.getQueue(this.queue)
     const jobId = this.getJobId(params.modelName)
 
+    const addOptions = {
+      jobId,
+      attempts: 40, // Many attempts since services may take considerable time to install
+      backoff: {
+        type: 'fixed' as const,
+        delay: 60000, // Check every 60 seconds
+      },
+      removeOnComplete: false, // Keep for status checking
+      removeOnFail: false, // Keep failed jobs for debugging
+    }
+
     try {
-      const job = await queue.add(this.key, params, {
-        jobId,
-        attempts: 40, // Many attempts since services may take considerable time to install
-        backoff: {
-          type: 'fixed',
-          delay: 60000, // Check every 60 seconds
-        },
-        removeOnComplete: false, // Keep for status checking
-        removeOnFail: false, // Keep failed jobs for debugging
-      })
+      const job = await queue.add(this.key, params, addOptions)
 
       return {
         job,
@@ -104,7 +106,38 @@ export class DownloadModelJob {
       }
     } catch (error) {
       if (error.message.includes('job already exists')) {
+        // A finished job (completed/failed) retains its record because
+        // removeOnComplete/removeOnFail are false, so the deterministic jobId
+        // collides forever. Remove the stale record and re-add so retries work.
         const existing = await queue.getJob(jobId)
+        const state = existing ? await existing.getState() : null
+
+        if (existing && (state === 'completed' || state === 'failed')) {
+          try {
+            await existing.remove()
+          } catch (removeError) {
+            // Race: another dispatch may have removed/re-added it. Fall back to
+            // the existing job rather than crashing dispatch.
+            logger.warn(
+              `[DownloadModelJob] Could not remove stale ${state} job for ${params.modelName}, returning existing`,
+              removeError
+            )
+            return {
+              job: existing,
+              created: false,
+              message: `Job already exists for model ${params.modelName}`,
+            }
+          }
+
+          const job = await queue.add(this.key, params, addOptions)
+          return {
+            job,
+            created: true,
+            message: `Re-queued model download for ${params.modelName} (was ${state})`,
+          }
+        }
+
+        // Genuinely in-flight (waiting/active/delayed/paused) — leave it alone.
         return {
           job: existing,
           created: false,

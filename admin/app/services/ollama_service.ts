@@ -151,16 +151,23 @@ export class OllamaService {
   }
 
   public async checkModelHasThinking(modelName: string): Promise<boolean> {
-    await this._ensureDependencies()
-    if (!this.ollama) {
-      throw new Error('Ollama client is not initialized.')
+    // A thinking-capability probe must NEVER block chat. The oMLX proxy's
+    // /api/show returns no `capabilities` field, so the old unguarded
+    // `modelInfo.capabilities.includes(...)` threw a TypeError and killed
+    // every oMLX chat ("error processing your request"). Guard the field AND
+    // swallow any probe failure → default to no-thinking (chat still works;
+    // thinking just isn't requested).
+    try {
+      await this._ensureDependencies()
+      if (!this.ollama) return false
+      const modelInfo = await this.ollama.show({ model: modelName })
+      return modelInfo.capabilities?.includes('thinking') ?? false
+    } catch (error) {
+      logger.warn(
+        `[OllamaService] thinking-capability probe failed for "${modelName}" — proceeding without thinking: ${error instanceof Error ? error.message : error}`
+      )
+      return false
     }
-
-    const modelInfo = await this.ollama.show({
-      model: modelName,
-    })
-
-    return modelInfo.capabilities.includes('thinking')
   }
 
   public async deleteModel(modelName: string) {
