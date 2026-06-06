@@ -96,6 +96,7 @@ def test_real_model_map_has_curated_moe_entries():
     assert m["qwen3:30b-a3b"] == "mlx-community/Qwen3-30B-A3B-4bit-DWQ"
     assert m["qwen3-coder:30b-a3b"] == "mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit"
     assert m["deepseek-v2:16b"] == "mlx-community/DeepSeek-V2-Lite-Chat-4bit-mlx"
+    assert m["hermes-4:14b"] == "mlx-community/Hermes-4-14B-4bit"
     for key, value in m.items():
         if key == "_comment" or "embed" in key:
             continue

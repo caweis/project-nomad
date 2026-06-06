@@ -21,6 +21,7 @@
   "qwen3:30b-a3b": "mlx-community/Qwen3-30B-A3B-4bit-DWQ",
   "qwen3-coder:30b-a3b": "mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit",
   "deepseek-v2:16b": "mlx-community/DeepSeek-V2-Lite-Chat-4bit-mlx",
+  "hermes-4:14b": "mlx-community/Hermes-4-14B-4bit",
   "nomic-embed-text": "nomic-embed-text",
   "mxbai-embed-large": "mxbai-embed-large"
 }

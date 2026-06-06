@@ -161,6 +161,26 @@ export const MLX_HIGHLIGHT_MODELS: NomadOllamaModel[] = [
       },
     ],
   },
+  {
+    name: 'Hermes-4-14B (direct answers)',
+    description:
+      'Hermes 4 14B (Nous Research, Qwen3-14B base, Apache-2.0) — tuned for direct, low-refusal answers with strong system-prompt steerability. It prioritizes answering over hedging, which helps with blunt medical / survival / self-reliance questions that more cautious models deflect. Trade-off: it will answer confidently even when wrong, and offline there is no internet to cross-check — verify anything safety-critical.',
+    estimated_pulls: '2M',
+    id: 'mlx-highlight-hermes-4-14b',
+    first_seen: '2026-06-06T00:00:00.000+00:00',
+    model_last_updated: 'recently',
+    mlxPullName: 'hermes-4:14b',
+    tags: [
+      {
+        name: 'hermes-4:14b',
+        size: '8 GB',
+        context: '128K',
+        input: 'Text',
+        cloud: false,
+        thinking: true,
+      },
+    ],
+  },
 ]
 
 export const DEFAULT_QUERY_REWRITE_MODEL = 'qwen2.5:3b' // default to qwen2.5 for query rewriting with good balance of text task performance and resource usage
