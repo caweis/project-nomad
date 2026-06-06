@@ -51,6 +51,71 @@ class ChatTranslator(
         super().__init__(model_mappings)
         self.logger = get_logger(__name__)
 
+    @staticmethod
+    def _basename(repo: str) -> str:
+        """Return the trailing path segment of an HF repo id.
+
+        oMLX advertises (and only recognizes) the bare repo *basename* as its
+        model id, e.g. "DeepSeek-R1-Distill-Qwen-32B-4bit" — never the
+        namespaced "mlx-community/DeepSeek-R1-Distill-Qwen-32B-4bit". So when we
+        translate a curated map value (always "<org>/<repo>") into the upstream
+        model name, we strip the namespace.
+        """
+        return repo.rsplit("/", 1)[-1] if isinstance(repo, str) else repo
+
+    def map_model_name(self, ollama_model: str) -> str:
+        """Map an inbound Ollama tag to oMLX's model id (the repo basename).
+
+        This is the inbound mirror of what models.py /api/tags does outbound
+        (FIX 1): /api/tags advertises each curated map value's *basename* under
+        its Ollama tag, so the admin's catalog matches and the model shows
+        installed. The admin then sends that same Ollama tag (e.g.
+        "deepseek-r1:32b") back on /api/chat and /api/generate. oMLX's OpenAI
+        endpoint only knows its model id — the basename — so without translating
+        here the upstream call 500s ("error processing your request") and chat is
+        down.
+
+        Resolution order, defensive throughout (an unknown name always passes
+        through unchanged for back-compat with callers that already send the
+        basename or an unmapped model):
+          1. Curated map KEY (the Ollama tag) -> basename(map[tag]).
+          2. Already a basename of some curated value -> itself (idempotent).
+          3. Otherwise -> unchanged.
+        """
+        mappings = self.model_mappings or {}
+        mapped = mappings.get(ollama_model)
+        if isinstance(mapped, str) and mapped:
+            target = self._basename(mapped)
+            if target != ollama_model:
+                self.logger.debug(
+                    f"Mapped model tag '{ollama_model}' to oMLX id '{target}'"
+                )
+            return target
+        # Idempotent passthrough: if the caller already sent a basename we
+        # advertise (or any unmapped name), forward it unchanged.
+        return ollama_model
+
+    def reverse_map_model_name(self, openai_model: str) -> str:
+        """Map oMLX's model id (a repo basename) back to its Ollama tag.
+
+        Mirror of map_model_name so the client-facing response model field keeps
+        the original Ollama tag (e.g. "deepseek-r1:32b") the admin sent, not the
+        bare oMLX basename it echoes back. The base-class reverse map keys on the
+        full "<org>/<repo>" value, which never matches the basename oMLX returns,
+        so we build a basename -> tag index here (the exact inverse of FIX 1's
+        basename_to_tag in models.py). Unknown ids pass through unchanged.
+        """
+        mappings = self.model_mappings or {}
+        for tag, repo in mappings.items():
+            if (
+                isinstance(tag, str)
+                and tag != "_comment"
+                and isinstance(repo, str)
+                and self._basename(repo) == openai_model
+            ):
+                return tag
+        return openai_model
+
     def translate_request(
         self, ollama_request: Union[OllamaGenerateRequest, OllamaChatRequest]
     ) -> OpenAIChatRequest:
