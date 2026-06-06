@@ -4370,27 +4370,60 @@ cmd_models() {
   local sub="${1:-list}"
   case "$sub" in
     list|"")
-      if ! curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
-        die "native Ollama not responding — run 'nomad install' or 'nomad reset-ollama'"
-      fi
+      _load_backend
       local ram_gb; ram_gb=$(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 ))
       # Rule of thumb: a Q4 model needs ~1.2× its file size in RAM for inference
       # (weights + KV cache + overhead). Compare against (RAM - 6 GB OS+apps reserve).
       local usable_ram_gb=$(( ram_gb - 6 ))
       [[ $usable_ram_gb -lt 2 ]] && usable_ram_gb=2
 
-      echo "Installed models (native Ollama on :11434, this Mac has ${ram_gb} GB RAM, ~${usable_ram_gb} GB usable for inference):"
-      # Per-model fits check: emit name | size | fits | modified
-      curl -fsS http://127.0.0.1:11434/api/tags \
-        | jq -r --arg ur "$usable_ram_gb" '
-          .models[]? |
-          (.size/1024/1024/1024) as $gb |
-          ($gb * 1.2) as $needed |
-          (if $needed <= ($ur|tonumber) then "✓ fits"
-           elif $needed <= ($ur|tonumber)*1.3 then "⚠ tight (may swap)"
-           else "✗ too big" end) as $verdict |
-          "  \(.name)\t\($gb | tostring | .[0:5]) GB\t\($needed | tostring | .[0:5]) GB needed\t\($verdict)\tmodified=\(.modified_at[0:19])"' \
-        | column -t -s $'\t'
+      if [[ "$BACKEND" == "omlx" ]]; then
+        # Active AI backend is oMLX: chat models live behind the proxy on :11436
+        # (incl. MLX-only models like hermes-4:14b that native Ollama never sees).
+        # Query the active backend, not :11434, so the list reflects what actually
+        # serves chat. oMLX /api/tags reports size 0, so show the curated size from
+        # the model table; oMLX governs memory via its own prefill guard (no RAM
+        # verdict here).
+        if curl -fsS --max-time 3 http://127.0.0.1:11436/api/tags >/dev/null 2>&1; then
+          echo "AI Assistant models (oMLX via proxy :11436, this Mac has ${ram_gb} GB RAM):"
+          local _n _gb
+          while IFS= read -r _n; do
+            [[ -z "$_n" ]] && continue
+            _gb="$(_model_size_gb "$_n")"
+            if [[ "$_gb" == "?" ]]; then printf "  %s\t(size n/a)\n" "$_n"
+            else printf "  %s\t~%s GB\n" "$_n" "$_gb"; fi
+          done < <(curl -fsS http://127.0.0.1:11436/api/tags | jq -r '.models[]?.name' | sort) \
+            | column -t -s $'\t'
+        else
+          warn "oMLX proxy not responding on :11436 — run 'nomad reset-ollama'"
+        fi
+        # The user's own native Ollama models coexist on :11434 (not the AI
+        # Assistant backend) — list them too so 'nomad models' is complete.
+        if curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1 \
+           && [[ "$(curl -fsS http://127.0.0.1:11434/api/tags | jq -r '.models | length')" -gt 0 ]]; then
+          echo
+          echo "Your coexisting native Ollama models (:11434, not the AI Assistant backend):"
+          curl -fsS http://127.0.0.1:11434/api/tags \
+            | jq -r '.models[]? | "  \(.name)\t\(.size/1024/1024/1024 | tostring | .[0:5]) GB\tmodified=\(.modified_at[0:19])"' \
+            | column -t -s $'\t'
+        fi
+      else
+        if ! curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+          die "native Ollama not responding — run 'nomad install' or 'nomad reset-ollama'"
+        fi
+        echo "Installed models (native Ollama on :11434, this Mac has ${ram_gb} GB RAM, ~${usable_ram_gb} GB usable for inference):"
+        # Per-model fits check: emit name | size | fits | modified
+        curl -fsS http://127.0.0.1:11434/api/tags \
+          | jq -r --arg ur "$usable_ram_gb" '
+            .models[]? |
+            (.size/1024/1024/1024) as $gb |
+            ($gb * 1.2) as $needed |
+            (if $needed <= ($ur|tonumber) then "✓ fits"
+             elif $needed <= ($ur|tonumber)*1.3 then "⚠ tight (may swap)"
+             else "✗ too big" end) as $verdict |
+            "  \(.name)\t\($gb | tostring | .[0:5]) GB\t\($needed | tostring | .[0:5]) GB needed\t\($verdict)\tmodified=\(.modified_at[0:19])"' \
+          | column -t -s $'\t'
+      fi
       echo
       local detected; detected="$(auto_tier)"
       echo "Tiers (auto-detected for this Mac: ${ram_gb} GB RAM → '$detected'):"
