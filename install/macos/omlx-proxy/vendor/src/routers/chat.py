@@ -123,12 +123,27 @@ async def stream_response(
 
     url = f"{settings.OPENAI_API_BASE_URL}/chat/completions"
 
+    # Ask the upstream (OpenAI-compatible oMLX) to report token usage in the final
+    # streaming chunk. OpenAI streaming usage requires stream_options.include_usage;
+    # OpenAIChatRequest has no such field, so inject it into the dumped payload.
+    # If the upstream ignores it, the per-delta fallback counter below still gives
+    # the benchmark a real server-side token count.
+    payload = openai_request.model_dump(exclude_none=True)
+    payload["stream_options"] = {"include_usage": True}
+
+    # Server-side fallback token count: count non-empty content deltas. Correct when
+    # the upstream is one-token-per-chunk; a floor otherwise. Superseded by the
+    # upstream's usage.completion_tokens when present.
+    streamed_token_count = 0
+    upstream_eval_count: Optional[int] = None
+    upstream_prompt_count: Optional[int] = None
+
     try:
         # Use stream_with_retry for streaming requests
         async for chunk in client.stream_with_retry(
             "POST",
             url,
-            json=openai_request.model_dump(exclude_none=True),
+            json=payload,
             headers=headers,
         ):
             # Process each chunk
@@ -138,11 +153,20 @@ async def stream_response(
                     continue
 
                 if line == "data: [DONE]":
+                    # Prefer the upstream's real completion-token count; else fall
+                    # back to the deltas we actually streamed.
+                    eval_count = (
+                        upstream_eval_count
+                        if upstream_eval_count is not None
+                        else streamed_token_count
+                    )
                     # Send final chunk
                     final_chunk = translator.translate_streaming_response(
                         "[DONE]",  # type: ignore
                         original_request,
                         is_last_chunk=True,
+                        eval_count=eval_count,
+                        prompt_eval_count=upstream_prompt_count,
                     )
                     if final_chunk:
                         yield json.dumps(final_chunk) + "\n"
@@ -153,12 +177,34 @@ async def stream_response(
                         # Parse the JSON data
                         data = json.loads(line[6:])
 
+                        # Capture usage from the final include_usage chunk (it has
+                        # an empty choices list and a usage object). Skip translating
+                        # it — there is no delta to forward, and emitting an empty
+                        # content frame would be a spurious extra chunk.
+                        if isinstance(data, dict) and data.get("usage"):
+                            usage = data["usage"]
+                            if usage.get("completion_tokens") is not None:
+                                upstream_eval_count = usage["completion_tokens"]
+                            if usage.get("prompt_tokens") is not None:
+                                upstream_prompt_count = usage["prompt_tokens"]
+                            if not data.get("choices"):
+                                continue
+
                         # Translate to Ollama format
                         ollama_chunk = translator.translate_streaming_response(
                             data, original_request
                         )
 
                         if ollama_chunk:
+                            # Count non-empty content deltas for the fallback.
+                            if isinstance(original_request, OllamaChatRequest):
+                                delta_text = ollama_chunk.get("message", {}).get(
+                                    "content", ""
+                                )
+                            else:
+                                delta_text = ollama_chunk.get("response", "")
+                            if delta_text:
+                                streamed_token_count += 1
                             yield json.dumps(ollama_chunk) + "\n"
 
                     except json.JSONDecodeError as e:

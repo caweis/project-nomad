@@ -54,3 +54,36 @@ def test_generate_stream_done_chunk_still_uses_response():
     assert out["done"] is True
     assert out["response"] == ""
     assert "message" not in out
+
+
+# --- Benchmark token-count regression (streaming) ------------------------------
+# The admin's AI benchmark measures tok/s from the stream; it uses the done
+# frame's eval_count when present, else counts SSE chunks (under-reports when the
+# upstream batches >1 token per event). The proxy now stamps a real eval_count
+# on the [DONE] frame. These pin: counts flow into the done frame, and the
+# default (no counts) stays back-compatible (no eval_count key).
+
+
+def test_done_frame_carries_eval_count_when_provided_chat():
+    out = T.translate_streaming_response(
+        "[DONE]", _chat_req(), is_last_chunk=True,
+        eval_count=128, prompt_eval_count=11,
+    )
+    assert out["eval_count"] == 128
+    assert out["prompt_eval_count"] == 11
+    assert out["done"] is True
+    assert "message" in out and "response" not in out
+
+
+def test_done_frame_carries_eval_count_when_provided_generate():
+    out = T.translate_streaming_response(
+        "[DONE]", _gen_req(), is_last_chunk=True, eval_count=42,
+    )
+    assert out["eval_count"] == 42
+    assert out["response"] == "" and "message" not in out
+
+
+def test_done_frame_omits_eval_count_by_default():
+    out = T.translate_streaming_response("[DONE]", _chat_req(), is_last_chunk=True)
+    assert "eval_count" not in out  # back-compat: no count -> no key
+    assert "prompt_eval_count" not in out

@@ -163,6 +163,8 @@ class ChatTranslator(
         original_request: Union[OllamaGenerateRequest, OllamaChatRequest],
         is_first_chunk: bool = False,
         is_last_chunk: bool = False,
+        eval_count: Optional[int] = None,
+        prompt_eval_count: Optional[int] = None,
     ) -> Optional[Dict[str, Any]]:
         """
         Translate a streaming response chunk from OpenAI to Ollama format.
@@ -172,6 +174,13 @@ class ChatTranslator(
             original_request: The original Ollama request
             is_first_chunk: Whether this is the first chunk
             is_last_chunk: Whether this is the last chunk
+            eval_count: Completion-token count to stamp on the final ([DONE])
+                frame as Ollama's `eval_count`. Lets a downstream benchmark read a
+                real server-side token count instead of counting SSE chunks (which
+                under-reports when the upstream batches >1 token per event). None
+                omits it (back-compat). Only used for the [DONE] frame.
+            prompt_eval_count: Prompt-token count to stamp on the final frame as
+                Ollama's `prompt_eval_count`. None omits it.
 
         Returns:
             The equivalent Ollama format chunk, or None to skip
@@ -197,6 +206,13 @@ class ChatTranslator(
                         final["message"] = {"role": "assistant", "content": ""}
                     else:
                         final["response"] = ""
+                    # Stamp token counts so a downstream benchmark measures real
+                    # tok/s from a server-side count, not the admin's SSE-chunk
+                    # count (under-reports when upstream batches tokens per event).
+                    if eval_count is not None:
+                        final["eval_count"] = eval_count
+                    if prompt_eval_count is not None:
+                        final["prompt_eval_count"] = prompt_eval_count
                     return final
 
                 # Skip empty chunks
