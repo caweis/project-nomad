@@ -17,10 +17,10 @@
 #   bash nomad models [list|pull [TIER|NAMES...]]
 #                                            # tier: tiny→2GB, small→10, medium→26,
 #                                            # large→65, xl→130, dreamy→215 (Studio)
-#   bash nomad upgrade [SERVICE]             # bare = make everything current:
-#                                            # refresh bundle code first, then
-#                                            # images + engines + stack. With a
-#                                            # SERVICE arg, upgrade just that one.
+#   bash nomad upgrade [SERVICE]             # alias of `nomad update` (same
+#                                            # behavior) — kept for muscle memory.
+#                                            # With a SERVICE arg, upgrade just
+#                                            # that one (kiwix/admin/ollama/…).
 #   bash nomad upgrade-models                # pull latest tags of installed
 #   bash nomad downloads [list|cancel ID|remove ID]   # admin's job queue
 #   bash nomad zim wikipedia [state|select VARIANT]   # Wikipedia download state
@@ -61,9 +61,13 @@
 #   bash nomad reinstall                     # nuclear: wipe everything + reinstall in one shot
 #   bash nomad self-update                   # fetch latest nomad script (also runs
 #                                            # implicitly at the start of install/reinstall)
-#   bash nomad update                        # fetch latest bundle + reinstall
-#                                            # in place (no data loss; see
-#                                            # 'man nomad-update')
+#   bash nomad update [SERVICE]              # THE update command — make everything
+#                                            # current. Smart + idempotent: only
+#                                            # redeploys what changed; proxy/oMLX
+#                                            # are NOT bounced unless their source
+#                                            # changed, so it won't drop an active
+#                                            # chat. SERVICE arg = just that one.
+#                                            # (no data loss; see 'man nomad-update')
 #
 # Globals at the top, all logic in named functions, single dispatch at the bottom.
 
@@ -2073,6 +2077,49 @@ _wait_http_counter() {
   return 1
 }
 
+# ─── Smart-update service gates ───────────────────────────────────────────────
+# `nomad update` re-runs every service step, which by default boots out and
+# re-bootstraps each LaunchAgent — interrupting an active chat (oMLX/proxy) or a
+# running RAG embed. These gates let a step SKIP its disruptive redeploy when the
+# service is already healthy AND its config signature is unchanged, so a routine
+# update is idempotent and non-disruptive. A fresh install (no marker) or any
+# config/source change falls through and deploys normally.
+_svc_marker() { echo "${SECRETS_DIR}/.nomad-svc-${1}.sig"; }
+_svc_unchanged() {  # $1=service key  $2=signature  $3=health url → 0 if safe to skip
+  local m; m="$(_svc_marker "$1")"
+  [[ -f "$m" && "$(cat "$m" 2>/dev/null)" == "$2" ]] || return 1
+  curl -fsS --max-time 3 "$3" >/dev/null 2>&1
+}
+_svc_record() {  # $1=service key  $2=signature
+  local m; m="$(_svc_marker "$1")"
+  mkdir -p "$(dirname "$m")" 2>/dev/null || true
+  printf '%s\n' "$2" > "$m" 2>/dev/null || true
+}
+# Content hash of the oMLX proxy (source + model_map). Path- and order-independent
+# so it flips iff a proxy .py/.json/.txt file's CONTENT changes.
+_proxy_content_hash() {  # $1 = proxy dir
+  local d="$1"; [[ -d "$d" ]] || { echo ""; return 0; }
+  find "$d" -type f \( -name '*.py' -o -name '*.json' -o -name '*.txt' \) \
+    -exec shasum -a 256 {} \; 2>/dev/null | awk '{print $1}' | sort \
+    | shasum -a 256 | awk '{print $1}'
+}
+# Routing: is this update/upgrade invocation a FULL stack run (no positional
+# service target, no dry-run/force flag)? `--branch NAME` stays full (an update
+# flag). A service token or --check/--force defers to the targeted cmd_upgrade.
+_upgrade_is_full() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      "")              shift ;;
+      --branch)        shift 2 ;;
+      --branch=*)      shift ;;
+      --check|--force) return 1 ;;
+      --*)             return 1 ;;
+      *)               return 1 ;;
+    esac
+  done
+  return 0
+}
+
 step_omlx_native() {
   section "Native oMLX (Apple-MLX) on :8000"
   local data_root; data_root="$(grep '^NOMAD_DATA_ROOT=' "$ENV_FILE" | cut -d= -f2-)"
@@ -2116,6 +2163,16 @@ except Exception:
 d.setdefault("auth", {})["skip_api_key_verification"] = True
 json.dump(d, open(p, "w"), indent=2)
 PYEOF
+
+  # Smart-update gate: skip the disruptive bootout/bootstrap when oMLX is healthy
+  # and its plist-determining config is unchanged (oMLX itself is brew-managed —
+  # bump it with `nomad upgrade omlx`). Keeps `nomad update` from dropping chat.
+  local _omlx_sig
+  _omlx_sig="$(printf '%s|%s|%s|%s' "$omlx_bin" "$mlx_dir" "$cache_dir" "$max_conc" | shasum -a 256 | awk '{print $1}')"
+  if _svc_unchanged omlx "$_omlx_sig" "http://127.0.0.1:8000/v1/models"; then
+    ok "oMLX already current on :8000 (config unchanged) — not bounced"
+    return 0
+  fi
 
   cat > "$OMLX_PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -2165,6 +2222,7 @@ EOF
 
   if _wait_http_counter "http://127.0.0.1:8000/v1/models" 60 "oMLX on :8000"; then
     ok "oMLX responding on :8000"
+    _svc_record omlx "$_omlx_sig"
   elif [[ -n "$last_err" ]]; then
     warn "oMLX did not answer on :8000 after a bootstrap error — run 'nomad reset-ollama' or check ~/Library/Logs/nomad-omlx.err.log (continuing install)"
   else
@@ -2179,6 +2237,16 @@ step_ollama_embed() {
   # Embed model lives on the internal disk so RAG embeddings survive a data-drive unplug; vectors are bit-identical (same weights regardless of disk).
   mkdir -p "$SECRETS_DIR/embed-models"
   mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
+
+  # Smart-update gate: skip the disruptive redeploy when the embed server is
+  # healthy and its config is unchanged — a routine `nomad update` shouldn't
+  # restart it mid-embed. (Embed config is stable per machine: bin + paths.)
+  local _embed_sig
+  _embed_sig="$(printf '%s|%s|11435' "$ollama_bin" "$SECRETS_DIR/embed-models" | shasum -a 256 | awk '{print $1}')"
+  if _svc_unchanged embed "$_embed_sig" "http://127.0.0.1:11435/api/tags"; then
+    ok "embed Ollama already current on :11435 (config unchanged) — not bounced"
+    return 0
+  fi
 
   # I2: pre-check :11435 — boot out any stale embed agent before writing new plist
   if lsof -nP -iTCP:11435 -sTCP:LISTEN >/dev/null 2>&1; then
@@ -2260,6 +2328,7 @@ EOF
       NOMAD_INSTALL_DEGRADED+=("RAG embeddings broken — embed Ollama llama.cpp runner (llama-server) missing; $(_ollama_runner_fix_hint)") ;;
     *) warn "embed Ollama inference probe inconclusive: ${_em_probe#error:} (RAG may pull/repair on first use)" ;;
   esac
+  _svc_record embed "$_embed_sig"
 }
 
 step_omlx_proxy() {
@@ -2270,6 +2339,16 @@ step_omlx_proxy() {
   # (install/macos), so omlx-proxy is a sibling — NOT under another install/macos.
   local proxy_dir="$bundle/omlx-proxy"
   [[ -d "$proxy_dir/vendor" ]] || die "proxy not vendored at $proxy_dir/vendor — your bundle is stale; run 'nomad update' (or re-bootstrap) to fetch the full latest bundle"
+
+  # Smart-update gate: redeploy only when the proxy SOURCE or model_map changed
+  # (content hash); skip when byte-identical AND already answering — so a routine
+  # `nomad update` never bounces the proxy (dropping chat) for an unrelated change.
+  # A fresh install (no marker) or any proxy/model_map edit falls through.
+  local _proxy_sig; _proxy_sig="$(_proxy_content_hash "$proxy_dir")"
+  if _svc_unchanged proxy "$_proxy_sig" "http://127.0.0.1:11436/api/tags"; then
+    ok "oMLX proxy already current on :11436 (source + model_map unchanged) — not redeployed"
+    return 0
+  fi
 
   # I3: ensure SECRETS_DIR exists with correct permissions before creating venv inside it.
   mkdir -p "$SECRETS_DIR" && chmod 700 "$SECRETS_DIR"
@@ -2347,6 +2426,7 @@ EOF
 
   if _wait_http_counter "http://127.0.0.1:11436/api/tags" 30 "proxy on :11436"; then
     ok "proxy responding on :11436 (admin reaches it via host.docker.internal)"
+    _svc_record proxy "$_proxy_sig"
   elif [[ -n "$last_err" ]]; then
     warn "proxy did not answer on :11436 after a bootstrap error — run 'nomad reset-ollama' or check ~/Library/Logs/nomad-omlx-proxy.err.log (continuing install)"
   else
@@ -6835,10 +6915,14 @@ case "$CMD" in
   restart)         cmd_restart "${EXTRA_ARGS[0]:-admin}" ;;
   logs)            cmd_logs    "${EXTRA_ARGS[0]:-admin}" ;;
   models)          cmd_models   "${EXTRA_ARGS[@]}" ;;
-  upgrade)         cmd_upgrade "${EXTRA_ARGS[@]}" ;;
+  # update == upgrade: one verb. Bare/full (or --branch) → the smart, idempotent
+  # full update (redeploys only what changed, incl. the proxy). A service target
+  # or --check/--force → the targeted/dry-run cmd_upgrade. So `nomad upgrade`
+  # never silently skips the proxy again, and `nomad update admin` works too.
+  upgrade)         if _upgrade_is_full "${EXTRA_ARGS[@]}"; then cmd_update "${EXTRA_ARGS[@]}"; else cmd_upgrade "${EXTRA_ARGS[@]}"; fi ;;
   upgrade-models)  cmd_upgrade_models ;;
   build-check|build-status) cmd_build_check ;;
-  update)          cmd_update "${EXTRA_ARGS[@]}" ;;
+  update)          if _upgrade_is_full "${EXTRA_ARGS[@]}"; then cmd_update "${EXTRA_ARGS[@]}"; else cmd_upgrade "${EXTRA_ARGS[@]}"; fi ;;
   downloads)       cmd_downloads "${EXTRA_ARGS[@]:-list}" ;;
   zim)             cmd_zim       "${EXTRA_ARGS[@]:-list}" ;;
   stl)             cmd_stl       "${EXTRA_ARGS[@]:-list}" ;;

@@ -49,6 +49,30 @@ check "tiny + 11    → none"    "$(_select_pull_tier tiny 11)"    "none"
 # downshift never exceeds the RAM target:
 check "small + 999  → small"   "$(_select_pull_tier small 999)"  "small"
 
+echo "== update/upgrade routing (_upgrade_is_full) =="
+load
+check "bare → full"              "$(_upgrade_is_full        && echo full || echo svc)" "full"
+check "empty placeholder → full" "$(_upgrade_is_full ""     && echo full || echo svc)" "full"
+check "--branch dev → full"      "$(_upgrade_is_full --branch dev && echo full || echo svc)" "full"
+check "admin → svc"              "$(_upgrade_is_full admin   && echo full || echo svc)" "svc"
+check "--check → svc"            "$(_upgrade_is_full --check && echo full || echo svc)" "svc"
+check "kiwix → svc"              "$(_upgrade_is_full kiwix   && echo full || echo svc)" "svc"
+check "--force kiwix → svc"      "$(_upgrade_is_full --force kiwix && echo full || echo svc)" "svc"
+
+echo "== proxy content hash (_proxy_content_hash) =="
+load
+PHD="$(mktemp -d)"
+mkdir -p "$PHD/config" "$PHD/vendor/src"
+printf 'print(1)\n' > "$PHD/vendor/src/main.py"
+printf '{"a":1}\n'   > "$PHD/config/model_map.json"
+PH1="$(_proxy_content_hash "$PHD")"
+check "hash non-empty"            "$([[ -n "$PH1" ]] && echo yes || echo no)" "yes"
+check "hash deterministic"        "$(_proxy_content_hash "$PHD")" "$PH1"
+printf '{"a":2}\n' > "$PHD/config/model_map.json"
+check "changes on model_map edit" "$([[ "$(_proxy_content_hash "$PHD")" != "$PH1" ]] && echo changed || echo same)" "changed"
+check "missing dir → empty"       "$(_proxy_content_hash "$PHD/nope")" ""
+rm -rf "$PHD"
+
 echo "== resolve drive models =="
 load
 # No .env yet → empty.
