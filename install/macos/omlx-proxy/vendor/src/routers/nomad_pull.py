@@ -94,8 +94,24 @@ async def _start_download(client: httpx.AsyncClient, repo: str) -> None:
             "oMLX admin API requires auth — set auth.skip_api_key_verification=true "
             "in ~/.omlx/settings.json (the installer does this)."
         )
-    if r.status_code >= 400 and r.status_code != 409:
+    # oMLX signals a duplicate/in-flight download as 409, or as 400 with
+    # "already in progress" in the body (version-dependent). Both are benign: the
+    # download is already running, so fall through to the polling loop — it picks
+    # up the in-progress task from /admin/api/hf/tasks and streams its real
+    # progress. Only genuine errors (bad repo, unreachable, etc.) should fail.
+    if r.status_code >= 400 and not _download_already_running(r.status_code, r.text):
         raise RuntimeError(f"oMLX download API returned HTTP {r.status_code}: {r.text[:200]}")
+
+
+def _download_already_running(status_code: int, body: str) -> bool:
+    """True when oMLX's response means 'this download is already in flight'.
+
+    Pure + dependency-free so the benign-vs-error decision is unit-testable
+    without booting the FastAPI app or hitting oMLX.
+    """
+    if status_code == 409:
+        return True
+    return status_code == 400 and "already in progress" in (body or "").lower()
 
 
 async def _latest_task(client: httpx.AsyncClient, repo: str) -> Optional[dict]:
