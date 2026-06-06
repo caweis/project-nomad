@@ -1,6 +1,7 @@
 import { Job } from 'bullmq'
 import { QueueService } from '#services/queue_service'
 import { EmbedJobWithProgress } from '../../types/rag.js'
+import { mapEmbedJob } from '../../util/embed_jobs.js'
 import { RagService } from '#services/rag_service'
 import { DockerService } from '#services/docker_service'
 import { OllamaService } from '#services/ollama_service'
@@ -166,15 +167,12 @@ export class EmbedFileJob {
   static async listActiveJobs(): Promise<EmbedJobWithProgress[]> {
     const queueService = new QueueService()
     const queue = queueService.getQueue(this.queue)
-    const jobs = await queue.getJobs(['waiting', 'active', 'delayed'])
+    // Include 'failed' so the Processing Queue surfaces files whose embedding
+    // exhausted its retries — otherwise "queued N" files vanish from the UI with
+    // no reason shown. mapEmbedJob lifts BullMQ's failedReason into the DTO.
+    const jobs = await queue.getJobs(['waiting', 'active', 'delayed', 'failed'])
 
-    return jobs.map((job) => ({
-      jobId: job.id!.toString(),
-      fileName: (job.data as EmbedFileJobParams).fileName,
-      filePath: (job.data as EmbedFileJobParams).filePath,
-      progress: typeof job.progress === 'number' ? job.progress : 0,
-      status: ((job.data as any).status as string) ?? 'waiting',
-    }))
+    return jobs.map((job) => mapEmbedJob(job))
   }
 
   static async getByFilePath(filePath: string): Promise<Job | undefined> {

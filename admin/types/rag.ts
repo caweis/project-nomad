@@ -4,6 +4,9 @@ export type EmbedJobWithProgress = {
   filePath: string
   progress: number
   status: string
+  /** Present only on failed jobs — the BullMQ failure reason, surfaced so the
+   *  Processing Queue can show WHICH file failed and WHY. */
+  failedReason?: string
 }
 
 export type ProcessAndEmbedFileResponse = {

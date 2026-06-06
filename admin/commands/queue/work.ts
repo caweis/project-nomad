@@ -149,7 +149,10 @@ export default class QueueWork extends BaseCommand {
       [RunDownloadJob.queue]: 3,
       [DownloadModelJob.queue]: 2, // Lower concurrency for resource-intensive model downloads
       [RunBenchmarkJob.queue]: 1, // Run benchmarks one at a time for accurate results
-      [EmbedFileJob.queue]: 2, // Lower concurrency for embedding jobs, can be resource intensive
+      // Embedding is memory/CPU-heavy (chunking + embedding large ZIM libraries).
+      // Run one at a time: two parallel embeds saturate unified memory and starve
+      // a concurrent AI chat, which is the "chat flaky under embed load" symptom.
+      [EmbedFileJob.queue]: 1,
       [CheckUpdateJob.queue]: 1, // No need to run more than one update check at a time
       default: 3,
     }

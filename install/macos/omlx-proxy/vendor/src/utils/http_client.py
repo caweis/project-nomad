@@ -165,7 +165,17 @@ class RetryClient:
             return isinstance(error, (httpx.NetworkError, httpx.TimeoutException))
 
         if response:
-            # Retry on 5xx errors and specific 4xx errors
+            # 503 Service Unavailable from oMLX means "busy" (max concurrent
+            # generations reached), not a fault. Retrying it immediately re-queues
+            # the SAME generation, holding the slot longer, and — because a
+            # retried-to-exhaustion response trips the shared circuit breaker —
+            # can open the breaker and block ALL subsequent chats for the recovery
+            # window (the "chat fails, then works a minute later" symptom). Treat
+            # 503 as terminal-for-now: return it cleanly so the client gets a fast
+            # busy signal and the breaker stays closed.
+            if response.status_code == 503:
+                return False
+            # Retry on other 5xx errors and specific transient 4xx errors.
             return response.status_code >= 500 or response.status_code in [
                 429,
                 408,
