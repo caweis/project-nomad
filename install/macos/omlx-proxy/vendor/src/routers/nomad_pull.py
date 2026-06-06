@@ -159,9 +159,15 @@ async def _pull_stream(name: str):
                                    "error": task.get("error") or f"download {status}"})
                     return
                 if status == "completed":
-                    if total:
-                        yield _ndjson({"status": "downloading", "digest": repo,
-                                       "total": total, "completed": total})
+                    # ALWAYS emit a 100% downloading frame. When oMLX reports the
+                    # model already-complete (or with no byte counts) the stream
+                    # would otherwise collapse to verifying/success with no
+                    # total/completed, and the admin's progress guard
+                    # (`if chunk.completed && chunk.total`) never fires → the UI
+                    # shows 0 progress and the download looks instant. `total or 1`
+                    # is a sentinel so the admin still sees one full (100%) frame.
+                    yield _ndjson({"status": "downloading", "digest": repo,
+                                   "total": total or 1, "completed": total or 1})
                     yield _ndjson({"status": "verifying"})
                     yield _ndjson({"status": "success"})
                     return
