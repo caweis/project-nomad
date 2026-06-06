@@ -1,7 +1,7 @@
 import { inject } from '@adonisjs/core'
 import { ChatRequest, Ollama } from 'ollama'
 import { NomadOllamaModel } from '../../types/ollama.js'
-import { FALLBACK_RECOMMENDED_OLLAMA_MODELS, MODEL_DESCRIPTION_OVERRIDES } from '../../constants/ollama.js'
+import { FALLBACK_RECOMMENDED_OLLAMA_MODELS, MLX_HIGHLIGHT_MODELS, MODEL_DESCRIPTION_OVERRIDES } from '../../constants/ollama.js'
 import { withMlxPullNames } from '../../util/mlx.js'
 import fs from 'node:fs/promises'
 import path from 'node:path'
@@ -242,6 +242,30 @@ export class OllamaService {
     }
   }
 
+  /**
+   * oMLX mode only: prepend the curated MLX-only highlight cards
+   * (MLX_HIGHLIGHT_MODELS — the MoE et al.) onto *models*. These surface
+   * curated MLX picks the remote catalog only exposes as a family tag (so the
+   * family resolver would collapse them to the smallest variant). Only cards
+   * whose pre-set `mlxPullName` is actually in *pullableKeys* are injected (so
+   * we never offer a card the proxy would refuse), and a card is skipped if its
+   * `name` already appears in *models* (de-dup guard against double-injection).
+   * Returns a new array; never mutates the input. The injected cards flow
+   * through the existing withMlxPullNames / sort / filter / recommendedOnly
+   * pipeline like any other model.
+   */
+  private prependMlxHighlights(
+    models: NomadOllamaModel[],
+    pullableKeys: string[]
+  ): NomadOllamaModel[] {
+    const existingNames = new Set(models.map((m) => m.name))
+    const pullable = new Set(pullableKeys)
+    const highlights = MLX_HIGHLIGHT_MODELS.filter(
+      (h) => h.mlxPullName !== undefined && pullable.has(h.mlxPullName) && !existingNames.has(h.name)
+    )
+    return highlights.length > 0 ? [...highlights, ...models] : models
+  }
+
   async getAvailableModels(
     { sort, recommendedOnly, query, limit, force }: { sort?: 'pulls' | 'name'; recommendedOnly?: boolean, query: string | null, limit?: number, force?: boolean } = {
       sort: 'pulls',
@@ -266,17 +290,33 @@ export class OllamaService {
         logger.warn(
           '[OllamaService] Returning fallback recommended models due to failure in fetching available models'
         )
-        return {
-          models: pullableKeys
-            ? withMlxPullNames(FALLBACK_RECOMMENDED_OLLAMA_MODELS, pullableKeys)
-            : FALLBACK_RECOMMENDED_OLLAMA_MODELS,
-          hasMore: false
+        if (!pullableKeys) {
+          return { models: FALLBACK_RECOMMENDED_OLLAMA_MODELS, hasMore: false }
         }
+        // oMLX mode: prepend the curated MLX-only highlight cards (the MoE et
+        // al.) the proxy can serve, then annotate — withMlxPullNames preserves
+        // each highlight's pre-set mlxPullName while resolving the rest.
+        const withHighlights = this.prependMlxHighlights(
+          FALLBACK_RECOMMENDED_OLLAMA_MODELS,
+          pullableKeys
+        )
+        return { models: withMlxPullNames(withHighlights, pullableKeys), hasMore: false }
+      }
+
+      // oMLX mode: prepend the curated MLX-only highlight cards (the MoE et al.)
+      // before annotating, so they flow through the same withMlxPullNames /
+      // sort / filter / recommendedOnly pipeline as the remote catalog. Only
+      // cards the proxy can actually serve are injected; remote-catalog cards
+      // are untouched on the 'ollama' backend (pullableKeys is null → no inject).
+      if (pullableKeys) {
+        models = this.prependMlxHighlights(models, pullableKeys)
       }
 
       // Carry mlxPullName through every downstream branch (full / query /
       // recommended) — the recommended path spreads each model object, so the
-      // annotation survives the tag-trimming map below.
+      // annotation survives the tag-trimming map below. withMlxPullNames
+      // preserves each highlight card's pre-set mlxPullName (skips resolution)
+      // while family-resolving the remote-catalog cards.
       if (pullableKeys) {
         models = withMlxPullNames(models, pullableKeys)
       }

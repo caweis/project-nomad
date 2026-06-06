@@ -81,6 +81,88 @@ export const FALLBACK_RECOMMENDED_OLLAMA_MODELS: NomadOllamaModel[] = [
   },
 ]
 
+/**
+ * Curated MLX-only highlight cards (oMLX mode only).
+ *
+ * The admin's remote catalog (api.projectnomad.us) is keyed by Ollama *family*
+ * — one "qwen3" card — and in oMLX mode `resolveMlxPullName` family-matches a
+ * card to the SMALLEST pullable key, so the MoE tag `qwen3:30b-a3b` never
+ * surfaces as its own selectable card (the `qwen3` card resolves to
+ * `qwen3:14b`). These synthetic catalog entries fix that: each is a full
+ * NomadOllamaModel with `mlxPullName` PRE-SET to the exact model_map.json key,
+ * a user-friendly `name` that won't collide with any remote-catalog family name
+ * (so it renders as a separate card), and a curated description.
+ *
+ * They are PREPENDED to the catalog in OllamaService.getAvailableModels — but
+ * ONLY in oMLX mode and ONLY for keys actually present in the proxy's pullable
+ * set, so we never offer a card the proxy would refuse. `withMlxPullNames`
+ * preserves the pre-set `mlxPullName` (skips family resolution) so each card
+ * installs its exact key. Curate this list as new MLX-only picks land in
+ * model_map.json.
+ */
+export const MLX_HIGHLIGHT_MODELS: NomadOllamaModel[] = [
+  {
+    name: 'Qwen3-30B-A3B (MoE)',
+    description:
+      'Qwen3 30B-A3B — a Mixture-of-Experts model: 30B total parameters, ~3B active per token. Big-model quality at small-model speed; great on 24GB+ Macs.',
+    estimated_pulls: '5M',
+    id: 'mlx-highlight-qwen3-30b-a3b',
+    first_seen: '2026-06-04T00:00:00.000+00:00',
+    model_last_updated: 'recently',
+    mlxPullName: 'qwen3:30b-a3b',
+    tags: [
+      {
+        name: 'qwen3:30b-a3b',
+        size: '17 GB',
+        context: '256K',
+        input: 'Text',
+        cloud: false,
+        thinking: true,
+      },
+    ],
+  },
+  {
+    name: 'Qwen3-Coder-30B-A3B (MoE)',
+    description:
+      'Qwen3-Coder 30B-A3B — a Mixture-of-Experts coding model: 30B total parameters, ~3B active per token. Strong code generation and agentic coding at ~3B-active speed; great on 24GB+ Macs.',
+    estimated_pulls: '4M',
+    id: 'mlx-highlight-qwen3-coder-30b-a3b',
+    first_seen: '2026-06-04T00:00:00.000+00:00',
+    model_last_updated: 'recently',
+    mlxPullName: 'qwen3-coder:30b-a3b',
+    tags: [
+      {
+        name: 'qwen3-coder:30b-a3b',
+        size: '17 GB',
+        context: '256K',
+        input: 'Text',
+        cloud: false,
+        thinking: false,
+      },
+    ],
+  },
+  {
+    name: 'DeepSeek-V2-Lite (MoE)',
+    description:
+      'DeepSeek-V2-Lite — a Mixture-of-Experts model: 16B total parameters, ~2.4B active per token. Fast, capable chat that fits 16GB Macs.',
+    estimated_pulls: '3M',
+    id: 'mlx-highlight-deepseek-v2-16b',
+    first_seen: '2026-06-04T00:00:00.000+00:00',
+    model_last_updated: 'recently',
+    mlxPullName: 'deepseek-v2:16b',
+    tags: [
+      {
+        name: 'deepseek-v2:16b',
+        size: '9 GB',
+        context: '32K',
+        input: 'Text',
+        cloud: false,
+        thinking: false,
+      },
+    ],
+  },
+]
+
 export const DEFAULT_QUERY_REWRITE_MODEL = 'qwen2.5:3b' // default to qwen2.5 for query rewriting with good balance of text task performance and resource usage
 
 /**

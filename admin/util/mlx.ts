@@ -57,12 +57,20 @@ export function resolveMlxPullName(family: string, pullableKeys: string[]): stri
  * Return a copy of *models* with `mlxPullName` set on each model that has a
  * matching MLX conversion. Immutable: never mutates the inputs, so passing the
  * shared FALLBACK_RECOMMENDED_OLLAMA_MODELS const through is safe.
+ *
+ * A model that ALREADY carries a truthy `mlxPullName` is returned unchanged —
+ * the family resolver is skipped. This lets the synthetic curated MLX-only
+ * cards (MLX_HIGHLIGHT_MODELS) keep their exact, pre-set model_map key (e.g.
+ * the MoE tag `qwen3:30b-a3b`) instead of being family-collapsed to the
+ * smallest `qwen3` variant, while remote-catalog cards (which never carry one)
+ * still get resolved as before.
  */
 export function withMlxPullNames(
   models: NomadOllamaModel[],
   pullableKeys: string[]
 ): NomadOllamaModel[] {
   return models.map((model) => {
+    if (model.mlxPullName) return model
     const pull = resolveMlxPullName(model.name, pullableKeys)
     return pull ? { ...model, mlxPullName: pull } : model
   })

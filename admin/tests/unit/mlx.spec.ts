@@ -85,4 +85,19 @@ test.group('withMlxPullNames', () => {
     assert.notProperty(models[0], 'mlxPullName')
     assert.equal(out[0].mlxPullName, 'llama3.1:8b')
   })
+
+  test('preserves a pre-set mlxPullName — skips family resolution', ({ assert }) => {
+    // Synthetic curated MLX cards (MLX_HIGHLIGHT_MODELS) carry their exact
+    // model_map key on `mlxPullName`. A card named "Qwen3-30B-A3B (MoE)" must
+    // keep `qwen3:30b-a3b` — it must NOT be family-collapsed (its name has no
+    // ':' family match anyway, but even a colliding name must be left as-is).
+    // A sibling card without a pre-set key still resolves normally.
+    const models = [
+      { name: 'Qwen3-30B-A3B (MoE)', tags: [], mlxPullName: 'qwen3:30b-a3b' },
+      { name: 'llama3.1', tags: [] },
+    ] as any
+    const out = withMlxPullNames(models, [...KEYS, 'qwen3:30b-a3b'])
+    assert.equal(out[0].mlxPullName, 'qwen3:30b-a3b')
+    assert.equal(out[1].mlxPullName, 'llama3.1:8b')
+  })
 })
