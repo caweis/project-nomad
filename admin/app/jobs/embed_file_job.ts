@@ -189,17 +189,19 @@ export class EmbedFileJob {
     const queue = queueService.getQueue(this.queue)
     const jobId = this.getJobId(params.filePath)
 
+    const addOptions = {
+      jobId,
+      attempts: 30,
+      backoff: {
+        type: 'fixed' as const,
+        delay: 60000, // Check every 60 seconds for service readiness
+      },
+      removeOnComplete: { count: 50 }, // Keep last 50 completed jobs for history
+      removeOnFail: { count: 20 }, // Keep last 20 failed jobs for debugging
+    }
+
     try {
-      const job = await queue.add(this.key, params, {
-        jobId,
-        attempts: 30,
-        backoff: {
-          type: 'fixed',
-          delay: 60000, // Check every 60 seconds for service readiness
-        },
-        removeOnComplete: { count: 50 }, // Keep last 50 completed jobs for history
-        removeOnFail: { count: 20 } // Keep last 20 failed jobs for debugging
-      })
+      const job = await queue.add(this.key, params, addOptions)
 
       logger.info(`[EmbedFileJob] Dispatched embedding job for file: ${params.fileName}`)
 
@@ -211,7 +213,43 @@ export class EmbedFileJob {
       }
     } catch (error) {
       if (error.message && error.message.includes('job already exists')) {
+        // Completed/failed records are retained (removeOnComplete/Fail keep N),
+        // so a re-scanned file collides on the deterministic jobId and never
+        // re-embeds. Remove the stale record and re-add so it actually runs.
         const existing = await queue.getJob(jobId)
+        const state = existing ? await existing.getState() : null
+
+        if (existing && (state === 'completed' || state === 'failed')) {
+          try {
+            await existing.remove()
+          } catch (removeError) {
+            // Race: another dispatch may have removed/re-added it. Fall back to
+            // the existing job rather than crashing dispatch.
+            logger.warn(
+              `[EmbedFileJob] Could not remove stale ${state} job for ${params.fileName}, returning existing`,
+              removeError
+            )
+            return {
+              job: existing,
+              created: false,
+              jobId,
+              message: `Embedding job already exists for: ${params.fileName}`,
+            }
+          }
+
+          const job = await queue.add(this.key, params, addOptions)
+          logger.info(
+            `[EmbedFileJob] Re-queued embedding job for file: ${params.fileName} (was ${state})`
+          )
+          return {
+            job,
+            created: true,
+            jobId,
+            message: `File re-queued for embedding: ${params.fileName} (was ${state})`,
+          }
+        }
+
+        // Genuinely in-flight (waiting/active/delayed/paused) — leave it alone.
         logger.info(`[EmbedFileJob] Job already exists for file: ${params.fileName}`)
         return {
           job: existing,

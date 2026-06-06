@@ -1237,13 +1237,19 @@ export class RagService {
           const stats = await getFileStatsIfExists(filePath)
 
           logger.info(`[RAG] Dispatching embed job for: ${fileName}`)
-          await EmbedFileJob.dispatch({
+          const result = await EmbedFileJob.dispatch({
             filePath: filePath,
             fileName: fileName,
             fileSize: stats?.size,
           })
-          queuedCount++
-          logger.debug(`[RAG] Successfully dispatched job for ${fileName}`)
+          // Only count jobs that actually entered the queue — skipped
+          // in-flight dispatches (created:false) must not inflate the toast.
+          if (result.created) {
+            queuedCount++
+            logger.debug(`[RAG] Successfully dispatched job for ${fileName}`)
+          } else {
+            logger.debug(`[RAG] Embed job already in-flight for ${fileName}, not counted`)
+          }
         } catch (fileError) {
           logger.error(`[RAG] Error dispatching job for file ${filePath}:`, fileError)
         }
