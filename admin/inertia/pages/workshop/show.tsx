@@ -7,6 +7,9 @@ import {
   IconArrowLeft,
   IconAlertTriangle,
   IconBox,
+  IconCube,
+  IconFileTypePdf,
+  IconPhoto,
   IconDownload,
   IconTrash,
   IconPhotoUp,
@@ -16,10 +19,12 @@ import type {
   StlDifficulty,
   StlFileDetail,
   StlMaterial,
+  WorkshopFileTypeEnum,
 } from '../../../types/stl_library'
 
+// StlFileDetail extends StlFileSlim which now includes file_type.
 interface PageProps {
-  file: StlFileDetail
+  file: StlFileDetail & { file_type: WorkshopFileTypeEnum }
   file_available: boolean
   enums: {
     categories: { value: StlCategory; label: string }[]
@@ -99,11 +104,14 @@ export default function WorkshopShow(props: PageProps) {
       // StlFile.isMetadataComplete on the server.
       const missing: string[] = []
       if (!form.name || !form.name.trim()) missing.push('name')
-      if (!form.material) missing.push('material')
-      if (form.print_time_minutes === '' || Number(form.print_time_minutes) <= 0) {
-        missing.push('print time')
+      // STL-only required fields — skip for CAD / PDF / image.
+      if (props.file.file_type === 'stl') {
+        if (!form.material) missing.push('material')
+        if (form.print_time_minutes === '' || Number(form.print_time_minutes) <= 0) {
+          missing.push('print time')
+        }
+        if (!form.difficulty) missing.push('difficulty')
       }
-      if (!form.difficulty) missing.push('difficulty')
 
       let text: string
       if (!data.metadata_pending) {
@@ -208,7 +216,7 @@ export default function WorkshopShow(props: PageProps) {
                   className="object-contain w-full h-full"
                 />
               ) : (
-                <IconBox size={96} className="text-gray-300" />
+                <ShowFileTypeIcon fileType={props.file.file_type} />
               )}
             </div>
 
@@ -298,56 +306,61 @@ export default function WorkshopShow(props: PageProps) {
                 </select>
               </FormGroup>
 
-              <FormGroup label="Material *">
-                <select
-                  value={form.material}
-                  onChange={(e) => set('material', e.target.value)}
-                  className="w-full rounded border border-gray-300 px-2 py-1.5"
-                >
-                  <option value="">— select —</option>
-                  {props.enums.materials.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
-              </FormGroup>
+              {/* STL-only fields — not shown for CAD / PDF / image */}
+              {props.file.file_type === 'stl' && (
+                <>
+                  <FormGroup label="Material *">
+                    <select
+                      value={form.material}
+                      onChange={(e) => set('material', e.target.value)}
+                      className="w-full rounded border border-gray-300 px-2 py-1.5"
+                    >
+                      <option value="">— select —</option>
+                      {props.enums.materials.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                  </FormGroup>
 
-              <FormGroup label="Print time (minutes) *">
-                <input
-                  type="number"
-                  min={0}
-                  value={form.print_time_minutes}
-                  onChange={(e) => set('print_time_minutes', e.target.value as never)}
-                  className="w-full rounded border border-gray-300 px-2 py-1.5"
-                />
-              </FormGroup>
+                  <FormGroup label="Print time (minutes) *">
+                    <input
+                      type="number"
+                      min={0}
+                      value={form.print_time_minutes}
+                      onChange={(e) => set('print_time_minutes', e.target.value as never)}
+                      className="w-full rounded border border-gray-300 px-2 py-1.5"
+                    />
+                  </FormGroup>
 
-              <FormGroup label="Infill %">
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={form.infill_pct}
-                  onChange={(e) => set('infill_pct', e.target.value as never)}
-                  className="w-full rounded border border-gray-300 px-2 py-1.5"
-                />
-              </FormGroup>
+                  <FormGroup label="Infill %">
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={form.infill_pct}
+                      onChange={(e) => set('infill_pct', e.target.value as never)}
+                      className="w-full rounded border border-gray-300 px-2 py-1.5"
+                    />
+                  </FormGroup>
 
-              <FormGroup label="Difficulty *">
-                <select
-                  value={form.difficulty}
-                  onChange={(e) => set('difficulty', e.target.value)}
-                  className="w-full rounded border border-gray-300 px-2 py-1.5 capitalize"
-                >
-                  <option value="">— select —</option>
-                  {props.enums.difficulties.map((d) => (
-                    <option key={d} value={d}>
-                      {d}
-                    </option>
-                  ))}
-                </select>
-              </FormGroup>
+                  <FormGroup label="Difficulty *">
+                    <select
+                      value={form.difficulty}
+                      onChange={(e) => set('difficulty', e.target.value)}
+                      className="w-full rounded border border-gray-300 px-2 py-1.5 capitalize"
+                    >
+                      <option value="">— select —</option>
+                      {props.enums.difficulties.map((d) => (
+                        <option key={d} value={d}>
+                          {d}
+                        </option>
+                      ))}
+                    </select>
+                  </FormGroup>
+                </>
+              )}
 
               <FormGroup label="License (freeform)">
                 <input
@@ -380,7 +393,7 @@ export default function WorkshopShow(props: PageProps) {
               />
             </FormGroup>
 
-            <FormGroup label="Description / print notes">
+            <FormGroup label="Description / notes">
               <textarea
                 value={form.description}
                 onChange={(e) => set('description', e.target.value)}
@@ -389,7 +402,11 @@ export default function WorkshopShow(props: PageProps) {
               />
             </FormGroup>
 
-            <p className="text-xs text-gray-500">* required to leave the "Needs metadata" state.</p>
+            {props.file.file_type === 'stl' ? (
+              <p className="text-xs text-gray-500">* required to leave the "Needs metadata" state.</p>
+            ) : (
+              <p className="text-xs text-gray-500">Name is the only required field for this file type.</p>
+            )}
 
             {/* StyledButton renders type="button", so it never triggers the
                 form's onSubmit — wire Save via onClick (the form's onSubmit
@@ -408,6 +425,22 @@ export default function WorkshopShow(props: PageProps) {
       </div>
     </AppLayout>
   )
+}
+
+/** Per-type icon shown in the detail page when there is no thumbnail. */
+function ShowFileTypeIcon({ fileType }: { fileType: WorkshopFileTypeEnum }) {
+  const cls = 'text-gray-300'
+  switch (fileType) {
+    case 'cad':
+      return <IconCube size={96} className={cls} />
+    case 'pdf':
+      return <IconFileTypePdf size={96} className={cls} />
+    case 'image':
+      return <IconPhoto size={96} className={cls} />
+    case 'stl':
+    default:
+      return <IconBox size={96} className={cls} />
+  }
 }
 
 /**

@@ -16,6 +16,7 @@ import type {
   StlListFilters,
   StlLibraryUnavailable,
   StlMaterial,
+  WorkshopFileTypeEnum,
 } from '../../../types/stl_library'
 
 type BatchAction = 'update-metadata' | 'recategorize' | 'delete'
@@ -33,6 +34,7 @@ interface PageProps {
   pagination: Pagination | null
   filters: StlListFilters
   enums: {
+    file_types: WorkshopFileTypeEnum[]
     categories: { value: StlCategory; label: string }[]
     materials: StlMaterial[]
     difficulties: StlDifficulty[]
@@ -145,8 +147,8 @@ export default function WorkshopIndex(props: PageProps) {
               <IconBox size={32} /> Workshop
             </h1>
             <p className="text-sm text-gray-600 mt-1">
-              Offline catalog of 3D-printable files. Drop STL/3MF files below, or
-              copy them into{' '}
+              Offline maker library — 3D prints, CAD files, PDFs, and reference images. Drop files
+              below, or copy them into{' '}
               <code className="bg-gray-100 px-1 rounded">storage/stl-library/&lt;category&gt;/</code>{' '}
               on your data drive and run a scan.
             </p>
@@ -265,6 +267,7 @@ function EmptyState({
   uploadPermitted: boolean
 }) {
   const filtered =
+    !!filters.file_type ||
     !!filters.category ||
     !!filters.material ||
     !!filters.difficulty ||
@@ -289,8 +292,7 @@ function EmptyState({
           <>Drop files into the upload zone above to get started.</>
         ) : (
           <>
-            Drop <code className="bg-gray-100 px-1 rounded">.stl</code> or{' '}
-            <code className="bg-gray-100 px-1 rounded">.3mf</code> files into{' '}
+            Drop STL, 3MF, CAD, PDF, or image files into{' '}
             <code className="bg-gray-100 px-1 rounded">storage/stl-library/&lt;category&gt;/</code>{' '}
             on your data drive, then click <strong>Rescan library</strong>.
           </>

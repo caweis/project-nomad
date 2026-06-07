@@ -1,9 +1,17 @@
 import { router } from '@inertiajs/react'
 import { useState } from 'react'
 import { IconSearch, IconX } from '@tabler/icons-react'
-import type { StlCategory, StlDifficulty, StlMaterial, StlListFilters } from '../../../types/stl_library'
+import type { StlCategory, StlDifficulty, StlListFilters, StlMaterial, WorkshopFileTypeEnum } from '../../../types/stl_library'
+
+const FILE_TYPE_LABELS: Record<WorkshopFileTypeEnum, string> = {
+  stl: 'STL / 3MF',
+  cad: 'CAD',
+  pdf: 'PDF',
+  image: 'Image',
+}
 
 interface FilterEnum {
+  file_types: WorkshopFileTypeEnum[]
   categories: { value: StlCategory; label: string }[]
   materials: StlMaterial[]
   difficulties: StlDifficulty[]
@@ -41,6 +49,7 @@ export default function WorkshopFilters({ filters, enums, total }: Props) {
   }
 
   const hasActiveFilters =
+    !!filters.file_type ||
     !!filters.category ||
     !!filters.material ||
     !!filters.difficulty ||
@@ -84,6 +93,25 @@ export default function WorkshopFilters({ filters, enums, total }: Props) {
           </button>
         </div>
       </form>
+
+      <FilterGroup label="File type">
+        <select
+          value={filters.file_type ?? ''}
+          onChange={(e) =>
+            updateFilter({
+              file_type: (e.target.value || undefined) as WorkshopFileTypeEnum | undefined,
+            })
+          }
+          className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+        >
+          <option value="">All types</option>
+          {enums.file_types.map((ft) => (
+            <option key={ft} value={ft}>
+              {FILE_TYPE_LABELS[ft]}
+            </option>
+          ))}
+        </select>
+      </FilterGroup>
 
       <FilterGroup label="Category">
         <select

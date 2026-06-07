@@ -18,10 +18,35 @@ import {
   STL_CATEGORIES,
   STL_DIFFICULTIES,
   STL_MATERIALS,
+  WORKSHOP_FILE_TYPES,
 } from '../../types/stl_library.js'
 import type { StlCategory, StlFileSlim } from '../../types/stl_library.js'
 import { sanitizeFilename } from '../utils/fs.js'
 import { requiredFieldsPresent } from '../../util/workshop_batch.js'
+import { classifyFileType } from '../../util/file_classification.js'
+
+/**
+ * MIME types served by the download endpoint, keyed by lowercase extension.
+ * Falls back to application/octet-stream for anything not listed (shouldn't
+ * happen — the upload validator only accepts known types, but defensive).
+ */
+const DOWNLOAD_MIME_MAP: Record<string, string> = {
+  '.stl': 'model/stl',
+  '.3mf': 'model/3mf',
+  '.pdf': 'application/pdf',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  // CAD: no standard MIME; browser downloads as a binary.
+  '.step': 'application/octet-stream',
+  '.stp': 'application/octet-stream',
+  '.dxf': 'application/octet-stream',
+  '.dwg': 'application/octet-stream',
+  '.f3d': 'application/octet-stream',
+  '.scad': 'application/octet-stream',
+}
 
 /**
  * Workshop / Offline STL Library — HTTP boundary.
@@ -68,6 +93,7 @@ export default class WorkshopController {
 
     const query = StlFile.query()
 
+    if (filters.file_type) query.where('file_type', filters.file_type)
     if (filters.category) query.where('category', filters.category)
     if (filters.material) query.where('material', filters.material)
     if (filters.difficulty) query.where('difficulty', filters.difficulty)
@@ -91,6 +117,7 @@ export default class WorkshopController {
       id: row.id,
       path: row.path,
       name: row.name,
+      file_type: (row.file_type ?? 'stl') as StlFileSlim['file_type'],
       category: row.category,
       material: row.material,
       print_time_minutes: row.print_time_minutes,
@@ -137,6 +164,7 @@ export default class WorkshopController {
         id: row.id,
         path: row.path,
         name: row.name,
+        file_type: (row.file_type ?? 'stl') as StlFileSlim['file_type'],
         category: row.category,
         tags: row.tags ?? [],
         material: row.material,
@@ -189,6 +217,7 @@ export default class WorkshopController {
     if (payload.license !== undefined) row.license = payload.license
 
     row.metadata_pending = !StlFile.isMetadataComplete({
+      file_type: row.file_type,
       name: row.name,
       material: row.material,
       print_time_minutes: row.print_time_minutes,
@@ -258,6 +287,7 @@ export default class WorkshopController {
         if (payload.material !== undefined) row.material = payload.material
         if (payload.difficulty !== undefined) row.difficulty = payload.difficulty
         row.metadata_pending = !StlFile.isMetadataComplete({
+          file_type: row.file_type,
           name: row.name,
           material: row.material,
           print_time_minutes: row.print_time_minutes,
@@ -372,7 +402,7 @@ export default class WorkshopController {
     }
 
     const ext = extname(row.path).toLowerCase()
-    const mime = ext === '.3mf' ? 'model/3mf' : 'model/stl'
+    const mime = DOWNLOAD_MIME_MAP[ext] ?? 'application/octet-stream'
     const filename = `${row.name}${ext}`
 
     response.header('Content-Type', mime)
@@ -451,7 +481,7 @@ export default class WorkshopController {
     const category = rawCategory as StlCategory
 
     const files = request.files('files', {
-      extnames: ['stl', '3mf'],
+      extnames: ['stl', '3mf', 'step', 'stp', 'dxf', 'dwg', 'f3d', 'scad', 'pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif'],
       size: '200mb',
     })
 
@@ -477,10 +507,11 @@ export default class WorkshopController {
       }
 
       const ext = (file.extname ?? '').toLowerCase()
-      if (ext !== 'stl' && ext !== '3mf') {
+      // Classify the extension — rejects anything not in the maker-library set.
+      if (!classifyFileType(ext)) {
         rejected.push({
           filename: file.clientName,
-          reason: `Only .stl and .3mf files are accepted (got .${ext || 'unknown'}).`,
+          reason: `Unsupported file type (.${ext || 'unknown'}). Accepted: STL, 3MF, CAD (STEP/STP/DXF/DWG/F3D/SCAD), PDF, images (PNG/JPG/WEBP/GIF).`,
         })
         continue
       }
@@ -576,6 +607,7 @@ export default class WorkshopController {
 
   private enumsForUi() {
     return {
+      file_types: [...WORKSHOP_FILE_TYPES],
       categories: STL_CATEGORIES.map((c) => ({ value: c, label: CATEGORY_LABELS[c] })),
       materials: [...STL_MATERIALS],
       difficulties: [...STL_DIFFICULTIES],

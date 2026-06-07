@@ -1,6 +1,7 @@
 import { DateTime } from 'luxon'
 import { BaseModel, column, SnakeCaseNamingStrategy } from '@adonisjs/lucid/orm'
 import type { StlCategory, StlDifficulty, StlMaterial } from '../../types/stl_library.js'
+import { isMetadataComplete as classifyIsMetadataComplete } from '../../util/file_classification.js'
 
 /**
  * Workshop / Offline STL Library catalog entry.
@@ -31,6 +32,13 @@ export default class StlFile extends BaseModel {
 
   @column()
   declare category: StlCategory
+
+  /**
+   * File-type discriminator. Populated at index time by classifyFileType().
+   * All pre-broadening rows default to 'stl' via the migration column default.
+   */
+  @column()
+  declare file_type: string
 
   /**
    * JSON column stored as a string array in MySQL. Adonis Lucid serializes
@@ -115,23 +123,29 @@ export default class StlFile extends BaseModel {
   declare last_indexed_at: DateTime
 
   /**
-   * Required-metadata check. Used by StlScannerService and the controller
-   * to determine when to flip metadata_pending. Mirrored client-side in
-   * the Workshop edit form for the same fields.
+   * Required-metadata check. Thin wrapper over the pure
+   * `isMetadataComplete` helper in util/file_classification.ts so the
+   * model API stays stable for existing callers (controller, scanner).
+   *
+   * Callers that have a `file_type` on the row automatically get the
+   * type-aware logic (stl → strict; cad/pdf/image → name only). When the
+   * caller passes a row without `file_type` (old call-sites that only pass
+   * name/material/print_time/difficulty), we default to 'stl' to preserve
+   * the existing strict behaviour.
    */
   static isMetadataComplete(row: {
-    name: string | null
-    material: StlMaterial | null
-    print_time_minutes: number | null
-    difficulty: StlDifficulty | null
+    file_type?: string | null
+    name?: string | null
+    material?: StlMaterial | null
+    print_time_minutes?: number | null
+    difficulty?: StlDifficulty | null
   }): boolean {
-    return (
-      !!row.name &&
-      row.name.trim().length > 0 &&
-      !!row.material &&
-      row.print_time_minutes !== null &&
-      row.print_time_minutes > 0 &&
-      !!row.difficulty
-    )
+    return classifyIsMetadataComplete({
+      file_type: row.file_type ?? 'stl',
+      name: row.name,
+      material: row.material,
+      print_time_minutes: row.print_time_minutes,
+      difficulty: row.difficulty,
+    })
   }
 }

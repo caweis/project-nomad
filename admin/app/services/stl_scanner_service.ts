@@ -7,6 +7,12 @@ import { DateTime } from 'luxon'
 import logger from '@adonisjs/core/services/logger'
 import StlFile from '#models/stl_file'
 import { STL_CATEGORIES, type StlCategory } from '../../types/stl_library.js'
+import {
+  INDEXABLE_EXTS,
+  classifyFileType,
+  CATEGORY_REMAP,
+  type WorkshopFileType,
+} from '../../util/file_classification.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -53,10 +59,11 @@ export class StlScannerService {
   public static readonly THUMBNAIL_DIR = '.thumbnails'
 
   /**
-   * File extensions we index. STL is the lingua franca; 3MF carries metadata
-   * (PrusaSlicer config, etc.) we may parse in a future commit.
+   * File extensions we index — imported from the pure file_classification
+   * helper so the scanner and the upload controller stay in sync automatically.
+   * Covers stl, 3mf, cad (step/stp/dxf/dwg/f3d/scad), pdf, and images.
    */
-  private static readonly INDEXABLE_EXTS = new Set(['.stl', '.3mf'])
+  private static readonly INDEXABLE_EXTS = INDEXABLE_EXTS
 
   /**
    * Read up to this many bytes from the head of each file when computing the
@@ -244,6 +251,16 @@ export class StlScannerService {
     if ((STL_CATEGORIES as readonly string[]).includes(parentDir)) {
       return parentDir as StlCategory
     }
+    // Legacy directory names from before the 7→14 category rename — existing
+    // installs have `tools/` and `agriculture/` folders on disk. Map them
+    // forward (tools→tools-hardware, agriculture→agriculture-homestead) so a
+    // file dropped straight into a legacy folder lands in the right new
+    // category instead of falling to 'other'. (Uploads already use the new
+    // names; this covers manual drops / `nomad stl import` into old dirs.)
+    const remapped = CATEGORY_REMAP[parentDir]
+    if (remapped && (STL_CATEGORIES as readonly string[]).includes(remapped)) {
+      return remapped as StlCategory
+    }
     return 'other'
   }
 
@@ -280,10 +297,12 @@ export class StlScannerService {
     }
 
     const { size, hash } = await this.fileInfo(absPath)
+    const fileExt = extname(relPath).toLowerCase()
     const row = new StlFile()
     row.path = relPath
     row.name = basename(relPath, extname(relPath))
     row.category = this.inferCategory(relPath)
+    row.file_type = classifyFileType(fileExt) ?? 'stl'
     row.tags = null
     row.material = null
     row.print_time_minutes = null
@@ -334,13 +353,17 @@ export class StlScannerService {
 
   /**
    * Render PNG previews for any row that doesn't have one yet and hasn't
-   * been marked as a sticky failure. Uses the `stl-thumb` binary bundled
-   * in the admin image at /usr/local/bin/stl-thumb (see Dockerfile).
+   * been marked as a sticky failure.
+   *
+   * Routes to the right renderer by file_type:
+   *   stl   → stl-thumb binary (unchanged)
+   *   pdf   → pdf2pic (first page → 256px PNG) with gm convert fallback
+   *   image → sharp resize
+   *   cad   → skip (no render in v1; UI shows per-type icon instead)
    *
    * If stl-thumb is missing from the image entirely (e.g., development on a
-   * host where the binary isn't installed), we log once and mark every
-   * row's thumbnail_failed=true so subsequent scans skip them — that's
-   * better than rolling spawn-ENOENT errors on every scan.
+   * host where the binary isn't installed), only STL rows are marked failed —
+   * pdf/image rendering is independent of stl-thumb.
    */
   private async generateThumbnails(): Promise<{ generated: number; failed: number }> {
     const pending = await StlFile.query()
@@ -353,23 +376,32 @@ export class StlScannerService {
     let generated = 0
     let failed = 0
 
-    // Probe once for stl-thumb presence so a missing binary doesn't punish
-    // every row with a full spawn attempt.
+    // Probe once for stl-thumb (only relevant for stl rows).
     const stlThumbAvailable = await this.hasStlThumb()
-    if (!stlThumbAvailable) {
+    const stlPending = pending.filter((r) => (r.file_type ?? 'stl') === 'stl')
+    if (!stlThumbAvailable && stlPending.length > 0) {
       logger.warn(
         '[StlScannerService] stl-thumb binary not found on PATH — marking ' +
-          `${pending.length} pending thumbnail(s) as failed (Dockerfile commit 4 adds it)`
+          `${stlPending.length} STL thumbnail(s) as failed (Dockerfile adds it)`
       )
-      for (const row of pending) {
+      for (const row of stlPending) {
         row.thumbnail_failed = true
         await row.save()
       }
-      return { generated: 0, failed: pending.length }
+      failed += stlPending.length
     }
 
     for (const row of pending) {
-      const result = await this.renderThumbnail(row.path, row.id)
+      const ft = (row.file_type ?? 'stl') as WorkshopFileType
+
+      // CAD: no render attempt in v1 — leave thumbnail_path null and do NOT
+      // set thumbnail_failed so a future scan can try again once #7 ships.
+      if (ft === 'cad') continue
+
+      // STL: already handled above when stl-thumb is missing.
+      if (ft === 'stl' && !stlThumbAvailable) continue
+
+      const result = await this.renderThumbnail(row.path, row.id, ft)
       if (result.ok) {
         row.thumbnail_path = result.thumbnailRelPath
         await row.save()
@@ -379,7 +411,7 @@ export class StlScannerService {
         await row.save()
         failed++
         logger.warn(
-          `[StlScannerService] stl-thumb failed on ${row.path}: ${result.error.slice(0, 200)}`
+          `[StlScannerService] thumbnail failed (${ft}) on ${row.path}: ${result.error.slice(0, 200)}`
         )
       }
     }
@@ -396,9 +428,22 @@ export class StlScannerService {
     }
   }
 
+  /**
+   * Render a single thumbnail, routed by file_type.
+   *
+   * All paths share:
+   *   • Output: {LIBRARY_ROOT}/.thumbnails/{id}.png
+   *   • Timeout: 30 s (generous for large STL/PDF on ARM)
+   *   • On error: returns { ok: false, error } — caller sets thumbnail_failed
+   *
+   * pdf2pic and sharp are lazy-imported inside this method so they don't
+   * pollute the module top-level (keeps the pure tests importable without
+   * those native modules).
+   */
   private async renderThumbnail(
     fileRelPath: string,
-    fileId: number
+    fileId: number,
+    fileType: WorkshopFileType
   ): Promise<{ ok: true; thumbnailRelPath: string } | { ok: false; error: string }> {
     const inputAbs = join(StlScannerService.LIBRARY_ROOT, fileRelPath)
     const thumbName = `${fileId}.png`
@@ -406,10 +451,40 @@ export class StlScannerService {
     const thumbAbs = join(StlScannerService.LIBRARY_ROOT, thumbRelPath)
 
     try {
-      // stl-thumb args: -s 256 (size), output is positional.
-      // Timeout 30s — generous because a complex 100MB STL on Apple Silicon
-      // can take 10-20s the first time through.
-      await execFileAsync('stl-thumb', ['-s', '256', inputAbs, thumbAbs], { timeout: 30000 })
+      switch (fileType) {
+        case 'stl': {
+          // stl-thumb args: -s 256 (size), output is positional.
+          // Timeout 30s — generous for a complex 100 MB STL on Apple Silicon.
+          await execFileAsync('stl-thumb', ['-s', '256', inputAbs, thumbAbs], { timeout: 30000 })
+          break
+        }
+
+        case 'pdf': {
+          // Use GraphicsMagick's gm convert with the Ghostscript PDF delegate.
+          // This matches the stl-thumb shell-out pattern (execFile, 30s timeout)
+          // and avoids awkward pdf2pic stream/path duality. ghostscript must be
+          // installed (see Dockerfile — added to the apt line in this commit).
+          // "[0]" selects the first page.
+          await execFileAsync(
+            'gm',
+            ['convert', `${inputAbs}[0]`, '-resize', '256x256', '-background', 'white', '-flatten', thumbAbs],
+            { timeout: 30000 }
+          )
+          break
+        }
+
+        case 'image': {
+          // Lazy-import sharp so the pure util tests don't require native bindings.
+          const sharp = (await import('sharp')).default
+          await sharp(inputAbs).resize(256, 256, { fit: 'inside' }).png().toFile(thumbAbs)
+          break
+        }
+
+        // cad is never passed here (filtered out in generateThumbnails).
+        default:
+          return { ok: false, error: `No renderer for file_type '${fileType}'` }
+      }
+
       return { ok: true, thumbnailRelPath: thumbRelPath }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)

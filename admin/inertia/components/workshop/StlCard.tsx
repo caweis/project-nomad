@@ -1,7 +1,30 @@
 import { Link } from '@inertiajs/react'
-import { IconBox, IconAlertTriangle } from '@tabler/icons-react'
-import type { StlFileSlim } from '../../../types/stl_library'
+import { IconBox, IconAlertTriangle, IconCube, IconFileTypePdf, IconPhoto } from '@tabler/icons-react'
+import type { StlFileSlim, WorkshopFileTypeEnum } from '../../../types/stl_library'
 import { CATEGORY_LABELS } from '../../../types/stl_library'
+
+const FILE_TYPE_BADGE: Record<WorkshopFileTypeEnum, string> = {
+  stl: 'STL',
+  cad: 'CAD',
+  pdf: 'PDF',
+  image: 'IMG',
+}
+
+/** Per-type icon shown when there is no thumbnail (or thumbnail_failed). */
+function FileTypeIcon({ fileType, size }: { fileType: WorkshopFileTypeEnum; size: number }) {
+  const cls = `text-gray-300`
+  switch (fileType) {
+    case 'cad':
+      return <IconCube size={size} className={cls} aria-hidden="true" />
+    case 'pdf':
+      return <IconFileTypePdf size={size} className={cls} aria-hidden="true" />
+    case 'image':
+      return <IconPhoto size={size} className={cls} aria-hidden="true" />
+    case 'stl':
+    default:
+      return <IconBox size={size} className={cls} aria-hidden="true" />
+  }
+}
 
 interface StlCardProps {
   file: StlFileSlim
@@ -84,7 +107,7 @@ export default function StlCard({ file, selectable, selected, onToggleSelect }: 
             loading="lazy"
           />
         ) : (
-          <IconBox size={64} className="text-gray-300" aria-hidden="true" />
+          <FileTypeIcon fileType={file.file_type} size={64} />
         )}
       </div>
 
@@ -92,14 +115,18 @@ export default function StlCard({ file, selectable, selected, onToggleSelect }: 
         <div className="font-semibold text-sm text-gray-900 truncate" title={file.name}>
           {file.name}
         </div>
-        <div className="flex items-center gap-2 text-xs text-gray-600">
+        <div className="flex items-center gap-2 text-xs text-gray-600 flex-wrap">
+          {/* File-type badge */}
+          <span className="inline-block rounded bg-gray-100 text-gray-600 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+            {FILE_TYPE_BADGE[file.file_type]}
+          </span>
           <span className="inline-block rounded-full bg-desert-green-light text-white px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide">
             {CATEGORY_LABELS[file.category]}
           </span>
-          <span>{file.material ?? '—'}</span>
+          {file.file_type === 'stl' && <span>{file.material ?? '—'}</span>}
         </div>
         <div className="flex items-center justify-between text-[11px] text-gray-500 mt-1">
-          <span>{printTimeLabel}</span>
+          <span>{file.file_type === 'stl' ? printTimeLabel : ''}</span>
           <span>{sizeMb} MB</span>
         </div>
       </div>

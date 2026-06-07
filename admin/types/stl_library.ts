@@ -4,19 +4,33 @@
  * Ported from SysAdminDoc/project-nomad-desktop §50 "Offline STL Library."
  * Files live on disk under ${NOMAD_DATA_ROOT}/storage/stl-library/<category>/.
  * The DB row indexes them; the file is the source of truth.
+ *
+ * v1 broaden (Workshop-broaden #6): categories expanded 7 → 14; file_type
+ * discriminator added to slim/detail interfaces; WORKSHOP_FILE_TYPES added.
  */
 
 export const STL_CATEGORIES = [
-  'medical',
-  'tools',
-  'household',
+  'tools-hardware',
   'replacement-parts',
-  'agriculture',
+  'household',
+  'medical',
+  'agriculture-homestead',
+  'woodworking',
+  'electronics',
+  'automotive',
+  'outdoor-survival',
+  'toys-games',
+  'art-decor',
   'firearm-accessories',
+  'education-models',
   'other',
 ] as const
 
 export type StlCategory = (typeof STL_CATEGORIES)[number]
+
+/** File-type discriminator for the broadened Workshop maker library. */
+export const WORKSHOP_FILE_TYPES = ['stl', 'cad', 'pdf', 'image'] as const
+export type WorkshopFileTypeEnum = (typeof WORKSHOP_FILE_TYPES)[number]
 
 export const STL_MATERIALS = ['PLA', 'PETG', 'ABS', 'TPU', 'Resin', 'Nylon'] as const
 
@@ -27,16 +41,25 @@ export const STL_DIFFICULTIES = ['beginner', 'intermediate', 'advanced'] as cons
 export type StlDifficulty = (typeof STL_DIFFICULTIES)[number]
 
 /**
- * What a category looks like in the UI — the human-friendly label and a
- * one-sentence description for the rights modal, empty state, and tooltips.
+ * What a category looks like in the UI — the human-friendly label for the
+ * filter sidebar, dropdowns, and card badges.
+ *
+ * Updated from 7 → 14 categories for Workshop-broaden v1 (#6).
  */
 export const CATEGORY_LABELS: Record<StlCategory, string> = {
-  medical: 'Medical',
-  tools: 'Tools',
-  household: 'Household',
+  'tools-hardware': 'Tools & Hardware',
   'replacement-parts': 'Replacement Parts',
-  agriculture: 'Agriculture',
+  household: 'Household',
+  medical: 'Medical',
+  'agriculture-homestead': 'Agriculture & Homestead',
+  woodworking: 'Woodworking',
+  electronics: 'Electronics',
+  automotive: 'Automotive',
+  'outdoor-survival': 'Outdoor & Survival',
+  'toys-games': 'Toys & Games',
+  'art-decor': 'Art & Decor',
   'firearm-accessories': 'Firearm Accessories',
+  'education-models': 'Education & Models',
   other: 'Other',
 }
 
@@ -48,6 +71,8 @@ export interface StlFileSlim {
   id: number
   path: string
   name: string
+  /** Discriminator added in Workshop-broaden v1 (#6). */
+  file_type: WorkshopFileTypeEnum
   category: StlCategory
   material: StlMaterial | null
   print_time_minutes: number | null
@@ -76,6 +101,7 @@ export interface StlFileDetail extends StlFileSlim {
  * Filter query accepted by the list endpoint.
  */
 export interface StlListFilters {
+  file_type?: WorkshopFileTypeEnum
   category?: StlCategory
   material?: StlMaterial
   difficulty?: StlDifficulty

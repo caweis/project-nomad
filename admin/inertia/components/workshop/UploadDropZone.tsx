@@ -9,7 +9,12 @@ import {
 import type { StlCategory } from '../../../types/stl_library'
 
 const MAX_FILE_BYTES = 200 * 1024 * 1024 // 200 MB per the upload spec
-const ACCEPT_EXTS = ['.stl', '.3mf']
+const ACCEPT_EXTS = [
+  '.stl', '.3mf',
+  '.step', '.stp', '.dxf', '.dwg', '.f3d', '.scad',
+  '.pdf',
+  '.png', '.jpg', '.jpeg', '.webp', '.gif',
+]
 
 interface CategoryOption {
   value: StlCategory
@@ -158,7 +163,7 @@ export default function UploadDropZone({ categories, onComplete }: Props) {
             id,
             file,
             state: 'rejected',
-            reason: 'Only .stl and .3mf files are accepted.',
+            reason: `File type not accepted (${ext || 'no extension'}). Supported: STL, 3MF, STEP/STP/DXF/DWG/F3D/SCAD, PDF, PNG/JPG/WEBP/GIF.`,
           }
         }
         if (file.size > MAX_FILE_BYTES) {
@@ -254,16 +259,16 @@ export default function UploadDropZone({ categories, onComplete }: Props) {
           ref={inputRef}
           type="file"
           multiple
-          accept=".stl,.3mf"
+          accept=".stl,.3mf,.step,.stp,.dxf,.dwg,.f3d,.scad,.pdf,.png,.jpg,.jpeg,.webp,.gif"
           onChange={onSelectFiles}
           className="hidden"
         />
         <IconUpload size={36} className="mx-auto text-desert-green mb-2" aria-hidden="true" />
         <p className="font-medium text-gray-800 mb-1">
-          Drag STL or 3MF files here, or click to select
+          Drag files here, or click to select
         </p>
         <p className="text-xs text-gray-500">
-          Up to 200 MB per file · saved to{' '}
+          STL · 3MF · CAD (STEP/DXF/DWG/F3D/SCAD) · PDF · images · up to 200 MB · saved to{' '}
           <code className="bg-white px-1 rounded border border-gray-200">
             storage/stl-library/{category}/
           </code>

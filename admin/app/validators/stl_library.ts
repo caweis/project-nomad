@@ -3,6 +3,7 @@ import {
   STL_CATEGORIES,
   STL_DIFFICULTIES,
   STL_MATERIALS,
+  WORKSHOP_FILE_TYPES,
 } from '../../types/stl_library.js'
 
 /**
@@ -16,6 +17,7 @@ import {
 
 export const listStlFilesValidator = vine.compile(
   vine.object({
+    file_type: vine.enum(WORKSHOP_FILE_TYPES).optional(),
     category: vine.enum(STL_CATEGORIES).optional(),
     material: vine.enum(STL_MATERIALS).optional(),
     difficulty: vine.enum(STL_DIFFICULTIES).optional(),

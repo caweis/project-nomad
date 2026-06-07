@@ -54,12 +54,12 @@ const MAPS_ITEM = {
   poweredBy: null,
 }
 
-// Workshop — offline 3D-printable STL catalog (Core Capability)
+// Workshop — offline maker library: STL, CAD, PDF, images (Core Capability)
 const WORKSHOP_ITEM = {
   label: 'Workshop',
   to: '/workshop',
   target: '',
-  description: 'Offline catalog of 3D-printable STL files',
+  description: 'Offline maker library: 3D prints, CAD, PDFs, and reference images.',
   icon: <IconBox size={48} />,
   installed: true,
   displayOrder: 5,
