@@ -221,7 +221,11 @@ export class ZIMExtractionService {
         const sections: Array<{ heading: string; text: string; level: number }> = [];
         let currentSection = { heading: 'Introduction', content: [] as string[], level: 2 };
 
-        $('body').children().each((_, element) => {
+        // Walk the full DOM, not just direct children of <body>. Modern ZIMs
+        // (Devdocs, Wikipedia, FreeCodeCamp, etc.) wrap article content in a
+        // container div, which under .children() is a single non-heading element
+        // and yields zero sections.
+        $('body').find('h2, h3, h4, p, ul, ol, dl, table').each((_, element) => {
             const $el = $(element);
             const tagName = element.tagName?.toLowerCase();
 
@@ -256,6 +260,20 @@ export class ZIMExtractionService {
                 text: currentSection.content.join(' ').replace(/\s+/g, ' ').trim(),
                 level: currentSection.level,
             });
+        }
+
+        // Fallback: if the selector walk produced no sections but the body has
+        // meaningful text (unusual markup, minimal headings/paragraphs), emit one
+        // section with the full body text so the article still contributes to the KB.
+        if (sections.length === 0) {
+            const bodyText = $('body').text().replace(/\s+/g, ' ').trim();
+            if (bodyText.length > 0) {
+                sections.push({
+                    heading: title || 'Content',
+                    text: bodyText,
+                    level: 2,
+                });
+            }
         }
 
         return {
