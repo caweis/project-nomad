@@ -13,6 +13,12 @@ export const KV_STORE_SCHEMA = {
   // you have the right to store every STL you put in this library."). Until
   // accepted, the key simply doesn't exist; once accepted, value is 'true'.
   'workshop.rightsAcknowledged': 'boolean',
+  // Self-Reliance Suite — Inventory measurement-system preference. 'us' (US
+  // customary) or 'metric'. Drives display-unit conversion in the Inventory UI
+  // and the Phase 2 calculator's display defaults. Default 'us' when unset.
+  // Switching is lossless: every resource_contribution is stored in its base
+  // unit, so a toggle re-displays existing rows instantly with no migration.
+  'inventory.measurementSystem': 'string',
 } as const
 
 type KVTagToType<T extends string> = T extends 'boolean' ? boolean : string

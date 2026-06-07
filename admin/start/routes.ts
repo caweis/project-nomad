@@ -12,6 +12,7 @@ import DocsController from '#controllers/docs_controller'
 import DownloadsController from '#controllers/downloads_controller'
 import EasySetupController from '#controllers/easy_setup_controller'
 import HomeController from '#controllers/home_controller'
+import InventoryController from '#controllers/inventory_controller'
 import MapsController from '#controllers/maps_controller'
 import OllamaController from '#controllers/ollama_controller'
 import HostCommandsController from '#controllers/host_commands_controller'
@@ -58,6 +59,21 @@ router
       .use(middleware.localNetworkOnly())
   })
   .prefix('/api/workshop')
+
+// Self-Reliance Suite — Inventory (Phase 1). Page GETs unguarded; the mutation
+// group writes only DB rows (no files), so it is ungated like the Workshop
+// single-row update/destroy.
+router.get('/inventory', [InventoryController, 'index'])
+router.get('/inventory/new', [InventoryController, 'new'])
+router.get('/inventory/:id', [InventoryController, 'show'])
+router
+  .group(() => {
+    router.post('/', [InventoryController, 'store'])
+    router.patch('/:id', [InventoryController, 'update'])
+    router.delete('/:id', [InventoryController, 'destroy'])
+  })
+  .prefix('/api/inventory')
+
 router.on('/knowledge-base').redirectToPath('/chat?knowledge_base=true') // redirect for legacy knowledge-base links
 
 router.get('/easy-setup', [EasySetupController, 'index'])

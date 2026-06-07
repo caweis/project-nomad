@@ -1,6 +1,7 @@
 import {
   IconBolt,
   IconBox,
+  IconClipboardList,
   IconHelp,
   IconMapRoute,
   IconPlus,
@@ -61,6 +62,20 @@ const WORKSHOP_ITEM = {
   icon: <IconBox size={48} />,
   installed: true,
   displayOrder: 5,
+  poweredBy: null,
+}
+
+// Inventory — Self-Reliance Suite Phase 1 (Core Capability). Hand-curated
+// catalog of supplies, gear, and resource-mapped items that feed the readiness
+// calculator (Phase 2).
+const INVENTORY_ITEM = {
+  label: 'Inventory',
+  to: '/inventory',
+  target: '',
+  description: 'Track supplies, gear, and resources for self-reliance',
+  icon: <IconClipboardList size={48} />,
+  installed: true,
+  displayOrder: 6,
   poweredBy: null,
 }
 
@@ -182,6 +197,9 @@ export default function Home(props: {
   // SysAdminDoc §50 — offline STL library at ${NOMAD_DATA_ROOT}/storage/
   // stl-library/)
   items.push(WORKSHOP_ITEM)
+
+  // Add Inventory as a Core Capability (Self-Reliance Suite Phase 1)
+  items.push(INVENTORY_ITEM)
 
   // Add system items
   items.push(...SYSTEM_ITEMS)
