@@ -26,23 +26,45 @@ export class DrugReferenceService {
    * representative row id (MIN(id)) and a labelCount of how many set_ids
    * collapsed into it. This is the locked UX decision.
    *
-   * Strategy:
-   *   1. FULLTEXT path: MATCH(searchable_name) AGAINST(? IN NATURAL LANGUAGE MODE)
+   * Scope:
+   *   'name'       (default) — existing path: MATCH(searchable_name) on brand+generic.
+   *   'indication' — new path: MATCH(searchable_name, indications) on the combined
+   *                  ft_drug_labels_name_indications index so users can search by
+   *                  what a drug treats ("heartburn", "high blood pressure").
+   *
+   * Strategy (both scopes):
+   *   1. FULLTEXT path: MATCH(cols) AGAINST(? IN NATURAL LANGUAGE MODE)
    *      — relevance-ranked, requires >= 3 chars (innodb_ft_min_token_size = 3).
    *   2. LIKE fallback: query < 3 chars OR FULLTEXT throws → LIKE '%term%'.
    *   3. Both paths apply the optional product_type filter and GROUP BY collapse.
    */
   async search(
     query: string,
-    options: { productType?: string; limit?: number; offset?: number }
+    options: { productType?: string; limit?: number; offset?: number; scope?: 'name' | 'indication' }
   ): Promise<DrugSearchResult[]> {
     const limit = options.limit ?? 50
     const offset = options.offset ?? 0
+    const scope = options.scope ?? 'name'
     const normalized = normalizeDrugName(query, null) ?? query.trim()
 
     if (!normalized || normalized.length === 0) return []
 
     const useLike = normalized.length < 3
+
+    if (scope === 'indication') {
+      if (!useLike) {
+        try {
+          return await this.searchIndicationFulltext(normalized, options.productType, limit, offset)
+        } catch (err) {
+          logger.warn(
+            `[DrugReferenceService] FULLTEXT indication search failed, falling back to LIKE: ${
+              err instanceof Error ? err.message : String(err)
+            }`
+          )
+        }
+      }
+      return await this.searchIndicationLike(normalized, options.productType, limit, offset)
+    }
 
     if (!useLike) {
       // FULLTEXT path
@@ -116,6 +138,95 @@ export class DrugReferenceService {
         COUNT(*) AS labelCount
       FROM drug_labels
       WHERE (searchable_name LIKE ? OR brand_name LIKE ?)
+    `
+    const bindings: unknown[] = [term, term]
+
+    if (productType) {
+      sql += ' AND product_type = ?'
+      bindings.push(productType)
+    }
+
+    sql += `
+      GROUP BY brand_name, generic_name
+      ORDER BY brand_name ASC
+      LIMIT ? OFFSET ?
+    `
+    bindings.push(limit, offset)
+
+    const rows = await db.rawQuery(sql, bindings)
+    return this.mapSearchRows(rows[0])
+  }
+
+  /**
+   * FULLTEXT indication-scope search.
+   *
+   * MATCHes over (searchable_name, indications) — must exactly match the
+   * ft_drug_labels_name_indications index column list. The MAX(MATCH …) pattern
+   * is LOAD-BEARING: MySQL 8.0 ONLY_FULL_GROUP_BY rejects a bare MATCH() in
+   * SELECT when GROUP BY is in effect; wrapping in MAX() makes it an aggregate
+   * and satisfies the mode constraint.
+   */
+  private async searchIndicationFulltext(
+    normalized: string,
+    productType: string | undefined,
+    limit: number,
+    offset: number
+  ): Promise<DrugSearchResult[]> {
+    let sql = `
+      SELECT
+        MIN(id) AS id,
+        brand_name,
+        generic_name,
+        MIN(manufacturer) AS manufacturer,
+        MIN(route) AS route,
+        MIN(product_type) AS product_type,
+        COUNT(*) AS labelCount,
+        MAX(MATCH(searchable_name, indications) AGAINST(? IN NATURAL LANGUAGE MODE)) AS relevance
+      FROM drug_labels
+      WHERE MATCH(searchable_name, indications) AGAINST(? IN NATURAL LANGUAGE MODE)
+    `
+    const bindings: unknown[] = [normalized, normalized]
+
+    if (productType) {
+      sql += ' AND product_type = ?'
+      bindings.push(productType)
+    }
+
+    sql += `
+      GROUP BY brand_name, generic_name
+      ORDER BY relevance DESC
+      LIMIT ? OFFSET ?
+    `
+    bindings.push(limit, offset)
+
+    const rows = await db.rawQuery(sql, bindings)
+    return this.mapSearchRows(rows[0])
+  }
+
+  /**
+   * LIKE indication-scope fallback (query < 3 chars or FULLTEXT unavailable).
+   *
+   * Searches searchable_name OR indications so short queries still return
+   * useful results without requiring the FULLTEXT index.
+   */
+  private async searchIndicationLike(
+    normalized: string,
+    productType: string | undefined,
+    limit: number,
+    offset: number
+  ): Promise<DrugSearchResult[]> {
+    const term = `%${normalized}%`
+    let sql = `
+      SELECT
+        MIN(id) AS id,
+        brand_name,
+        generic_name,
+        MIN(manufacturer) AS manufacturer,
+        MIN(route) AS route,
+        MIN(product_type) AS product_type,
+        COUNT(*) AS labelCount
+      FROM drug_labels
+      WHERE (searchable_name LIKE ? OR indications LIKE ?)
     `
     const bindings: unknown[] = [term, term]
 

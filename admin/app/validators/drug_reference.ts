@@ -16,6 +16,7 @@ export const searchDrugValidator = vine.compile(
     product_type: vine.enum(PRODUCT_TYPE_VALUES).optional(),
     limit: vine.number().min(1).max(200).optional(),
     offset: vine.number().min(0).optional(),
+    scope: vine.enum(['name', 'indication'] as const).optional(),
   })
 )
 

@@ -78,6 +78,7 @@ export default class DrugReferenceController {
         productType: params.product_type,
         limit: params.limit,
         offset: params.offset,
+        scope: params.scope,
       })
       return { results }
     } catch (err) {

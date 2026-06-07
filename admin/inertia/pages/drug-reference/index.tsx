@@ -24,6 +24,7 @@ const DEBOUNCE_MS = 350
 export default function DrugReferenceIndex({ ingestStatus, rowCount }: PageProps) {
   const [query, setQuery] = useState('')
   const [productType, setProductType] = useState<string | null>(null)
+  const [scope, setScope] = useState<'name' | 'indication'>('name')
   const [results, setResults] = useState<DrugSearchResult[]>([])
   const [loading, setLoading] = useState(false)
   const [searched, setSearched] = useState(false)
@@ -37,7 +38,7 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount }: PageProps
   const LIMIT = 50
 
   const doSearch = useCallback(
-    async (q: string, pt: string | null, off: number, append: boolean) => {
+    async (q: string, pt: string | null, sc: 'name' | 'indication', off: number, append: boolean) => {
       if (!q.trim()) {
         setResults([])
         setSearched(false)
@@ -49,6 +50,7 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount }: PageProps
       try {
         const params = new URLSearchParams({ q, limit: String(LIMIT), offset: String(off) })
         if (pt) params.set('product_type', pt)
+        if (sc === 'indication') params.set('scope', 'indication')
         const resp = await fetch(`/api/drug-reference/search?${params}`)
         if (!resp.ok) throw new Error(`Search failed: HTTP ${resp.status}`)
         const json = (await resp.json()) as { results: DrugSearchResult[] }
@@ -71,7 +73,7 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount }: PageProps
     setOffset(0)
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
-      doSearch(val, productType, 0, false)
+      doSearch(val, productType, scope, 0, false)
     }, DEBOUNCE_MS)
   }
 
@@ -79,13 +81,20 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount }: PageProps
     setProductType(pt)
     setOffset(0)
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    doSearch(query, pt, 0, false)
+    doSearch(query, pt, scope, 0, false)
+  }
+
+  const handleScopeChange = (sc: 'name' | 'indication') => {
+    setScope(sc)
+    setOffset(0)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    doSearch(query, productType, sc, 0, false)
   }
 
   const handleLoadMore = () => {
     const newOffset = offset + LIMIT
     setOffset(newOffset)
-    doSearch(query, productType, newOffset, true)
+    doSearch(query, productType, scope, newOffset, true)
   }
 
   const handleTriggerIngest = async () => {
@@ -168,14 +177,45 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount }: PageProps
           // ── Search UI ──────────────────────────────────────────────────────
           <>
             {/* Search box */}
-            <div className="mb-4">
+            <div className="mb-3">
               <input
                 type="text"
                 value={query}
                 onChange={handleQueryChange}
-                placeholder="Search by drug name, generic name, or indication…"
+                placeholder={
+                  scope === 'indication'
+                    ? 'Search by condition — e.g. heartburn, allergies, high blood pressure'
+                    : 'Search by drug name or generic name…'
+                }
                 className="w-full border border-gray-300 rounded px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-desert-green"
               />
+            </div>
+
+            {/* Scope toggle — Name vs What it treats */}
+            <div className="flex gap-2 mb-4 flex-wrap items-center">
+              <span className="text-xs text-gray-500 mr-1">Search by:</span>
+              <button
+                type="button"
+                onClick={() => handleScopeChange('name')}
+                className={`px-3 py-1 rounded-full text-sm border transition-colors ${
+                  scope === 'name'
+                    ? 'bg-desert-green text-white border-desert-green'
+                    : 'bg-white text-gray-700 border-gray-300 hover:border-desert-green'
+                }`}
+              >
+                Name
+              </button>
+              <button
+                type="button"
+                onClick={() => handleScopeChange('indication')}
+                className={`px-3 py-1 rounded-full text-sm border transition-colors ${
+                  scope === 'indication'
+                    ? 'bg-desert-green text-white border-desert-green'
+                    : 'bg-white text-gray-700 border-gray-300 hover:border-desert-green'
+                }`}
+              >
+                What it treats
+              </button>
             </div>
 
             {/* OTC / Rx filter pills */}
