@@ -102,6 +102,15 @@ export default class StlFile extends BaseModel {
   @column()
   declare thumbnail_failed: boolean
 
+  /**
+   * Extracted text from the first 5 pages of a PDF (pdf-parse).
+   * NULL for non-PDF rows and for PDFs where extraction failed or hasn't
+   * run yet. Capped at 20 KB stored. Populated by StlScannerService at
+   * scan time for file_type='pdf' rows.
+   */
+  @column()
+  declare pdf_text_extract: string | null
+
   @column()
   declare file_size_bytes: number
 

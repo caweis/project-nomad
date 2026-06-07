@@ -147,6 +147,10 @@ export default class WorkshopController {
 
   /**
    * GET /workshop/:id — detail page (also acts as the metadata edit form).
+   *
+   * For PDF files: if the pdf-pages/{id}/ directory doesn't exist or is empty,
+   * generatePdfPagePreviews is called lazily so the detail view gets page images
+   * on first visit without waiting for a full scan.
    */
   async show({ inertia, params, response }: HttpContext) {
     const id = Number(params.id)
@@ -157,6 +161,39 @@ export default class WorkshopController {
     const row = await StlFile.find(id)
     if (!row) {
       return response.notFound({ error: 'STL file not found' })
+    }
+
+    // Lazy PDF page preview generation — only if the file is on disk and no
+    // pages have been rendered yet. Non-blocking on error (detail page still loads).
+    if ((row.file_type ?? '') === 'pdf') {
+      const fileAbs = join(StlScannerService.LIBRARY_ROOT, row.path)
+      if (existsSync(fileAbs)) {
+        const pageDir = join(
+          StlScannerService.LIBRARY_ROOT,
+          StlScannerService.THUMBNAIL_DIR,
+          'pdf-pages',
+          String(id)
+        )
+        let needsGenerate = true
+        try {
+          const entries = await fs.readdir(pageDir)
+          if (entries.length > 0) needsGenerate = false
+        } catch {
+          // Directory doesn't exist yet — generate
+        }
+        if (needsGenerate) {
+          try {
+            const scanner = new StlScannerService()
+            await scanner.generatePdfPagePreviews(id, fileAbs)
+          } catch (err) {
+            logger.warn(
+              `[WorkshopController] lazy PDF page preview failed for id=${id}: ${
+                err instanceof Error ? err.message : String(err)
+              }`
+            )
+          }
+        }
+      }
     }
 
     return inertia.render('workshop/show', {
@@ -182,10 +219,63 @@ export default class WorkshopController {
         added_at: row.added_at?.toISO(),
         last_indexed_at: row.last_indexed_at?.toISO(),
       },
+      // Pass a boolean flag rather than the full 20 KB text in the page payload.
+      // The frontend lazy-fetches /api/workshop/files/:id/pdf-text when the
+      // disclosure is opened (spec open-q #2 — lazy fetch).
+      has_pdf_text: typeof row.pdf_text_extract === 'string' && row.pdf_text_extract.length > 0,
       file_available: existsSync(join(StlScannerService.LIBRARY_ROOT, row.path)),
       enums: this.enumsForUi(),
       rights_acknowledged: await this.rightsAcknowledged(),
     })
+  }
+
+  /**
+   * GET /api/workshop/files/:id/pdf-page/:page
+   *
+   * Serves a single PDF page preview PNG (1-indexed, matching the storage
+   * convention page-1.png…page-4.png). Returns 404 if the page hasn't been
+   * rendered yet — the <img onError> in the frontend handles this gracefully.
+   */
+  async pdfPage({ params, response }: HttpContext) {
+    const id = Number(params.id)
+    const page = Number(params.page)
+    if (!Number.isInteger(id) || id <= 0 || !Number.isInteger(page) || page <= 0) {
+      return response.notFound({ error: 'invalid id or page' })
+    }
+
+    const pagePath = join(
+      StlScannerService.LIBRARY_ROOT,
+      StlScannerService.THUMBNAIL_DIR,
+      'pdf-pages',
+      String(id),
+      `page-${page}.png`
+    )
+
+    if (!existsSync(pagePath)) {
+      return response.notFound({ error: 'page not found' })
+    }
+
+    response.header('Content-Type', 'image/png')
+    response.header('Cache-Control', 'private, max-age=3600')
+    return response.stream(createReadStream(pagePath))
+  }
+
+  /**
+   * GET /api/workshop/files/:id/pdf-text
+   *
+   * Lazy endpoint for the PDF text extract disclosure widget. Returns the
+   * stored pdf_text_extract string without putting 20 KB in the page prop.
+   */
+  async pdfText({ params, response }: HttpContext) {
+    const id = Number(params.id)
+    if (!Number.isInteger(id) || id <= 0) {
+      return response.notFound({ error: 'invalid id' })
+    }
+
+    const row = await StlFile.find(id)
+    if (!row) return response.notFound({ error: 'STL file not found' })
+
+    return { text: row.pdf_text_extract ?? '' }
   }
 
   /**

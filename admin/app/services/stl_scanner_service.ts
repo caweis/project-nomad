@@ -13,6 +13,22 @@ import {
   CATEGORY_REMAP,
   type WorkshopFileType,
 } from '../../util/file_classification.js'
+import { cadRenderStrategy } from '../../util/cad_render_strategy.js'
+
+// yauzl types — local interfaces mirror the ingest_drug_labels_job.ts pattern
+// so the service can import yauzl lazily (keeps pure util tests importable
+// without native deps) while still getting typed callbacks.
+import type { Readable } from 'node:stream'
+
+interface YauzlEntry { fileName: string }
+interface YauzlZipFile {
+  readEntry(): void
+  openReadStream(entry: YauzlEntry, cb: (err: Error | null, stream: Readable | null) => void): void
+  on(event: 'entry', listener: (entry: YauzlEntry) => void): this
+  on(event: 'end', listener: () => void): this
+  on(event: 'error', listener: (err: Error) => void): this
+  close(): void
+}
 
 const execFileAsync = promisify(execFile)
 
@@ -57,6 +73,12 @@ export class StlScannerService {
    * Prefixed with a dot so the recursive walk skips it naturally.
    */
   public static readonly THUMBNAIL_DIR = '.thumbnails'
+
+  /**
+   * Maximum number of PDF pages to render as detail-view previews.
+   * Easy to raise in v2 if needed.
+   */
+  private static readonly PDF_PREVIEW_PAGE_CAP = 4
 
   /**
    * File extensions we index — imported from the pure file_classification
@@ -313,6 +335,7 @@ export class StlScannerService {
     row.license = null
     row.thumbnail_path = null
     row.thumbnail_failed = false
+    row.pdf_text_extract = null
     row.file_size_bytes = size
     row.file_hash = hash
     row.metadata_pending = true
@@ -355,15 +378,16 @@ export class StlScannerService {
    * Render PNG previews for any row that doesn't have one yet and hasn't
    * been marked as a sticky failure.
    *
-   * Routes to the right renderer by file_type:
-   *   stl   → stl-thumb binary (unchanged)
-   *   pdf   → pdf2pic (first page → 256px PNG) with gm convert fallback
+   * Routes to the right renderer by file_type, then by extension for 'cad':
+   *   stl   → stl-thumb binary
+   *   pdf   → gm convert (first page card thumbnail); then generatePdfPagePreviews + pdf-parse
    *   image → sharp resize
-   *   cad   → skip (no render in v1; UI shows per-type icon instead)
+   *   cad   → dispatch via cadRenderStrategy (f3d/dxf/scad/icon)
    *
-   * If stl-thumb is missing from the image entirely (e.g., development on a
-   * host where the binary isn't installed), only STL rows are marked failed —
-   * pdf/image rendering is independent of stl-thumb.
+   * The 'no-renderer:ext' sentinel from the cad branch is NOT a failure —
+   * it means no renderer is available for this extension (e.g. .step, .dwg).
+   * thumbnail_failed is left false so the UI shows the per-type icon and a
+   * future scan won't skip the row.
    */
   private async generateThumbnails(): Promise<{ generated: number; failed: number }> {
     const pending = await StlFile.query()
@@ -394,24 +418,53 @@ export class StlScannerService {
     for (const row of pending) {
       const ft = (row.file_type ?? 'stl') as WorkshopFileType
 
-      // CAD: no render attempt in v1 — leave thumbnail_path null and do NOT
-      // set thumbnail_failed so a future scan can try again once #7 ships.
-      if (ft === 'cad') continue
-
       // STL: already handled above when stl-thumb is missing.
       if (ft === 'stl' && !stlThumbAvailable) continue
 
-      const result = await this.renderThumbnail(row.path, row.id, ft)
+      const fileExt = extname(row.path).toLowerCase()
+      const result = await this.renderThumbnail(row.path, row.id, ft, fileExt)
+
       if (result.ok) {
         row.thumbnail_path = result.thumbnailRelPath
         await row.save()
         generated++
+
+        // For PDF rows: generate the multi-page detail strip + extract text.
+        if (ft === 'pdf') {
+          const inputAbs = join(StlScannerService.LIBRARY_ROOT, row.path)
+
+          // Multi-page previews (pages 1..4 at 512px each)
+          await this.generatePdfPagePreviews(row.id, inputAbs)
+
+          // Text extraction — non-fatal; only once per row.
+          // Uses the class-based PDFParse API (matches rag_service.ts pattern).
+          if (row.pdf_text_extract === null) {
+            try {
+              const { PDFParse } = await import('pdf-parse')
+              const buf = await fs.readFile(inputAbs)
+              const parser = new PDFParse({ data: buf })
+              const data = await parser.getText()
+              await parser.destroy()
+              row.pdf_text_extract = data.text.slice(0, 20000)
+              await row.save()
+            } catch {
+              logger.warn(
+                `[StlScannerService] pdf-parse failed on ${row.path} — text search disabled for this file`
+              )
+            }
+          }
+        }
+      } else if (result.error.startsWith('no-renderer:')) {
+        // No renderer for this extension (.step, .stp, .iges, .dwg).
+        // Leave thumbnail_path null and thumbnail_failed false — the UI shows
+        // the per-type icon. This is NOT a failure; don't count it, don't mark it.
+        continue
       } else {
         row.thumbnail_failed = true
         await row.save()
         failed++
         logger.warn(
-          `[StlScannerService] thumbnail failed (${ft}) on ${row.path}: ${result.error.slice(0, 200)}`
+          `[StlScannerService] thumbnail failed (${ft}/${fileExt}) on ${row.path}: ${result.error.slice(0, 200)}`
         )
       }
     }
@@ -435,6 +488,7 @@ export class StlScannerService {
    *   • Output: {LIBRARY_ROOT}/.thumbnails/{id}.png
    *   • Timeout: 30 s (generous for large STL/PDF on ARM)
    *   • On error: returns { ok: false, error } — caller sets thumbnail_failed
+   *     UNLESS error starts with 'no-renderer:' (caller skips without marking)
    *
    * pdf2pic and sharp are lazy-imported inside this method so they don't
    * pollute the module top-level (keeps the pure tests importable without
@@ -443,7 +497,8 @@ export class StlScannerService {
   private async renderThumbnail(
     fileRelPath: string,
     fileId: number,
-    fileType: WorkshopFileType
+    fileType: WorkshopFileType,
+    fileExt: string,
   ): Promise<{ ok: true; thumbnailRelPath: string } | { ok: false; error: string }> {
     const inputAbs = join(StlScannerService.LIBRARY_ROOT, fileRelPath)
     const thumbName = `${fileId}.png`
@@ -480,7 +535,24 @@ export class StlScannerService {
           break
         }
 
-        // cad is never passed here (filtered out in generateThumbnails).
+        case 'cad': {
+          // Dispatch by file extension — different renderers per CAD sub-type.
+          const strategy = cadRenderStrategy(fileExt)
+          switch (strategy) {
+            case 'f3d':
+              return await this.renderF3dThumbnail(inputAbs, thumbAbs, thumbRelPath)
+            case 'dxf':
+              return await this.renderDxfThumbnail(inputAbs, thumbAbs, thumbRelPath)
+            case 'scad':
+              return await this.renderScadThumbnail(inputAbs, thumbAbs, thumbRelPath)
+            case 'icon':
+            default:
+              // .step, .stp, .iges, .dwg — no renderer available.
+              // Return a sentinel that generateThumbnails recognises as "skip, not fail".
+              return { ok: false, error: `no-renderer:${fileExt}` }
+          }
+        }
+
         default:
           return { ok: false, error: `No renderer for file_type '${fileType}'` }
       }
@@ -490,6 +562,214 @@ export class StlScannerService {
       const msg = err instanceof Error ? err.message : String(err)
       return { ok: false, error: msg }
     }
+  }
+
+  /**
+   * Render a .f3d thumbnail by extracting the embedded preview PNG from
+   * the Fusion 360 ZIP archive.
+   *
+   * .f3d files are ZIP archives. Fusion 360 embeds at least one *.png entry
+   * (the design preview). Strategy: iterate entries via yauzl, find the first
+   * *.png, pipe it through sharp resized to 256×256.
+   *
+   * Zero new Node.js dependencies — yauzl and sharp are already in package.json.
+   *
+   * Wrapped in a 30-second Promise.race since this uses stream callbacks
+   * (not execFile) and we must cap runaway zip iteration.
+   */
+  private async renderF3dThumbnail(
+    inputAbs: string,
+    thumbAbs: string,
+    thumbRelPath: string,
+  ): Promise<{ ok: true; thumbnailRelPath: string } | { ok: false; error: string }> {
+    const TIMEOUT_MS = 30000
+
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore — yauzl resolved at runtime from dependencies
+    const yauzl = await import('yauzl')
+    const sharp = (await import('sharp')).default
+
+    // Cast to any for callback-typed yauzl.open — same pattern as ingest_drug_labels_job.ts
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const yauzlOpen = (yauzl as any).open as (
+      path: string,
+      opts: { lazyEntries: boolean },
+      cb: (err: Error | null, zipFile: YauzlZipFile | null) => void
+    ) => void
+
+    const extractPromise = new Promise<{ ok: true; thumbnailRelPath: string } | { ok: false; error: string }>(
+      (resolve) => {
+        yauzlOpen(inputAbs, { lazyEntries: true }, (err, zipfile) => {
+          if (err || !zipfile) {
+            resolve({ ok: false, error: err?.message ?? 'yauzl open failed' })
+            return
+          }
+
+          zipfile.on('entry', (entry: YauzlEntry) => {
+            if (!entry.fileName.toLowerCase().endsWith('.png')) {
+              // Not a PNG — keep searching
+              zipfile.readEntry()
+              return
+            }
+
+            // Found the first PNG — open its read stream
+            zipfile.openReadStream(entry, (streamErr, readStream) => {
+              if (streamErr || !readStream) {
+                zipfile.close()
+                resolve({ ok: false, error: streamErr?.message ?? 'stream open failed' })
+                return
+              }
+
+              const chunks: Buffer[] = []
+              readStream.on('data', (chunk: Buffer) => chunks.push(chunk))
+              readStream.on('end', async () => {
+                zipfile.close()
+                try {
+                  const buf = Buffer.concat(chunks)
+                  await sharp(buf).resize(256, 256, { fit: 'inside' }).png().toFile(thumbAbs)
+                  resolve({ ok: true, thumbnailRelPath: thumbRelPath })
+                } catch (sharpErr) {
+                  const msg = sharpErr instanceof Error ? sharpErr.message : String(sharpErr)
+                  resolve({ ok: false, error: msg })
+                }
+              })
+              readStream.on('error', (rErr: Error) => {
+                zipfile.close()
+                resolve({ ok: false, error: rErr.message })
+              })
+            })
+          })
+
+          zipfile.on('end', () => {
+            // Reached end of zip without finding a PNG
+            resolve({ ok: false, error: 'no PNG entry found in .f3d archive' })
+          })
+
+          zipfile.on('error', (zipErr: Error) => {
+            resolve({ ok: false, error: zipErr.message })
+          })
+
+          // Start reading
+          zipfile.readEntry()
+        })
+      }
+    )
+
+    const timeoutPromise = new Promise<{ ok: false; error: string }>((resolve) =>
+      setTimeout(
+        () => resolve({ ok: false, error: 'f3d thumbnail extraction timed out after 30s' }),
+        TIMEOUT_MS
+      )
+    )
+
+    return Promise.race([extractPromise, timeoutPromise])
+  }
+
+  /**
+   * Render a .dxf thumbnail via the ezdxf + matplotlib Python script.
+   *
+   * Uses execFileAsync (30s timeout) — same pattern as stl-thumb and gm convert.
+   * The script path is the in-container path after ADD admin/ ./ copies it.
+   */
+  private async renderDxfThumbnail(
+    inputAbs: string,
+    thumbAbs: string,
+    thumbRelPath: string,
+  ): Promise<{ ok: true; thumbnailRelPath: string } | { ok: false; error: string }> {
+    try {
+      await execFileAsync(
+        'python3',
+        ['/app/scripts/dxf_thumb.py', inputAbs, thumbAbs, '256'],
+        { timeout: 30000 }
+      )
+      return { ok: true, thumbnailRelPath: thumbRelPath }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      return { ok: false, error: msg }
+    }
+  }
+
+  /**
+   * Render a .scad thumbnail via xvfb-run + openscad.
+   *
+   * OpenSCAD's standard Debian binary requires a GLX display even in
+   * "headless" mode. xvfb-run provides a virtual framebuffer — no GPU needed.
+   * --auto-servernum prevents Xvfb display-number collision when multiple
+   * SCAD renders run concurrently during a large library scan.
+   */
+  private async renderScadThumbnail(
+    inputAbs: string,
+    thumbAbs: string,
+    thumbRelPath: string,
+  ): Promise<{ ok: true; thumbnailRelPath: string } | { ok: false; error: string }> {
+    try {
+      await execFileAsync(
+        'xvfb-run',
+        [
+          '--auto-servernum',
+          '--server-args', '-screen 0 1024x768x24',
+          'openscad',
+          '--imgsize=256,256',
+          '-o', thumbAbs,
+          inputAbs,
+        ],
+        { timeout: 30000 }
+      )
+      return { ok: true, thumbnailRelPath: thumbRelPath }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      return { ok: false, error: msg }
+    }
+  }
+
+  /**
+   * Generate per-page PNG previews for the detail view of a PDF file.
+   *
+   * Uses gm convert in a loop (consistent with the card-thumbnail renderer —
+   * same binary, no new Node deps). Pages are 0-indexed in GM notation:
+   * `file.pdf[0]` = page 1, `file.pdf[1]` = page 2, etc.
+   *
+   * Stops when GM returns non-zero (page out of range) to handle short PDFs
+   * gracefully. Capped at PDF_PREVIEW_PAGE_CAP pages.
+   *
+   * Output: {LIBRARY_ROOT}/.thumbnails/pdf-pages/{fileId}/page-N.png
+   */
+  async generatePdfPagePreviews(
+    fileId: number,
+    fileAbsPath: string,
+  ): Promise<{ pageCount: number; generatedPages: number }> {
+    const pageDir = join(
+      StlScannerService.LIBRARY_ROOT,
+      StlScannerService.THUMBNAIL_DIR,
+      'pdf-pages',
+      String(fileId)
+    )
+    await fs.mkdir(pageDir, { recursive: true })
+
+    let generatedPages = 0
+    for (let i = 0; i < StlScannerService.PDF_PREVIEW_PAGE_CAP; i++) {
+      const outPath = join(pageDir, `page-${i + 1}.png`)
+      try {
+        await execFileAsync(
+          'gm',
+          [
+            'convert',
+            `${fileAbsPath}[${i}]`,
+            '-resize', '512x512',
+            '-background', 'white',
+            '-flatten',
+            outPath,
+          ],
+          { timeout: 30000 }
+        )
+        generatedPages++
+      } catch {
+        // Page N doesn't exist — PDF has fewer pages than the cap. Stop.
+        break
+      }
+    }
+
+    return { pageCount: generatedPages, generatedPages }
   }
 }
 

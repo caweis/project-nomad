@@ -25,6 +25,7 @@ import type {
 // StlFileDetail extends StlFileSlim which now includes file_type.
 interface PageProps {
   file: StlFileDetail & { file_type: WorkshopFileTypeEnum }
+  has_pdf_text: boolean
   file_available: boolean
   enums: {
     categories: { value: StlCategory; label: string }[]
@@ -229,6 +230,16 @@ export default function WorkshopShow(props: PageProps) {
               onPick={() => thumbInputRef.current?.click()}
               onSelected={onThumbnailSelected}
             />
+
+            {/* PDF multi-page strip — only for PDF files */}
+            {props.file.file_type === 'pdf' && (
+              <PdfPageStrip fileId={props.file.id} />
+            )}
+
+            {/* PDF text extract disclosure — lazy-fetched to avoid 20 KB page payload */}
+            {props.file.file_type === 'pdf' && props.has_pdf_text && (
+              <PdfTextDisclosure fileId={props.file.id} />
+            )}
             <dl className="text-sm text-gray-700 bg-white border border-gray-200 rounded-lg p-3 space-y-1">
               <Field label="Path" value={props.file.path} mono />
               <Field label="Size" value={`${sizeMb} MB`} />
@@ -502,6 +513,82 @@ function ThumbnailUpload({
       </button>
       {error && <p className="mt-2 text-xs text-red-700">{error}</p>}
     </div>
+  )
+}
+
+/**
+ * Horizontal scrollable strip of PDF page preview thumbnails (pages 1–4).
+ * Each image is loaded via <img src> — onError hides images that 404 (PDFs
+ * with fewer than 4 pages). No loading spinner needed; <img> lazy-loads natively.
+ */
+function PdfPageStrip({ fileId }: { fileId: number }) {
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white p-2">
+      <p className="mb-1.5 text-xs font-medium text-gray-500">Pages</p>
+      <div className="flex gap-2 overflow-x-auto">
+        {[1, 2, 3, 4].map((n) => (
+          <img
+            key={n}
+            src={`/api/workshop/files/${fileId}/pdf-page/${n}`}
+            alt={`Page ${n}`}
+            className="h-28 w-auto shrink-0 rounded border border-gray-100 bg-gray-50 object-contain"
+            onError={(e) => {
+              // Page doesn't exist — hide the image element entirely
+              ;(e.currentTarget as HTMLImageElement).style.display = 'none'
+            }}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Collapsed disclosure showing the extracted PDF text.
+ * Lazy-fetches /api/workshop/files/:id/pdf-text only when opened, so the
+ * 20 KB text payload never lands in the initial page prop.
+ */
+function PdfTextDisclosure({ fileId }: { fileId: number }) {
+  const [text, setText] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  const onToggle = async (e: React.SyntheticEvent<HTMLDetailsElement>) => {
+    const details = e.currentTarget
+    if (!details.open || text !== null) return
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/workshop/files/${fileId}/pdf-text`, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setText(typeof data.text === 'string' ? data.text : '')
+      }
+    } catch {
+      setText('')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <details
+      className="rounded-lg border border-gray-200 bg-white text-sm"
+      onToggle={onToggle}
+    >
+      <summary className="cursor-pointer select-none px-3 py-2 font-medium text-gray-700 hover:bg-gray-50">
+        Extracted text (for search)
+      </summary>
+      <div className="border-t border-gray-100 px-3 py-2">
+        {loading ? (
+          <p className="text-xs text-gray-400">Loading…</p>
+        ) : (
+          <pre className="whitespace-pre-wrap text-xs text-gray-600 overflow-auto max-h-48">
+            {text ?? ''}
+          </pre>
+        )}
+      </div>
+    </details>
   )
 }
 

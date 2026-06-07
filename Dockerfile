@@ -1,7 +1,13 @@
 FROM node:22-slim AS base
 
-# Install bash & curl for entrypoint script compatibility, graphicsmagick for pdf2pic, and vips-dev & build-base for sharp
-RUN apt-get update && apt-get install -y bash curl graphicsmagick ghostscript libvips-dev build-essential
+# Install bash & curl for entrypoint script compatibility, graphicsmagick for pdf2pic, and vips-dev & build-base for sharp.
+# python3-ezdxf + python3-matplotlib: DXF thumbnail renderer (dxf_thumb.py, headless via Agg).
+# openscad + xvfb: SCAD thumbnail renderer (xvfb-run provides virtual framebuffer for OpenSCAD's GLX requirement).
+# Base-layer change: triggers a full multi-arch rebuild (~25 min for arm64 + amd64) — same class as adding ghostscript in #6.
+RUN apt-get update && apt-get install -y \
+    bash curl graphicsmagick ghostscript libvips-dev build-essential \
+    python3-ezdxf python3-matplotlib \
+    openscad xvfb
 
 # stl-thumb — generates PNG previews for the Workshop / Offline STL Library.
 # Multi-arch: TARGETARCH is set automatically by buildx (amd64 or arm64),
@@ -42,6 +48,7 @@ FROM base AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules /app/node_modules
 ADD admin/ ./
+RUN chmod +x /app/scripts/dxf_thumb.py
 RUN node ace build
 
 # Production stage

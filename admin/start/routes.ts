@@ -47,6 +47,9 @@ router
     router.post('/batch', [WorkshopController, 'batch'])
     router.get('/files/:id/download', [WorkshopController, 'download'])
     router.get('/files/:id/thumbnail', [WorkshopController, 'thumbnail'])
+    // PDF detail-view: individual page previews + extracted text (lazy fetch).
+    router.get('/files/:id/pdf-page/:page', [WorkshopController, 'pdfPage'])
+    router.get('/files/:id/pdf-text', [WorkshopController, 'pdfText'])
     router.post('/scan', [WorkshopController, 'scan'])
     router.post('/acknowledge-rights', [WorkshopController, 'acknowledgeRights'])
     // Permission probe is intentionally NOT gated — the UI calls it from any
