@@ -166,7 +166,7 @@ export default function InventoryShow(props: PageProps) {
         headers: { 'X-Requested-With': 'XMLHttpRequest' },
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      router.visit('/inventory')
+      router.visit('/readiness?tab=inventory')
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       setMessage({ kind: 'err', text: `Delete failed: ${msg}` })
@@ -179,7 +179,7 @@ export default function InventoryShow(props: PageProps) {
 
       <div className="p-4 md:p-6 max-w-3xl mx-auto">
         <Link
-          href="/inventory"
+          href="/readiness?tab=inventory"
           className="inline-flex items-center gap-1 text-sm text-gray-600 mb-3 hover:text-desert-green"
         >
           <IconArrowLeft size={16} /> Back to Inventory

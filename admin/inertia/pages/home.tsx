@@ -1,7 +1,6 @@
 import {
   IconBolt,
   IconBox,
-  IconClipboardList,
   IconHelp,
   IconMapRoute,
   IconPlus,
@@ -66,26 +65,13 @@ const WORKSHOP_ITEM = {
   poweredBy: null,
 }
 
-// Inventory — Self-Reliance Suite Phase 1 (Core Capability). Hand-curated
-// catalog of supplies, gear, and resource-mapped items that feed the readiness
-// calculator (Phase 2).
-const INVENTORY_ITEM = {
-  label: 'Inventory',
-  to: '/inventory',
-  target: '',
-  description: 'Track supplies, gear, and resources for self-reliance',
-  icon: <IconClipboardList size={48} />,
-  installed: true,
-  displayOrder: 6,
-  poweredBy: null,
-}
-
-// Preparedness — Self-Reliance Suite Phases 2 + 3 (Core Capability). One
-// page with two tabs: Supply Readiness reads the Inventory catalog and a
-// household config to show how many days of water, food, and power you have
-// against your target horizon (stores no new stock); Scenario Plans holds the
-// editable, checkable per-scenario plans whose steps cross-link to inventory
-// items, STL files, and ZIM articles.
+// Preparedness — Self-Reliance Suite Phases 1 + 2 + 3 (Core Capability). One
+// page with three tabs: Inventory (the hand-curated catalog of supplies, gear,
+// and resource-mapped items — formerly a standalone tile), Supply Readiness
+// (reads that catalog and a household config to show how many days of water,
+// food, and power you have against your target horizon — stores no new stock),
+// and Scenario Plans (the editable, checkable per-scenario plans whose steps
+// cross-link to inventory items, STL files, and ZIM articles).
 const READINESS_ITEM = {
   label: 'Preparedness',
   to: '/readiness',
@@ -216,10 +202,8 @@ export default function Home(props: {
   // stl-library/)
   items.push(WORKSHOP_ITEM)
 
-  // Add Inventory as a Core Capability (Self-Reliance Suite Phase 1)
-  items.push(INVENTORY_ITEM)
-
-  // Add Preparedness as a Core Capability (Self-Reliance Suite Phases 2 + 3)
+  // Add Preparedness as a Core Capability (Self-Reliance Suite Phases 1 + 2 + 3;
+  // the former standalone Inventory tile is now its first tab)
   items.push(READINESS_ITEM)
 
   // Add system items

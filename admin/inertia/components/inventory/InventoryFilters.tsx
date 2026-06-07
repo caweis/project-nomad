@@ -17,9 +17,10 @@ interface Props {
 const EXPIRY_WINDOWS = [7, 14, 30, 60, 90] as const
 
 /**
- * Filter rail for the Inventory list page. URL-driven — every change is a
- * partial Inertia visit so back/forward, deep-links, and refresh all preserve
- * filter state. Mirrors WorkshopFilters; strips empty params from the URL.
+ * Filter rail for the Inventory tab of the Preparedness page. URL-driven —
+ * every change is an Inertia visit to /readiness?tab=inventory so back/forward,
+ * deep-links, and refresh all preserve filter state. Mirrors WorkshopFilters;
+ * strips empty params from the URL.
  */
 export default function InventoryFilters({ filters, enums, total }: Props) {
   const [search, setSearch] = useState(filters.search ?? '')
@@ -28,16 +29,18 @@ export default function InventoryFilters({ filters, enums, total }: Props) {
   const updateFilter = (partial: Partial<InventoryListFilters>) => {
     const merged: Record<string, unknown> = { ...filters, ...partial, page: 1 }
     // Strip empty/false params so the URL stays clean (?category= → no param),
-    // and narrow to the scalar shape Inertia's RequestPayload accepts.
-    const next: Record<string, string | number | boolean> = {}
+    // and narrow to the scalar shape Inertia's RequestPayload accepts. The
+    // tab param keeps the visit on the Inventory tab of the Preparedness page.
+    const next: Record<string, string | number | boolean> = { tab: 'inventory' }
     for (const [k, v] of Object.entries(merged)) {
       if (v === undefined || v === null || v === '' || v === false) continue
       next[k] = v as string | number | boolean
     }
-    router.get('/inventory', next, { preserveState: true, preserveScroll: true, replace: true })
+    router.get('/readiness', next, { preserveState: true, preserveScroll: true, replace: true })
   }
 
-  const clearAll = () => router.get('/inventory', {}, { preserveState: true })
+  const clearAll = () =>
+    router.get('/readiness', { tab: 'inventory' }, { preserveState: true })
 
   const onSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault()

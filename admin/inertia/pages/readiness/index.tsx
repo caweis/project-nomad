@@ -3,6 +3,8 @@ import { Head, Link, router } from '@inertiajs/react'
 import AppLayout from '~/layouts/AppLayout'
 import StyledButton from '~/components/StyledButton'
 import InfoTooltip from '~/components/InfoTooltip'
+import InventoryCard from '~/components/inventory/InventoryCard'
+import InventoryFilters from '~/components/inventory/InventoryFilters'
 import {
   IconShieldCheck,
   IconDroplet,
@@ -11,11 +13,21 @@ import {
   IconAlertTriangle,
   IconListCheck,
   IconChecks,
+  IconClipboardList,
+  IconScale,
 } from '@tabler/icons-react'
 import { displayUnitLabel, fromBase, toBase } from '../../../util/units'
+import { pageList } from '../../../util/workshop_pagination'
 import type { ReadinessResource, ResourceReadiness, ReadinessStatus } from '../../../util/readiness'
 import type { ReadinessDashboard } from '../../../types/readiness'
-import type { MeasurementSystem } from '../../../types/inventory'
+import type {
+  InventoryCategory,
+  InventoryCondition,
+  InventoryItemSlim,
+  InventoryListFilters,
+  MeasurementSystem,
+  ResourceType,
+} from '../../../types/inventory'
 import {
   SCENARIOS,
   SCENARIO_LABELS,
@@ -26,37 +38,68 @@ import {
 /**
  * Self-Reliance Suite — Preparedness.
  *
- * One page, two tabs:
+ * One page, three tabs (data → assessment → response):
+ *   • Inventory — the unified supplies/gear catalog moved here from the former
+ *     standalone /inventory list page: filter sidebar, card grid, pagination,
+ *     expiring/low-stock badges. "Add item" → /inventory/new; cards →
+ *     /inventory/:id. This is the canonical inventory_items list — the same
+ *     rows Supply Readiness sums and Scenario Plan steps cross-link.
  *   • Supply Readiness — the Phase 2 days-of-supply calculator: three
  *     per-resource cards (water / food / power) with days-of-supply, status
  *     pill, and gap, each carrying the CITED §5.1.1 "source:" tooltip; an
  *     expiry-warning panel; and a household-config form that PATCHes the
  *     existing /api/system/settings KV endpoint (one key per request, like the
- *     Inventory units toggle) then router.reload()s. Water is shown/entered in
- *     the user's measurement system via util/units.ts; food (kcal) and power
- *     (Wh) are system-agnostic. Stores no new stock — it reads Inventory.
+ *     units toggle) then router.reload()s. Water is shown/entered in the user's
+ *     measurement system via util/units.ts; food (kcal) and power (Wh) are
+ *     system-agnostic. Stores no new stock — it reads Inventory.
  *   • Scenario Plans — the Phase 3 per-scenario checklist list (grouped by
  *     scenario, step tallies, "New plan" action). Clicking a plan opens
  *     /plans/:id; the detail/create pages link back here to ?tab=plans.
  *
  * The active tab comes from the server-resolved `tab` prop (driven by the
- * `?tab=supply|plans` query param), so it is linkable and survives
- * router.reload(). Switching tabs is an Inertia GET that preserves state/scroll
- * so the calculator's loaded data is not lost when toggling.
+ * `?tab=inventory|supply|plans` query param, default inventory). Per-tab
+ * loading: the server only sends the active tab's dataset, so each tab's prop
+ * is optional. Switching tabs is an Inertia GET to /readiness?tab=X — when on
+ * the inventory tab the filter/page params ride alongside ?tab=inventory so the
+ * list stays deep-linkable.
+ *
+ * The units toggle lives in the page header so it applies across the Inventory
+ * and Supply Readiness tabs (both display base-unit values in the user's
+ * system). It PATCHes the units KV key then reloads, re-rendering whichever tab
+ * is active in the new system.
  */
 
-type ReadinessTab = 'supply' | 'plans'
+type ReadinessTab = 'inventory' | 'supply' | 'plans'
+
+interface Pagination {
+  total: number
+  per_page: number
+  current_page: number
+  last_page: number
+}
 
 interface Enums {
   scenarios: { value: Scenario; label: string }[]
+  categories: { value: InventoryCategory; label: string }[]
+  conditions: InventoryCondition[]
+  resource_types: ResourceType[]
+  resource_base_units: Record<ResourceType, string>
 }
 
 interface PageProps {
-  dashboard: ReadinessDashboard
-  plans: ScenarioPlanSlim[]
-  enums: Enums
   tab: ReadinessTab
+  measurement_system: MeasurementSystem
+  enums: Enums
+  // Only the active tab's dataset is sent by the server, so each is optional.
+  inventoryItems?: InventoryItemSlim[]
+  pagination?: Pagination
+  inventoryFilters?: InventoryListFilters
+  dashboard?: ReadinessDashboard
+  plans?: ScenarioPlanSlim[]
 }
+
+/** List-tab default window for the "Expiring soon" card badge. */
+const EXPIRING_SOON_DAYS = 30
 
 /** Cited provenance for each figure, surfaced in-app per spec §5.0 / §5.1.1. */
 const SOURCE_NOTES: Record<ReadinessResource, string> = {
@@ -103,15 +146,47 @@ const RESOURCE_META: Record<
   power: { label: 'Power', icon: <IconBolt size={28} /> },
 }
 
-export default function ReadinessIndex({ dashboard, plans, tab }: PageProps) {
+export default function ReadinessIndex(props: PageProps) {
+  const { tab, measurement_system: system } = props
+  const [savingSystem, setSavingSystem] = useState(false)
+
   /**
-   * Switch tabs via an Inertia GET that updates `?tab`. preserveState keeps the
-   * config form's local edits and preserveScroll avoids a jump; the server
-   * re-supplies both datasets so neither tab needs a second fetch.
+   * Switch tabs via an Inertia GET that updates `?tab`. Inventory carries its
+   * current filter/page params so the deep-link survives; supply/plans need no
+   * extra params. preserveScroll avoids a jump; the server supplies only the
+   * destination tab's dataset.
    */
   const goTo = (next: ReadinessTab) => {
     if (next === tab) return
-    router.get('/readiness', { tab: next }, { preserveState: true, preserveScroll: true })
+    const params: Record<string, string | number | boolean> =
+      next === 'inventory' ? buildInventoryQuery(props.inventoryFilters) : {}
+    params.tab = next
+    router.get('/readiness', params, { preserveScroll: true })
+  }
+
+  /**
+   * Persist the units preference via the existing /api/system/settings KV
+   * endpoint, then reload so every base-unit value re-displays in the new
+   * system. Switching is lossless (values are stored in base units). The reload
+   * preserves the current ?tab + inventory filters because router.reload()
+   * re-issues the same URL.
+   */
+  const setSystem = async (next: MeasurementSystem) => {
+    if (next === system || savingSystem) return
+    setSavingSystem(true)
+    try {
+      const res = await fetch('/api/system/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        body: JSON.stringify({ key: 'inventory.measurementSystem', value: next }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      // onFinish fires on both success and failure of the visit, so the toggle
+      // never stays locked after a same-component reload.
+      router.reload({ onFinish: () => setSavingSystem(false) })
+    } catch {
+      setSavingSystem(false)
+    }
   }
 
   return (
@@ -119,29 +194,45 @@ export default function ReadinessIndex({ dashboard, plans, tab }: PageProps) {
       <Head title="Preparedness" />
 
       <div className="p-4 md:p-6 max-w-7xl mx-auto">
-        <header className="mb-4">
-          <h1 className="text-3xl font-bold text-desert-green flex items-center gap-2">
-            <IconShieldCheck size={32} /> Preparedness
-          </h1>
-          <p className="text-sm text-gray-600 mt-1">
-            Your days-of-supply against a target, plus checkable plans for the situations you
-            prepare for.
-          </p>
+        <header className="flex flex-wrap items-start justify-between gap-3 mb-4">
+          <div>
+            <h1 className="text-3xl font-bold text-desert-green flex items-center gap-2">
+              <IconShieldCheck size={32} /> Preparedness
+            </h1>
+            <p className="text-sm text-gray-600 mt-1">
+              Your supplies, the days-of-supply they buy you against a target, and checkable plans
+              for the situations you prepare for.
+            </p>
+          </div>
+
+          {/* Units toggle lives in the header so it applies across Inventory +
+              Supply Readiness. It's only meaningful on those two tabs. */}
+          {tab !== 'plans' && (
+            <UnitsToggle system={system} disabled={savingSystem} onChange={setSystem} />
+          )}
         </header>
 
         <TabBar active={tab} onChange={goTo} />
 
-        {tab === 'plans' ? (
-          <ScenarioPlansTab plans={plans} />
-        ) : (
-          <SupplyReadinessTab dashboard={dashboard} />
+        {tab === 'inventory' && (
+          <InventoryTab
+            items={props.inventoryItems ?? []}
+            pagination={props.pagination}
+            filters={props.inventoryFilters ?? {}}
+            enums={props.enums}
+            system={system}
+          />
         )}
+        {tab === 'supply' && props.dashboard && (
+          <SupplyReadinessTab dashboard={props.dashboard} />
+        )}
+        {tab === 'plans' && <ScenarioPlansTab plans={props.plans ?? []} />}
       </div>
     </AppLayout>
   )
 }
 
-/** The two-tab selector for the planner. StyledButton-free; plain buttons. */
+/** The three-tab selector. Plain buttons (StyledButton renders type="button"). */
 function TabBar({
   active,
   onChange,
@@ -150,6 +241,7 @@ function TabBar({
   onChange: (tab: ReadinessTab) => void
 }) {
   const tabs: { id: ReadinessTab; label: string; icon: React.ReactNode }[] = [
+    { id: 'inventory', label: 'Inventory', icon: <IconClipboardList size={18} /> },
     { id: 'supply', label: 'Supply Readiness', icon: <IconShieldCheck size={18} /> },
     { id: 'plans', label: 'Scenario Plans', icon: <IconListCheck size={18} /> },
   ]
@@ -179,6 +271,236 @@ function TabBar({
       </nav>
     </div>
   )
+}
+
+// ─── Inventory tab ────────────────────────────────────────────────────────────
+
+/**
+ * Inventory list (moved here from the former standalone /inventory page). Filter
+ * rail + card grid + pagination, all driven by the server-supplied filters. The
+ * filter/pager controls issue Inertia GETs to /readiness?tab=inventory so the
+ * list stays in-tab and deep-linkable. The units toggle lives in the page
+ * header (shared with Supply Readiness), not here.
+ */
+function InventoryTab({
+  items,
+  pagination,
+  filters,
+  enums,
+}: {
+  items: InventoryItemSlim[]
+  pagination?: Pagination
+  filters: InventoryListFilters
+  enums: Enums
+  system: MeasurementSystem
+}) {
+  return (
+    <div>
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+        <p className="text-sm text-gray-600">
+          Track your supplies, gear, and resources for self-reliance. Map water, food, and power
+          items to feed the Supply Readiness calculator.
+        </p>
+        <Link href="/inventory/new">
+          <StyledButton variant="primary" icon="IconPlus">
+            Add item
+          </StyledButton>
+        </Link>
+      </div>
+
+      <div className="flex flex-col md:flex-row gap-4">
+        <InventoryFilters
+          filters={filters}
+          enums={{ categories: enums.categories }}
+          total={pagination?.total ?? items.length}
+        />
+        <div className="flex-1">
+          {items.length === 0 ? (
+            <InventoryEmptyState filters={filters} />
+          ) : (
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                {items.map((item) => (
+                  <InventoryCard key={item.id} item={item} expiringWithinDays={EXPIRING_SOON_DAYS} />
+                ))}
+              </div>
+              {pagination && pagination.last_page > 1 && (
+                <Pager pagination={pagination} filters={filters} />
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function UnitsToggle({
+  system,
+  disabled,
+  onChange,
+}: {
+  system: MeasurementSystem
+  disabled: boolean
+  onChange: (system: MeasurementSystem) => void
+}) {
+  return (
+    <div className="inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-white p-0.5 text-sm">
+      <IconScale size={16} className="ml-1.5 text-gray-400" aria-hidden="true" />
+      <ToggleButton active={system === 'us'} disabled={disabled} onClick={() => onChange('us')}>
+        Imperial / US
+      </ToggleButton>
+      <ToggleButton
+        active={system === 'metric'}
+        disabled={disabled}
+        onClick={() => onChange('metric')}
+      >
+        Metric
+      </ToggleButton>
+    </div>
+  )
+}
+
+function ToggleButton({
+  active,
+  disabled,
+  onClick,
+  children,
+}: {
+  active: boolean
+  disabled: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      aria-pressed={active}
+      className={[
+        'rounded px-2.5 py-1 font-medium transition-colors disabled:opacity-50',
+        active ? 'bg-desert-green text-white' : 'text-gray-600 hover:bg-gray-100',
+      ].join(' ')}
+    >
+      {children}
+    </button>
+  )
+}
+
+function InventoryEmptyState({ filters }: { filters: InventoryListFilters }) {
+  const filtered =
+    !!filters.category ||
+    !!filters.location ||
+    !!filters.search ||
+    filters.expiring_within_days !== undefined ||
+    filters.low_stock === true
+
+  if (filtered) {
+    return (
+      <div className="rounded-lg border border-gray-200 bg-white p-12 text-center text-gray-600">
+        <IconClipboardList size={48} className="mx-auto text-gray-300 mb-3" />
+        <p className="font-medium mb-1">No items match these filters</p>
+        <p className="text-sm">Try clearing one or more filters from the sidebar.</p>
+      </div>
+    )
+  }
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white p-12 text-center text-gray-600">
+      <IconClipboardList size={48} className="mx-auto text-gray-300 mb-3" />
+      <p className="font-medium mb-1">Inventory is empty</p>
+      <p className="text-sm">
+        Use <strong>Add item</strong> above to start cataloging your supplies and gear.
+      </p>
+    </div>
+  )
+}
+
+function Pager({
+  pagination,
+  filters,
+}: {
+  pagination: Pagination
+  filters: InventoryListFilters
+}) {
+  const { current_page: current, last_page: last } = pagination
+
+  const goTo = (page: number) => {
+    const target = Math.min(Math.max(1, page), last)
+    if (target === current) return
+    router.get(
+      '/readiness',
+      { ...buildInventoryQuery(filters), tab: 'inventory', page: target },
+      { preserveScroll: true }
+    )
+  }
+
+  const tokens = pageList(current, last)
+
+  return (
+    <nav className="mt-6 flex flex-wrap items-center justify-center gap-2" aria-label="Pagination">
+      <button
+        disabled={current === 1}
+        onClick={() => goTo(current - 1)}
+        className="px-3 py-1 rounded border border-gray-300 text-sm disabled:opacity-40"
+      >
+        Previous
+      </button>
+
+      <div className="flex items-center gap-1">
+        {tokens.map((tok, i) =>
+          tok === '…' ? (
+            <span key={`gap-${i}`} className="px-2 text-sm text-gray-400 select-none">
+              …
+            </span>
+          ) : (
+            <button
+              key={tok}
+              onClick={() => goTo(tok)}
+              aria-current={tok === current ? 'page' : undefined}
+              className={[
+                'min-w-[2rem] px-2 py-1 rounded border text-sm',
+                tok === current
+                  ? 'border-desert-green bg-desert-green text-white font-semibold'
+                  : 'border-gray-300 text-gray-700 hover:bg-gray-50',
+              ].join(' ')}
+            >
+              {tok}
+            </button>
+          )
+        )}
+      </div>
+
+      <button
+        disabled={current === last}
+        onClick={() => goTo(current + 1)}
+        className="px-3 py-1 rounded border border-gray-300 text-sm disabled:opacity-40"
+      >
+        Next
+      </button>
+
+      <span className="ml-2 text-sm text-gray-600">
+        Page {current} of {last}
+      </span>
+    </nav>
+  )
+}
+
+/**
+ * Flatten the inventory filters into a clean scalar query object (drop
+ * empty/false params) so they can ride alongside ?tab=inventory on tab switches
+ * and pager clicks.
+ */
+function buildInventoryQuery(
+  filters: InventoryListFilters | undefined
+): Record<string, string | number | boolean> {
+  const out: Record<string, string | number | boolean> = {}
+  if (!filters) return out
+  for (const [k, v] of Object.entries(filters)) {
+    if (v === undefined || v === null || v === '' || v === false) continue
+    out[k] = v as string | number | boolean
+  }
+  return out
 }
 
 // ─── Supply Readiness tab ─────────────────────────────────────────────────────

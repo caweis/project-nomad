@@ -62,10 +62,15 @@ router
   })
   .prefix('/api/workshop')
 
-// Self-Reliance Suite — Inventory (Phase 1). Page GETs unguarded; the mutation
+// Self-Reliance Suite — Inventory (Phase 1). The inventory LIST now lives as
+// the "Inventory" tab of the Preparedness (ReadinessController supplies the
+// list), so the bare /inventory list route redirects there (any old bookmark
+// still lands in the tab). The create (/inventory/new) and detail
+// (/inventory/:id) pages stay standalone. Page GETs unguarded; the mutation
 // group writes only DB rows (no files), so it is ungated like the Workshop
-// single-row update/destroy.
-router.get('/inventory', [InventoryController, 'index'])
+// single-row update/destroy. `/inventory/new` precedes `/inventory/:id` so the
+// literal route wins over the param.
+router.on('/inventory').redirectToPath('/readiness?tab=inventory')
 router.get('/inventory/new', [InventoryController, 'new'])
 router.get('/inventory/:id', [InventoryController, 'show'])
 router

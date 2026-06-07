@@ -3,7 +3,6 @@ import KVStore from '#models/kv_store'
 import { InventoryService } from '#services/inventory_service'
 import {
   createInventoryItemValidator,
-  listInventoryItemsValidator,
   resourceMappingValid,
   updateInventoryItemValidator,
 } from '#validators/inventory'
@@ -21,34 +20,17 @@ import {
 /**
  * Self-Reliance Suite — Inventory HTTP boundary.
  *
- * Renders two Inertia pages (list + detail/create) and a small JSON API for
- * create/update/delete. Mirrors the WorkshopController shape: index/show render
- * Inertia; store/update/destroy are JSON mutations; integer-id guards; never
- * leak exceptions to the UI.
+ * Renders the detail/create Inertia page and a small JSON API for
+ * create/update/delete. The inventory LIST now lives as the "Inventory" tab of
+ * the Preparedness (ReadinessController supplies the list), so this controller
+ * no longer renders a list page. Mirrors the WorkshopController shape: new/show
+ * render Inertia; store/update/destroy are JSON mutations; integer-id guards;
+ * never leak exceptions to the UI.
  *
  * Inventory writes no files, so the Workshop "drive unavailable" branch is
  * omitted — the catalog is pure DB rows.
  */
 export default class InventoryController {
-  /**
-   * GET /inventory — list page. Server-renders the filtered, paginated rows
-   * plus the enum lists and the current measurement system so the sidebar and
-   * resource badges don't need a separate fetch.
-   */
-  async index({ inertia, request }: HttpContext) {
-    const filters = await request.validateUsing(listInventoryItemsValidator)
-    const service = new InventoryService()
-    const { items, pagination } = await service.list(filters)
-
-    return inertia.render('inventory/index', {
-      items,
-      pagination,
-      filters,
-      enums: this.enumsForUi(),
-      measurement_system: await this.measurementSystem(),
-    })
-  }
-
   /**
    * GET /inventory/new — create form. The show page doubles as create when
    * given no row (item: null).
