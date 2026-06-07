@@ -83,7 +83,7 @@ router
 router.get('/readiness', [ReadinessController, 'index'])
 
 // Self-Reliance Suite — Scenario Plans (Phase 3). The plans list now lives as
-// the "Scenario Plans" tab of the Readiness Planner, so the bare /plans list
+// the "Scenario Plans" tab of the Preparedness, so the bare /plans list
 // route redirects there (any old bookmark still lands in the tab). The create
 // (/plans/new) and detail (/plans/:id) pages stay standalone. Page GETs
 // unguarded; the mutation group writes only DB rows (no files), so it is ungated

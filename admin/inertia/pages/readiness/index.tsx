@@ -24,7 +24,7 @@ import {
 } from '../../../types/scenarios'
 
 /**
- * Self-Reliance Suite — Readiness Planner.
+ * Self-Reliance Suite — Preparedness.
  *
  * One page, two tabs:
  *   • Supply Readiness — the Phase 2 days-of-supply calculator: three
@@ -116,12 +116,12 @@ export default function ReadinessIndex({ dashboard, plans, tab }: PageProps) {
 
   return (
     <AppLayout>
-      <Head title="Readiness Planner" />
+      <Head title="Preparedness" />
 
       <div className="p-4 md:p-6 max-w-7xl mx-auto">
         <header className="mb-4">
           <h1 className="text-3xl font-bold text-desert-green flex items-center gap-2">
-            <IconShieldCheck size={32} /> Readiness Planner
+            <IconShieldCheck size={32} /> Preparedness
           </h1>
           <p className="text-sm text-gray-600 mt-1">
             Your days-of-supply against a target, plus checkable plans for the situations you
@@ -155,7 +155,7 @@ function TabBar({
   ]
   return (
     <div className="border-b border-gray-200 mb-6">
-      <nav className="-mb-px flex gap-6" aria-label="Readiness Planner tabs">
+      <nav className="-mb-px flex gap-6" aria-label="Preparedness tabs">
         {tabs.map((t) => {
           const isActive = t.id === active
           return (

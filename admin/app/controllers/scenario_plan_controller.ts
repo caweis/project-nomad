@@ -20,7 +20,7 @@ import {
  *
  * Renders the create + detail Inertia pages and a JSON API for plan and step
  * mutations. The plans LIST now lives as the "Scenario Plans" tab of the
- * Readiness Planner (ReadinessController supplies the list), so this controller
+ * Preparedness (ReadinessController supplies the list), so this controller
  * no longer renders a list page. Mirrors the InventoryController shape: new/show
  * render Inertia; mutations are JSON; integer-id guards on every id param; never
  * leak exceptions to the UI. Plans/steps are pure DB rows, so there is no "drive

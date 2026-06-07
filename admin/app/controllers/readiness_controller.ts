@@ -3,12 +3,12 @@ import { ReadinessService } from '#services/readiness_service'
 import { ScenarioPlanService } from '#services/scenario_plan_service'
 import { SCENARIO_LABELS, SCENARIOS } from '../../types/scenarios.js'
 
-/** The two tabs of the Readiness Planner page. */
+/** The two tabs of the Preparedness page. */
 const READINESS_TABS = ['supply', 'plans'] as const
 type ReadinessTab = (typeof READINESS_TABS)[number]
 
 /**
- * Self-Reliance Suite — Readiness Planner HTTP boundary.
+ * Self-Reliance Suite — Preparedness HTTP boundary.
  *
  * One page with two tabs: "Supply Readiness" (the Phase 2 days-of-supply
  * calculator + household config) and "Scenario Plans" (the Phase 3 per-scenario
@@ -24,7 +24,7 @@ type ReadinessTab = (typeof READINESS_TABS)[number]
  */
 export default class ReadinessController {
   /**
-   * GET /readiness — the Readiness Planner. Reads Inventory + the KV config via
+   * GET /readiness — the Preparedness. Reads Inventory + the KV config via
    * ReadinessService (which falls back to cited defaults for any unset key, so
    * the page always renders) and the scenario-plan list via ScenarioPlanService,
    * then hands both to Inertia along with the active tab.

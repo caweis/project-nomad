@@ -80,14 +80,14 @@ const INVENTORY_ITEM = {
   poweredBy: null,
 }
 
-// Readiness Planner — Self-Reliance Suite Phases 2 + 3 (Core Capability). One
+// Preparedness — Self-Reliance Suite Phases 2 + 3 (Core Capability). One
 // page with two tabs: Supply Readiness reads the Inventory catalog and a
 // household config to show how many days of water, food, and power you have
 // against your target horizon (stores no new stock); Scenario Plans holds the
 // editable, checkable per-scenario plans whose steps cross-link to inventory
 // items, STL files, and ZIM articles.
 const READINESS_ITEM = {
-  label: 'Readiness Planner',
+  label: 'Preparedness',
   to: '/readiness',
   target: '',
   description: 'Days of water, food, and power on hand, plus scenario checklists',
@@ -219,7 +219,7 @@ export default function Home(props: {
   // Add Inventory as a Core Capability (Self-Reliance Suite Phase 1)
   items.push(INVENTORY_ITEM)
 
-  // Add Readiness Planner as a Core Capability (Self-Reliance Suite Phases 2 + 3)
+  // Add Preparedness as a Core Capability (Self-Reliance Suite Phases 2 + 3)
   items.push(READINESS_ITEM)
 
   // Add system items
