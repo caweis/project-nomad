@@ -44,3 +44,22 @@ export function mapEmbedJob(job: EmbedJobLike): EmbedJobWithProgress {
   }
   return dto
 }
+
+/**
+ * A ZIM file is embedded in batches: the parent batch's handle() dispatches the
+ * next batch (batchOffset > 0) before it returns. Those continuation batches
+ * must NOT reuse the deterministic per-file jobId, because two BullMQ dedupe
+ * paths would silently swallow them:
+ *   1. The parent is still `active` and locked, so queue.add() with the same
+ *      jobId returns the locked parent instead of enqueueing the new batch.
+ *   2. After the parent completes its entry lingers in the `completed` ZSET
+ *      (removeOnComplete keeps 50) and keeps tripping jobId dedupe.
+ * Either way the ZIM stopped embedding after its first batch — every multi-batch
+ * ZIM (Wikipedia, etc.) silently indexed only ~50 articles. Initial dispatches
+ * (batchOffset 0 or undefined) keep the deterministic jobId so a re-run (UI
+ * re-click, sync rescan) stays idempotent; continuation batches let BullMQ
+ * auto-generate a unique id so each stacks as an independent queue entry.
+ */
+export function isContinuationBatch(batchOffset?: number): boolean {
+  return !!(batchOffset && batchOffset > 0)
+}

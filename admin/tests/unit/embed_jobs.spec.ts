@@ -1,5 +1,5 @@
 import { test } from '@japa/runner'
-import { mapEmbedJob } from '../../util/embed_jobs.js'
+import { mapEmbedJob, isContinuationBatch } from '../../util/embed_jobs.js'
 
 test.group('mapEmbedJob', () => {
   test('maps an in-flight job, preserving its data status', ({ assert }) => {
@@ -62,5 +62,32 @@ test.group('mapEmbedJob', () => {
     assert.equal(dto.fileName, '')
     assert.equal(dto.filePath, '')
     assert.equal(dto.status, 'waiting')
+  })
+})
+
+test.group('isContinuationBatch', () => {
+  // The crux of the multi-batch ZIM fix: only batchOffset > 0 is a continuation
+  // (and so must skip the deterministic jobId). An initial dispatch keeps it.
+  test('initial dispatch (undefined offset) is not a continuation', ({ assert }) => {
+    assert.isFalse(isContinuationBatch(undefined))
+  })
+
+  test('first batch (offset 0) is not a continuation', ({ assert }) => {
+    // offset 0 is the initial batch — it must keep the deterministic jobId so
+    // a UI re-click / sync rescan stays idempotent.
+    assert.isFalse(isContinuationBatch(0))
+  })
+
+  test('offset 50 is a continuation', ({ assert }) => {
+    assert.isTrue(isContinuationBatch(50))
+  })
+
+  test('any positive offset is a continuation', ({ assert }) => {
+    assert.isTrue(isContinuationBatch(1))
+    assert.isTrue(isContinuationBatch(12345))
+  })
+
+  test('negative offset is treated as non-continuation (defensive)', ({ assert }) => {
+    assert.isFalse(isContinuationBatch(-1))
   })
 })

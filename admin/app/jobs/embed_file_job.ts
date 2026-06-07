@@ -1,7 +1,7 @@
 import { Job } from 'bullmq'
 import { QueueService } from '#services/queue_service'
 import { EmbedJobWithProgress } from '../../types/rag.js'
-import { mapEmbedJob } from '../../util/embed_jobs.js'
+import { mapEmbedJob, isContinuationBatch } from '../../util/embed_jobs.js'
 import { RagService } from '#services/rag_service'
 import { DockerService } from '#services/docker_service'
 import { OllamaService } from '#services/ollama_service'
@@ -186,31 +186,46 @@ export class EmbedFileJob {
     const queueService = QueueService.getInstance()
     const queue = queueService.getQueue(this.queue)
     const jobId = this.getJobId(params.filePath)
+    const isContinuation = isContinuationBatch(params.batchOffset)
 
-    const addOptions = {
-      jobId,
+    const addOptions: NonNullable<Parameters<typeof queue.add>[2]> = {
       attempts: 30,
       backoff: {
-        type: 'fixed' as const,
+        type: 'fixed',
         delay: 60000, // Check every 60 seconds for service readiness
       },
       removeOnComplete: { count: 50 }, // Keep last 50 completed jobs for history
       removeOnFail: { count: 20 }, // Keep last 20 failed jobs for debugging
     }
+    // Initial dispatches pin the deterministic jobId so a re-run (UI re-click,
+    // sync rescan) is idempotent. Continuation batches must NOT pin it, or
+    // BullMQ dedupe silently swallows them against the locked/lingering parent
+    // and the ZIM stops embedding after the first batch. See isContinuationBatch().
+    if (!isContinuation) {
+      addOptions.jobId = jobId
+    }
 
     try {
       const job = await queue.add(this.key, params, addOptions)
 
-      logger.info(`[EmbedFileJob] Dispatched embedding job for file: ${params.fileName}`)
+      const continuationLabel = isContinuation
+        ? ` (continuation @ offset ${params.batchOffset})`
+        : ''
+      logger.info(
+        `[EmbedFileJob] Dispatched embedding job for file: ${params.fileName}${continuationLabel}`
+      )
 
       return {
         job,
         created: true,
-        jobId,
+        jobId: job.id ?? jobId,
         message: `File queued for embedding: ${params.fileName}`,
       }
     } catch (error) {
-      if (error.message && error.message.includes('job already exists')) {
+      // Deterministic-jobId dedupe only applies to initial dispatches. A
+      // continuation batch never pins a jobId, so it cannot collide and falls
+      // through to the rethrow below.
+      if (!isContinuation && error.message && error.message.includes('job already exists')) {
         // Completed/failed records are retained (removeOnComplete/Fail keep N),
         // so a re-scanned file collides on the deterministic jobId and never
         // re-embeds. Remove the stale record and re-add so it actually runs.
