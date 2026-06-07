@@ -11,6 +11,8 @@ interface Props {
   filters: InventoryListFilters
   enums: FilterEnum
   total: number
+  /** Distinct known locations, alphabetized — options for the location select. */
+  locations: string[]
 }
 
 /** "Expiring within N days" options for the filter dropdown. */
@@ -22,9 +24,8 @@ const EXPIRY_WINDOWS = [7, 14, 30, 60, 90] as const
  * deep-links, and refresh all preserve filter state. Mirrors WorkshopFilters;
  * strips empty params from the URL.
  */
-export default function InventoryFilters({ filters, enums, total }: Props) {
+export default function InventoryFilters({ filters, enums, total, locations }: Props) {
   const [search, setSearch] = useState(filters.search ?? '')
-  const [location, setLocation] = useState(filters.location ?? '')
 
   const updateFilter = (partial: Partial<InventoryListFilters>) => {
     const merged: Record<string, unknown> = { ...filters, ...partial, page: 1 }
@@ -45,11 +46,6 @@ export default function InventoryFilters({ filters, enums, total }: Props) {
   const onSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     updateFilter({ search: search.trim() || undefined })
-  }
-
-  const onLocationSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    updateFilter({ location: location.trim() || undefined })
   }
 
   const hasActiveFilters =
@@ -114,26 +110,23 @@ export default function InventoryFilters({ filters, enums, total }: Props) {
         </select>
       </FilterGroup>
 
-      <form onSubmit={onLocationSubmit}>
-        <FilterGroup label="Location">
-          <div className="flex gap-1">
-            <input
-              type="text"
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              placeholder="garage shelf B"
-              className="flex-1 min-w-0 rounded border border-gray-300 px-2 py-1 text-sm"
-            />
-            <button
-              type="submit"
-              aria-label="Filter by location"
-              className="rounded border border-gray-300 bg-gray-50 px-2 hover:bg-gray-100"
-            >
-              <IconSearch size={16} />
-            </button>
-          </div>
-        </FilterGroup>
-      </form>
+      <FilterGroup label="Location">
+        {/* A select of known locations — picking one issues the same Inertia GET
+            (?location=...) the old free-text field did; the backend whereILike on
+            `location` is unchanged. "All locations" clears the filter. */}
+        <select
+          value={filters.location ?? ''}
+          onChange={(e) => updateFilter({ location: e.target.value || undefined })}
+          className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+        >
+          <option value="">All locations</option>
+          {locations.map((loc) => (
+            <option key={loc} value={loc}>
+              {loc}
+            </option>
+          ))}
+        </select>
+      </FilterGroup>
 
       <FilterGroup label="Expiring within">
         <select

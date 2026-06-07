@@ -163,6 +163,24 @@ export class InventoryService {
   }
 
   /**
+   * Distinct, non-empty `location` values across the catalog, alphabetized.
+   * Powers the type-to-add location combobox on the item form and the location
+   * filter dropdown on the Inventory tab — both suggest known locations while
+   * still allowing a brand-new free-typed value (which appears here next time).
+   */
+  async distinctLocations(): Promise<string[]> {
+    const rows = await InventoryItem.query()
+      .distinct('location')
+      .whereNotNull('location')
+      .whereNot('location', '')
+      .orderBy('location', 'asc')
+
+    return rows
+      .map((row) => row.location)
+      .filter((loc): loc is string => loc !== null && loc !== '')
+  }
+
+  /**
    * Phase 2 dependency: total base-unit amount for a resource across all
    * contributing rows. Excludes contribution <= 0 so a stray bad row can't
    * corrupt the total (the cross-field validator already blocks those on save;

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Head, Link, router } from '@inertiajs/react'
+import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react'
 import AppLayout from '~/layouts/AppLayout'
 import StyledButton from '~/components/StyledButton'
 import InfoTooltip from '~/components/InfoTooltip'
@@ -15,6 +16,9 @@ import {
   IconChecks,
   IconClipboardList,
   IconScale,
+  IconInfoCircle,
+  IconExternalLink,
+  IconX,
 } from '@tabler/icons-react'
 import { displayUnitLabel, fromBase, toBase } from '../../../util/units'
 import { pageList } from '../../../util/workshop_pagination'
@@ -94,6 +98,8 @@ interface PageProps {
   inventoryItems?: InventoryItemSlim[]
   pagination?: Pagination
   inventoryFilters?: InventoryListFilters
+  /** Distinct known locations (inventory tab only) — powers the location filter. */
+  locations?: string[]
   dashboard?: ReadinessDashboard
   plans?: ScenarioPlanSlim[]
 }
@@ -220,6 +226,7 @@ export default function ReadinessIndex(props: PageProps) {
             pagination={props.pagination}
             filters={props.inventoryFilters ?? {}}
             enums={props.enums}
+            locations={props.locations ?? []}
             system={system}
           />
         )}
@@ -287,11 +294,13 @@ function InventoryTab({
   pagination,
   filters,
   enums,
+  locations,
 }: {
   items: InventoryItemSlim[]
   pagination?: Pagination
   filters: InventoryListFilters
   enums: Enums
+  locations: string[]
   system: MeasurementSystem
 }) {
   return (
@@ -312,6 +321,7 @@ function InventoryTab({
         <InventoryFilters
           filters={filters}
           enums={{ categories: enums.categories }}
+          locations={locations}
           total={pagination?.total ?? items.length}
         />
         <div className="flex-1">
@@ -507,6 +517,7 @@ function buildInventoryQuery(
 
 function SupplyReadinessTab({ dashboard }: { dashboard: ReadinessDashboard }) {
   const { resources, expiryWarnings, targetHorizonDays, measurementSystem } = dashboard
+  const [sourcesOpen, setSourcesOpen] = useState(false)
 
   return (
     <>
@@ -524,7 +535,189 @@ function SupplyReadinessTab({ dashboard }: { dashboard: ReadinessDashboard }) {
       <ExpiryPanel warnings={expiryWarnings} horizon={targetHorizonDays} system={measurementSystem} />
 
       <ConfigForm dashboard={dashboard} />
+
+      {/* Non-intrusive provenance link — the full cited rationale lives behind it
+          so it never clutters the dashboard. */}
+      <div className="mt-6 text-center">
+        <button
+          type="button"
+          onClick={() => setSourcesOpen(true)}
+          className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-desert-green hover:underline"
+        >
+          <IconInfoCircle size={16} />
+          Sources &amp; methodology
+        </button>
+      </div>
+
+      <SourcesModal open={sourcesOpen} onClose={() => setSourcesOpen(false)} />
     </>
+  )
+}
+
+/** A cited source the modal links out to. */
+interface SourceLink {
+  label: string
+  url: string
+}
+
+/**
+ * Consolidated provenance for every readiness figure, drawn from spec §5.1.1
+ * and the per-figure tooltips already on this page (SOURCE_NOTES / HORIZON_SOURCE
+ * / PET_SOURCE). Each entry restates the rationale and links its real sources —
+ * no fabricated citations.
+ */
+interface SourceEntry {
+  title: string
+  icon: React.ReactNode
+  body: string
+  links: SourceLink[]
+}
+
+const SOURCE_ENTRIES: SourceEntry[] = [
+  {
+    title: 'Water — 1 US gal/person/day',
+    icon: <IconDroplet size={18} />,
+    body:
+      '1 US gallon (3.79 L) per person per day for drinking and sanitation. Every person counts ' +
+      'as a full person — children are not discounted. FEMA, Ready.gov, and the CDC note children, ' +
+      'nursing mothers, and the ill need more, and needs can double in extreme heat.',
+    links: [
+      { label: 'Ready.gov/water', url: 'https://www.ready.gov/water' },
+      {
+        label: 'FEMA "Food and Water in an Emergency" (FA-321)',
+        url: 'https://www.fema.gov/pdf/library/f&web.pdf',
+      },
+      {
+        label: 'CDC emergency water',
+        url: 'https://www.cdc.gov/healthywater/emergency/drinking/creating-storing-emergency-water-supply.html',
+      },
+    ],
+  },
+  {
+    title: 'Food — 2,000 kcal/person/day',
+    icon: <IconToolsKitchen2 size={18} />,
+    body:
+      '2,000 kcal per person per day as the generic default (the FDA Nutrition Facts general ' +
+      'reference). Real needs span 1,000–3,200 kcal by age, sex, and activity, so adjust the ' +
+      'per-person value to your household (USDA/HHS Dietary Guidelines, Appendix 2).',
+    links: [
+      {
+        label: 'FDA Nutrition Facts label',
+        url: 'https://www.fda.gov/food/nutrition-facts-label',
+      },
+      { label: 'dietaryguidelines.gov', url: 'https://www.dietaryguidelines.gov' },
+    ],
+  },
+  {
+    title: 'Supply horizon — 14 days / 3 days',
+    icon: <IconShieldCheck size={18} />,
+    body:
+      '14 days for sheltering at home; a 3-day floor for evacuation. Ready.gov itself says only ' +
+      '"several days," so the day counts are cited to the Red Cross and FEMA.',
+    links: [
+      {
+        label: 'American Red Cross survival-kit list',
+        url: 'https://www.redcross.org/get-help/how-to-prepare-for-emergencies/survival-kit-supplies.html',
+      },
+      {
+        label: 'FEMA "Food and Water in an Emergency" (FA-321)',
+        url: 'https://www.fema.gov/pdf/library/f&web.pdf',
+      },
+    ],
+  },
+  {
+    title: 'Pets — your own daily intake',
+    icon: <IconClipboardList size={18} />,
+    body:
+      'No authoritative per-pet gallon or calorie figure exists; primary sources give durations ' +
+      'only (AVMA: 3–7 days of food, 7+ days of water). Enter your pets’ normal combined daily ' +
+      'water and food and the calculator multiplies by the horizon.',
+    links: [
+      { label: 'Ready.gov/pets', url: 'https://www.ready.gov/pets' },
+      {
+        label: 'AVMA pets-and-disasters',
+        url: 'https://www.avma.org/resources-tools/pet-owners/emergencycare/pets-and-disasters',
+      },
+    ],
+  },
+  {
+    title: 'Power — user-entered load',
+    icon: <IconBolt size={18} />,
+    body:
+      'No universal per-person watt-hour standard exists — emergency power is entirely ' +
+      'device-dependent. Enter your own daily Wh need; 0 leaves power untracked.',
+    links: [],
+  },
+]
+
+/**
+ * "Why these numbers?" modal — the full, scannable provenance for every readiness
+ * figure, hidden behind the bottom-of-tab link so it stays out of the way until
+ * asked for. Matches the local Headless UI Dialog pattern (WorkshopRightsModal).
+ */
+function SourcesModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  return (
+    <Dialog open={open} onClose={onClose} className="relative z-50">
+      <DialogBackdrop className="fixed inset-0 bg-black/50" />
+      <div className="fixed inset-0 flex items-start justify-center overflow-y-auto p-4 sm:p-8">
+        <DialogPanel className="my-8 max-w-2xl w-full rounded-lg bg-white p-6 shadow-xl">
+          <div className="flex items-start justify-between gap-3 mb-1">
+            <DialogTitle className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+              <IconInfoCircle size={22} className="text-desert-green shrink-0" />
+              Why these numbers? — Sources
+            </DialogTitle>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="shrink-0 rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+            >
+              <IconX size={18} />
+            </button>
+          </div>
+
+          <p className="text-sm text-gray-500 mb-5">
+            Every default in this calculator is grounded in an authoritative source — none are
+            guessed. Adjust any figure to your household in the form above.
+          </p>
+
+          <div className="space-y-5">
+            {SOURCE_ENTRIES.map((entry) => (
+              <section key={entry.title}>
+                <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                  <span className="text-desert-green">{entry.icon}</span>
+                  {entry.title}
+                </h3>
+                <p className="mt-1 text-sm text-gray-600">{entry.body}</p>
+                {entry.links.length > 0 && (
+                  <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+                    {entry.links.map((link) => (
+                      <li key={link.url}>
+                        <a
+                          href={link.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs text-desert-green hover:underline"
+                        >
+                          {link.label}
+                          <IconExternalLink size={12} />
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            ))}
+          </div>
+
+          <div className="mt-6 flex justify-end">
+            <StyledButton variant="primary" onClick={onClose}>
+              Close
+            </StyledButton>
+          </div>
+        </DialogPanel>
+      </div>
+    </Dialog>
   )
 }
 

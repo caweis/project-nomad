@@ -70,12 +70,15 @@ export default class ReadinessController {
 
     if (tab === 'inventory') {
       const filters = await request.validateUsing(listInventoryItemsValidator)
-      const { items, pagination } = await new InventoryService().list(filters)
+      const inventoryService = new InventoryService()
+      const { items, pagination } = await inventoryService.list(filters)
+      const locations = await inventoryService.distinctLocations()
       return inertia.render('readiness/index', {
         ...shared,
         inventoryItems: items,
         pagination,
         inventoryFilters: filters,
+        locations,
       })
     }
 

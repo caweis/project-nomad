@@ -40,6 +40,7 @@ export default class InventoryController {
       item: null,
       enums: this.enumsForUi(),
       measurement_system: await this.measurementSystem(),
+      locations: await new InventoryService().distinctLocations(),
     })
   }
 
@@ -79,6 +80,7 @@ export default class InventoryController {
       item,
       enums: this.enumsForUi(),
       measurement_system: await this.measurementSystem(),
+      locations: await service.distinctLocations(),
     })
   }
 

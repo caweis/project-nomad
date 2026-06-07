@@ -24,6 +24,8 @@ interface PageProps {
   item: InventoryItemDetail | null
   enums: Enums
   measurement_system: MeasurementSystem
+  /** Distinct existing locations, alphabetized — suggestions for the combobox. */
+  locations: string[]
 }
 
 /**
@@ -272,13 +274,23 @@ export default function InventoryShow(props: PageProps) {
             </FormGroup>
 
             <FormGroup label="Location">
+              {/* Combobox: a free-text input wired to a datalist of known
+                  locations. Picking a suggestion fills the field; typing a
+                  brand-new value just saves on the item and shows up as a
+                  suggestion next time. Stays optional/nullable as before. */}
               <input
                 type="text"
+                list="inventory-locations"
                 value={form.location}
                 onChange={(e) => set('location', e.target.value)}
                 placeholder="garage shelf B"
                 className="w-full rounded border border-gray-300 px-2 py-1.5"
               />
+              <datalist id="inventory-locations">
+                {props.locations.map((loc) => (
+                  <option key={loc} value={loc} />
+                ))}
+              </datalist>
             </FormGroup>
 
             <FormGroup label="Restock threshold (low-stock flag)">
