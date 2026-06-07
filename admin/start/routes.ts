@@ -15,6 +15,7 @@ import HomeController from '#controllers/home_controller'
 import InventoryController from '#controllers/inventory_controller'
 import MapsController from '#controllers/maps_controller'
 import OllamaController from '#controllers/ollama_controller'
+import ReadinessController from '#controllers/readiness_controller'
 import HostCommandsController from '#controllers/host_commands_controller'
 import RagController from '#controllers/rag_controller'
 import SettingsController from '#controllers/settings_controller'
@@ -73,6 +74,12 @@ router
     router.delete('/:id', [InventoryController, 'destroy'])
   })
   .prefix('/api/inventory')
+
+// Self-Reliance Suite — Readiness Calculator (Phase 2). Read-only page; it
+// stores no new stock (reads Inventory) and persists its household config via
+// the existing PATCH /api/system/settings KV endpoint, so there is no new
+// mutation route here. Ungated like the Inventory/Workshop page GETs.
+router.get('/readiness', [ReadinessController, 'index'])
 
 router.on('/knowledge-base').redirectToPath('/chat?knowledge_base=true') // redirect for legacy knowledge-base links
 

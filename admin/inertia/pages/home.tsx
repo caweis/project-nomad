@@ -6,6 +6,7 @@ import {
   IconMapRoute,
   IconPlus,
   IconSettings,
+  IconShieldCheck,
   IconWand,
   IconWifiOff,
 } from '@tabler/icons-react'
@@ -76,6 +77,20 @@ const INVENTORY_ITEM = {
   icon: <IconClipboardList size={48} />,
   installed: true,
   displayOrder: 6,
+  poweredBy: null,
+}
+
+// Readiness — Self-Reliance Suite Phase 2 (Core Capability). Reads the Inventory
+// catalog and a household config to show how many days of water, food, and power
+// you have against your target horizon. Stores no new stock.
+const READINESS_ITEM = {
+  label: 'Readiness',
+  to: '/readiness',
+  target: '',
+  description: 'See how many days of water, food, and power you have on hand',
+  icon: <IconShieldCheck size={48} />,
+  installed: true,
+  displayOrder: 7,
   poweredBy: null,
 }
 
@@ -200,6 +215,9 @@ export default function Home(props: {
 
   // Add Inventory as a Core Capability (Self-Reliance Suite Phase 1)
   items.push(INVENTORY_ITEM)
+
+  // Add Readiness as a Core Capability (Self-Reliance Suite Phase 2)
+  items.push(READINESS_ITEM)
 
   // Add system items
   items.push(...SYSTEM_ITEMS)
