@@ -116,14 +116,14 @@ export class RunDownloadJob {
   }
 
   static async getByUrl(url: string): Promise<Job | undefined> {
-    const queueService = new QueueService()
+    const queueService = QueueService.getInstance()
     const queue = queueService.getQueue(this.queue)
     const jobId = this.getJobId(url)
     return await queue.getJob(jobId)
   }
 
   static async dispatch(params: RunDownloadJobParams) {
-    const queueService = new QueueService()
+    const queueService = QueueService.getInstance()
     const queue = queueService.getQueue(this.queue)
     const jobId = this.getJobId(params.url)
 

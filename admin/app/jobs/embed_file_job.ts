@@ -165,7 +165,7 @@ export class EmbedFileJob {
   }
 
   static async listActiveJobs(): Promise<EmbedJobWithProgress[]> {
-    const queueService = new QueueService()
+    const queueService = QueueService.getInstance()
     const queue = queueService.getQueue(this.queue)
     // Include 'failed' so the Processing Queue surfaces files whose embedding
     // exhausted its retries — otherwise "queued N" files vanish from the UI with
@@ -176,14 +176,14 @@ export class EmbedFileJob {
   }
 
   static async getByFilePath(filePath: string): Promise<Job | undefined> {
-    const queueService = new QueueService()
+    const queueService = QueueService.getInstance()
     const queue = queueService.getQueue(this.queue)
     const jobId = this.getJobId(filePath)
     return await queue.getJob(jobId)
   }
 
   static async dispatch(params: EmbedFileJobParams) {
-    const queueService = new QueueService()
+    const queueService = QueueService.getInstance()
     const queue = queueService.getQueue(this.queue)
     const jobId = this.getJobId(params.filePath)
 

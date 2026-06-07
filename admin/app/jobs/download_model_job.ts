@@ -74,14 +74,14 @@ export class DownloadModelJob {
   }
 
   static async getByModelName(modelName: string): Promise<Job | undefined> {
-    const queueService = new QueueService()
+    const queueService = QueueService.getInstance()
     const queue = queueService.getQueue(this.queue)
     const jobId = this.getJobId(modelName)
     return await queue.getJob(jobId)
   }
 
   static async dispatch(params: DownloadModelJobParams) {
-    const queueService = new QueueService()
+    const queueService = QueueService.getInstance()
     const queue = queueService.getQueue(this.queue)
     const jobId = this.getJobId(params.modelName)
 
