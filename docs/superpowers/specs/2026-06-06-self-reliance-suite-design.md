@@ -459,6 +459,44 @@ guesses: Phase 2 must either cite them (age-based water/calorie needs) or replac
 them (e.g. count children as full persons for water per FEMA; use age-based
 calorie references for food). Do not ship the multipliers as fact.
 
+### 5.1.1 Sourced values (sourcing pass DONE 2026-06-06 — SUPERSEDES the placeholders above)
+
+Authoritative, cited figures from the §5.0 pass. Each is surfaced in-app as a
+"source:" tooltip so the user sees the provenance.
+
+- **Water — 1 US gallon (3.785411784 L) per person per day** (drinking + sanitation).
+  Every person counts as a FULL person; children are NOT discounted — FEMA / Ready.gov
+  / CDC state children, nursing mothers, and the ill "will require even more," and in
+  extreme heat needs "can double." Offer an optional upward hot-climate factor; never a
+  downward child factor. Sources: Ready.gov/water; FEMA "Food and Water in an Emergency"
+  (FA-321); CDC emergency water.
+- **Food — 2,000 kcal per person per day** as the generic default (FDA Nutrition Facts
+  general reference). Real needs span 1,000–3,200 kcal by age/sex/activity (USDA/HHS
+  Dietary Guidelines, Appendix 2): a teen male needs MORE than 2,000, a toddler ~1,000 —
+  so a flat child fraction is wrong in both directions. v1 = 2,000/person with a
+  per-person override; an age-banded calorie table (DGA) is a documented enhancement.
+  Sources: FDA Nutrition Facts label; dietaryguidelines.gov (Appendix 2).
+- **Supply horizon — 14 days default (shelter-at-home), 3-day floor (evacuation).**
+  Sources: American Red Cross survival-kit list + FEMA FA-321 ("two-week supply"). Cite
+  Red Cross/FEMA for the day counts — Ready.gov itself only says "several days."
+- **Pets — NO fabricated per-pet figure.** No authoritative gallon/kcal-per-pet number
+  exists; primary sources give durations only (AVMA: 3–7 days food, ≥7 days water;
+  Ready.gov: "several days"). v1: the user enters their pet's normal daily water/food and
+  the calc multiplies by the horizon. Do NOT use the circulating "1 oz/lb/day" rule (not
+  from a primary authority). Sources: Ready.gov/pets; AVMA pets-and-disasters.
+- **Power — NO default; user-entered load.** There is no universal per-person watt-hour
+  standard; emergency power is entirely device-dependent and fabricating a default is a
+  safety hazard. v1: user enters a daily Wh need (default 0 = "not tracked"); a device
+  list is a later enhancement.
+
+**Config change vs §5.1:** DROP `readiness.childMultiplier` and `readiness.petMultiplier`.
+Keep `householdAdults` + `householdChildren` (both full-person for water; both 2,000 kcal
+default for food unless an age-band override is set). Pets are user-entered daily-intake
+inputs, not a multiplier. `readiness.needs` default stays `{ water: 3.785411784, food:
+2000, power: 0 }` per person/day; `readiness.targetHorizonDays` default `14`. The §5.2
+formula drops the multiplier terms accordingly: dailyNeed(resource) = people ×
+perPersonNeed(resource) + petIntake(resource).
+
 `power: 0` default means power readiness is dormant until the user sets a need;
 the dashboard renders a "set a daily power need to track this" prompt rather than
 a divide-by-zero (see §7).
