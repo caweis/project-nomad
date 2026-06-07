@@ -249,6 +249,16 @@ admin/types/kv_store.ts  →  'inventory.measurementSystem': 'string'   // 'us' 
 Default `'us'` (per the locked US-customary defaults). Read/written via
 `KVStore.getValue/setValue`.
 
+**Switching is a hard requirement (Chris, 2026-06-06: "make sure we can switch
+between metric and imperial").** It is a first-class Settings control labelled
+**Imperial / US ↔ Metric**. Because every measurable amount is stored in its base
+unit, switching is **lossless and retroactive** — existing rows and the readiness
+dashboard re-display in the newly chosen system instantly, with no data
+migration. The toggle drives both inventory display and the Phase 2 calculator
+defaults. Note: "Imperial" here means **US customary** (US gallon = 3.785411784 L),
+**not** the UK imperial gallon (4.546 L) — confirm at review if UK units are ever
+needed (would add a third `measurementSystem` value, not a code-path change).
+
 **Conversion table** (the pure helper in §4.5 owns these constants):
 
 | Resource | Base | US display unit | Metric display unit | Factor (display → base) |
