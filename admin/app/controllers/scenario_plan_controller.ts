@@ -18,24 +18,15 @@ import {
 /**
  * Self-Reliance Suite — Scenario Plans HTTP boundary (Phase 3).
  *
- * Renders the list + detail Inertia pages and a JSON API for plan and step
- * mutations. Mirrors the InventoryController shape: index/show render Inertia;
- * mutations are JSON; integer-id guards on every id param; never leak exceptions
- * to the UI. Plans/steps are pure DB rows, so there is no "drive unavailable"
- * branch.
+ * Renders the create + detail Inertia pages and a JSON API for plan and step
+ * mutations. The plans LIST now lives as the "Scenario Plans" tab of the
+ * Readiness Planner (ReadinessController supplies the list), so this controller
+ * no longer renders a list page. Mirrors the InventoryController shape: new/show
+ * render Inertia; mutations are JSON; integer-id guards on every id param; never
+ * leak exceptions to the UI. Plans/steps are pure DB rows, so there is no "drive
+ * unavailable" branch.
  */
 export default class ScenarioPlanController {
-  /** GET /plans — list page. */
-  async index({ inertia }: HttpContext) {
-    const service = new ScenarioPlanService()
-    const plans = await service.listPlans()
-
-    return inertia.render('plans/index', {
-      plans,
-      enums: this.enumsForUi(),
-    })
-  }
-
   /** GET /plans/new — create form. The show page doubles as create (plan: null). */
   async new({ inertia }: HttpContext) {
     return inertia.render('plans/show', {

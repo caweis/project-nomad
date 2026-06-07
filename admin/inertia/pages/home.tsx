@@ -3,7 +3,6 @@ import {
   IconBox,
   IconClipboardList,
   IconHelp,
-  IconListCheck,
   IconMapRoute,
   IconPlus,
   IconSettings,
@@ -81,31 +80,20 @@ const INVENTORY_ITEM = {
   poweredBy: null,
 }
 
-// Readiness — Self-Reliance Suite Phase 2 (Core Capability). Reads the Inventory
-// catalog and a household config to show how many days of water, food, and power
-// you have against your target horizon. Stores no new stock.
+// Readiness Planner — Self-Reliance Suite Phases 2 + 3 (Core Capability). One
+// page with two tabs: Supply Readiness reads the Inventory catalog and a
+// household config to show how many days of water, food, and power you have
+// against your target horizon (stores no new stock); Scenario Plans holds the
+// editable, checkable per-scenario plans whose steps cross-link to inventory
+// items, STL files, and ZIM articles.
 const READINESS_ITEM = {
-  label: 'Readiness',
+  label: 'Readiness Planner',
   to: '/readiness',
   target: '',
-  description: 'See how many days of water, food, and power you have on hand',
+  description: 'Days of water, food, and power on hand, plus scenario checklists',
   icon: <IconShieldCheck size={48} />,
   installed: true,
   displayOrder: 7,
-  poweredBy: null,
-}
-
-// Scenario Plans — Self-Reliance Suite Phase 3 (Core Capability). Editable,
-// checkable per-scenario plans whose steps cross-link to inventory items, STL
-// files, and ZIM articles.
-const SCENARIO_PLANS_ITEM = {
-  label: 'Scenario Plans',
-  to: '/plans',
-  target: '',
-  description: 'Checklists for blackout, evacuation, and other situations',
-  icon: <IconListCheck size={48} />,
-  installed: true,
-  displayOrder: 8,
   poweredBy: null,
 }
 
@@ -231,11 +219,8 @@ export default function Home(props: {
   // Add Inventory as a Core Capability (Self-Reliance Suite Phase 1)
   items.push(INVENTORY_ITEM)
 
-  // Add Readiness as a Core Capability (Self-Reliance Suite Phase 2)
+  // Add Readiness Planner as a Core Capability (Self-Reliance Suite Phases 2 + 3)
   items.push(READINESS_ITEM)
-
-  // Add Scenario Plans as a Core Capability (Self-Reliance Suite Phase 3)
-  items.push(SCENARIO_PLANS_ITEM)
 
   // Add system items
   items.push(...SYSTEM_ITEMS)

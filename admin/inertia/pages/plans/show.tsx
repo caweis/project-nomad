@@ -49,7 +49,7 @@ export default function PlansShow(props: PageProps) {
 
       <div className="p-4 md:p-6 max-w-3xl mx-auto">
         <Link
-          href="/plans"
+          href="/readiness?tab=plans"
           className="inline-flex items-center gap-1 text-sm text-gray-600 mb-3 hover:text-desert-green"
         >
           <IconArrowLeft size={16} /> Back to Scenario Plans
@@ -189,7 +189,7 @@ function PlanEditor({ plan, enums }: { plan: ScenarioPlanDetail; enums: Enums })
         headers: { 'X-Requested-With': 'XMLHttpRequest' },
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      router.visit('/plans')
+      router.visit('/readiness?tab=plans')
     } catch {
       // Stay on the page; the user can retry.
     }

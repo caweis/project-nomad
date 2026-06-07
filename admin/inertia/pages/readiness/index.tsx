@@ -9,26 +9,53 @@ import {
   IconToolsKitchen2,
   IconBolt,
   IconAlertTriangle,
+  IconListCheck,
+  IconChecks,
 } from '@tabler/icons-react'
 import { displayUnitLabel, fromBase, toBase } from '../../../util/units'
 import type { ReadinessResource, ResourceReadiness, ReadinessStatus } from '../../../util/readiness'
 import type { ReadinessDashboard } from '../../../types/readiness'
 import type { MeasurementSystem } from '../../../types/inventory'
+import {
+  SCENARIOS,
+  SCENARIO_LABELS,
+  type Scenario,
+  type ScenarioPlanSlim,
+} from '../../../types/scenarios'
 
 /**
- * Self-Reliance Suite — Phase 2 Readiness Calculator dashboard.
+ * Self-Reliance Suite — Readiness Planner.
  *
- * Three per-resource cards (water / food / power) with days-of-supply, status
- * pill, and gap, each carrying the CITED §5.1.1 "source:" tooltip; an
- * expiry-warning panel; and a household-config form that PATCHes the existing
- * /api/system/settings KV endpoint (one key per request, like the Inventory
- * units toggle) then router.reload()s. Water is shown/entered in the user's
- * measurement system via util/units.ts; food (kcal) and power (Wh) are
- * system-agnostic. Stores no new stock — the dashboard reads Inventory.
+ * One page, two tabs:
+ *   • Supply Readiness — the Phase 2 days-of-supply calculator: three
+ *     per-resource cards (water / food / power) with days-of-supply, status
+ *     pill, and gap, each carrying the CITED §5.1.1 "source:" tooltip; an
+ *     expiry-warning panel; and a household-config form that PATCHes the
+ *     existing /api/system/settings KV endpoint (one key per request, like the
+ *     Inventory units toggle) then router.reload()s. Water is shown/entered in
+ *     the user's measurement system via util/units.ts; food (kcal) and power
+ *     (Wh) are system-agnostic. Stores no new stock — it reads Inventory.
+ *   • Scenario Plans — the Phase 3 per-scenario checklist list (grouped by
+ *     scenario, step tallies, "New plan" action). Clicking a plan opens
+ *     /plans/:id; the detail/create pages link back here to ?tab=plans.
+ *
+ * The active tab comes from the server-resolved `tab` prop (driven by the
+ * `?tab=supply|plans` query param), so it is linkable and survives
+ * router.reload(). Switching tabs is an Inertia GET that preserves state/scroll
+ * so the calculator's loaded data is not lost when toggling.
  */
+
+type ReadinessTab = 'supply' | 'plans'
+
+interface Enums {
+  scenarios: { value: Scenario; label: string }[]
+}
 
 interface PageProps {
   dashboard: ReadinessDashboard
+  plans: ScenarioPlanSlim[]
+  enums: Enums
+  tab: ReadinessTab
 }
 
 /** Cited provenance for each figure, surfaced in-app per spec §5.0 / §5.1.1. */
@@ -76,36 +103,210 @@ const RESOURCE_META: Record<
   power: { label: 'Power', icon: <IconBolt size={28} /> },
 }
 
-export default function ReadinessIndex({ dashboard }: PageProps) {
-  const { resources, expiryWarnings, targetHorizonDays, measurementSystem } = dashboard
+export default function ReadinessIndex({ dashboard, plans, tab }: PageProps) {
+  /**
+   * Switch tabs via an Inertia GET that updates `?tab`. preserveState keeps the
+   * config form's local edits and preserveScroll avoids a jump; the server
+   * re-supplies both datasets so neither tab needs a second fetch.
+   */
+  const goTo = (next: ReadinessTab) => {
+    if (next === tab) return
+    router.get('/readiness', { tab: next }, { preserveState: true, preserveScroll: true })
+  }
 
   return (
     <AppLayout>
-      <Head title="Readiness" />
+      <Head title="Readiness Planner" />
 
       <div className="p-4 md:p-6 max-w-7xl mx-auto">
         <header className="mb-4">
           <h1 className="text-3xl font-bold text-desert-green flex items-center gap-2">
-            <IconShieldCheck size={32} /> Readiness
+            <IconShieldCheck size={32} /> Readiness Planner
           </h1>
           <p className="text-sm text-gray-600 mt-1">
-            How many days of water, food, and power you have on hand against a{' '}
-            {targetHorizonDays}-day target, computed from your Inventory. Every figure cites its
-            source.
+            Your days-of-supply against a target, plus checkable plans for the situations you
+            prepare for.
           </p>
         </header>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          {resources.map((r) => (
-            <ResourceCard key={r.resource} readiness={r} system={measurementSystem} />
-          ))}
-        </div>
+        <TabBar active={tab} onChange={goTo} />
 
-        <ExpiryPanel warnings={expiryWarnings} horizon={targetHorizonDays} system={measurementSystem} />
-
-        <ConfigForm dashboard={dashboard} />
+        {tab === 'plans' ? (
+          <ScenarioPlansTab plans={plans} />
+        ) : (
+          <SupplyReadinessTab dashboard={dashboard} />
+        )}
       </div>
     </AppLayout>
+  )
+}
+
+/** The two-tab selector for the planner. StyledButton-free; plain buttons. */
+function TabBar({
+  active,
+  onChange,
+}: {
+  active: ReadinessTab
+  onChange: (tab: ReadinessTab) => void
+}) {
+  const tabs: { id: ReadinessTab; label: string; icon: React.ReactNode }[] = [
+    { id: 'supply', label: 'Supply Readiness', icon: <IconShieldCheck size={18} /> },
+    { id: 'plans', label: 'Scenario Plans', icon: <IconListCheck size={18} /> },
+  ]
+  return (
+    <div className="border-b border-gray-200 mb-6">
+      <nav className="-mb-px flex gap-6" aria-label="Readiness Planner tabs">
+        {tabs.map((t) => {
+          const isActive = t.id === active
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => onChange(t.id)}
+              aria-current={isActive ? 'page' : undefined}
+              className={[
+                'inline-flex items-center gap-1.5 border-b-2 px-1 py-3 text-sm font-medium transition-colors',
+                isActive
+                  ? 'border-desert-green text-desert-green'
+                  : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700',
+              ].join(' ')}
+            >
+              {t.icon}
+              {t.label}
+            </button>
+          )
+        })}
+      </nav>
+    </div>
+  )
+}
+
+// ─── Supply Readiness tab ─────────────────────────────────────────────────────
+
+function SupplyReadinessTab({ dashboard }: { dashboard: ReadinessDashboard }) {
+  const { resources, expiryWarnings, targetHorizonDays, measurementSystem } = dashboard
+
+  return (
+    <>
+      <p className="text-sm text-gray-600 mb-4">
+        How many days of water, food, and power you have on hand against a {targetHorizonDays}-day
+        target, computed from your Inventory. Every figure cites its source.
+      </p>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        {resources.map((r) => (
+          <ResourceCard key={r.resource} readiness={r} system={measurementSystem} />
+        ))}
+      </div>
+
+      <ExpiryPanel warnings={expiryWarnings} horizon={targetHorizonDays} system={measurementSystem} />
+
+      <ConfigForm dashboard={dashboard} />
+    </>
+  )
+}
+
+// ─── Scenario Plans tab ───────────────────────────────────────────────────────
+
+/** Badge color per scenario, mirroring the inventory category badge styling. */
+const SCENARIO_BADGE: Record<Scenario, string> = {
+  blackout: 'bg-amber-100 text-amber-900',
+  evacuation: 'bg-red-100 text-red-900',
+  medical: 'bg-rose-100 text-rose-900',
+  'water-contamination': 'bg-sky-100 text-sky-900',
+  other: 'bg-gray-100 text-gray-700',
+}
+
+/**
+ * Scenario-plans list (moved here from the former standalone plans/index page).
+ * Plans grouped by scenario, each card badged and showing its done/total step
+ * tally. Clicking a plan opens /plans/:id; "New plan" opens /plans/new.
+ */
+function ScenarioPlansTab({ plans }: { plans: ScenarioPlanSlim[] }) {
+  // Group plans by scenario, preserving the canonical scenario order.
+  const grouped = SCENARIOS.map((scenario) => ({
+    scenario,
+    plans: plans.filter((p) => p.scenario === scenario),
+  })).filter((g) => g.plans.length > 0)
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
+        <p className="text-sm text-gray-600">
+          Editable, checkable plans for the situations you prepare for. Each step can link to an
+          inventory item, a printable file, or an offline article.
+        </p>
+        <Link href="/plans/new">
+          <StyledButton variant="primary" icon="IconPlus">
+            New plan
+          </StyledButton>
+        </Link>
+      </div>
+
+      {plans.length === 0 ? (
+        <PlansEmptyState />
+      ) : (
+        <div className="space-y-8">
+          {grouped.map((group) => (
+            <section key={group.scenario}>
+              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                {SCENARIO_LABELS[group.scenario]}
+              </h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {group.plans.map((plan) => (
+                  <PlanCard key={plan.id} plan={plan} />
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function PlanCard({ plan }: { plan: ScenarioPlanSlim }) {
+  const done = plan.total_steps > 0 && plan.checked_steps >= plan.total_steps
+  return (
+    <Link
+      href={`/plans/${plan.id}`}
+      className="group flex flex-col rounded-lg border border-gray-200 bg-white p-4 shadow-sm hover:shadow-md transition-shadow gap-2"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <span className="font-semibold text-gray-900" title={plan.title}>
+          {plan.title}
+        </span>
+        <span
+          className={[
+            'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide',
+            SCENARIO_BADGE[plan.scenario],
+          ].join(' ')}
+        >
+          {SCENARIO_LABELS[plan.scenario]}
+        </span>
+      </div>
+
+      {plan.description && (
+        <p className="text-sm text-gray-600 line-clamp-2">{plan.description}</p>
+      )}
+
+      <div className="mt-auto flex items-center gap-1.5 text-xs text-gray-500">
+        <IconChecks size={14} className={done ? 'text-emerald-600' : 'text-gray-400'} />
+        {plan.checked_steps} / {plan.total_steps} step{plan.total_steps === 1 ? '' : 's'} done
+      </div>
+    </Link>
+  )
+}
+
+function PlansEmptyState() {
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white p-12 text-center text-gray-600">
+      <IconListCheck size={48} className="mx-auto text-gray-300 mb-3" />
+      <p className="font-medium mb-1">No scenario plans yet</p>
+      <p className="text-sm">
+        Use <strong>New plan</strong> above to build a checklist for a situation you prepare for.
+      </p>
+    </div>
   )
 }
 

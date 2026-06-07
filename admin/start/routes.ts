@@ -82,12 +82,14 @@ router
 // mutation route here. Ungated like the Inventory/Workshop page GETs.
 router.get('/readiness', [ReadinessController, 'index'])
 
-// Self-Reliance Suite — Scenario Plans (Phase 3). Editable, checkable
-// per-scenario plans whose steps cross-link to inventory items, STL files, or
-// ZIM articles. Page GETs unguarded; the mutation group writes only DB rows (no
-// files), so it is ungated like the Inventory/Workshop single-row mutations.
-// `/plans/new` precedes `/plans/:id` so the literal route wins over the param.
-router.get('/plans', [ScenarioPlanController, 'index'])
+// Self-Reliance Suite — Scenario Plans (Phase 3). The plans list now lives as
+// the "Scenario Plans" tab of the Readiness Planner, so the bare /plans list
+// route redirects there (any old bookmark still lands in the tab). The create
+// (/plans/new) and detail (/plans/:id) pages stay standalone. Page GETs
+// unguarded; the mutation group writes only DB rows (no files), so it is ungated
+// like the Inventory/Workshop single-row mutations. `/plans/new` precedes
+// `/plans/:id` so the literal route wins over the param.
+router.on('/plans').redirectToPath('/readiness?tab=plans')
 router.get('/plans/new', [ScenarioPlanController, 'new'])
 router.get('/plans/:id', [ScenarioPlanController, 'show'])
 router
