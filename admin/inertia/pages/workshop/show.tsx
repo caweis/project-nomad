@@ -9,7 +9,6 @@ import {
   IconBox,
   IconDownload,
   IconTrash,
-  IconDeviceFloppy,
   IconPhotoUp,
 } from '@tabler/icons-react'
 import type {
@@ -62,8 +61,9 @@ export default function WorkshopShow(props: PageProps) {
   const set = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }))
 
-  const onSave = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const onSave = async (e?: React.FormEvent) => {
+    e?.preventDefault()
+    if (saving) return
     setSaving(true)
     setMessage(null)
     const payload: Record<string, unknown> = {
@@ -391,7 +391,16 @@ export default function WorkshopShow(props: PageProps) {
 
             <p className="text-xs text-gray-500">* required to leave the "Needs metadata" state.</p>
 
-            <StyledButton type="submit" variant="primary" icon="IconDeviceFloppy" loading={saving}>
+            {/* StyledButton renders type="button", so it never triggers the
+                form's onSubmit — wire Save via onClick (the form's onSubmit
+                stays as the Enter-key fallback). */}
+            <StyledButton
+              variant="primary"
+              icon="IconDeviceFloppy"
+              loading={saving}
+              disabled={saving}
+              onClick={() => onSave()}
+            >
               Save changes
             </StyledButton>
           </form>
