@@ -66,6 +66,20 @@ export const extractFileName = (path: string) => {
 }
 
 /**
+ * True for a request that was deliberately canceled/aborted (axios
+ * CanceledError or fetch AbortError) — normal control flow, not an error worth
+ * surfacing to the user.
+ */
+function isRequestCancellation(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const e = error as { name?: string; code?: string; message?: string }
+  if (e.name === 'CanceledError' || e.name === 'AbortError') return true
+  if (e.code === 'ERR_CANCELED') return true
+  if (typeof e.message === 'string' && e.message.trim().toLowerCase() === 'canceled') return true
+  return false
+}
+
+/**
  * A higher-order function that wraps an asynchronous function to catch and log internal errors.
  * @param fn The asynchronous function to be wrapped.
  * @returns A new function that executes the original function and logs any errors. Returns undefined in case of an error.
@@ -75,6 +89,15 @@ export function catchInternal<Fn extends (...args: any[]) => any>(fn: Fn): (...a
     try {
       return await fn(...args)
     } catch (error) {
+      // A canceled/aborted request is normal control flow — e.g. React Query
+      // aborting an in-flight query when its inputs change (selecting a chat
+      // session cancels the chat-suggestions fetch), or a component unmounting
+      // mid-request. Swallow it silently instead of showing an "internal
+      // error" toast for something the app did on purpose.
+      if (isRequestCancellation(error)) {
+        return undefined
+      }
+
       console.error('Internal error caught:', error)
 
       if (globalNotificationCallback) {
