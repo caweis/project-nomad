@@ -18,7 +18,14 @@ const loggerConfig = defineConfig({
         targets:
           targets()
             .pushIf(!app.inProduction, targets.pretty())
+            // Production: write JSON to both the persisted log file (Debug Info
+            // bundle export reads it) AND stdout (destination 1), so
+            // `docker logs nomad_admin` / `nomad_admin_worker` and any external
+            // log aggregator can see runtime telemetry — RAG batch progress,
+            // embed dispatch lines, query rewrites. Without the stdout target a
+            // prod install is blind from outside the container.
             .pushIf(app.inProduction, targets.file({ destination: "/app/storage/logs/admin.log" }))
+            .pushIf(app.inProduction, targets.file({ destination: 1 }))
             .toArray(),
       },
     },
