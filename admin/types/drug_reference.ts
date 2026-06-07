@@ -37,6 +37,8 @@ export interface IngestDrugLabelsJobParams {
   totalParts?: number
   recordsIngested?: number
   recordsSkipped?: number
+  /** Epoch ms when the ingest began (set on pass 0, carried through continuations). */
+  startedAt?: number
 }
 
 // ─── Search result DTO (collapsed by brand+generic) ──────────────────────────
@@ -101,6 +103,10 @@ export interface DrugIngestStatus {
   currentPartName: string | null
   recordsIngested: number
   recordsSkipped: number
+  /** Approx. total records from the manifest (0 if not known yet). Drives the counter + %. */
+  expectedTotal: number
+  /** Epoch ms the ingest began, for live elapsed + a rough ETA (null if idle/unknown). */
+  startedAtMs: number | null
   failedReason?: string
   lastUpdated: string | null
   rowCount: number

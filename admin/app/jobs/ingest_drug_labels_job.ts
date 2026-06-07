@@ -95,6 +95,10 @@ export class IngestDrugLabelsJob {
     const partIndex = params.partIndex ?? 0
     const runningIngested = params.recordsIngested ?? 0
     const runningSkipped = params.recordsSkipped ?? 0
+    // Stamp the overall ingest start once (pass 0) and carry it through every
+    // continuation, so the UI can show live elapsed time + a rough ETA across
+    // all 13 parts (not just the current pass).
+    const startedAt = params.startedAt ?? Date.now()
 
     logger.info(`[IngestDrugLabelsJob] Starting pass partIndex=${partIndex}`)
 
@@ -112,6 +116,7 @@ export class IngestDrugLabelsJob {
         currentPartName: null,
         recordsIngested: 0,
         recordsSkipped: 0,
+        startedAt,
       })
       await job.updateProgress(0)
 
@@ -150,6 +155,7 @@ export class IngestDrugLabelsJob {
       recordsIngested: runningIngested,
       recordsSkipped: runningSkipped,
       manifest,
+      startedAt,
     })
     await job.updateProgress(
       Math.floor((partIndex / totalParts) * 100)
@@ -223,6 +229,7 @@ export class IngestDrugLabelsJob {
         totalParts,
         recordsIngested: totalIngested,
         recordsSkipped: totalSkipped,
+        startedAt,
       }
 
       // No jobId here — let BullMQ auto-generate. This is the critical rule.

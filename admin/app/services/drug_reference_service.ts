@@ -239,6 +239,8 @@ export class DrugReferenceService {
         currentPartName: null,
         recordsIngested: 0,
         recordsSkipped: 0,
+        expectedTotal: count,
+        startedAtMs: null,
         lastUpdated: lastUpdated ?? null,
         rowCount: count,
       }
@@ -263,6 +265,9 @@ export class DrugReferenceService {
       currentPartName: data.currentPartName ?? null,
       recordsIngested: data.recordsIngested ?? 0,
       recordsSkipped: data.recordsSkipped ?? 0,
+      expectedTotal:
+        data.manifest?.total_records ?? (data.totalParts ? data.totalParts * 20000 : 0),
+      startedAtMs: data.startedAt ?? null,
       failedReason: job.failedReason || undefined,
       lastUpdated: lastUpdated ?? null,
       rowCount: count,
