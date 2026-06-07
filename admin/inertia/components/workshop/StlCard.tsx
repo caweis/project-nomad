@@ -3,17 +3,33 @@ import { IconBox, IconAlertTriangle } from '@tabler/icons-react'
 import type { StlFileSlim } from '../../../types/stl_library'
 import { CATEGORY_LABELS } from '../../../types/stl_library'
 
+interface StlCardProps {
+  file: StlFileSlim
+  /** When true, render a selection checkbox overlay for batch operations. */
+  selectable?: boolean
+  /** Whether this card is currently selected (only meaningful when selectable). */
+  selected?: boolean
+  /** Called with the file id when the selection checkbox is toggled. */
+  onToggleSelect?: (id: number) => void
+}
+
 /**
  * One tile in the Workshop grid. Shows thumbnail, name, category badge,
  * material, and print-time at a glance. Files with metadata_pending get a
  * yellow "Needs metadata" pill and a slightly muted appearance so the user
  * spots them in a sea of finished entries.
  *
+ * When `selectable` is true a checkbox overlays the top-left corner; toggling
+ * it drives batch selection in the parent and must NOT navigate to the detail
+ * page (the checkbox stops click/keydown propagation and prevents default so
+ * the surrounding <Link> doesn't fire). With `selectable` false the card
+ * behaves exactly as before — a plain link to the detail page.
+ *
  * Fallbacks:
  *   • No thumbnail yet (or render failed) → generic 3D-box SVG icon
  *   • print_time_minutes null → "—" (typical for pending files)
  */
-export default function StlCard({ file }: { file: StlFileSlim }) {
+export default function StlCard({ file, selectable, selected, onToggleSelect }: StlCardProps) {
   const printTimeLabel = formatPrintTime(file.print_time_minutes)
   const sizeMb = (file.file_size_bytes / 1024 / 1024).toFixed(1)
 
@@ -23,9 +39,35 @@ export default function StlCard({ file }: { file: StlFileSlim }) {
       className={[
         'group relative flex flex-col rounded-lg border bg-white overflow-hidden',
         'shadow-sm hover:shadow-md transition-shadow',
-        file.metadata_pending ? 'border-amber-300 ring-1 ring-amber-200' : 'border-gray-200',
+        selected
+          ? 'border-desert-green ring-2 ring-desert-green'
+          : file.metadata_pending
+            ? 'border-amber-300 ring-1 ring-amber-200'
+            : 'border-gray-200',
       ].join(' ')}
     >
+      {selectable && (
+        <label
+          className="absolute top-2 left-2 z-20 flex items-center justify-center rounded bg-white/90 p-1 shadow-sm cursor-pointer"
+          onClick={(e) => {
+            // Keep the click off the surrounding <Link> so toggling selection
+            // never navigates to the detail page.
+            e.preventDefault()
+            e.stopPropagation()
+            onToggleSelect?.(file.id)
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={!!selected}
+            aria-label={`Select ${file.name}`}
+            onChange={() => {}}
+            onClick={(e) => e.stopPropagation()}
+            className="h-4 w-4 accent-desert-green cursor-pointer"
+          />
+        </label>
+      )}
+
       {file.metadata_pending && (
         <div className="absolute top-2 right-2 z-10 flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">
           <IconAlertTriangle size={12} aria-hidden="true" />

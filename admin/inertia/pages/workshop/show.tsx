@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Head, Link, router } from '@inertiajs/react'
 import AppLayout from '~/layouts/AppLayout'
 import StyledButton from '~/components/StyledButton'
@@ -10,6 +10,7 @@ import {
   IconDownload,
   IconTrash,
   IconDeviceFloppy,
+  IconPhotoUp,
 } from '@tabler/icons-react'
 import type {
   StlCategory,
@@ -51,6 +52,12 @@ export default function WorkshopShow(props: PageProps) {
   })
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+  const [thumbUploading, setThumbUploading] = useState(false)
+  const [thumbError, setThumbError] = useState<string | null>(null)
+  // Cache-buster so a freshly-uploaded thumbnail replaces the cached <img>
+  // (the serve endpoint sends Cache-Control: private, max-age=3600).
+  const [thumbVersion, setThumbVersion] = useState(0)
+  const thumbInputRef = useRef<HTMLInputElement>(null)
 
   const set = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -137,6 +144,37 @@ export default function WorkshopShow(props: PageProps) {
     }
   }
 
+  const onThumbnailSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    // Reset the input so picking the same file again still fires onChange.
+    e.target.value = ''
+    if (!file) return
+
+    setThumbUploading(true)
+    setThumbError(null)
+    try {
+      const body = new FormData()
+      body.append('thumbnail', file)
+      const res = await fetch(`/api/workshop/files/${props.file.id}/thumbnail-upload`, {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        body,
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || data.message || `HTTP ${res.status}`)
+      }
+      setThumbVersion((v) => v + 1)
+      // Refresh the file prop so thumbnail_path / thumbnail_failed update.
+      router.reload({ only: ['file'] })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setThumbError(`Thumbnail upload failed: ${msg}`)
+    } finally {
+      setThumbUploading(false)
+    }
+  }
+
   const sizeMb = (props.file.file_size_bytes / 1024 / 1024).toFixed(2)
 
   return (
@@ -165,7 +203,7 @@ export default function WorkshopShow(props: PageProps) {
             <div className="aspect-square bg-white border border-gray-200 rounded-lg flex items-center justify-center overflow-hidden">
               {props.file.thumbnail_path ? (
                 <img
-                  src={`/api/workshop/files/${props.file.id}/thumbnail`}
+                  src={`/api/workshop/files/${props.file.id}/thumbnail?v=${thumbVersion}`}
                   alt={props.file.name}
                   className="object-contain w-full h-full"
                 />
@@ -173,6 +211,16 @@ export default function WorkshopShow(props: PageProps) {
                 <IconBox size={96} className="text-gray-300" />
               )}
             </div>
+
+            <ThumbnailUpload
+              failed={props.file.thumbnail_failed}
+              hasThumbnail={!!props.file.thumbnail_path}
+              uploading={thumbUploading}
+              error={thumbError}
+              inputRef={thumbInputRef}
+              onPick={() => thumbInputRef.current?.click()}
+              onSelected={onThumbnailSelected}
+            />
             <dl className="text-sm text-gray-700 bg-white border border-gray-200 rounded-lg p-3 space-y-1">
               <Field label="Path" value={props.file.path} mono />
               <Field label="Size" value={`${sizeMb} MB`} />
@@ -350,6 +398,68 @@ export default function WorkshopShow(props: PageProps) {
         </div>
       </div>
     </AppLayout>
+  )
+}
+
+/**
+ * Manual PNG thumbnail upload. Prominent (amber) when the auto-renderer failed
+ * — that's the path the feature exists for; otherwise it's a quiet "Replace
+ * thumbnail" affordance so the user can swap in a nicer render any time.
+ * PNG-only, matching the serve endpoint's hardcoded Content-Type.
+ */
+function ThumbnailUpload({
+  failed,
+  hasThumbnail,
+  uploading,
+  error,
+  inputRef,
+  onPick,
+  onSelected,
+}: {
+  failed: boolean
+  hasThumbnail: boolean
+  uploading: boolean
+  error: string | null
+  inputRef: React.RefObject<HTMLInputElement | null>
+  onPick: () => void
+  onSelected: (e: React.ChangeEvent<HTMLInputElement>) => void
+}) {
+  const label = uploading
+    ? 'Uploading…'
+    : hasThumbnail
+      ? 'Replace thumbnail (PNG)'
+      : 'Upload thumbnail (PNG)'
+
+  return (
+    <div
+      className={[
+        'rounded-lg border p-3 text-sm',
+        failed ? 'border-amber-300 bg-amber-50' : 'border-gray-200 bg-white',
+      ].join(' ')}
+    >
+      {failed && (
+        <p className="mb-2 flex items-start gap-1.5 text-amber-900">
+          <IconAlertTriangle size={16} className="mt-0.5 shrink-0" />
+          <span>Automatic thumbnail generation failed for this file. Upload a PNG by hand.</span>
+        </p>
+      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/png,.png"
+        className="hidden"
+        onChange={onSelected}
+      />
+      <button
+        type="button"
+        onClick={onPick}
+        disabled={uploading}
+        className="inline-flex w-full items-center justify-center gap-1.5 rounded border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+      >
+        <IconPhotoUp size={16} /> {label}
+      </button>
+      {error && <p className="mt-2 text-xs text-red-700">{error}</p>}
+    </div>
   )
 }
 

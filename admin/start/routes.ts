@@ -38,6 +38,9 @@ router
   .group(() => {
     router.patch('/files/:id', [WorkshopController, 'update'])
     router.delete('/files/:id', [WorkshopController, 'destroy'])
+    // Batch metadata edit / recategorize / delete. Ungated like update/destroy
+    // above — it's a metadata + DB surface, not a file upload.
+    router.post('/batch', [WorkshopController, 'batch'])
     router.get('/files/:id/download', [WorkshopController, 'download'])
     router.get('/files/:id/thumbnail', [WorkshopController, 'thumbnail'])
     router.post('/scan', [WorkshopController, 'scan'])
@@ -49,6 +52,10 @@ router
     // the UI uses to decide whether to show the drop zone, so a client that
     // bypasses the UI still hits a 403 here.
     router.post('/upload', [WorkshopController, 'upload']).use(middleware.localNetworkOnly())
+    // Manual thumbnail upload writes a PNG to disk, so gate it like /upload.
+    router
+      .post('/files/:id/thumbnail-upload', [WorkshopController, 'uploadThumbnail'])
+      .use(middleware.localNetworkOnly())
   })
   .prefix('/api/workshop')
 router.on('/knowledge-base').redirectToPath('/chat?knowledge_base=true') // redirect for legacy knowledge-base links

@@ -1,12 +1,14 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Head, router } from '@inertiajs/react'
 import AppLayout from '~/layouts/AppLayout'
 import StlCard from '~/components/workshop/StlCard'
 import WorkshopFilters from '~/components/workshop/WorkshopFilters'
 import WorkshopRightsModal from '~/components/workshop/WorkshopRightsModal'
 import UploadDropZone from '~/components/workshop/UploadDropZone'
+import WorkshopBatchBar, { type BatchFields } from '~/components/workshop/WorkshopBatchBar'
 import StyledButton from '~/components/StyledButton'
 import { IconAlertTriangle, IconBox, IconNetworkOff } from '@tabler/icons-react'
+import { pageList } from '../../../util/workshop_pagination'
 import type {
   StlCategory,
   StlDifficulty,
@@ -15,6 +17,8 @@ import type {
   StlLibraryUnavailable,
   StlMaterial,
 } from '../../../types/stl_library'
+
+type BatchAction = 'update-metadata' | 'recategorize' | 'delete'
 
 interface Pagination {
   total: number
@@ -42,6 +46,60 @@ export default function WorkshopIndex(props: PageProps) {
   const [scanning, setScanning] = useState(false)
   const [scanResult, setScanResult] = useState<string | null>(null)
   const [rightsOpen, setRightsOpen] = useState(!props.rights_acknowledged)
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+
+  const pageIds = useMemo(() => props.files.map((f) => f.id), [props.files])
+  const allOnPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id))
+
+  const toggleSelect = (id: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const selectAllOnPage = () => {
+    setSelected((prev) => {
+      // If everything on the page is already selected, this acts as "deselect
+      // the page"; otherwise add every id on the page to the selection.
+      const next = new Set(prev)
+      if (pageIds.every((id) => next.has(id))) {
+        pageIds.forEach((id) => next.delete(id))
+      } else {
+        pageIds.forEach((id) => next.add(id))
+      }
+      return next
+    })
+  }
+
+  const clearSelection = () => setSelected(new Set())
+
+  // Run a batch op against /api/workshop/batch. Returns an error string on
+  // failure (the bar shows it inline and keeps the selection for retry) or
+  // null on success — on which we clear the selection and reload the grid so
+  // pagination + counts reflect the change.
+  const runBatch = async (action: BatchAction, fields: BatchFields): Promise<string | null> => {
+    const ids = [...selected]
+    if (ids.length === 0) return 'No files selected.'
+    try {
+      const res = await fetch('/api/workshop/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        body: JSON.stringify({ action, ids, ...fields }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        return body.error || body.message || `HTTP ${res.status}`
+      }
+      clearSelection()
+      router.reload({ only: ['files', 'pagination'] })
+      return null
+    } catch (err) {
+      return err instanceof Error ? err.message : String(err)
+    }
+  }
 
   const runScan = async () => {
     setScanning(true)
@@ -125,9 +183,26 @@ export default function WorkshopIndex(props: PageProps) {
                   <EmptyState filters={props.filters} uploadPermitted={props.upload_permitted} />
                 ) : (
                   <>
+                    {selected.size > 0 && (
+                      <WorkshopBatchBar
+                        selectedCount={selected.size}
+                        pageCount={pageIds.length}
+                        allOnPageSelected={allOnPageSelected}
+                        enums={props.enums}
+                        onSelectAllOnPage={selectAllOnPage}
+                        onClearSelection={clearSelection}
+                        onRun={runBatch}
+                      />
+                    )}
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
                       {props.files.map((f) => (
-                        <StlCard key={f.id} file={f} />
+                        <StlCard
+                          key={f.id}
+                          file={f}
+                          selectable
+                          selected={selected.has(f.id)}
+                          onToggleSelect={toggleSelect}
+                        />
                       ))}
                     </div>
                     {props.pagination && props.pagination.last_page > 1 && (
@@ -226,32 +301,70 @@ function EmptyState({
 }
 
 function Pager({ pagination, filters }: { pagination: Pagination; filters: StlListFilters }) {
+  const { current_page: current, last_page: last } = pagination
+
   const goTo = (page: number) => {
+    const target = Math.min(Math.max(1, page), last)
+    if (target === current) return
+    // Navigate via Inertia preserving every active filter + per_page; only the
+    // page number changes. WorkshopFilters owns filter changes; this owns page.
     router.get(
       '/workshop',
-      { ...filters, page },
+      { ...filters, page: target },
       { preserveScroll: true, preserveState: true }
     )
   }
+
+  const tokens = pageList(current, last)
+
   return (
-    <nav className="flex items-center justify-center gap-2 mt-6">
+    <nav
+      className="mt-6 flex flex-wrap items-center justify-center gap-2"
+      aria-label="Pagination"
+    >
       <button
-        disabled={pagination.current_page === 1}
-        onClick={() => goTo(pagination.current_page - 1)}
+        disabled={current === 1}
+        onClick={() => goTo(current - 1)}
         className="px-3 py-1 rounded border border-gray-300 text-sm disabled:opacity-40"
       >
         Previous
       </button>
-      <span className="text-sm text-gray-600">
-        Page {pagination.current_page} of {pagination.last_page}
-      </span>
+
+      <div className="flex items-center gap-1">
+        {tokens.map((tok, i) =>
+          tok === '…' ? (
+            <span key={`gap-${i}`} className="px-2 text-sm text-gray-400 select-none">
+              …
+            </span>
+          ) : (
+            <button
+              key={tok}
+              onClick={() => goTo(tok)}
+              aria-current={tok === current ? 'page' : undefined}
+              className={[
+                'min-w-[2rem] px-2 py-1 rounded border text-sm',
+                tok === current
+                  ? 'border-desert-green bg-desert-green text-white font-semibold'
+                  : 'border-gray-300 text-gray-700 hover:bg-gray-50',
+              ].join(' ')}
+            >
+              {tok}
+            </button>
+          )
+        )}
+      </div>
+
       <button
-        disabled={pagination.current_page === pagination.last_page}
-        onClick={() => goTo(pagination.current_page + 1)}
+        disabled={current === last}
+        onClick={() => goTo(current + 1)}
         className="px-3 py-1 rounded border border-gray-300 text-sm disabled:opacity-40"
       >
         Next
       </button>
+
+      <span className="ml-2 text-sm text-gray-600">
+        Page {current} of {last}
+      </span>
     </nav>
   )
 }

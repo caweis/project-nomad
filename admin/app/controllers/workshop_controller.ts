@@ -8,7 +8,11 @@ import StlFile from '#models/stl_file'
 import KVStore from '#models/kv_store'
 import { StlScannerService } from '#services/stl_scanner_service'
 import { isLocalNetworkRequest } from '#middleware/local_network_only_middleware'
-import { listStlFilesValidator, updateStlFileValidator } from '#validators/stl_library'
+import {
+  batchWorkshopValidator,
+  listStlFilesValidator,
+  updateStlFileValidator,
+} from '#validators/stl_library'
 import {
   CATEGORY_LABELS,
   STL_CATEGORIES,
@@ -17,6 +21,7 @@ import {
 } from '../../types/stl_library.js'
 import type { StlCategory, StlFileSlim } from '../../types/stl_library.js'
 import { sanitizeFilename } from '../utils/fs.js'
+import { requiredFieldsPresent } from '../../util/workshop_batch.js'
 
 /**
  * Workshop / Offline STL Library — HTTP boundary.
@@ -210,23 +215,126 @@ export default class WorkshopController {
     const row = await StlFile.find(id)
     if (!row) return response.notFound({ error: 'STL file not found' })
 
-    const fileAbs = join(StlScannerService.LIBRARY_ROOT, row.path)
-    const thumbAbs = row.thumbnail_path
-      ? join(StlScannerService.LIBRARY_ROOT, row.thumbnail_path)
-      : null
-
-    // Delete file first; tolerate already-missing files.
-    await fs.unlink(fileAbs).catch((err) => {
-      if (err.code !== 'ENOENT') {
-        logger.warn(`[WorkshopController] couldn't delete ${fileAbs}: ${err.message}`)
-      }
-    })
-    if (thumbAbs) {
-      await fs.unlink(thumbAbs).catch(() => {})
-    }
-
+    await this.deleteRowFiles(row)
     await row.delete()
     return { success: true }
+  }
+
+  /**
+   * POST /api/workshop/batch — operate on many rows at once.
+   *
+   * Three actions share one endpoint (the UI's selection bar drives all three):
+   *   • update-metadata — set material and/or difficulty on every selected row,
+   *     then recompute each row's metadata_pending so a bulk fill exits the
+   *     pending state just like the single-row update does.
+   *   • recategorize — move every selected row to a category. Category is NOT
+   *     part of the completeness check, so metadata_pending is left untouched.
+   *   • delete — unlink each row's file (+ thumbnail) on disk, tolerate ENOENT,
+   *     then delete the row. Reuses the same `deleteRowFiles` helper destroy()
+   *     uses so the on-disk cleanup logic lives in exactly one place.
+   *
+   * Ungated like update()/destroy() — it's a metadata/DB surface, not an
+   * upload. The action→required-field gate runs through the pure
+   * `requiredFieldsPresent` helper (unit-tested) before any rows are touched.
+   */
+  async batch({ request, response }: HttpContext) {
+    const payload = await request.validateUsing(batchWorkshopValidator)
+
+    const gate = requiredFieldsPresent(payload.action, {
+      material: payload.material,
+      difficulty: payload.difficulty,
+      category: payload.category,
+    })
+    if (!gate.ok) {
+      return response.badRequest({ error: gate.error })
+    }
+
+    const rows = await StlFile.query().whereIn('id', payload.ids)
+
+    let affected = 0
+
+    if (payload.action === 'update-metadata') {
+      for (const row of rows) {
+        if (payload.material !== undefined) row.material = payload.material
+        if (payload.difficulty !== undefined) row.difficulty = payload.difficulty
+        row.metadata_pending = !StlFile.isMetadataComplete({
+          name: row.name,
+          material: row.material,
+          print_time_minutes: row.print_time_minutes,
+          difficulty: row.difficulty,
+        })
+        await row.save()
+        affected++
+      }
+    } else if (payload.action === 'recategorize') {
+      // `category` is guaranteed present by the gate above.
+      const category = payload.category as StlCategory
+      for (const row of rows) {
+        row.category = category
+        await row.save()
+        affected++
+      }
+    } else {
+      // delete
+      for (const row of rows) {
+        await this.deleteRowFiles(row)
+        await row.delete()
+        affected++
+      }
+    }
+
+    return { success: true, action: payload.action, affected }
+  }
+
+  /**
+   * POST /api/workshop/files/:id/thumbnail-upload — manual PNG thumbnail.
+   *
+   * The auto-generator (stl-thumb) can fail on a file it can't parse, which
+   * sets thumbnail_failed=true and leaves the grid showing the generic SVG
+   * fallback. This lets the user supply a PNG by hand. PNG only, because the
+   * thumbnail-serve endpoint hardcodes Content-Type image/png.
+   *
+   * Gated by localNetworkOnly on the route (it writes a file, same as upload).
+   */
+  async uploadThumbnail({ params, request, response }: HttpContext) {
+    if (!existsSync(StlScannerService.LIBRARY_ROOT)) {
+      return response.serviceUnavailable({
+        error: 'Data drive is not mounted — reconnect the drive and try again.',
+      })
+    }
+
+    const id = Number(params.id)
+    if (!Number.isInteger(id) || id <= 0) {
+      return response.badRequest({ error: 'invalid id' })
+    }
+
+    const row = await StlFile.find(id)
+    if (!row) return response.notFound({ error: 'STL file not found' })
+
+    const file = request.file('thumbnail', { extnames: ['png'], size: '5mb' })
+    if (!file) {
+      return response.badRequest({ error: 'No thumbnail uploaded.' })
+    }
+    if (!file.isValid) {
+      const reason =
+        file.errors.length > 0
+          ? file.errors.map((e) => e.message).join('; ')
+          : 'File rejected by upload validator'
+      return response.badRequest({ error: reason })
+    }
+
+    const thumbDir = join(StlScannerService.LIBRARY_ROOT, StlScannerService.THUMBNAIL_DIR)
+    await fs.mkdir(thumbDir, { recursive: true })
+
+    const thumbName = `${id}-manual.png`
+    await file.move(thumbDir, { name: thumbName, overwrite: true })
+
+    const thumbRelPath = join(StlScannerService.THUMBNAIL_DIR, thumbName)
+    row.thumbnail_path = thumbRelPath
+    row.thumbnail_failed = false
+    await row.save()
+
+    return { success: true, thumbnail_path: thumbRelPath }
   }
 
   /**
@@ -441,6 +549,25 @@ export default class WorkshopController {
   }
 
   // ─── helpers ────────────────────────────────────────────────────────────
+
+  /**
+   * Best-effort unlink of a row's file on disk plus its thumbnail. Tolerates
+   * already-missing files (ENOENT) — the drive may be disconnected, or a prior
+   * scan already pruned the thumbnail. Shared by destroy() and the batch-delete
+   * action so the on-disk cleanup contract lives in exactly one place.
+   */
+  private async deleteRowFiles(row: StlFile): Promise<void> {
+    const fileAbs = join(StlScannerService.LIBRARY_ROOT, row.path)
+    await fs.unlink(fileAbs).catch((err) => {
+      if (err.code !== 'ENOENT') {
+        logger.warn(`[WorkshopController] couldn't delete ${fileAbs}: ${err.message}`)
+      }
+    })
+    if (row.thumbnail_path) {
+      const thumbAbs = join(StlScannerService.LIBRARY_ROOT, row.thumbnail_path)
+      await fs.unlink(thumbAbs).catch(() => {})
+    }
+  }
 
   private async rightsAcknowledged(): Promise<boolean> {
     const row = await KVStore.findBy('key', 'workshop.rightsAcknowledged')

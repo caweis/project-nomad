@@ -55,3 +55,29 @@ export const updateStlFileValidator = vine.compile(
     license: vine.string().trim().maxLength(255).nullable().optional(),
   })
 )
+
+/**
+ * Batch operation validator. One endpoint serves three actions over a set of
+ * file ids:
+ *   • update-metadata — set material and/or difficulty on every selected row
+ *     (then the controller recomputes metadata_pending per row).
+ *   • recategorize    — move every selected row to a category.
+ *   • delete          — remove rows + their files from disk.
+ *
+ * material/difficulty are nullable so a bulk "clear this field" is expressible
+ * (matches the single-row update validator). The action→required-field gate is
+ * enforced in the controller via the pure `requiredFieldsPresent` helper, not
+ * here, because Vine can't express "≥1 of these two depending on action" as
+ * cleanly as a tested pure function can.
+ *
+ * The id list is capped at 500 so one request can't sweep an unbounded table.
+ */
+export const batchWorkshopValidator = vine.compile(
+  vine.object({
+    action: vine.enum(['update-metadata', 'recategorize', 'delete'] as const),
+    ids: vine.array(vine.number().positive()).minLength(1).maxLength(500),
+    material: vine.enum(STL_MATERIALS).nullable().optional(),
+    difficulty: vine.enum(STL_DIFFICULTIES).nullable().optional(),
+    category: vine.enum(STL_CATEGORIES).optional(),
+  })
+)
