@@ -67,12 +67,16 @@ router
 // Page GETs ungated (read-only views). The /api/drug-reference group mirrors
 // the /api/maps posture — no localNetworkOnly gate because the only disk write
 // is the background ingest job (server-side, triggered but not executed inline).
+// /drug-reference/interactions must precede /drug-reference/:id so the literal
+// path wins over the param route.
 router.get('/drug-reference', [DrugReferenceController, 'index'])
+router.get('/drug-reference/interactions', [DrugReferenceController, 'interactions'])
 router.get('/drug-reference/:id', [DrugReferenceController, 'show'])
 router
   .group(() => {
     router.get('/search', [DrugReferenceController, 'search'])
     router.get('/status', [DrugReferenceController, 'status'])
+    router.get('/interactions', [DrugReferenceController, 'interactionsApi'])
     router.post('/download', [DrugReferenceController, 'download'])
   })
   .prefix('/api/drug-reference')

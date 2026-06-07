@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react'
-import { Head, router } from '@inertiajs/react'
+import { Head, Link, router } from '@inertiajs/react'
 import AppLayout from '~/layouts/AppLayout'
 import StyledButton from '~/components/StyledButton'
 import DrugResultRow from '~/components/drug-reference/DrugResultRow'
@@ -140,7 +140,16 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount }: PageProps
 
       <div className="p-4 max-w-4xl mx-auto">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold mb-1">Drug Reference</h1>
+          <div className="flex flex-wrap items-start justify-between gap-3 mb-1">
+            <h1 className="text-2xl font-bold">Drug Reference</h1>
+            {rowCount > 0 && (
+              <Link href="/drug-reference/interactions">
+                <StyledButton variant="outline" size="sm" onClick={() => {}}>
+                  Compare interactions
+                </StyledButton>
+              </Link>
+            )}
+          </div>
           <p className="text-sm opacity-70">
             Offline FDA drug labels — Rx + OTC. Search {rowCount > 0 ? `${rowCount.toLocaleString()} labels` : 'once data is downloaded'}.
           </p>

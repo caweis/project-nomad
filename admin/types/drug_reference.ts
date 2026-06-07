@@ -83,6 +83,20 @@ export interface DrugLabelDetail {
   ingested_at: string
 }
 
+// ─── Interaction comparison DTO ───────────────────────────────────────────────
+
+/**
+ * Slim DTO for the side-by-side interaction comparison view.
+ * Contains only the fields needed to render one column: identity + label text.
+ */
+export interface DrugInteractionEntry {
+  id: number
+  brand_name: string | null
+  generic_name: string | null
+  product_type: string | null
+  drug_interactions: string | null
+}
+
 // ─── Ingest status ────────────────────────────────────────────────────────────
 
 export type DrugIngestPhase =

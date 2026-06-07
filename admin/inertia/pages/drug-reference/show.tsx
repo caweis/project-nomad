@@ -24,14 +24,22 @@ export default function DrugReferenceShow({ label }: PageProps) {
       <Head title={label.brand_name ?? label.generic_name ?? 'Drug Detail'} />
 
       <div className="p-4 max-w-3xl mx-auto">
-        {/* Back nav */}
-        <Link
-          href="/drug-reference"
-          className="inline-flex items-center gap-1 text-sm text-desert-green hover:underline mb-4"
-        >
-          <IconArrowLeft size={16} />
-          Drug Reference
-        </Link>
+        {/* Back nav + comparison entry */}
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <Link
+            href="/drug-reference"
+            className="inline-flex items-center gap-1 text-sm text-desert-green hover:underline"
+          >
+            <IconArrowLeft size={16} />
+            Drug Reference
+          </Link>
+          <Link
+            href={`/drug-reference/interactions?ids=${label.id}`}
+            className="text-xs px-2.5 py-1 rounded border border-desert-green text-desert-green hover:bg-desert-green hover:text-white transition-colors"
+          >
+            Add to interaction comparison
+          </Link>
+        </div>
 
         {/* ── Header ──────────────────────────────────────────────────────── */}
         <div className="mb-6">

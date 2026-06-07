@@ -1,7 +1,8 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import logger from '@adonisjs/core/services/logger'
 import { DrugReferenceService } from '#services/drug_reference_service'
-import { searchDrugValidator } from '#validators/drug_reference'
+import { searchDrugValidator, interactionsValidator } from '#validators/drug_reference'
+import { parseCompareIds } from '../../util/compare_ids.js'
 
 /**
  * Drug Reference v1 — HTTP boundary.
@@ -100,6 +101,51 @@ export default class DrugReferenceController {
       const msg = err instanceof Error ? err.message : String(err)
       logger.error(`[DrugReferenceController] status failed: ${msg}`)
       return response.internalServerError({ error: 'Could not read ingest status' })
+    }
+  }
+
+  /**
+   * GET /drug-reference/interactions — side-by-side label comparison page.
+   * Passes rowCount + ingestStatus so the empty-state prompt can render,
+   * mirroring the index() pattern. The actual entry data is loaded client-side
+   * via /api/drug-reference/interactions?ids=… so the page is shareable via URL.
+   */
+  async interactions({ inertia }: HttpContext) {
+    try {
+      const [status, count] = await Promise.all([
+        this.service.getIngestStatus(),
+        this.service.rowCount(),
+      ])
+
+      return inertia.render('drug-reference/interactions', {
+        ingestStatus: status,
+        rowCount: count,
+      })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      logger.error(`[DrugReferenceController] interactions page failed: ${msg}`)
+      return inertia.render('drug-reference/interactions', {
+        ingestStatus: null,
+        rowCount: 0,
+      })
+    }
+  }
+
+  /**
+   * GET /api/drug-reference/interactions?ids=1,2,3
+   * Validates → parses → fetches and returns { entries: DrugInteractionEntry[] }.
+   * Never leaks exceptions; integer-guards ids via parseCompareIds.
+   */
+  async interactionsApi({ request, response }: HttpContext) {
+    try {
+      const params = await request.validateUsing(interactionsValidator)
+      const ids = parseCompareIds(params.ids ?? '')
+      const entries = await this.service.getInteractionsFor(ids)
+      return { entries }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      logger.warn(`[DrugReferenceController] interactionsApi failed: ${msg}`)
+      return response.badRequest({ error: msg })
     }
   }
 

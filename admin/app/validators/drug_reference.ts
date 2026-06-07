@@ -24,3 +24,17 @@ export const searchDrugValidator = vine.compile(
 export const downloadDrugValidator = vine.compile(
   vine.object({})
 )
+
+/**
+ * GET /api/drug-reference/interactions?ids=1,2,3
+ *
+ * Accepts `ids` as a comma-separated string. The controller parses the actual
+ * id values via parseCompareIds (dedupe, drop non-positive-int, cap at 5).
+ * Vine validates only that `ids` is a non-empty string; the pure helper does
+ * the real semantic validation so it can be unit-tested without a running app.
+ */
+export const interactionsValidator = vine.compile(
+  vine.object({
+    ids: vine.string().trim().minLength(1).maxLength(200).optional(),
+  })
+)

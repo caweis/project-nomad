@@ -4,12 +4,14 @@ import { QueueService } from './queue_service.js'
 import { IngestDrugLabelsJob } from '#jobs/ingest_drug_labels_job'
 import { normalizeDrugName } from '../../util/drug_labels.js'
 import KVStore from '#models/kv_store'
+import { parseCompareIds, MAX_COMPARE } from '../../util/compare_ids.js'
 import type {
   DrugSearchResult,
   DrugLabelDetail,
   DrugIngestStatus,
   DrugIngestPhase,
   DrugIngestState,
+  DrugInteractionEntry,
 } from '../../types/drug_reference.js'
 
 /**
@@ -290,6 +292,61 @@ export class DrugReferenceService {
       source_updated_at: row.source_updated_at,
       ingested_at: row.ingested_at.toISO() ?? '',
     }
+  }
+
+  /**
+   * Return the drug interaction text for a set of label ids.
+   *
+   * - Dedupes and caps the id list via parseCompareIds / MAX_COMPARE.
+   * - One query: SELECT id, brand_name, generic_name, product_type,
+   *   drug_interactions FROM drug_labels WHERE id IN (?).
+   * - Re-orders the rows to match the requested id order so the caller's
+   *   column positions are stable even if MySQL returns rows in a different
+   *   order. Missing ids (non-existent in the table) are silently omitted.
+   * - Returns [] for an empty or entirely-invalid id list.
+   */
+  async getInteractionsFor(ids: number[]): Promise<DrugInteractionEntry[]> {
+    if (ids.length === 0) return []
+
+    // Dedupe + cap (caller may already have done this, but be defensive).
+    const safeIds = parseCompareIds(ids.join(',')).slice(0, MAX_COMPARE)
+    if (safeIds.length === 0) return []
+
+    const placeholders = safeIds.map(() => '?').join(', ')
+    const sql = `
+      SELECT id, brand_name, generic_name, product_type, drug_interactions
+      FROM drug_labels
+      WHERE id IN (${placeholders})
+    `
+    const rows = await db.rawQuery(sql, safeIds)
+    const rawRows: Array<{
+      id: number | string
+      brand_name: string | null
+      generic_name: string | null
+      product_type: string | null
+      drug_interactions: string | null
+    }> = Array.isArray(rows[0]) ? rows[0] : []
+
+    // Build a lookup by id so we can re-order to match the request order.
+    const byId = new Map<number, DrugInteractionEntry>()
+    for (const row of rawRows) {
+      const entry: DrugInteractionEntry = {
+        id: Number(row.id),
+        brand_name: row.brand_name ?? null,
+        generic_name: row.generic_name ?? null,
+        product_type: row.product_type ?? null,
+        drug_interactions: row.drug_interactions ?? null,
+      }
+      byId.set(entry.id, entry)
+    }
+
+    // Re-order: iterate safeIds, include only ids that exist in the table.
+    const ordered: DrugInteractionEntry[] = []
+    for (const id of safeIds) {
+      const entry = byId.get(id)
+      if (entry) ordered.push(entry)
+    }
+    return ordered
   }
 
   /**
