@@ -56,7 +56,11 @@ export default function InventoryIndex(props: PageProps) {
         body: JSON.stringify({ key: 'inventory.measurementSystem', value: system }),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      router.reload()
+      // router.reload() keeps this component mounted (Inertia preserves state on
+      // a same-component reload), so savingSystem must be cleared explicitly once
+      // the reload settles — otherwise it stays true and the toggle locks after
+      // a single switch. onFinish fires on both success and failure of the visit.
+      router.reload({ onFinish: () => setSavingSystem(false) })
     } catch {
       // Leave the toggle as-is on failure; the reload simply won't fire.
       setSavingSystem(false)

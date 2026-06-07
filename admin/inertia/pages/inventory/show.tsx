@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Head, Link, router } from '@inertiajs/react'
 import AppLayout from '~/layouts/AppLayout'
 import StyledButton from '~/components/StyledButton'
@@ -61,11 +61,36 @@ export default function InventoryShow(props: PageProps) {
   const set = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }))
 
+  // Tracks whether the user has hand-typed the Unit field, so the resource-type
+  // auto-fill never clobbers a custom unit (e.g. 'cans', 'rounds'). Manual entry
+  // flips it true; selecting a resource type resets it so a fresh resource
+  // selection re-takes ownership of the field. It seeds true when editing an
+  // existing resource-mapped item whose saved unit differs from the canonical
+  // label, so a previously hand-overridden unit isn't stomped on mount.
+  const unitManuallyEdited = useRef<boolean>(
+    item?.resource_type != null &&
+      item.unit !== '' &&
+      item.unit !== displayUnitLabel(item.resource_type, props.measurement_system)
+  )
+
   // The unit label shown next to the contribution input depends on the selected
   // resource type + the current measurement system.
   const contributionUnitLabel = useMemo(() => {
     if (!form.resource_type) return ''
     return displayUnitLabel(form.resource_type as ResourceType, props.measurement_system)
+  }, [form.resource_type, props.measurement_system])
+
+  // Auto-populate the Unit field from resource type + measurement system. When a
+  // resource type is selected (water/food/power) the canonical display unit
+  // drives the field — water tracks the system (gal ↔ L), food is kcal, power is
+  // Wh — and it re-applies when the system flips. The field stays editable: once
+  // the user hand-types a unit (unitManuallyEdited) the auto-fill backs off, and
+  // an empty resource type leaves the unit untouched so free-text units survive.
+  useEffect(() => {
+    if (!form.resource_type) return
+    if (unitManuallyEdited.current) return
+    const auto = displayUnitLabel(form.resource_type as ResourceType, props.measurement_system)
+    setForm((prev) => (prev.unit === auto ? prev : { ...prev, unit: auto }))
   }, [form.resource_type, props.measurement_system])
 
   const buildPayload = (): Record<string, unknown> => {
@@ -97,8 +122,9 @@ export default function InventoryShow(props: PageProps) {
     }
   }
 
-  const onSave = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const onSave = async (e?: React.FormEvent) => {
+    e?.preventDefault()
+    if (saving) return
     setSaving(true)
     setMessage(null)
     try {
@@ -234,7 +260,12 @@ export default function InventoryShow(props: PageProps) {
               <input
                 type="text"
                 value={form.unit}
-                onChange={(e) => set('unit', e.target.value)}
+                onChange={(e) => {
+                  // A hand-typed unit takes ownership of the field; the
+                  // resource-type/system auto-fill backs off from here on.
+                  unitManuallyEdited.current = true
+                  set('unit', e.target.value)
+                }}
                 required
                 className="w-full rounded border border-gray-300 px-2 py-1.5"
               />
@@ -292,7 +323,13 @@ export default function InventoryShow(props: PageProps) {
               <FormGroup label="Resource type">
                 <select
                   value={form.resource_type}
-                  onChange={(e) => set('resource_type', e.target.value)}
+                  onChange={(e) => {
+                    // A fresh resource selection re-takes ownership of the Unit
+                    // field so the auto-fill effect can populate the canonical
+                    // label; the effect itself no-ops when the value is empty.
+                    unitManuallyEdited.current = false
+                    set('resource_type', e.target.value)
+                  }}
                   className="w-full rounded border border-gray-300 px-2 py-1.5 capitalize"
                 >
                   <option value="">— not mapped —</option>
@@ -322,7 +359,17 @@ export default function InventoryShow(props: PageProps) {
           </fieldset>
 
           <div className="flex items-center gap-3">
-            <StyledButton variant="primary" icon="IconDeviceFloppy" loading={saving}>
+            {/* StyledButton renders type="button", so it never triggers the
+                form's onSubmit — submission is wired via onClick, mirroring the
+                Readiness config form. The form's onSubmit stays as the Enter-key
+                fallback. */}
+            <StyledButton
+              variant="primary"
+              icon="IconDeviceFloppy"
+              loading={saving}
+              disabled={saving}
+              onClick={() => onSave()}
+            >
               {isCreate ? 'Create item' : 'Save changes'}
             </StyledButton>
             {!isCreate && (
