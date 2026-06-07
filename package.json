@@ -1,6 +1,6 @@
 {
   "name": "project-nomad",
-  "version": "0.2.71-macos",
+  "version": "0.2.72-macos",
   "description": "\"",
   "main": "index.js",
   "scripts": {
