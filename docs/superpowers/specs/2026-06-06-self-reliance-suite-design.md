@@ -416,6 +416,23 @@ Push it into `items` next to `WORKSHOP_ITEM` and import `IconClipboardList` from
 Reads Inventory; **stores no new stock data** (canonical data — one source of
 truth, Maxim 4). The only new persisted state is the household config (KV).
 
+### 5.0 Science grounding (HARD requirement — Chris, 2026-06-06)
+
+Every daily-need value, multiplier, and target horizon the calculator uses **must
+be grounded in an authoritative, cited source — not guessed by us.** Each number
+carries its citation in this spec AND is surfaced in-app (a source note/tooltip
+beside the figure) so the user sees *why* the target is what it is. Where no
+credible source pins a value, it is shown as an **adjustable estimate** ("estimate
+— set to your situation"), never presented as established fact. Phase 2 therefore
+**opens with a sourcing pass** that replaces every default in §5.1 with a cited
+figure before any UI is built. Candidate authorities to verify (NOT yet
+confirmed): Ready.gov / FEMA / American Red Cross (emergency water ≈ 1
+gal/person/day; supply horizon) and FDA nutrition labeling + USDA/HHS Dietary
+Guidelines + NASEM Dietary Reference Intakes (calorie needs by age/sex/activity).
+The same rule binds any Phase 3 scenario-plan guidance (quantities, procedures,
+and especially anything medical): cite the source, or mark it a non-authoritative
+starting point. We do not invent numbers a user might stake survival decisions on.
+
 ### 5.1 Household config (KV)
 
 New `KV_STORE_SCHEMA` keys (all `'string'`-tagged, JSON-encoded where structured —
@@ -432,9 +449,15 @@ defaults, the `kv_store` consume pattern):
 | `readiness.childMultiplier` | float-as-string | `'0.5'` |
 | `readiness.petMultiplier` | float-as-string | `'0.25'` |
 
-Defaults encode the locked guidance: water ≈ 1 US gal/person/day (= 3.785 L),
-food ≈ 2000 kcal/person/day, power configurable (default 0 = "not tracked until
-you set it"). Children/pets use a simple multiplier (kept simple per scope).
+These defaults are PLACEHOLDERS pending the §5.0 sourcing pass — confirm + cite
+each against an authoritative source before shipping, or relabel as adjustable
+estimates. Provisional: water ≈ 1 US gal/person/day (= 3.785 L; verify
+Ready.gov/FEMA), food ≈ 2000 kcal/person/day (verify FDA/DGA — real needs vary by
+age/sex/activity per NASEM DRIs), power configurable (default 0 = "not tracked
+until you set it"). The child (0.5) and pet (0.25) multipliers are UNSOURCED
+guesses: Phase 2 must either cite them (age-based water/calorie needs) or replace
+them (e.g. count children as full persons for water per FEMA; use age-based
+calorie references for food). Do not ship the multipliers as fact.
 
 `power: 0` default means power readiness is dormant until the user sets a need;
 the dashboard renders a "set a daily power need to track this" prompt rather than
