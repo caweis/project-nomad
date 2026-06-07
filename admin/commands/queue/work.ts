@@ -8,6 +8,7 @@ import { RunBenchmarkJob } from '#jobs/run_benchmark_job'
 import { EmbedFileJob } from '#jobs/embed_file_job'
 import { CheckUpdateJob } from '#jobs/check_update_job'
 import { CheckServiceUpdatesJob } from '#jobs/check_service_updates_job'
+import { IngestDrugLabelsJob } from '#jobs/ingest_drug_labels_job'
 
 export default class QueueWork extends BaseCommand {
   static commandName = 'queue:work'
@@ -129,6 +130,7 @@ export default class QueueWork extends BaseCommand {
     handlers.set(EmbedFileJob.key, new EmbedFileJob())
     handlers.set(CheckUpdateJob.key, new CheckUpdateJob())
     handlers.set(CheckServiceUpdatesJob.key, new CheckServiceUpdatesJob())
+    handlers.set(IngestDrugLabelsJob.key, new IngestDrugLabelsJob())
 
     queues.set(RunDownloadJob.key, RunDownloadJob.queue)
     queues.set(DownloadModelJob.key, DownloadModelJob.queue)
@@ -136,6 +138,7 @@ export default class QueueWork extends BaseCommand {
     queues.set(EmbedFileJob.key, EmbedFileJob.queue)
     queues.set(CheckUpdateJob.key, CheckUpdateJob.queue)
     queues.set(CheckServiceUpdatesJob.key, CheckServiceUpdatesJob.queue)
+    queues.set(IngestDrugLabelsJob.key, IngestDrugLabelsJob.queue)
 
     return [handlers, queues]
   }
@@ -154,6 +157,9 @@ export default class QueueWork extends BaseCommand {
       // a concurrent AI chat, which is the "chat flaky under embed load" symptom.
       [EmbedFileJob.queue]: 1,
       [CheckUpdateJob.queue]: 1, // No need to run more than one update check at a time
+      // Drug ingest: one heavy stream at a time — downloading + unzipping +
+      // parsing ~150 MB JSON per part. Concurrency 1 matches EmbedFileJob.
+      [IngestDrugLabelsJob.queue]: 1,
       default: 3,
     }
 

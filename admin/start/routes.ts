@@ -24,6 +24,7 @@ import SystemController from '#controllers/system_controller'
 import CollectionUpdatesController from '#controllers/collection_updates_controller'
 import ZimController from '#controllers/zim_controller'
 import WorkshopController from '#controllers/workshop_controller'
+import DrugReferenceController from '#controllers/drug_reference_controller'
 import router from '@adonisjs/core/services/router'
 import transmit from '@adonisjs/transmit/services/main'
 import { middleware } from './kernel.js'
@@ -61,6 +62,20 @@ router
       .use(middleware.localNetworkOnly())
   })
   .prefix('/api/workshop')
+
+// Drug Reference v1 — offline FDA drug-label search.
+// Page GETs ungated (read-only views). The /api/drug-reference group mirrors
+// the /api/maps posture — no localNetworkOnly gate because the only disk write
+// is the background ingest job (server-side, triggered but not executed inline).
+router.get('/drug-reference', [DrugReferenceController, 'index'])
+router.get('/drug-reference/:id', [DrugReferenceController, 'show'])
+router
+  .group(() => {
+    router.get('/search', [DrugReferenceController, 'search'])
+    router.get('/status', [DrugReferenceController, 'status'])
+    router.post('/download', [DrugReferenceController, 'download'])
+  })
+  .prefix('/api/drug-reference')
 
 // Self-Reliance Suite — Inventory (Phase 1). The inventory LIST now lives as
 // the "Inventory" tab of the Preparedness (ReadinessController supplies the

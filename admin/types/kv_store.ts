@@ -53,6 +53,11 @@ export const KV_STORE_SCHEMA = {
   // hazard, so power readiness is dormant (0) until the user sets a load.
   // Default '0'.
   'readiness.powerPerDay': 'string',
+  // Drug Reference v1 — export_date of the last successfully completed
+  // openFDA drug-label ingest (e.g. "2026-06-06"). Written by
+  // IngestDrugLabelsJob on final-part completion; read by the search page's
+  // status panel to show "Last updated: <date>". Null when never ingested.
+  'drugReference.lastUpdatedExportDate': 'string',
 } as const
 
 type KVTagToType<T extends string> = T extends 'boolean' ? boolean : string

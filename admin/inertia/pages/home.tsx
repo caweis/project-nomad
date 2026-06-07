@@ -3,6 +3,7 @@ import {
   IconBox,
   IconHelp,
   IconMapRoute,
+  IconPill,
   IconPlus,
   IconSettings,
   IconShieldCheck,
@@ -62,6 +63,19 @@ const WORKSHOP_ITEM = {
   icon: <IconBox size={48} />,
   installed: true,
   displayOrder: 5,
+  poweredBy: null,
+}
+
+// Drug Reference v1 — offline FDA drug-label search (Core Capability).
+// displayOrder 6: between Workshop (5) and Preparedness (7).
+const DRUG_REFERENCE_ITEM = {
+  label: 'Drug Reference',
+  to: '/drug-reference',
+  target: '',
+  description: 'Offline, searchable FDA drug labels (Rx + OTC)',
+  icon: <IconPill size={48} />,
+  installed: true,
+  displayOrder: 6,
   poweredBy: null,
 }
 
@@ -201,6 +215,9 @@ export default function Home(props: {
   // SysAdminDoc §50 — offline STL library at ${NOMAD_DATA_ROOT}/storage/
   // stl-library/)
   items.push(WORKSHOP_ITEM)
+
+  // Add Drug Reference as a Core Capability (offline FDA drug labels, v1)
+  items.push(DRUG_REFERENCE_ITEM)
 
   // Add Preparedness as a Core Capability (Self-Reliance Suite Phases 1 + 2 + 3;
   // the former standalone Inventory tile is now its first tab)
