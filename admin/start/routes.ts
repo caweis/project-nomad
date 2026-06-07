@@ -16,6 +16,7 @@ import InventoryController from '#controllers/inventory_controller'
 import MapsController from '#controllers/maps_controller'
 import OllamaController from '#controllers/ollama_controller'
 import ReadinessController from '#controllers/readiness_controller'
+import ScenarioPlanController from '#controllers/scenario_plan_controller'
 import HostCommandsController from '#controllers/host_commands_controller'
 import RagController from '#controllers/rag_controller'
 import SettingsController from '#controllers/settings_controller'
@@ -80,6 +81,28 @@ router
 // the existing PATCH /api/system/settings KV endpoint, so there is no new
 // mutation route here. Ungated like the Inventory/Workshop page GETs.
 router.get('/readiness', [ReadinessController, 'index'])
+
+// Self-Reliance Suite — Scenario Plans (Phase 3). Editable, checkable
+// per-scenario plans whose steps cross-link to inventory items, STL files, or
+// ZIM articles. Page GETs unguarded; the mutation group writes only DB rows (no
+// files), so it is ungated like the Inventory/Workshop single-row mutations.
+// `/plans/new` precedes `/plans/:id` so the literal route wins over the param.
+router.get('/plans', [ScenarioPlanController, 'index'])
+router.get('/plans/new', [ScenarioPlanController, 'new'])
+router.get('/plans/:id', [ScenarioPlanController, 'show'])
+router
+  .group(() => {
+    // Plan mutations.
+    router.post('/', [ScenarioPlanController, 'store'])
+    router.patch('/:id', [ScenarioPlanController, 'update'])
+    router.delete('/:id', [ScenarioPlanController, 'destroy'])
+    // Step mutations, scoped under their plan.
+    router.post('/:planId/steps', [ScenarioPlanController, 'storeStep'])
+    router.patch('/:planId/steps/:id', [ScenarioPlanController, 'updateStep'])
+    router.patch('/:planId/steps/:id/toggle', [ScenarioPlanController, 'toggleStep'])
+    router.delete('/:planId/steps/:id', [ScenarioPlanController, 'destroyStep'])
+  })
+  .prefix('/api/plans')
 
 router.on('/knowledge-base').redirectToPath('/chat?knowledge_base=true') // redirect for legacy knowledge-base links
 

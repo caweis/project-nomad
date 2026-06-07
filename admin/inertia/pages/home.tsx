@@ -3,6 +3,7 @@ import {
   IconBox,
   IconClipboardList,
   IconHelp,
+  IconListCheck,
   IconMapRoute,
   IconPlus,
   IconSettings,
@@ -91,6 +92,20 @@ const READINESS_ITEM = {
   icon: <IconShieldCheck size={48} />,
   installed: true,
   displayOrder: 7,
+  poweredBy: null,
+}
+
+// Scenario Plans — Self-Reliance Suite Phase 3 (Core Capability). Editable,
+// checkable per-scenario plans whose steps cross-link to inventory items, STL
+// files, and ZIM articles.
+const SCENARIO_PLANS_ITEM = {
+  label: 'Scenario Plans',
+  to: '/plans',
+  target: '',
+  description: 'Checklists for blackout, evacuation, and other situations',
+  icon: <IconListCheck size={48} />,
+  installed: true,
+  displayOrder: 8,
   poweredBy: null,
 }
 
@@ -218,6 +233,9 @@ export default function Home(props: {
 
   // Add Readiness as a Core Capability (Self-Reliance Suite Phase 2)
   items.push(READINESS_ITEM)
+
+  // Add Scenario Plans as a Core Capability (Self-Reliance Suite Phase 3)
+  items.push(SCENARIO_PLANS_ITEM)
 
   // Add system items
   items.push(...SYSTEM_ITEMS)
