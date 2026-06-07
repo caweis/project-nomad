@@ -139,7 +139,18 @@ export default function InventoryShow(props: PageProps) {
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
-        throw new Error(body.error || body.message || `HTTP ${res.status}`)
+        // AdonisJS/vine returns 422 as { errors: [{ field, message }] } — surface
+        // the field-level reasons (e.g. "unit: The unit field must be defined")
+        // instead of an opaque "HTTP 422".
+        const fieldErrors = Array.isArray(body.errors)
+          ? body.errors
+              .map((er: { field?: string; message?: string }) =>
+                er.field ? `${er.field}: ${er.message}` : er.message
+              )
+              .filter(Boolean)
+              .join('; ')
+          : ''
+        throw new Error(fieldErrors || body.error || body.message || `HTTP ${res.status}`)
       }
       if (isCreate) {
         const data = await res.json()
@@ -258,7 +269,7 @@ export default function InventoryShow(props: PageProps) {
               />
             </FormGroup>
 
-            <FormGroup label="Unit * (e.g. gal, cans, rounds)">
+            <FormGroup label="Unit (e.g. gal, cans — consumables only)">
               <input
                 type="text"
                 value={form.unit}

@@ -31,7 +31,10 @@ export const createInventoryItemValidator = vine.compile(
     name: vine.string().trim().minLength(1).maxLength(255),
     category: vine.enum(INVENTORY_CATEGORIES),
     quantity: vine.number().min(0),
-    unit: vine.string().trim().minLength(1).maxLength(32),
+    // Unit is OPTIONAL: consumables have one (gal/cans), but gear (a water
+    // filter, a stove) has no consumable unit. The column is NOT NULL with a
+    // ''-default, so an omitted/empty unit stores '' — no migration needed.
+    unit: vine.string().trim().maxLength(32).optional(),
     location: vine.string().trim().maxLength(255).nullable().optional(),
     notes: vine.string().trim().maxLength(5000).nullable().optional(),
     expiry_date: vine.date().nullable().optional(),
@@ -47,7 +50,7 @@ export const updateInventoryItemValidator = vine.compile(
     name: vine.string().trim().minLength(1).maxLength(255).optional(),
     category: vine.enum(INVENTORY_CATEGORIES).optional(),
     quantity: vine.number().min(0).optional(),
-    unit: vine.string().trim().minLength(1).maxLength(32).optional(),
+    unit: vine.string().trim().maxLength(32).optional(),
     location: vine.string().trim().maxLength(255).nullable().optional(),
     notes: vine.string().trim().maxLength(5000).nullable().optional(),
     expiry_date: vine.date().nullable().optional(),

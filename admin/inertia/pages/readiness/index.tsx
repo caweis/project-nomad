@@ -22,8 +22,9 @@ import {
 } from '@tabler/icons-react'
 import { displayUnitLabel, fromBase, toBase } from '../../../util/units'
 import { pageList } from '../../../util/workshop_pagination'
+import { computeResourceReadiness } from '../../../util/readiness'
 import type { ReadinessResource, ResourceReadiness, ReadinessStatus } from '../../../util/readiness'
-import type { ReadinessDashboard } from '../../../types/readiness'
+import type { ReadinessConfig, ReadinessDashboard } from '../../../types/readiness'
 import type {
   InventoryCategory,
   InventoryCondition,
@@ -516,25 +517,50 @@ function buildInventoryQuery(
 // ─── Supply Readiness tab ─────────────────────────────────────────────────────
 
 function SupplyReadinessTab({ dashboard }: { dashboard: ReadinessDashboard }) {
-  const { resources, expiryWarnings, targetHorizonDays, measurementSystem } = dashboard
+  const { expiryWarnings, measurementSystem } = dashboard
   const [sourcesOpen, setSourcesOpen] = useState(false)
+
+  // Live config — seeded from the server-computed dashboard.config; updated as
+  // the user types in ConfigForm (all values in BASE units, matching ReadinessConfig).
+  const [liveConfig, setLiveConfig] = useState(dashboard.config)
+
+  // Mirror the server's readiness_service.ts compute() mapping exactly:
+  //   people = adults + children (both full persons, no discount — §5.1.1)
+  //   water:  computeResourceReadiness('water', haveBase, people, needs.water, petWaterPerDay, horizon)
+  //   food:   computeResourceReadiness('food',  haveBase, people, needs.food,  petFoodPerDay,  horizon)
+  //   power:  computeResourceReadiness('power', haveBase, 1, powerPerDay, 0, horizon)
+  //             ↑ people=1 + load-as-perPersonNeed, matching the server's flat-total semantics
+  //
+  // haveBase comes from the server-computed dashboard.resources (the DB sum
+  // of contributing inventory rows); only the config inputs are live.
+  const haveBase = (res: ReadinessResource) =>
+    dashboard.resources.find((r) => r.resource === res)?.haveBase ?? 0
+
+  const people = liveConfig.adults + liveConfig.children
+  const horizon = liveConfig.targetHorizonDays
+
+  const liveResources: ResourceReadiness[] = [
+    computeResourceReadiness('water', haveBase('water'), people, liveConfig.needs.water, liveConfig.petWaterPerDay, horizon),
+    computeResourceReadiness('food',  haveBase('food'),  people, liveConfig.needs.food,  liveConfig.petFoodPerDay,  horizon),
+    computeResourceReadiness('power', haveBase('power'), 1,      liveConfig.powerPerDay, 0,                         horizon),
+  ]
 
   return (
     <>
       <p className="text-sm text-gray-600 mb-4">
-        How many days of water, food, and power you have on hand against a {targetHorizonDays}-day
+        How many days of water, food, and power you have on hand against a {horizon}-day
         target, computed from your Inventory. Every figure cites its source.
       </p>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        {resources.map((r) => (
+        {liveResources.map((r) => (
           <ResourceCard key={r.resource} readiness={r} system={measurementSystem} />
         ))}
       </div>
 
-      <ExpiryPanel warnings={expiryWarnings} horizon={targetHorizonDays} system={measurementSystem} />
+      <ExpiryPanel warnings={expiryWarnings} horizon={horizon} system={measurementSystem} />
 
-      <ConfigForm dashboard={dashboard} />
+      <ConfigForm dashboard={dashboard} onLiveChange={setLiveConfig} />
 
       {/* Non-intrusive provenance link — the full cited rationale lives behind it
           so it never clutters the dashboard. */}
@@ -941,7 +967,13 @@ function ExpiryPanel({
   )
 }
 
-function ConfigForm({ dashboard }: { dashboard: ReadinessDashboard }) {
+function ConfigForm({
+  dashboard,
+  onLiveChange,
+}: {
+  dashboard: ReadinessDashboard
+  onLiveChange: (config: ReadinessConfig) => void
+}) {
   const system = dashboard.measurementSystem
   const c = dashboard.config
 
@@ -959,8 +991,33 @@ function ConfigForm({ dashboard }: { dashboard: ReadinessDashboard }) {
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
 
-  const set = <K extends keyof typeof form>(key: K, value: string) =>
-    setForm((prev) => ({ ...prev, [key]: value }))
+  /**
+   * Convert the current form strings to a ReadinessConfig (all base units) and
+   * fire onLiveChange so SupplyReadinessTab can immediately recompute the cards.
+   * Water display-unit values are converted back to L (toBase); food/power/petFood
+   * are system-agnostic. This mirrors the onSave base-unit math but is side-effect-free.
+   */
+  const fireLiveChange = (next: typeof form) => {
+    onLiveChange({
+      adults: toNonNegativeInt(next.adults),
+      children: toNonNegativeInt(next.children),
+      targetHorizonDays: clampHorizon(toNonNegativeInt(next.targetHorizonDays)),
+      needs: {
+        water: toBase('water', toNonNegativeNumber(next.waterPerPerson), system),
+        food: toNonNegativeNumber(next.foodPerPerson),
+        power: 0, // power need lives in powerPerDay (no per-person standard)
+      },
+      petWaterPerDay: toBase('water', toNonNegativeNumber(next.petWaterPerDay), system),
+      petFoodPerDay: toNonNegativeNumber(next.petFoodPerDay),
+      powerPerDay: toNonNegativeNumber(next.powerPerDay),
+    })
+  }
+
+  const set = <K extends keyof typeof form>(key: K, value: string) => {
+    const next = { ...form, [key]: value }
+    setForm(next)
+    fireLiveChange(next)
+  }
 
   const waterUnit = displayUnitLabel('water', system)
 

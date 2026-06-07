@@ -55,6 +55,27 @@ export class IngestDrugLabelsJob {
     const queueService = QueueService.getInstance()
     const queue = queueService.getQueue(this.queue)
 
+    // A previous run can still be parked under the deterministic jobId. If it is
+    // genuinely in flight (active/waiting/delayed) report "already running". But a
+    // FAILED or COMPLETED job (e.g. the worker restarted mid-ingest and the job
+    // stalled past its limit) ALSO keeps that id — and left in place it makes
+    // queue.add throw "job already exists", so the Download button can never
+    // restart the ingest. Clear a finished/failed job first so a fresh run can be
+    // dispatched. Re-running is safe: upserts are idempotent on set_id.
+    const existing = await queue.getJob(this.jobId)
+    if (existing) {
+      const state = await existing.getState()
+      if (state === 'active' || state === 'waiting' || state === 'delayed') {
+        return { job: existing, created: false, message: 'Drug label ingest already running' }
+      }
+      try {
+        await existing.remove()
+      } catch {
+        // Best-effort: if removal fails we fall through to add, which surfaces
+        // any genuine conflict in the catch below.
+      }
+    }
+
     try {
       const job = await queue.add(
         this.key,
@@ -71,9 +92,9 @@ export class IngestDrugLabelsJob {
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error)
       if (msg.includes('job already exists')) {
-        const existing = await queue.getJob(this.jobId)
+        const stillThere = await queue.getJob(this.jobId)
         return {
-          job: existing,
+          job: stillThere,
           created: false,
           message: 'Drug label ingest already running',
         }

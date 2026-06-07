@@ -97,7 +97,9 @@ export default class InventoryController {
     }
 
     const service = new InventoryService()
-    const row = await service.create(payload)
+    // unit is optional at the edge (gear has none); the column is NOT NULL with a
+    // ''-default, so coalesce an omitted unit to '' for the create contract.
+    const row = await service.create({ ...payload, unit: payload.unit ?? '' })
     return { success: true, id: row.id }
   }
 
