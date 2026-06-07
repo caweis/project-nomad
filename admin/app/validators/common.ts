@@ -1,34 +1,62 @@
 import vine from '@vinejs/vine'
+import ipaddr from 'ipaddr.js'
 
 /**
  * Checks whether a URL points to a loopback or link-local address.
  * Used to prevent SSRF — the server should not fetch from localhost
- * or link-local/metadata endpoints (e.g. cloud instance metadata at 169.254.x.x).
+ * or link-local/metadata endpoints (e.g. cloud instance metadata at 169.254.169.254).
  *
  * RFC1918 private ranges (10.x, 172.16-31.x, 192.168.x) are intentionally
  * ALLOWED because NOMAD is a LAN appliance and users may host content
  * mirrors on their local network.
  *
- * Throws an error if the URL is a loopback or link-local address.
+ * Hostnames are canonicalized with ipaddr.js so EVERY encoding of a blocked
+ * address is rejected — IPv4-mapped IPv6 (::ffff:127.0.0.1, ::ffff:a9fe:a9fe),
+ * fully-expanded forms (0:0:0:0:0:ffff:a9fe:a9fe), and bracketed IPv6 literals.
+ * (The previous regex-only guard matched bracketed patterns, but URL.hostname
+ * strips the brackets, so the IPv6 patterns never fired — a live SSRF bypass.)
+ *
+ * Throws if the URL is a loopback, link-local, unspecified, or cloud-metadata
+ * address.
  */
 export function assertNotPrivateUrl(urlString: string): void {
   const parsed = new URL(urlString)
-  const hostname = parsed.hostname.toLowerCase()
+  // WHATWG URL keeps brackets on IPv6 literals (`http://[::1]/` → `[::1]`); strip them.
+  const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '')
 
-  const blockedPatterns = [
-    /^localhost$/,
-    /^127\.\d+\.\d+\.\d+$/,
-    /^0\.0\.0\.0$/,
-    /^169\.254\.\d+\.\d+$/, // Link-local / cloud metadata
-    /^\[::1\]$/,
-    /^\[?fe[89ab][0-9a-f]:/i, // IPv6 link-local fe80::/10 (fe80–febf)
-    /^\[::ffff:/i, // IPv4-mapped IPv6 (e.g. [::ffff:7f00:1] = 127.0.0.1)
-    /^\[::\]$/, // IPv6 all-zeros (equivalent to 0.0.0.0)
-    /^\[fd00:ec2:[0:]*:?254\]$/i, // AWS IPv6 EC2 IMDS fd00:ec2::254 (+ expanded form)
-  ]
+  // Not an IP literal → a DNS name. Block the obvious `localhost` alias; allow
+  // everything else (LAN names like `my-nas` stay usable). DNS rebinding is out
+  // of scope — it would need a resolve-and-recheck at fetch time.
+  if (!ipaddr.isValid(hostname)) {
+    if (hostname === 'localhost') {
+      throw new Error(`Download URL must not point to localhost: ${hostname}`)
+    }
+    return
+  }
 
-  if (blockedPatterns.some((re) => re.test(hostname))) {
+  let addr: ipaddr.IPv4 | ipaddr.IPv6 = ipaddr.parse(hostname)
+  // Unwrap IPv4-mapped IPv6 so the range check sees the embedded IPv4 address
+  // regardless of how it was written.
+  if (addr.kind() === 'ipv6' && (addr as ipaddr.IPv6).isIPv4MappedAddress()) {
+    addr = (addr as ipaddr.IPv6).toIPv4Address()
+  }
+
+  // Block loopback, link-local (covers the 169.254.169.254 cloud IMDS), and the
+  // unspecified address — in both families. RFC1918 / LAN ranges are deliberately
+  // NOT blocked (appliance use on the user's own network).
+  const BLOCKED_RANGES = new Set(['loopback', 'linkLocal', 'unspecified'])
+  if (BLOCKED_RANGES.has(addr.range())) {
     throw new Error(`Download URL must not point to a loopback or link-local address: ${hostname}`)
+  }
+
+  // AWS also exposes IMDS over IPv6 at fd00:ec2::254, which sits in fc00::/7
+  // (unique-local) that we otherwise allow as LAN — block that one address in
+  // every encoding via its normalized form.
+  if (addr.kind() === 'ipv6') {
+    const IMDS_V6 = ipaddr.parse('fd00:ec2::254').toNormalizedString()
+    if ((addr as ipaddr.IPv6).toNormalizedString() === IMDS_V6) {
+      throw new Error(`Download URL must not point to the cloud instance metadata endpoint: ${hostname}`)
+    }
   }
 }
 

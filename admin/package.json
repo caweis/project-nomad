@@ -98,6 +98,7 @@
     "edge.js": "^6.2.1",
     "fast-xml-parser": "^5.7.0",
     "fuse.js": "^7.1.0",
+    "ipaddr.js": "2.4.0",
     "luxon": "^3.6.1",
     "maplibre-gl": "^4.7.1",
     "mysql2": "^3.14.1",
