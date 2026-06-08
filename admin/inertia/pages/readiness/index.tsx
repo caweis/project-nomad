@@ -1099,11 +1099,14 @@ function ConfigForm({
   // on every keystroke. The "Calculate" button (onCalculate) re-runs the same
   // recompute on demand — both paths share fireLiveChange.
   const set = <K extends keyof typeof form>(key: K, value: string) => {
-    setForm((prev) => {
-      const next = { ...prev, [key]: value }
-      fireLiveChange(next, pets)
-      return next
-    })
+    // Compute next, update the form, then fire the recompute in the handler —
+    // NOT inside the setForm updater. An updater must stay pure; calling the
+    // parent's setLiveConfig from within it warns ("cannot update a component
+    // while rendering another") and double-fires under StrictMode. Mirrors
+    // updatePets below.
+    const next = { ...form, [key]: value }
+    setForm(next)
+    fireLiveChange(next, pets)
   }
 
   /**
