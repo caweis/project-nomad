@@ -1,17 +1,18 @@
 import { Job } from 'bullmq'
 import { promises as fsPromises } from 'node:fs'
-import { access, mkdir, constants } from 'node:fs/promises'
-import path from 'node:path'
+import { access, constants } from 'node:fs/promises'
 import { Writable } from 'node:stream'
 import logger from '@adonisjs/core/services/logger'
 import { QueueService } from '#services/queue_service'
-import { doResumableDownload } from '../utils/downloads.js'
-import { mapDrugLabelRecord, parseDrugLabelManifest } from '../../util/drug_labels.js'
-import type { IngestDrugLabelsJobParams, DrugLabelManifest } from '../../types/drug_reference.js'
+import { mapDrugLabelRecord, parseDownloadState, partZipPath } from '../../util/drug_labels.js'
+import { STORAGE_BASE } from '#jobs/download_drug_data_job'
+import type {
+  IngestDrugDataJobParams,
+  DrugLabelManifest,
+  DrugLabelPartition,
+} from '../../types/drug_reference.js'
 
-const STORAGE_BASE = '/app/storage/drug-data'
 const BATCH_SIZE = 500
-const MANIFEST_URL = 'https://api.fda.gov/download.json'
 
 // ─── Local type aliases for yauzl callbacks ───────────────────────────────────
 // yauzl/stream-json are loaded via dynamic import() with @ts-ignore (see
@@ -31,13 +32,27 @@ interface YauzlZipFile {
   on(event: 'error', listener: (err: Error) => void): this
 }
 
-export class IngestDrugLabelsJob {
+/**
+ * Phase B — Ingest (parse/DB-only failure domain, ZERO network I/O).
+ *
+ * Each pass reads ONE on-disk part and streams it into drug_labels via the
+ * memory-safe streamIngestPart pipeline (yauzl → stream-json → batched
+ * updateOrCreateMany). The part list comes from the manifest in job data OR, for
+ * a manual "Ingest into search" run with no manifest, is rebuilt from the
+ * `drugReference.downloadState` KV marker. A missing on-disk part fails loudly
+ * ("run Download first") rather than silently under-ingesting. Continuations use
+ * queue.add with NO jobId. After the LAST part: write the final KV status, then
+ * delete the downloaded parts and clear the download-state marker (the per-part
+ * unlink that used to run during download moves here — parts persist until a
+ * full ingest succeeds).
+ */
+export class IngestDrugDataJob {
   static get queue() {
     return 'drug-ingest'
   }
 
   static get key() {
-    return 'ingest-drug-labels'
+    return 'ingest-drug-data'
   }
 
   /** Deterministic jobId — only one ingest at a time, re-runnable. */
@@ -49,19 +64,13 @@ export class IngestDrugLabelsJob {
 
   /**
    * Dispatch the initial ingest (pass 0). Idempotent on the deterministic jobId.
-   * Returns "already running" if the job is active/waiting.
+   * A finished/failed prior job under that id is cleared first so a re-ingest can
+   * always restart (upserts are idempotent on set_id).
    */
   static async dispatch() {
     const queueService = QueueService.getInstance()
     const queue = queueService.getQueue(this.queue)
 
-    // A previous run can still be parked under the deterministic jobId. If it is
-    // genuinely in flight (active/waiting/delayed) report "already running". But a
-    // FAILED or COMPLETED job (e.g. the worker restarted mid-ingest and the job
-    // stalled past its limit) ALSO keeps that id — and left in place it makes
-    // queue.add throw "job already exists", so the Download button can never
-    // restart the ingest. Clear a finished/failed job first so a fresh run can be
-    // dispatched. Re-running is safe: upserts are idempotent on set_id.
     const existing = await queue.getJob(this.jobId)
     if (existing) {
       const state = await existing.getState()
@@ -71,15 +80,14 @@ export class IngestDrugLabelsJob {
       try {
         await existing.remove()
       } catch {
-        // Best-effort: if removal fails we fall through to add, which surfaces
-        // any genuine conflict in the catch below.
+        // Best-effort: fall through to add.
       }
     }
 
     try {
       const job = await queue.add(
         this.key,
-        {} satisfies IngestDrugLabelsJobParams,
+        {} satisfies IngestDrugDataJobParams,
         {
           jobId: this.jobId,
           attempts: 3,
@@ -93,11 +101,7 @@ export class IngestDrugLabelsJob {
       const msg = error instanceof Error ? error.message : String(error)
       if (msg.includes('job already exists')) {
         const stillThere = await queue.getJob(this.jobId)
-        return {
-          job: stillThere,
-          created: false,
-          message: 'Drug label ingest already running',
-        }
+        return { job: stillThere, created: false, message: 'Drug label ingest already running' }
       }
       throw error
     }
@@ -112,98 +116,45 @@ export class IngestDrugLabelsJob {
   // ─── Job handler ───────────────────────────────────────────────────────────
 
   async handle(job: Job) {
-    const params = job.data as IngestDrugLabelsJobParams
+    const params = job.data as IngestDrugDataJobParams
     const partIndex = params.partIndex ?? 0
     const runningIngested = params.recordsIngested ?? 0
     const runningSkipped = params.recordsSkipped ?? 0
-    // Stamp the overall ingest start once (pass 0) and carry it through every
-    // continuation, so the UI can show live elapsed time + a rough ETA across
-    // all 13 parts (not just the current pass).
     const startedAt = params.startedAt ?? Date.now()
 
-    logger.info(`[IngestDrugLabelsJob] Starting pass partIndex=${partIndex}`)
+    logger.info(`[IngestDrugDataJob] Starting pass partIndex=${partIndex}`)
 
-    // ── Pre-flight: verify storage drive is writable ─────────────────────────
-    await this.verifyStorageAvailable(job)
-
-    // ── Pass 0: fetch the manifest ───────────────────────────────────────────
-    let manifest: DrugLabelManifest
-    if (partIndex === 0 || !params.manifest) {
-      await job.updateData({
-        ...job.data,
-        phase: 'manifest',
-        partIndex: 0,
-        totalParts: 0,
-        currentPartName: null,
-        recordsIngested: 0,
-        recordsSkipped: 0,
-        startedAt,
-      })
-      await job.updateProgress(0)
-
-      logger.info('[IngestDrugLabelsJob] Fetching manifest from api.fda.gov/download.json')
-      manifest = await this.fetchManifest()
-
-      logger.info(
-        `[IngestDrugLabelsJob] Manifest: export_date=${manifest.export_date} ` +
-          `total_records=${manifest.total_records} parts=${manifest.partitions.length}`
-      )
-    } else {
-      manifest = params.manifest
-    }
-
+    // Resolve the part list: manifest in job data, else the KV download marker.
+    const { manifest, exportDate } = await this.resolvePartSource(params)
     const totalParts = params.totalParts ?? manifest.partitions.length
 
     if (partIndex >= totalParts) {
-      logger.warn(`[IngestDrugLabelsJob] partIndex ${partIndex} >= totalParts ${totalParts}, nothing to do`)
+      logger.warn(
+        `[IngestDrugDataJob] partIndex ${partIndex} >= totalParts ${totalParts}, nothing to do`
+      )
       return
     }
 
     const partition = manifest.partitions[partIndex]
-    const zipBasename = path.basename(partition.file)
-    const zipPath = path.join(STORAGE_BASE, zipBasename)
-    const partName = partition.display_name || zipBasename
+    const zipPath = partZipPath(STORAGE_BASE, partition)
+    const partName = partition.display_name || partition.file
 
-    logger.info(`[IngestDrugLabelsJob] Processing part ${partIndex + 1}/${totalParts}: ${partName}`)
+    // Guard: the part MUST already be on disk. No re-download here — fail loud so
+    // a missing part can't silently produce a "ready" status with fewer rows.
+    try {
+      await access(zipPath, constants.R_OK)
+    } catch {
+      await job.updateData({ ...job.data, phase: 'failed' })
+      throw new Error(
+        `Part ${partIndex + 1}/${totalParts} not downloaded (${zipPath}). ` +
+          'Run Download FDA data first.'
+      )
+    }
 
-    // ── Update status ─────────────────────────────────────────────────────────
-    await job.updateData({
-      ...job.data,
-      phase: 'downloading',
-      partIndex,
-      totalParts,
-      currentPartName: partName,
-      recordsIngested: runningIngested,
-      recordsSkipped: runningSkipped,
-      manifest,
-      startedAt,
-    })
-    await job.updateProgress(
-      Math.floor((partIndex / totalParts) * 100)
+    logger.info(
+      `[IngestDrugDataJob] Ingesting part ${partIndex + 1}/${totalParts}: ${partName}`
     )
 
-    // ── Download the part ─────────────────────────────────────────────────────
-    await mkdir(STORAGE_BASE, { recursive: true })
-
-    logger.info(`[IngestDrugLabelsJob] Downloading ${partition.file} → ${zipPath}`)
-
-    await doResumableDownload({
-      url: partition.file,
-      filepath: zipPath,
-      timeout: 300_000, // 5-minute per-chunk timeout
-      allowedMimeTypes: [], // skip MIME check — zip content-type varies across CDNs
-      onProgress: (progress) => {
-        const downloadFraction = progress.downloadedBytes / (progress.totalBytes || 1)
-        const pct = Math.floor(
-          ((partIndex + downloadFraction * 0.5) / totalParts) * 100
-        )
-        job.updateProgress(pct)
-      },
-    })
-
-    logger.info(`[IngestDrugLabelsJob] Download complete: ${zipPath}`)
-
-    // ── Stream-unzip + stream-parse + batch-upsert ────────────────────────────
     await job.updateData({
       ...job.data,
       phase: 'ingesting',
@@ -212,39 +163,37 @@ export class IngestDrugLabelsJob {
       currentPartName: partName,
       recordsIngested: runningIngested,
       recordsSkipped: runningSkipped,
+      manifest,
+      startedAt,
     })
+    await job.updateProgress(Math.floor((partIndex / totalParts) * 100))
 
     const { recordsIngested: partIngested, recordsSkipped: partSkipped } =
-      await this.streamIngestPart(job, zipPath, partIndex, totalParts, runningIngested, runningSkipped)
+      await this.streamIngestPart(
+        job,
+        zipPath,
+        partIndex,
+        totalParts,
+        runningIngested,
+        runningSkipped
+      )
 
     const totalIngested = runningIngested + partIngested
     const totalSkipped = runningSkipped + partSkipped
 
     logger.info(
-      `[IngestDrugLabelsJob] Part ${partIndex + 1} done: ` +
-        `ingested=${partIngested} skipped=${partSkipped} ` +
-        `running_total=${totalIngested}`
+      `[IngestDrugDataJob] Part ${partIndex + 1} done: ` +
+        `ingested=${partIngested} skipped=${partSkipped} running_total=${totalIngested}`
     )
 
-    // ── Delete the part zip ───────────────────────────────────────────────────
-    try {
-      await fsPromises.unlink(zipPath)
-      logger.info(`[IngestDrugLabelsJob] Deleted zip: ${zipPath}`)
-    } catch (err) {
-      logger.warn(`[IngestDrugLabelsJob] Could not delete zip ${zipPath}: ${err instanceof Error ? err.message : String(err)}`)
-    }
-
-    // ── Continuation or completion ────────────────────────────────────────────
     const nextIndex = partIndex + 1
 
     if (nextIndex < totalParts) {
-      // Dispatch the continuation. MUST NOT reuse the deterministic jobId —
-      // the same rule as EmbedFileJob's isContinuationBatch pattern. BullMQ
-      // dedupe would swallow it against the active/lingering parent otherwise.
+      // Continuation — NO jobId. The critical rule.
       const queueService = QueueService.getInstance()
-      const queue = queueService.getQueue(IngestDrugLabelsJob.queue)
+      const queue = queueService.getQueue(IngestDrugDataJob.queue)
 
-      const continuationParams: IngestDrugLabelsJobParams = {
+      const continuationParams: IngestDrugDataJobParams = {
         partIndex: nextIndex,
         manifest,
         totalParts,
@@ -253,15 +202,13 @@ export class IngestDrugLabelsJob {
         startedAt,
       }
 
-      // No jobId here — let BullMQ auto-generate. This is the critical rule.
-      await queue.add(IngestDrugLabelsJob.key, continuationParams, {
+      await queue.add(IngestDrugDataJob.key, continuationParams, {
         attempts: 3,
         backoff: { type: 'exponential', delay: 5000 },
         removeOnComplete: { count: 5 },
         removeOnFail: { count: 5 },
       })
-
-      logger.info(`[IngestDrugLabelsJob] Dispatched continuation for part ${nextIndex + 1}/${totalParts}`)
+      logger.info(`[IngestDrugDataJob] Dispatched continuation for part ${nextIndex + 1}/${totalParts}`)
 
       await job.updateData({
         ...job.data,
@@ -272,12 +219,12 @@ export class IngestDrugLabelsJob {
         recordsSkipped: totalSkipped,
       })
     } else {
-      // Final part — write KV and mark complete.
-      await this.writeFinalStatus(manifest.export_date)
+      // Final part — write KV status, mark ready, THEN reclaim disk.
+      await this.writeFinalStatus(exportDate)
 
       await job.updateData({
         ...job.data,
-        phase: 'completed',
+        phase: 'ready',
         partIndex,
         totalParts,
         currentPartName: null,
@@ -287,10 +234,13 @@ export class IngestDrugLabelsJob {
       await job.updateProgress(100)
 
       logger.info(
-        `[IngestDrugLabelsJob] Ingest complete. ` +
+        `[IngestDrugDataJob] Ingest complete. ` +
           `total_ingested=${totalIngested} total_skipped=${totalSkipped} ` +
-          `export_date=${manifest.export_date}`
+          `export_date=${exportDate}`
       )
+
+      // Reclaim disk only after a FULL ingest succeeds.
+      await this.deleteDownloadedParts(manifest, totalParts)
     }
 
     return { partIndex, totalIngested, totalSkipped }
@@ -298,50 +248,51 @@ export class IngestDrugLabelsJob {
 
   // ─── Private helpers ───────────────────────────────────────────────────────
 
-  private async verifyStorageAvailable(job: Job): Promise<void> {
-    try {
-      await access(STORAGE_BASE, constants.W_OK)
-    } catch {
-      // If the dir doesn't exist yet, try to create it — the compose mount
-      // guarantees the parent /app/storage exists.
-      try {
-        await mkdir(STORAGE_BASE, { recursive: true })
-      } catch (mkdirErr) {
-        await job.updateData({ ...job.data, phase: 'failed' })
-        throw new Error(
-          `Storage drive not available: cannot write to ${STORAGE_BASE} (${
-            mkdirErr instanceof Error ? mkdirErr.message : String(mkdirErr)
-          })`
-        )
-      }
-    }
-  }
-
-  private async fetchManifest(): Promise<DrugLabelManifest> {
-    // The codebase targets Node 22 (see @types/node ^22), so global fetch is available.
-    let json: unknown
-    try {
-      const resp = await fetch(MANIFEST_URL)
-      if (!resp.ok) {
-        throw new Error(`HTTP ${resp.status} from ${MANIFEST_URL}`)
-      }
-      json = await resp.json()
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      if (
-        msg.includes('ENOTFOUND') ||
-        msg.includes('ECONNREFUSED') ||
-        msg.includes('ECONNRESET') ||
-        msg.includes('fetch failed')
-      ) {
-        throw new Error(
-          `No internet — connect to download FDA drug data. (${msg})`
-        )
-      }
-      throw err
+  /**
+   * Resolve the ordered partition list + export_date for this ingest run.
+   *
+   * Prefers the manifest carried in job data (auto-chained from the download job,
+   * or a continuation pass). Falls back to the KV download-state marker so a
+   * manual "Ingest into search" with no manifest still works — the marker stores
+   * each part's on-disk path and manifest index, which is enough to drive
+   * streamIngestPart without re-fetching the manifest from the network. Fails
+   * loudly if neither source is present.
+   */
+  private async resolvePartSource(
+    params: IngestDrugDataJobParams
+  ): Promise<{ manifest: DrugLabelManifest; exportDate: string }> {
+    if (params.manifest) {
+      return { manifest: params.manifest, exportDate: params.manifest.export_date }
     }
 
-    return parseDrugLabelManifest(json)
+    const KVStore = (await import('#models/kv_store')).default
+    const marker = parseDownloadState(await KVStore.getValue('drugReference.downloadState'))
+    if (!marker) {
+      throw new Error('Nothing downloaded — run Download FDA data first.')
+    }
+
+    // Rebuild a manifest-shaped partition list from the marker. partZipPath uses
+    // path.basename(partition.file), so feeding the recorded path as `file`
+    // resolves back to the same on-disk path.
+    const ordered = [...marker.parts].sort((a, b) => a.index - b.index)
+    const partitions: DrugLabelPartition[] = ordered.map((p) => ({
+      display_name: p.name,
+      file: p.path,
+      size_mb: '0',
+      records: 0,
+    }))
+
+    const manifest: DrugLabelManifest = {
+      export_date: marker.export_date,
+      // The marker persists the real manifest total (~259k) so a rebuilt
+      // manifest carries the same label-count denominator the auto-chained run
+      // would have had — keeping the "X of ~259k" counter, the records-based
+      // progress %, and the ETA alive on the manual-ingest path. Pre-totalRecords
+      // markers parse back as 0; the service treats 0 as unknown and falls back.
+      total_records: marker.totalRecords,
+      partitions,
+    }
+    return { manifest, exportDate: marker.export_date }
   }
 
   /**
@@ -441,7 +392,7 @@ export class IngestDrugLabelsJob {
                   row = mapDrugLabelRecord(record as Parameters<typeof mapDrugLabelRecord>[0])
                 } catch (mapErr) {
                   logger.warn(
-                    `[IngestDrugLabelsJob] mapDrugLabelRecord threw: ${mapErr instanceof Error ? mapErr.message : String(mapErr)}`
+                    `[IngestDrugDataJob] mapDrugLabelRecord threw: ${mapErr instanceof Error ? mapErr.message : String(mapErr)}`
                   )
                   recordsSkipped++
                   callback()
@@ -473,7 +424,7 @@ export class IngestDrugLabelsJob {
                     // Update progress: parts-done fraction + within-part fraction
                     const withinFraction = recordsIngested / Math.max(1, 20000)
                     const pct = Math.floor(
-                      ((partIndex + 0.5 + withinFraction * 0.5) / totalParts) * 100
+                      ((partIndex + withinFraction) / totalParts) * 100
                     )
                     job.updateProgress(
                       Math.min(pct, Math.floor(((partIndex + 1) / totalParts) * 100) - 1)
@@ -487,7 +438,7 @@ export class IngestDrugLabelsJob {
                   })
                   .catch((upsertErr: unknown) => {
                     logger.warn(
-                      `[IngestDrugLabelsJob] Batch upsert failed: ${upsertErr instanceof Error ? upsertErr.message : String(upsertErr)}`
+                      `[IngestDrugDataJob] Batch upsert failed: ${upsertErr instanceof Error ? upsertErr.message : String(upsertErr)}`
                     )
                     // Count the batch as skipped and continue — per-batch failure ≠ abort
                     recordsSkipped += currentBatch.length
@@ -511,7 +462,7 @@ export class IngestDrugLabelsJob {
                   })
                   .catch((upsertErr: unknown) => {
                     logger.warn(
-                      `[IngestDrugLabelsJob] Final batch upsert failed: ${upsertErr instanceof Error ? upsertErr.message : String(upsertErr)}`
+                      `[IngestDrugDataJob] Final batch upsert failed: ${upsertErr instanceof Error ? upsertErr.message : String(upsertErr)}`
                     )
                     recordsSkipped += remainingBatch.length
                     callback()
@@ -546,5 +497,32 @@ export class IngestDrugLabelsJob {
     // Lazy import to keep module top level free of Lucid
     const KVStore = (await import('#models/kv_store')).default
     await KVStore.setValue('drugReference.lastUpdatedExportDate', exportDate)
+  }
+
+  /**
+   * Delete the downloaded part zips and clear the download-state marker, run once
+   * after a full ingest succeeds (reclaims ~1.7 GB). A failed unlink is logged
+   * but never aborts a completed ingest.
+   */
+  private async deleteDownloadedParts(
+    manifest: DrugLabelManifest,
+    totalParts: number
+  ): Promise<void> {
+    for (let i = 0; i < totalParts; i++) {
+      const partition = manifest.partitions[i]
+      if (!partition) continue
+      const zipPath = partZipPath(STORAGE_BASE, partition)
+      try {
+        await fsPromises.unlink(zipPath)
+        logger.info(`[IngestDrugDataJob] Deleted zip: ${zipPath}`)
+      } catch (err) {
+        logger.warn(
+          `[IngestDrugDataJob] Could not delete zip ${zipPath}: ${err instanceof Error ? err.message : String(err)}`
+        )
+      }
+    }
+
+    const KVStore = (await import('#models/kv_store')).default
+    await KVStore.clearValue('drugReference.downloadState')
   }
 }

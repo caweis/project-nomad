@@ -15,7 +15,7 @@ import {
 } from '../../util/file_classification.js'
 import { cadRenderStrategy } from '../../util/cad_render_strategy.js'
 
-// yauzl types — local interfaces mirror the ingest_drug_labels_job.ts pattern
+// yauzl types — local interfaces mirror the ingest_drug_data_job.ts pattern
 // so the service can import yauzl lazily (keeps pure util tests importable
 // without native deps) while still getting typed callbacks.
 import type { Readable } from 'node:stream'
@@ -611,7 +611,7 @@ export class StlScannerService {
     const yauzl = await import('yauzl')
     const sharp = (await import('sharp')).default
 
-    // Cast to any for callback-typed yauzl.open — same pattern as ingest_drug_labels_job.ts
+    // Cast to any for callback-typed yauzl.open — same pattern as ingest_drug_data_job.ts
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const yauzlOpen = (yauzl as any).open as (
       path: string,

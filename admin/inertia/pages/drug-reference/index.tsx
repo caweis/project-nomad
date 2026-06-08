@@ -32,8 +32,18 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount }: PageProps
   const [hasMore, setHasMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [triggering, setTriggering] = useState(false)
+  const [ingesting, setIngesting] = useState(false)
   const [status, setStatus] = useState<DrugIngestStatus | null>(ingestStatus)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Top-level phase derived from the two sub-phases. `busy` = a phase is running.
+  const phase = status?.phase ?? 'idle'
+  const busy = phase === 'downloading' || phase === 'ingesting'
+  // The manual "Ingest into search" button is available once parts are on disk
+  // (download completed) and ingest is not already running. phase 'downloaded'
+  // and 'failed' (with a completed download) both qualify.
+  const canIngestFromDisk =
+    status?.download.state === 'completed' && status?.ingest.state !== 'running'
 
   const LIMIT = 50
 
@@ -97,18 +107,19 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount }: PageProps
     doSearch(query, productType, scope, newOffset, true)
   }
 
-  const handleTriggerIngest = async () => {
+  const refreshStatus = async () => {
+    const statusResp = await fetch('/api/drug-reference/status')
+    if (statusResp.ok) setStatus(await statusResp.json())
+  }
+
+  // Primary action — start the download phase (auto-chains ingest on completion).
+  const handleTriggerDownload = async () => {
     if (triggering) return
     setTriggering(true)
     try {
       const resp = await fetch('/api/drug-reference/download', { method: 'POST' })
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
-      // Refresh status after trigger
-      const statusResp = await fetch('/api/drug-reference/status')
-      if (statusResp.ok) {
-        const newStatus = await statusResp.json()
-        setStatus(newStatus)
-      }
+      await refreshStatus()
     } catch {
       // ignore — status will update on next poll
     } finally {
@@ -116,14 +127,29 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount }: PageProps
     }
   }
 
+  // Secondary action — re-run ingest from the on-disk parts (no re-download).
+  const handleIngestFromDisk = async () => {
+    if (ingesting) return
+    setIngesting(true)
+    try {
+      const resp = await fetch('/api/drug-reference/ingest', { method: 'POST' })
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+      await refreshStatus()
+    } catch {
+      // ignore — status will update on next poll
+    } finally {
+      setIngesting(false)
+    }
+  }
+
   const handleStatusRefresh = async () => {
     try {
       const resp = await fetch('/api/drug-reference/status')
       if (resp.ok) {
-        const newStatus = await resp.json()
+        const newStatus = (await resp.json()) as DrugIngestStatus
         setStatus(newStatus)
-        // If ingest just completed, reload the page to show updated rowCount
-        if (newStatus.state === 'completed' && newStatus.rowCount > rowCount) {
+        // If ingest just finished, reload the page to show updated rowCount.
+        if (newStatus.phase === 'ready' && newStatus.rowCount > rowCount) {
           router.reload({ only: ['rowCount', 'ingestStatus'] })
         }
       }
@@ -164,17 +190,31 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount }: PageProps
               Requires ~1.7 GB compressed download (~8–10 GB after ingestion).
             </p>
 
-            <StyledButton
-              variant="primary"
-              onClick={handleTriggerIngest}
-              disabled={triggering || status?.state === 'running'}
-            >
-              {status?.state === 'running'
-                ? 'Downloading…'
-                : triggering
-                ? 'Starting…'
-                : 'Download FDA drug data'}
-            </StyledButton>
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <StyledButton
+                variant="primary"
+                onClick={handleTriggerDownload}
+                disabled={triggering || busy}
+              >
+                {phase === 'downloading'
+                  ? 'Downloading…'
+                  : phase === 'ingesting'
+                    ? 'Indexing…'
+                    : triggering
+                      ? 'Starting…'
+                      : 'Download FDA drug data'}
+              </StyledButton>
+
+              {canIngestFromDisk && (
+                <StyledButton
+                  variant="secondary"
+                  onClick={handleIngestFromDisk}
+                  disabled={ingesting || busy}
+                >
+                  {ingesting ? 'Starting…' : 'Ingest into search'}
+                </StyledButton>
+              )}
+            </div>
 
             {status && (
               <div className="mt-6">
@@ -305,15 +345,31 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount }: PageProps
 
             {/* Update control */}
             <div className="mt-8 pt-6 border-t border-gray-200">
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                 <h3 className="text-sm font-semibold">FDA data</h3>
-                <StyledButton
-                  variant="secondary"
-                  onClick={handleTriggerIngest}
-                  disabled={triggering || status?.state === 'running'}
-                >
-                  {status?.state === 'running' ? 'Updating…' : 'Update FDA data'}
-                </StyledButton>
+                <div className="flex flex-wrap items-center gap-2">
+                  {canIngestFromDisk && (
+                    <StyledButton
+                      variant="outline"
+                      size="sm"
+                      onClick={handleIngestFromDisk}
+                      disabled={ingesting || busy}
+                    >
+                      {ingesting ? 'Starting…' : 'Ingest into search'}
+                    </StyledButton>
+                  )}
+                  <StyledButton
+                    variant="secondary"
+                    onClick={handleTriggerDownload}
+                    disabled={triggering || busy}
+                  >
+                    {phase === 'downloading'
+                      ? 'Downloading…'
+                      : phase === 'ingesting'
+                        ? 'Indexing…'
+                        : 'Update FDA data'}
+                  </StyledButton>
+                </div>
               </div>
               {status && <IngestStatus status={status} onRefresh={handleStatusRefresh} />}
             </div>

@@ -8,7 +8,8 @@ import { RunBenchmarkJob } from '#jobs/run_benchmark_job'
 import { EmbedFileJob } from '#jobs/embed_file_job'
 import { CheckUpdateJob } from '#jobs/check_update_job'
 import { CheckServiceUpdatesJob } from '#jobs/check_service_updates_job'
-import { IngestDrugLabelsJob } from '#jobs/ingest_drug_labels_job'
+import { DownloadDrugDataJob } from '#jobs/download_drug_data_job'
+import { IngestDrugDataJob } from '#jobs/ingest_drug_data_job'
 
 export default class QueueWork extends BaseCommand {
   static commandName = 'queue:work'
@@ -48,6 +49,7 @@ export default class QueueWork extends BaseCommand {
 
     // Create a worker for each queue
     for (const queueName of queuesToProcess) {
+      const stall = this.getStallOptionsForQueue(queueName)
       const worker = new Worker(
         queueName,
         async (job) => {
@@ -70,13 +72,21 @@ export default class QueueWork extends BaseCommand {
           // its window and the download job is marked stalled, retried 3x,
           // then killed — and disappears from the UI because failed jobs
           // aren't returned by getJobs(['waiting','active','delayed']).
-          // 10 minutes gives the auto-renewer (lockDuration/2 = 5 min) plenty
-          // of headroom even when the worker is heavily loaded. Tradeoff:
-          // if a worker crashes mid-job, other workers wait up to 10 min
-          // before picking up the orphaned job — acceptable for our use.
-          // Mirrors upstream Crosstalk-Solutions/project-nomad #604
+          // 10 minutes (the default below) gives the auto-renewer
+          // (lockDuration/2 = 5 min) plenty of headroom even when the worker is
+          // heavily loaded. The drug-download / drug-ingest queues run a heavier
+          // stretch per part and get a longer lock + a higher stalled tolerance
+          // (see getStallOptionsForQueue). Tradeoff: if a worker crashes mid-job,
+          // other workers wait up to lockDuration before picking up the orphaned
+          // job. Mirrors upstream Crosstalk-Solutions/project-nomad #604
           // (commit 2609530) which addresses the same failure mode.
-          lockDuration: 600_000,
+          lockDuration: stall.lockDuration,
+          // BullMQ default maxStalledCount is 1 — a single transient lock-renewal
+          // miss fails the job (and its continuation chain). The drug queues raise
+          // this to 3 so a hiccup retries instead of killing the part chain. This
+          // is the direct fix for the "job stalled more than allowable limit"
+          // failure on the drug download.
+          maxStalledCount: stall.maxStalledCount,
         }
       )
 
@@ -130,7 +140,8 @@ export default class QueueWork extends BaseCommand {
     handlers.set(EmbedFileJob.key, new EmbedFileJob())
     handlers.set(CheckUpdateJob.key, new CheckUpdateJob())
     handlers.set(CheckServiceUpdatesJob.key, new CheckServiceUpdatesJob())
-    handlers.set(IngestDrugLabelsJob.key, new IngestDrugLabelsJob())
+    handlers.set(DownloadDrugDataJob.key, new DownloadDrugDataJob())
+    handlers.set(IngestDrugDataJob.key, new IngestDrugDataJob())
 
     queues.set(RunDownloadJob.key, RunDownloadJob.queue)
     queues.set(DownloadModelJob.key, DownloadModelJob.queue)
@@ -138,9 +149,27 @@ export default class QueueWork extends BaseCommand {
     queues.set(EmbedFileJob.key, EmbedFileJob.queue)
     queues.set(CheckUpdateJob.key, CheckUpdateJob.queue)
     queues.set(CheckServiceUpdatesJob.key, CheckServiceUpdatesJob.queue)
-    queues.set(IngestDrugLabelsJob.key, IngestDrugLabelsJob.queue)
+    queues.set(DownloadDrugDataJob.key, DownloadDrugDataJob.queue)
+    queues.set(IngestDrugDataJob.key, IngestDrugDataJob.queue)
 
     return [handlers, queues]
+  }
+
+  /**
+   * Per-queue stall-recovery options. The drug download/ingest queues run a long
+   * per-part stretch (download ~150 MB, then a heavy stream-unzip + DB upsert),
+   * so they get a 30-minute lock and tolerate 3 stalled hiccups before failing.
+   * Every other queue keeps the established 10-minute lock + BullMQ's default
+   * single-strike stall count.
+   */
+  private getStallOptionsForQueue(queueName: string): {
+    lockDuration: number
+    maxStalledCount: number
+  } {
+    if (queueName === DownloadDrugDataJob.queue || queueName === IngestDrugDataJob.queue) {
+      return { lockDuration: 1_800_000, maxStalledCount: 3 }
+    }
+    return { lockDuration: 600_000, maxStalledCount: 1 }
   }
 
   /**
@@ -157,9 +186,12 @@ export default class QueueWork extends BaseCommand {
       // a concurrent AI chat, which is the "chat flaky under embed load" symptom.
       [EmbedFileJob.queue]: 1,
       [CheckUpdateJob.queue]: 1, // No need to run more than one update check at a time
-      // Drug ingest: one heavy stream at a time — downloading + unzipping +
-      // parsing ~150 MB JSON per part. Concurrency 1 matches EmbedFileJob.
-      [IngestDrugLabelsJob.queue]: 1,
+      // Drug download: one part at a time — a ~150 MB resumable HTTP pull per
+      // part. Concurrency 1 keeps the network + disk from thrashing.
+      [DownloadDrugDataJob.queue]: 1,
+      // Drug ingest: one heavy stream at a time — unzipping + parsing ~150 MB
+      // JSON per part into the DB. Concurrency 1 matches EmbedFileJob.
+      [IngestDrugDataJob.queue]: 1,
       default: 3,
     }
 

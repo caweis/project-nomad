@@ -6,7 +6,15 @@
  * Mirrors the `embed_jobs.ts` pattern.
  */
 
-import type { DrugLabelManifest, DrugLabelPartition } from '../types/drug_reference.js'
+import path from 'node:path'
+import type {
+  DrugLabelManifest,
+  DrugLabelPartition,
+  DownloadStateMarker,
+  DrugDownloadStatus,
+  DrugIngestPhaseStatus,
+  DrugIngestPhase,
+} from '../types/drug_reference.js'
 
 // ─── Internal structural types (no Lucid) ────────────────────────────────────
 
@@ -299,4 +307,125 @@ export function parseDrugLabelManifest(json: unknown): DrugLabelManifest {
     total_records,
     partitions,
   }
+}
+
+// ─── Two-step ingest helpers (pure — no I/O) ──────────────────────────────────
+
+/**
+ * Resolve the on-disk path of a part's zip from its manifest partition.
+ *
+ * The download job stages each part to `<storageBase>/<basename-of-file-URL>`;
+ * both the download job (write) and the ingest job (read) must agree on this
+ * path. Extracting it here (pure: path.basename + path.join do no I/O) lets both
+ * jobs and the tests share one definition instead of inlining the join twice.
+ */
+export function partZipPath(storageBase: string, partition: DrugLabelPartition): string {
+  return path.join(storageBase, path.basename(partition.file))
+}
+
+/**
+ * Defensively parse the `drugReference.downloadState` KV marker.
+ *
+ * Mirrors the readiness.needs defensive-parse pattern: a never-set (null) value,
+ * malformed JSON, or a structurally-wrong object all return null so callers fall
+ * back to "nothing downloaded" rather than throwing. A valid marker must carry a
+ * non-empty parts array with a string path on each entry.
+ */
+export function parseDownloadState(raw: string | null): DownloadStateMarker | null {
+  if (!raw) return null
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  if (typeof parsed !== 'object' || parsed === null) return null
+  const m = parsed as Record<string, unknown>
+  if (typeof m.export_date !== 'string') return null
+  if (typeof m.totalParts !== 'number') return null
+  if (!Array.isArray(m.parts) || m.parts.length === 0) return null
+
+  const parts: DownloadStateMarker['parts'] = []
+  for (const p of m.parts as unknown[]) {
+    if (typeof p !== 'object' || p === null) return null
+    const part = p as Record<string, unknown>
+    if (typeof part.path !== 'string' || part.path.trim() === '') return null
+    parts.push({
+      index: typeof part.index === 'number' ? part.index : parts.length,
+      name: typeof part.name === 'string' ? part.name : '',
+      path: part.path,
+      bytes: typeof part.bytes === 'number' ? part.bytes : 0,
+    })
+  }
+
+  return {
+    export_date: m.export_date,
+    totalParts: m.totalParts,
+    // Older markers (written before totalRecords existed) parse back as 0 =
+    // "unknown"; callers fall back to a parts-based estimate in that case.
+    totalRecords: typeof m.totalRecords === 'number' ? m.totalRecords : 0,
+    parts,
+    completedAtMs: typeof m.completedAtMs === 'number' ? m.completedAtMs : 0,
+  }
+}
+
+/**
+ * Resolve the ingest "expected total" denominator — the ~259k that drives the
+ * "X of ~N labels" counter, the records-based progress %, and the ETA.
+ *
+ * Precedence (first known value wins, where "known" means > 0):
+ *   1. the manifest's real `total_records` (~259k) — carried in job data on the
+ *      auto-chained run, or rebuilt from the persisted download marker;
+ *   2. a parts-based estimate (`totalParts * 20000`) when the manifest total is
+ *      not yet known (e.g. an older marker, or before the manifest is resolved);
+ *   3. the live row count as a last resort.
+ *
+ * The bug this fixes: `total_records ?? fallback` returns 0 when total_records
+ * is 0, because 0 is not nullish — so the fallback was never reached and the
+ * counter/%/ETA silently disappeared. Treating 0 as "unknown" restores them.
+ */
+export function resolveExpectedTotal(
+  manifestTotalRecords: number | undefined,
+  totalParts: number | undefined,
+  rowCount: number,
+  perPartEstimate = 20000
+): number {
+  if (manifestTotalRecords && manifestTotalRecords > 0) return manifestTotalRecords
+  if (totalParts && totalParts > 0) return totalParts * perPartEstimate
+  return rowCount
+}
+
+/**
+ * Derive the top-level ingest phase from the two sub-phase states + the live row
+ * count. This is the state machine the UI keys off of:
+ *
+ *   - ingest running                          → 'ingesting'
+ *   - download running                        → 'downloading'
+ *   - either phase failed (ingest wins)       → 'failed'
+ *   - ingest completed (or rows already exist
+ *     with no active work)                    → 'ready'
+ *   - download completed, ingest not done     → 'downloaded'
+ *   - nothing happening, no rows              → 'idle'
+ *
+ * Ordering matters: an in-flight phase is reported before a terminal one so a
+ * re-ingest after a prior success shows 'ingesting', not 'ready'. A failed
+ * download does NOT force the ingest phase to fail (and vice-versa) — only the
+ * phase that actually failed surfaces, and a running phase always outranks a
+ * sibling failure.
+ */
+export function deriveIngestPhase(
+  download: DrugDownloadStatus,
+  ingest: DrugIngestPhaseStatus,
+  rowCount: number
+): DrugIngestPhase {
+  if (ingest.state === 'running') return 'ingesting'
+  if (download.state === 'running') return 'downloading'
+  // No phase is actively running below this point.
+  if (ingest.state === 'failed') return 'failed'
+  if (download.state === 'failed') return 'failed'
+  if (ingest.state === 'completed') return 'ready'
+  if (download.state === 'completed') return 'downloaded'
+  // Idle: surface 'ready' if there is already searchable data from a past run.
+  if (rowCount > 0) return 'ready'
+  return 'idle'
 }

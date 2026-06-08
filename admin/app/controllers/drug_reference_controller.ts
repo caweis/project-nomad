@@ -151,15 +151,36 @@ export default class DrugReferenceController {
 
   /**
    * POST /api/drug-reference/download
-   * Triggers the ingest job (idempotent — deduped on deterministic jobId).
+   * Triggers the download phase (idempotent — deduped on deterministic jobId).
+   * The download auto-chains the ingest phase on completion.
    */
   async download({ response }: HttpContext) {
     try {
-      const result = await this.service.triggerIngest()
+      const result = await this.service.triggerDownload()
       return { success: true, created: result.created, message: result.message }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       logger.error(`[DrugReferenceController] download trigger failed: ${msg}`)
+      return response.internalServerError({ error: 'Could not trigger download' })
+    }
+  }
+
+  /**
+   * POST /api/drug-reference/ingest
+   * Manually (re-)runs the ingest phase from the already-downloaded on-disk
+   * parts, with no re-download. Returns 404 when nothing is on disk so the UI
+   * can keep its guard honest even if the button is reached out of band.
+   */
+  async ingest({ response }: HttpContext) {
+    try {
+      const result = await this.service.triggerIngestFromDisk()
+      if (result.nothingDownloaded) {
+        return response.notFound({ error: result.message })
+      }
+      return { success: true, created: result.created, message: result.message }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      logger.error(`[DrugReferenceController] ingest trigger failed: ${msg}`)
       return response.internalServerError({ error: 'Could not trigger ingest' })
     }
   }

@@ -1,16 +1,24 @@
 import db from '@adonisjs/lucid/services/db'
 import logger from '@adonisjs/core/services/logger'
+import type { Job } from 'bullmq'
 import { QueueService } from './queue_service.js'
-import { IngestDrugLabelsJob } from '#jobs/ingest_drug_labels_job'
-import { normalizeDrugName } from '../../util/drug_labels.js'
+import { DownloadDrugDataJob } from '#jobs/download_drug_data_job'
+import { IngestDrugDataJob } from '#jobs/ingest_drug_data_job'
+import {
+  normalizeDrugName,
+  parseDownloadState,
+  deriveIngestPhase,
+  resolveExpectedTotal,
+} from '../../util/drug_labels.js'
 import KVStore from '#models/kv_store'
 import { parseCompareIds, MAX_COMPARE } from '../../util/compare_ids.js'
 import type {
   DrugSearchResult,
   DrugLabelDetail,
   DrugIngestStatus,
-  DrugIngestPhase,
-  DrugIngestState,
+  DrugPhaseState,
+  DrugDownloadStatus,
+  DrugIngestPhaseStatus,
   DrugInteractionEntry,
 } from '../../types/drug_reference.js'
 
@@ -363,82 +371,146 @@ export class DrugReferenceService {
   }
 
   /**
-   * Dispatch the ingest job (idempotent — deduped by deterministic jobId).
-   * Returns "already running" if the job is active/waiting.
+   * Dispatch the download phase (idempotent — deduped by deterministic jobId).
+   * Auto-chains the ingest phase on completion. Returns "already running" if the
+   * download job is active/waiting.
    */
-  async triggerIngest() {
-    return IngestDrugLabelsJob.dispatch()
+  async triggerDownload() {
+    return DownloadDrugDataJob.dispatch(true)
   }
 
   /**
-   * Return the rich ingest status for the UI panel.
-   * Reads the deterministic job (drug-labels-ingest) from BullMQ and merges
-   * it with the KV last-updated marker and the live row count.
+   * Dispatch the ingest phase from the already-downloaded on-disk parts (the
+   * manual "Ingest into search" path). Guards on the KV download-state marker so
+   * it fails fast with a typed result when nothing has been downloaded, rather
+   * than dispatching a job that would immediately fail in the worker.
    */
-  async getIngestStatus(): Promise<DrugIngestStatus> {
+  async triggerIngestFromDisk() {
+    const marker = parseDownloadState(await KVStore.getValue('drugReference.downloadState'))
+    if (!marker) {
+      return {
+        job: undefined,
+        created: false,
+        message: 'Nothing downloaded — run Download FDA data first.',
+        nothingDownloaded: true,
+      }
+    }
+    const result = await IngestDrugDataJob.dispatch()
+    return { ...result, nothingDownloaded: false }
+  }
+
+  /**
+   * Resolve the canonical deterministic job for a phase's queue, falling back to
+   * the most-progressed auto-id continuation when the deterministic job is
+   * absent or completed (passes > 0 use auto-generated ids). Each phase has its
+   * own queue + jobId, so this is called once per queue with the matching ids.
+   */
+  private async resolvePhaseJob(
+    queueName: string,
+    deterministicJobId: string
+  ): Promise<Job | undefined> {
     const queueService = QueueService.getInstance()
-    const queue = queueService.getQueue(IngestDrugLabelsJob.queue)
+    const queue = queueService.getQueue(queueName)
 
-    // Find the canonical job first (deterministic id). If it's done/absent,
-    // scan active+waiting jobs for a continuation (auto-id jobs from pass > 0).
-    let job = await queue.getJob(IngestDrugLabelsJob.jobId)
-
-    // If the deterministic job is not found or completed, check for an active
-    // continuation (a non-deterministic-id job in active/waiting/delayed states).
+    let job = await queue.getJob(deterministicJobId)
     if (!job || (await job.getState()) === 'completed') {
       const activeJobs = await queue.getJobs(['active', 'waiting', 'delayed'])
-      // Pick the most-progressed continuation (highest partIndex).
       const continuation = activeJobs
-        .filter((j) => j.id !== IngestDrugLabelsJob.jobId)
+        .filter((j) => j.id !== deterministicJobId)
         .sort((a, b) => (b.data?.partIndex ?? 0) - (a.data?.partIndex ?? 0))[0]
       if (continuation) job = continuation
     }
+    return job
+  }
 
-    const lastUpdated = await KVStore.getValue('drugReference.lastUpdatedExportDate')
-    const count = await this.rowCount()
+  /** Map a BullMQ job state to the per-phase run state. */
+  private phaseStateFor(state: string | undefined): DrugPhaseState {
+    if (state === 'failed') return 'failed'
+    if (state === 'completed') return 'completed'
+    if (state === 'active' || state === 'waiting' || state === 'delayed') return 'running'
+    return 'idle'
+  }
 
-    if (!job) {
-      return {
-        state: 'idle',
-        progress: 0,
-        phase: count > 0 ? 'completed' : 'manifest',
-        partIndex: 0,
-        totalParts: 0,
-        currentPartName: null,
-        recordsIngested: 0,
-        recordsSkipped: 0,
-        expectedTotal: count,
-        startedAtMs: null,
-        lastUpdated: lastUpdated ?? null,
-        rowCount: count,
-      }
+  /**
+   * Return the two-phase ingest status for the UI panel. Reads the download job
+   * (drug-download queue) and the ingest job (drug-ingest queue) independently,
+   * merges the KV download-state marker + last-updated marker + live row count,
+   * and derives the top-level phase from the two sub-phases.
+   */
+  async getIngestStatus(): Promise<DrugIngestStatus> {
+    const [downloadJob, ingestJob] = await Promise.all([
+      this.resolvePhaseJob(DownloadDrugDataJob.queue, DownloadDrugDataJob.jobId),
+      this.resolvePhaseJob(IngestDrugDataJob.queue, IngestDrugDataJob.jobId),
+    ])
+
+    const [lastUpdated, rawMarker, count] = await Promise.all([
+      KVStore.getValue('drugReference.lastUpdatedExportDate'),
+      KVStore.getValue('drugReference.downloadState'),
+      this.rowCount(),
+    ])
+    const marker = parseDownloadState(rawMarker)
+
+    // ── Download sub-status ─────────────────────────────────────────────────
+    const dlState = downloadJob ? await downloadJob.getState() : undefined
+    const dlData = downloadJob?.data ?? {}
+    let downloadPhaseState = this.phaseStateFor(dlState)
+    // A finished download job is pruned (removeOnComplete) but the marker proves
+    // the parts are on disk — treat that as a completed download phase so the
+    // manual "Ingest into search" button stays available.
+    if (downloadPhaseState === 'idle' && marker) downloadPhaseState = 'completed'
+
+    const download: DrugDownloadStatus = {
+      state: downloadPhaseState,
+      partsDone: downloadPhaseState === 'completed' ? (marker?.totalParts ?? dlData.totalParts ?? 0) : (dlData.partIndex ?? 0),
+      totalParts: dlData.totalParts ?? marker?.totalParts ?? 0,
+      bytesDownloaded: dlData.bytesDownloaded,
+      currentPartName: dlData.currentPartName ?? null,
+      failedReason: dlState === 'failed' ? downloadJob?.failedReason || undefined : undefined,
     }
 
-    const state = await job.getState()
-    const data = job.data ?? {}
-    const progress = typeof job.progress === 'number' ? job.progress : 0
+    // ── Ingest sub-status ───────────────────────────────────────────────────
+    const ingState = ingestJob ? await ingestJob.getState() : undefined
+    const ingData = ingestJob?.data ?? {}
+    let ingestPhaseState = this.phaseStateFor(ingState)
+    // A pruned-but-successful ingest leaves rows + the last-updated marker and
+    // clears the download marker; reflect that as a completed ingest phase.
+    if (ingestPhaseState === 'idle' && !marker && count > 0) ingestPhaseState = 'completed'
 
-    const ingestState: DrugIngestState =
-      state === 'failed' ? 'failed'
-        : state === 'completed' ? 'completed'
-        : state === 'active' || state === 'waiting' || state === 'delayed' ? 'running'
-        : 'idle'
+    const ingest: DrugIngestPhaseStatus = {
+      state: ingestPhaseState,
+      records: ingData.recordsIngested ?? 0,
+      // total_records 0 means "unknown" (e.g. a manifest rebuilt from an older
+      // marker) — resolveExpectedTotal falls back to a parts estimate, then the
+      // live row count, so the counter/%/ETA never silently vanish.
+      expectedTotal: resolveExpectedTotal(ingData.manifest?.total_records, ingData.totalParts, count),
+      partsDone: ingData.partIndex ?? 0,
+      totalParts: ingData.totalParts ?? marker?.totalParts ?? 0,
+      currentPartName: ingData.currentPartName ?? null,
+      failedReason: ingState === 'failed' ? ingestJob?.failedReason || undefined : undefined,
+    }
+
+    const phase = deriveIngestPhase(download, ingest, count)
+
+    // The active phase drives elapsed/ETA: ingest start when ingesting, else the
+    // download start.
+    const startedAtMs =
+      phase === 'ingesting'
+        ? (ingData.startedAt ?? null)
+        : phase === 'downloading'
+          ? (dlData.startedAt ?? null)
+          : null
+
+    const error =
+      phase === 'failed' ? (ingest.failedReason ?? download.failedReason) : undefined
 
     return {
-      state: ingestState,
-      progress,
-      phase: (data.phase as DrugIngestPhase) ?? 'manifest',
-      partIndex: data.partIndex ?? 0,
-      totalParts: data.totalParts ?? 0,
-      currentPartName: data.currentPartName ?? null,
-      recordsIngested: data.recordsIngested ?? 0,
-      recordsSkipped: data.recordsSkipped ?? 0,
-      expectedTotal:
-        data.manifest?.total_records ?? (data.totalParts ? data.totalParts * 20000 : 0),
-      startedAtMs: data.startedAt ?? null,
-      failedReason: job.failedReason || undefined,
+      phase,
+      download,
+      ingest,
+      startedAtMs,
       lastUpdated: lastUpdated ?? null,
       rowCount: count,
+      error,
     }
   }
 }

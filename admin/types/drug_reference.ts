@@ -29,9 +29,69 @@ export interface DrugLabelManifest {
   partitions: DrugLabelPartition[]
 }
 
+// ─── Download-state marker (persisted in KV, no migration) ────────────────────
+
+/**
+ * One downloaded part recorded in the `drugReference.downloadState` KV marker.
+ * `index` is the manifest partition position so a manual ingest with no manifest
+ * in its params can rebuild the ordered part list (and resolve each on-disk zip
+ * via partZipPath) without re-fetching the manifest from the network.
+ */
+export interface DownloadStatePart {
+  index: number
+  name: string
+  path: string
+  bytes: number
+}
+
+/**
+ * The download-phase completion marker. Written to KV after the LAST part lands
+ * on disk; read by the ingest job + the service to know parts are available for
+ * the manual "Ingest into search" path and to gate POST /ingest. Cleared after a
+ * full ingest succeeds (when the parts are deleted).
+ */
+export interface DownloadStateMarker {
+  export_date: string
+  totalParts: number
+  /**
+   * Manifest `total_records` (~259k), persisted so a manual or auto-chained
+   * ingest that rebuilds the manifest from this marker (rather than carrying it
+   * in job data) still knows the real label-count denominator — the source of
+   * the "X of ~259k labels" counter, the records-based progress %, and the ETA.
+   * Older markers written before this field exists parse back as 0 (unknown).
+   */
+  totalRecords: number
+  parts: DownloadStatePart[]
+  completedAtMs: number
+}
+
 // ─── Job params ───────────────────────────────────────────────────────────────
 
-export interface IngestDrugLabelsJobParams {
+/**
+ * DownloadDrugDataJob params. Pass 0 fetches the manifest; each later pass
+ * downloads one part to disk. `phase` was previously written into job data but
+ * never typed — it is part of the contract now.
+ */
+export interface DownloadDrugDataJobParams {
+  partIndex?: number
+  manifest?: DrugLabelManifest
+  totalParts?: number
+  /** Auto-dispatch the ingest phase after the last part downloads. Default true. */
+  autoChain?: boolean
+  /** Epoch ms when the download began (set on pass 0, carried through continuations). */
+  startedAt?: number
+  /** Bytes downloaded for the current part (live progress). */
+  bytesDownloaded?: number
+  currentPartName?: string | null
+  phase?: 'manifest' | 'downloading' | 'downloaded' | 'failed'
+}
+
+/**
+ * IngestDrugDataJob params. Each pass reads one on-disk part and streams it into
+ * drug_labels. Zero network I/O. `manifest` is optional: a manual ingest can run
+ * from the KV download-state marker alone.
+ */
+export interface IngestDrugDataJobParams {
   partIndex?: number
   manifest?: DrugLabelManifest
   totalParts?: number
@@ -39,6 +99,8 @@ export interface IngestDrugLabelsJobParams {
   recordsSkipped?: number
   /** Epoch ms when the ingest began (set on pass 0, carried through continuations). */
   startedAt?: number
+  currentPartName?: string | null
+  phase?: 'ingesting' | 'ready' | 'failed'
 }
 
 // ─── Search result DTO (collapsed by brand+generic) ──────────────────────────
@@ -97,31 +159,58 @@ export interface DrugInteractionEntry {
   drug_interactions: string | null
 }
 
-// ─── Ingest status ────────────────────────────────────────────────────────────
+// ─── Ingest status (two-phase) ────────────────────────────────────────────────
 
+/**
+ * Top-level state machine across both phases. `downloaded` means parts are on
+ * disk and ingest hasn't started/finished — the manual "Ingest into search"
+ * button is available. `ready` means a full ingest succeeded (parts deleted).
+ */
 export type DrugIngestPhase =
-  | 'manifest'
+  | 'idle'
   | 'downloading'
+  | 'downloaded'
   | 'ingesting'
-  | 'completed'
+  | 'ready'
   | 'failed'
 
-export type DrugIngestState = 'idle' | 'running' | 'completed' | 'failed'
+/** Per-phase run state. */
+export type DrugPhaseState = 'idle' | 'running' | 'completed' | 'failed'
 
-export interface DrugIngestStatus {
-  state: DrugIngestState
-  progress: number
-  phase: DrugIngestPhase
-  partIndex: number
+/** Download-phase sub-status. */
+export interface DrugDownloadStatus {
+  state: DrugPhaseState
+  partsDone: number
   totalParts: number
+  bytesDownloaded?: number
+  bytesTotal?: number
   currentPartName: string | null
-  recordsIngested: number
-  recordsSkipped: number
+  failedReason?: string
+}
+
+/** Ingest-phase sub-status. */
+export interface DrugIngestPhaseStatus {
+  state: DrugPhaseState
+  records: number
   /** Approx. total records from the manifest (0 if not known yet). Drives the counter + %. */
   expectedTotal: number
-  /** Epoch ms the ingest began, for live elapsed + a rough ETA (null if idle/unknown). */
-  startedAtMs: number | null
+  partsDone: number
+  totalParts: number
+  currentPartName: string | null
   failedReason?: string
+}
+
+/**
+ * The combined two-phase status DTO returned to the client. `phase` is the
+ * top-level state machine derived from the two sub-phases + rowCount.
+ */
+export interface DrugIngestStatus {
+  phase: DrugIngestPhase
+  download: DrugDownloadStatus
+  ingest: DrugIngestPhaseStatus
+  /** Epoch ms the active phase began, for live elapsed + a rough ETA (null if idle). */
+  startedAtMs: number | null
   lastUpdated: string | null
   rowCount: number
+  error?: string
 }
