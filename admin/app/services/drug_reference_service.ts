@@ -9,6 +9,7 @@ import {
   parseDownloadState,
   deriveIngestPhase,
   resolveExpectedTotal,
+  resolveIngestRecordsShown,
 } from '../../util/drug_labels.js'
 import KVStore from '#models/kv_store'
 import { parseCompareIds, MAX_COMPARE } from '../../util/compare_ids.js'
@@ -476,13 +477,29 @@ export class DrugReferenceService {
     // clears the download marker; reflect that as a completed ingest phase.
     if (ingestPhaseState === 'idle' && !marker && count > 0) ingestPhaseState = 'completed'
 
+    // total_records 0 means "unknown" (e.g. a manifest rebuilt from an older
+    // marker) — resolveExpectedTotal falls back to a parts estimate, then the
+    // live row count, so the counter/%/ETA never silently vanish.
+    const expectedTotal = resolveExpectedTotal(
+      ingData.manifest?.total_records,
+      ingData.totalParts,
+      count
+    )
+    const jobRecords = ingData.recordsIngested ?? 0
+    // While ingesting, the per-job recordsIngested lags across the per-part
+    // continuation handoff (continuations run under auto jobIds). Drive the shown
+    // count from max(jobRecords, live rowCount) so a first ingest tracks the table
+    // filling 0 → ~259k, while a re-ingest into a populated table still rides the
+    // per-job counter. Outside the running phase, trust the job's own total.
+    const records =
+      ingestPhaseState === 'running'
+        ? resolveIngestRecordsShown(jobRecords, count, expectedTotal)
+        : jobRecords
+
     const ingest: DrugIngestPhaseStatus = {
       state: ingestPhaseState,
-      records: ingData.recordsIngested ?? 0,
-      // total_records 0 means "unknown" (e.g. a manifest rebuilt from an older
-      // marker) — resolveExpectedTotal falls back to a parts estimate, then the
-      // live row count, so the counter/%/ETA never silently vanish.
-      expectedTotal: resolveExpectedTotal(ingData.manifest?.total_records, ingData.totalParts, count),
+      records,
+      expectedTotal,
       partsDone: ingData.partIndex ?? 0,
       totalParts: ingData.totalParts ?? marker?.totalParts ?? 0,
       currentPartName: ingData.currentPartName ?? null,

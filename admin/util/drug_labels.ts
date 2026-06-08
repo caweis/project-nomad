@@ -396,6 +396,39 @@ export function resolveExpectedTotal(
 }
 
 /**
+ * Resolve the ingested-record count the UI shows during the 'ingesting' phase.
+ *
+ * The bug this fixes: the per-job `recordsIngested` counter lags during the
+ * per-part continuation handoff. Pass 0 runs under the deterministic jobId and
+ * carries its count in job data; continuations (parts 2+) run under auto-ids and
+ * each only know the running total written into *their* job data mid-batch, so
+ * the number the status read surfaces can stall while the DB keeps filling.
+ *
+ * The live `drug_labels` row count is ground truth, but it is only a faithful
+ * progress signal on a FIRST ingest — an empty (or near-empty) table climbs
+ * 0 → ~259k as rows land. On a re-ingest into an already-populated table the row
+ * count barely moves (upserts replace existing rows), so it would understate
+ * progress; there the per-job `recordsIngested` is the better source.
+ *
+ * Taking max(jobRecords, rowCount) satisfies both:
+ *   - first ingest: rowCount climbs and exceeds the lagging jobRecords → live count;
+ *   - re-ingest: rowCount is already high and static, jobRecords climbs from 0 and
+ *     overtakes it → per-job count, never regressing below what is on disk.
+ *
+ * Clamped to `expectedTotal` (when known) so the live count can't briefly read
+ * past the denominator and push the bar over 100%.
+ */
+export function resolveIngestRecordsShown(
+  jobRecords: number,
+  rowCount: number,
+  expectedTotal: number
+): number {
+  const best = Math.max(jobRecords, rowCount)
+  if (expectedTotal > 0) return Math.min(best, expectedTotal)
+  return best
+}
+
+/**
  * Derive the top-level ingest phase from the two sub-phase states + the live row
  * count. This is the state machine the UI keys off of:
  *

@@ -13,6 +13,7 @@ import {
   parseDownloadState,
   deriveIngestPhase,
   resolveExpectedTotal,
+  resolveIngestRecordsShown,
 } from '../../util/drug_labels.ts'
 import type {
   DrugLabelPartition,
@@ -158,5 +159,25 @@ check('resolveExpectedTotal falls back to row count when parts undefined', () =>
   assert.equal(resolveExpectedTotal(undefined, undefined, 5000), 5000))
 check('resolveExpectedTotal honors a custom per-part estimate', () =>
   assert.equal(resolveExpectedTotal(0, 4, 0, 25000), 4 * 25000))
+
+// ── resolveIngestRecordsShown (continuation-handoff progress lag) ────────────
+check('resolveIngestRecordsShown: first ingest tracks live row count climbing', () =>
+  // Empty table fills: jobRecords lags at 12000, live rowCount has reached 45000.
+  assert.equal(resolveIngestRecordsShown(12000, 45000, 259000), 45000))
+check('resolveIngestRecordsShown: re-ingest rides the per-job counter', () =>
+  // Populated table (rowCount static ~259000), re-ingest jobRecords climbing 80000.
+  // max would pick rowCount, but it is clamped to expectedTotal so it never over-reads;
+  // here rowCount === expectedTotal so the clamp holds it at the denominator.
+  assert.equal(resolveIngestRecordsShown(80000, 259000, 259000), 259000))
+check('resolveIngestRecordsShown: re-ingest where rowCount sits below total', () =>
+  // rowCount 200000 static, jobRecords overtakes at 210000 → per-job count wins.
+  assert.equal(resolveIngestRecordsShown(210000, 200000, 259000), 210000))
+check('resolveIngestRecordsShown: clamps live count to expectedTotal', () =>
+  // Live count momentarily reads past the denominator → clamp to expectedTotal.
+  assert.equal(resolveIngestRecordsShown(0, 260000, 259000), 259000))
+check('resolveIngestRecordsShown: unknown total (0) returns the raw max', () =>
+  assert.equal(resolveIngestRecordsShown(5000, 9000, 0), 9000))
+check('resolveIngestRecordsShown: both zero at start', () =>
+  assert.equal(resolveIngestRecordsShown(0, 0, 259000), 0))
 
 console.log(`\nAll ${passed} standalone assertions passed.`)
