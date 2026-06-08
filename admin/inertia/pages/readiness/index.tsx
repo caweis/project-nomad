@@ -1013,11 +1013,19 @@ function ConfigForm({
     })
   }
 
+  // Editing only updates the form. The readiness cards recompute when the user
+  // clicks "Calculate" (onCalculate) — a deliberate, on-demand recompute rather
+  // than per-keystroke wiring, so the projected days/needs update reliably.
   const set = <K extends keyof typeof form>(key: K, value: string) => {
-    const next = { ...form, [key]: value }
-    setForm(next)
-    fireLiveChange(next)
+    setForm((prev) => ({ ...prev, [key]: value }))
   }
+
+  /**
+   * Recompute all readiness cards (water, food, power) from the current form by
+   * pushing it into the parent's liveConfig. Wired to the "Calculate" button —
+   * one action recalculates every resource at once.
+   */
+  const onCalculate = () => fireLiveChange(form)
 
   const waterUnit = displayUnitLabel('water', system)
 
@@ -1153,9 +1161,14 @@ function ConfigForm({
 
       <div className="mt-5 flex items-center gap-3">
         {/* StyledButton renders type="button", so submission is wired via
-            onClick rather than the form's onSubmit. */}
+            onClick rather than the form's onSubmit. "Calculate" recomputes the
+            cards (water/food/power) from the current inputs; "Save" persists +
+            reloads. */}
+        <StyledButton variant="primary" icon="IconCalculator" onClick={onCalculate}>
+          Calculate
+        </StyledButton>
         <StyledButton
-          variant="primary"
+          variant="secondary"
           icon="IconDeviceFloppy"
           loading={saving}
           disabled={saving}
