@@ -146,21 +146,55 @@ const PET_SOURCE =
   'durations only: 3–7 days food, 7+ days water). Enter your pets’ normal ' +
   'combined daily intake. Ready.gov/pets; AVMA pets-and-disasters.'
 
-const STATUS_PILL: Record<ReadinessStatus, { label: string; className: string }> = {
-  green: { label: 'On target', className: 'bg-green-100 text-green-800 border-green-300' },
-  yellow: { label: 'Building', className: 'bg-yellow-100 text-yellow-800 border-yellow-300' },
-  red: { label: 'Low', className: 'bg-red-100 text-red-800 border-red-300' },
-  unset: { label: 'Not tracked', className: 'bg-gray-100 text-gray-600 border-gray-300' },
+/**
+ * Per-status presentation, all on the desert palette (no generic Tailwind
+ * green/yellow/red): a chip className, the accent-strip/progress-bar background,
+ * and the status-dot color. `dotClass` is a bg-* utility so the dot tracks the
+ * chip's hue.
+ */
+const STATUS_PILL: Record<
+  ReadinessStatus,
+  { label: string; className: string; barClass: string; dotClass: string }
+> = {
+  green: {
+    label: 'On target',
+    className: 'bg-desert-olive/10 text-desert-olive-dark border-desert-olive/30',
+    barClass: 'bg-desert-olive',
+    dotClass: 'bg-desert-olive',
+  },
+  yellow: {
+    label: 'Building',
+    className: 'bg-desert-orange/10 text-desert-orange-dark border-desert-orange/30',
+    barClass: 'bg-desert-orange',
+    dotClass: 'bg-desert-orange',
+  },
+  red: {
+    label: 'Low',
+    className: 'bg-desert-red/10 text-desert-red-dark border-desert-red/30',
+    barClass: 'bg-desert-red',
+    dotClass: 'bg-desert-red',
+  },
+  unset: {
+    label: 'Not tracked',
+    className: 'bg-desert-stone/10 text-desert-stone-dark border-desert-stone/30',
+    barClass: 'bg-desert-stone-lighter',
+    dotClass: 'bg-desert-stone-light',
+  },
 }
 
 const RESOURCE_META: Record<
   ReadinessResource,
   { label: string; icon: React.ReactNode }
 > = {
-  water: { label: 'Water', icon: <IconDroplet size={28} /> },
-  food: { label: 'Food', icon: <IconToolsKitchen2 size={28} /> },
-  power: { label: 'Power', icon: <IconBolt size={28} /> },
+  water: { label: 'Water', icon: <IconDroplet size={20} /> },
+  food: { label: 'Food', icon: <IconToolsKitchen2 size={20} /> },
+  power: { label: 'Power', icon: <IconBolt size={20} /> },
 }
+
+/** Shared elevated-card surface for the Supply Readiness tab (card + form). */
+const CARD_SURFACE =
+  'rounded-2xl border border-desert-stone-lighter/60 bg-desert-white ' +
+  'shadow-[0_1px_2px_rgba(66,68,32,0.04),0_8px_24px_-12px_rgba(66,68,32,0.12)]'
 
 export default function ReadinessIndex(props: PageProps) {
   const { tab, measurement_system: system } = props
@@ -588,7 +622,7 @@ function SupplyReadinessTab({ dashboard }: { dashboard: ReadinessDashboard }) {
         target, computed from your Inventory. Every figure cites its source.
       </p>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-6">
         {liveResources.map((r) => (
           <ResourceCard
             key={r.resource}
@@ -920,6 +954,7 @@ function ResourceCard({
   const unitLabel = displayUnitLabel(readiness.resource, system)
   const haveDisplay = round2(fromBase(readiness.resource, readiness.haveBase, system))
   const gapDisplay = round2(fromBase(readiness.resource, readiness.gapBase, system))
+  const unset = readiness.status === 'unset'
 
   // Pet readout amount in the display unit; kcal/Wh are system-agnostic so this
   // is an identity for food. Only shown when petReadout is supplied (pets > 0).
@@ -927,70 +962,104 @@ function ResourceCard({
     ? round2(fromBase(readiness.resource, petReadout.petTotalBase, system))
     : 0
 
-  return (
-    <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm flex flex-col">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-          <span className="text-desert-green">{meta.icon}</span>
-          {meta.label}
-          <InfoTooltip text={SOURCE_NOTES[readiness.resource]} />
-        </h2>
-        <span className={`text-xs font-semibold rounded-full border px-2.5 py-1 ${pill.className}`}>
-          {pill.label}
-        </span>
-      </div>
+  // Records-against-target progress for the bar (capped at 100%); null days → 0.
+  const pct =
+    readiness.days === null || readiness.targetDays <= 0
+      ? 0
+      : Math.min(100, Math.round((readiness.days / readiness.targetDays) * 100))
 
-      {readiness.status === 'unset' ? (
-        <div className="mt-4 flex-1">
-          <p className="text-gray-500 text-sm">
+  return (
+    <div className={`group relative flex flex-col overflow-hidden ${CARD_SURFACE}`}>
+      {/* Status accent strip */}
+      <div className={`h-1 w-full ${pill.barClass}`} />
+
+      <div className="flex flex-1 flex-col p-5">
+        <div className="flex items-center justify-between">
+          <h2 className="flex items-center gap-2.5 text-base font-semibold tracking-tight text-desert-green-dark">
+            <span
+              className={`flex h-9 w-9 items-center justify-center rounded-xl ${
+                unset ? 'bg-desert-stone/10 text-desert-stone-dark' : 'bg-desert-green/10 text-desert-green'
+              }`}
+            >
+              {meta.icon}
+            </span>
+            <span className="flex items-center gap-1.5">
+              {meta.label}
+              <InfoTooltip text={SOURCE_NOTES[readiness.resource]} />
+            </span>
+          </h2>
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${pill.className}`}
+          >
+            <span className={`h-1.5 w-1.5 rounded-full ${pill.dotClass}`} />
+            {pill.label}
+          </span>
+        </div>
+
+        {unset ? (
+          <p className="mt-6 flex-1 text-sm leading-relaxed text-desert-stone-dark">
             Set a daily {meta.label.toLowerCase()} need below to start tracking this.
           </p>
-        </div>
-      ) : (
-        <>
-          <div className="mt-4">
-            <div className="text-4xl font-bold text-desert-green">
-              {readiness.days === null ? '—' : round1(readiness.days)}
-              <span className="text-base font-normal text-gray-500 ml-1">days</span>
+        ) : (
+          <>
+            <div className="mt-5 flex items-baseline gap-1.5">
+              <span className="text-5xl font-bold leading-none tracking-tight text-desert-green">
+                {readiness.days === null ? '—' : round1(readiness.days)}
+              </span>
+              <span className="text-sm font-medium text-desert-stone-dark">days</span>
             </div>
-            <p className="text-xs text-gray-500 mt-0.5">
+            <p className="mt-1.5 text-xs text-desert-stone">
               of a {readiness.targetDays}-day target
               {petReadout && petReadout.daysWithout !== null && (
-                <> ({round1(petReadout.daysWithout)} without pets)</>
+                <>
+                  {' '}
+                  · <span className="text-desert-stone-dark">{round1(petReadout.daysWithout)} without pets</span>
+                </>
               )}
             </p>
-          </div>
 
-          <dl className="mt-4 text-sm space-y-1 flex-1">
-            <div className="flex justify-between">
-              <dt className="text-gray-500">On hand</dt>
-              <dd className="font-medium text-gray-800">
-                {haveDisplay} {unitLabel}
-              </dd>
+            <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-desert-sand">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${pill.barClass}`}
+                style={{ width: `${pct}%` }}
+              />
             </div>
-            <div className="flex justify-between">
-              <dt className="text-gray-500">Household need/day</dt>
-              <dd className="font-medium text-gray-800">
-                {round2(fromBase(readiness.resource, readiness.dailyNeed, system))} {unitLabel}/day
-              </dd>
-            </div>
-          </dl>
 
-          {petReadout && (
-            <p className="mt-2 flex items-center gap-1.5 text-xs text-gray-500">
-              <IconPaw size={13} className="shrink-0 text-desert-green" />
-              Pets: +{petAddDisplay} {unitLabel}/day (≈ {round1(petReadout.personEquivalent)} people)
-            </p>
-          )}
+            <dl className="mt-4 flex-1 space-y-2 border-t border-desert-stone-lighter/40 pt-3 text-sm">
+              <div className="flex items-baseline justify-between">
+                <dt className="text-desert-stone-dark">On hand</dt>
+                <dd className="font-semibold tabular-nums text-desert-green-dark">
+                  {haveDisplay} <span className="text-xs font-normal text-desert-stone">{unitLabel}</span>
+                </dd>
+              </div>
+              <div className="flex items-baseline justify-between">
+                <dt className="text-desert-stone-dark">Need / day</dt>
+                <dd className="font-semibold tabular-nums text-desert-green-dark">
+                  {round2(fromBase(readiness.resource, readiness.dailyNeed, system))}{' '}
+                  <span className="text-xs font-normal text-desert-stone">{unitLabel}/day</span>
+                </dd>
+              </div>
+            </dl>
 
-          {readiness.gapBase > 0 && (
-            <p className="mt-3 text-sm text-desert-stone-dark">
-              Need <strong>{gapDisplay} {unitLabel}</strong> more to reach {readiness.targetDays}{' '}
-              days.
-            </p>
-          )}
-        </>
-      )}
+            {petReadout && (
+              <p className="mt-3 flex items-center gap-1.5 rounded-lg bg-desert-sand/70 px-2.5 py-1.5 text-xs text-desert-tan-dark">
+                <IconPaw size={13} className="shrink-0 text-desert-green" />
+                Pets add {petAddDisplay} {unitLabel}/day{' '}
+                <span className="text-desert-stone-light">·</span> ≈ {round1(petReadout.personEquivalent)} people
+              </p>
+            )}
+
+            {readiness.gapBase > 0 && (
+              <p className="mt-3 pt-1 text-sm text-desert-stone-dark">
+                <span className="font-semibold text-desert-orange-dark">
+                  {gapDisplay} {unitLabel}
+                </span>{' '}
+                short of {readiness.targetDays} days.
+              </p>
+            )}
+          </>
+        )}
+      </div>
     </div>
   )
 }
@@ -1006,31 +1075,37 @@ function ExpiryPanel({
 }) {
   if (warnings.length === 0) {
     return (
-      <div className="rounded-lg border border-gray-200 bg-white p-4 mb-6 text-sm text-gray-600">
+      <div className={`${CARD_SURFACE} mb-6 p-4 text-sm text-desert-stone-dark`}>
         No contributing stock expires before the {horizon}-day window.
       </div>
     )
   }
 
   return (
-    <div className="rounded-lg border border-yellow-300 bg-yellow-50 p-4 mb-6">
-      <h2 className="text-base font-semibold text-yellow-900 flex items-center gap-2">
+    <div className="mb-6 rounded-2xl border border-desert-orange/30 bg-desert-orange/5 p-5">
+      <h2 className="flex items-center gap-2 text-sm font-semibold text-desert-orange-dark">
         <IconAlertTriangle size={18} />
         {warnings.length} item{warnings.length === 1 ? '' : 's'} expire before day {horizon}
       </h2>
-      <p className="text-xs text-yellow-800 mt-0.5">
+      <p className="mt-1 text-xs text-desert-orange-dark/80">
         These are still counted in your on-hand totals — they just won&apos;t last the full window.
       </p>
-      <ul className="mt-3 space-y-1.5">
+      <ul className="mt-3 divide-y divide-desert-orange/15">
         {warnings.map((w) => {
           const unitLabel = displayUnitLabel(w.resource, system)
           const amount = round2(fromBase(w.resource, w.amountBase, system))
           return (
-            <li key={w.id} className="text-sm flex flex-wrap items-baseline justify-between gap-2">
-              <Link href={`/inventory/${w.id}`} className="text-desert-green hover:underline font-medium">
+            <li
+              key={w.id}
+              className="flex flex-wrap items-baseline justify-between gap-2 py-1.5 text-sm"
+            >
+              <Link
+                href={`/inventory/${w.id}`}
+                className="font-semibold text-desert-green hover:underline"
+              >
                 {w.name}
               </Link>
-              <span className="text-yellow-900">
+              <span className="text-desert-orange-dark">
                 {amount} {unitLabel} of {RESOURCE_META[w.resource].label.toLowerCase()}
                 {w.expiryDate ? ` · expires ${w.expiryDate}` : ''}
               </span>
@@ -1181,80 +1256,84 @@ function ConfigForm({
   }
 
   return (
-    <form onSubmit={onSave} className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
-      <h2 className="text-lg font-semibold text-gray-800 mb-1">Household</h2>
-      <p className="text-sm text-gray-500 mb-4">
-        Children count as full persons for water and food — needs are never discounted by age
-        (FEMA/Ready.gov). The cards above show your household total; the rates below are the
-        per-person standards they multiply.
-      </p>
-
-      {/* Top row: who's in the household, the target window, and pets. */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <NumberField
-          label="Adults"
-          value={form.adults}
-          onChange={(v) => set('adults', v)}
-          min={0}
-          step={1}
-        />
-        <NumberField
-          label="Children"
-          value={form.children}
-          onChange={(v) => set('children', v)}
-          min={0}
-          step={1}
-        />
-        <NumberField
-          label="Target horizon (days)"
-          value={form.targetHorizonDays}
-          onChange={(v) => set('targetHorizonDays', v)}
-          min={1}
-          max={365}
-          step={1}
-          tooltip={HORIZON_SOURCE}
-        />
+    <form onSubmit={onSave} className={`overflow-hidden ${CARD_SURFACE}`}>
+      <div className="border-b border-desert-stone-lighter/40 bg-gradient-to-b from-desert-sand/50 to-transparent px-6 py-4">
+        <h2 className="text-lg font-semibold tracking-tight text-desert-green-dark">Household</h2>
+        <p className="mt-1 max-w-2xl text-sm leading-relaxed text-desert-stone-dark">
+          Children count as full persons for water and food — needs are never discounted by age
+          (FEMA/Ready.gov). The cards above show your household total; the rates below are the
+          per-person standards they multiply.
+        </p>
       </div>
 
-      <PetsField pets={pets} system={system} onChange={updatePets} />
+      <div className="space-y-7 px-6 py-6">
+        {/* Who's in the household + the target window. */}
+        <fieldset>
+          <legend className="mb-3 text-xs font-semibold uppercase tracking-wider text-desert-stone">
+            Who &amp; how long
+          </legend>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <NumberField label="Adults" value={form.adults} onChange={(v) => set('adults', v)} min={0} step={1} />
+            <NumberField
+              label="Children"
+              value={form.children}
+              onChange={(v) => set('children', v)}
+              min={0}
+              step={1}
+            />
+            <NumberField
+              label="Target horizon (days)"
+              value={form.targetHorizonDays}
+              onChange={(v) => set('targetHorizonDays', v)}
+              min={1}
+              max={365}
+              step={1}
+              tooltip={HORIZON_SOURCE}
+            />
+          </div>
+        </fieldset>
 
-      <section className="mt-6">
-        <h3 className="text-sm font-semibold text-gray-700">
-          Per-person daily needs (editable standards)
-        </h3>
-        <p className="text-xs text-gray-500 mt-0.5 mb-3">
-          What one person uses per day (FEMA/Ready.gov defaults). Your household total is computed
-          on the cards above.
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <NumberField
-            label={`Water per person (${waterUnit}/day)`}
-            value={form.waterPerPerson}
-            onChange={(v) => set('waterPerPerson', v)}
-            min={0}
-            step={0.1}
-            tooltip={SOURCE_NOTES.water}
-          />
-          <NumberField
-            label="Food per person (kcal/day)"
-            value={form.foodPerPerson}
-            onChange={(v) => set('foodPerPerson', v)}
-            min={0}
-            step={50}
-            tooltip={SOURCE_NOTES.food}
-          />
-          <NumberField
-            label="Power need (Wh/day)"
-            value={form.powerPerDay}
-            onChange={(v) => set('powerPerDay', v)}
-            min={0}
-            step={50}
-            tooltip={SOURCE_NOTES.power}
-          />
-        </div>
-      </section>
+        <PetsField pets={pets} system={system} onChange={updatePets} />
 
-      <div className="mt-6 flex items-center gap-3">
+        {/* Per-person daily needs. */}
+        <fieldset>
+          <legend className="mb-1 text-xs font-semibold uppercase tracking-wider text-desert-stone">
+            Per-person daily needs
+          </legend>
+          <p className="mb-3 text-xs text-desert-stone-dark">
+            What one person uses per day (FEMA/Ready.gov defaults). Your household total is computed
+            on the cards above.
+          </p>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <NumberField
+              label={`Water per person (${waterUnit}/day)`}
+              value={form.waterPerPerson}
+              onChange={(v) => set('waterPerPerson', v)}
+              min={0}
+              step={0.1}
+              tooltip={SOURCE_NOTES.water}
+            />
+            <NumberField
+              label="Food per person (kcal/day)"
+              value={form.foodPerPerson}
+              onChange={(v) => set('foodPerPerson', v)}
+              min={0}
+              step={50}
+              tooltip={SOURCE_NOTES.food}
+            />
+            <NumberField
+              label="Power need (Wh/day)"
+              value={form.powerPerDay}
+              onChange={(v) => set('powerPerDay', v)}
+              min={0}
+              step={50}
+              tooltip={SOURCE_NOTES.power}
+            />
+          </div>
+        </fieldset>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 border-t border-desert-stone-lighter/40 bg-desert-sand/30 px-6 py-4">
         {/* StyledButton renders type="button", so submission is wired via
             onClick rather than the form's onSubmit. The cards now recompute live
             as the user edits; "Calculate" re-runs that recompute on demand and
@@ -1272,7 +1351,11 @@ function ConfigForm({
           Save
         </StyledButton>
         {message && (
-          <span className={message.kind === 'ok' ? 'text-green-700 text-sm' : 'text-red-700 text-sm'}>
+          <span
+            className={
+              message.kind === 'ok' ? 'text-sm text-desert-olive-dark' : 'text-sm text-desert-red-dark'
+            }
+          >
             {message.text}
           </span>
         )}
@@ -1300,7 +1383,7 @@ function NumberField({
 }) {
   return (
     <div className="flex h-full flex-col">
-      <label className="mb-1 flex items-center gap-1 text-sm font-medium text-gray-700">
+      <label className="mb-1.5 flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-desert-stone-dark">
         {label}
         {tooltip && <InfoTooltip text={tooltip} />}
       </label>
@@ -1312,7 +1395,7 @@ function NumberField({
         max={max}
         step={step}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-auto block w-full rounded-md bg-white px-3 py-2 text-sm text-gray-900 border border-gray-400 focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-primary"
+        className="mt-auto block w-full rounded-lg border border-desert-stone-lighter bg-white px-3 py-2 text-sm text-desert-green-darker transition focus:border-desert-green focus:outline-none focus:ring-2 focus:ring-desert-green/20"
       />
     </div>
   )
@@ -1359,22 +1442,29 @@ function PetsField({
     onChange(next)
   }
 
+  const petInput =
+    'block rounded-lg border border-desert-stone-lighter bg-white px-3 py-1.5 text-sm text-desert-green-darker transition focus:border-desert-green focus:outline-none focus:ring-2 focus:ring-desert-green/20'
+  const petLabel = 'mb-1 text-[11px] font-semibold uppercase tracking-wide text-desert-stone'
+
   return (
-    <section className="mt-6">
-      <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-1.5">
-        <IconPaw size={15} className="text-desert-green" />
+    <fieldset className="rounded-xl border border-desert-stone-lighter/50 bg-desert-sand/30 p-4">
+      <legend className="flex items-center gap-1.5 px-2 text-xs font-semibold uppercase tracking-wider text-desert-stone">
+        <IconPaw size={14} className="text-desert-green" />
         Pets
         <InfoTooltip text={PET_SOURCE} />
-      </h3>
-      <p className="text-xs text-gray-500 mt-0.5 mb-3">
+      </legend>
+      <p className="mb-3 text-xs text-desert-stone-dark">
         Typical-adult estimates; needs vary with weight.
       </p>
 
-      <div className="space-y-3">
+      <div className="space-y-2">
         {rows.map((row, i) => (
-          <div key={i} className="flex flex-wrap items-end gap-3">
+          <div
+            key={i}
+            className="flex flex-wrap items-end gap-3 rounded-lg border border-desert-stone-lighter/50 bg-white px-3 py-2.5"
+          >
             <div className="flex flex-col">
-              <label className="mb-1 text-sm font-medium text-gray-700">Pets</label>
+              <label className={petLabel}>Count</label>
               <input
                 type="number"
                 inputMode="numeric"
@@ -1382,16 +1472,16 @@ function PetsField({
                 step={1}
                 value={String(row.count)}
                 onChange={(e) => updateRow(i, { count: toNonNegativeInt(e.target.value) })}
-                className="block w-24 rounded-md bg-white px-3 py-2 text-sm text-gray-900 border border-gray-400 focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-primary"
+                className={`${petInput} w-20`}
               />
             </div>
 
             <div className="flex flex-col">
-              <label className="mb-1 text-sm font-medium text-gray-700">Pet type</label>
+              <label className={petLabel}>Type</label>
               <select
                 value={row.type}
                 onChange={(e) => changeType(i, e.target.value as PetType)}
-                className="block rounded-md bg-white px-3 py-2 text-sm text-gray-900 border border-gray-400 focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-primary"
+                className={petInput}
               >
                 {PET_TYPES.map((t) => (
                   <option key={t} value={t}>
@@ -1404,9 +1494,7 @@ function PetsField({
             {row.type === 'other' && (
               <>
                 <div className="flex flex-col">
-                  <label className="mb-1 text-sm font-medium text-gray-700">
-                    Water/pet ({waterUnit}/day)
-                  </label>
+                  <label className={petLabel}>Water/pet ({waterUnit}/day)</label>
                   <input
                     type="number"
                     inputMode="decimal"
@@ -1418,13 +1506,11 @@ function PetsField({
                         waterL: toBase('water', toNonNegativeNumber(e.target.value), system),
                       })
                     }
-                    className="block w-32 rounded-md bg-white px-3 py-2 text-sm text-gray-900 border border-gray-400 focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-primary"
+                    className={`${petInput} w-28`}
                   />
                 </div>
                 <div className="flex flex-col">
-                  <label className="mb-1 text-sm font-medium text-gray-700">
-                    Food/pet (kcal/day)
-                  </label>
+                  <label className={petLabel}>Food/pet (kcal/day)</label>
                   <input
                     type="number"
                     inputMode="decimal"
@@ -1432,7 +1518,7 @@ function PetsField({
                     step={50}
                     value={String(round1(row.kcal ?? 0))}
                     onChange={(e) => updateRow(i, { kcal: toNonNegativeNumber(e.target.value) })}
-                    className="block w-32 rounded-md bg-white px-3 py-2 text-sm text-gray-900 border border-gray-400 focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-primary"
+                    className={`${petInput} w-28`}
                   />
                 </div>
               </>
@@ -1443,7 +1529,7 @@ function PetsField({
                 type="button"
                 onClick={() => removeRow(i)}
                 aria-label="Remove pet"
-                className="mb-1 inline-flex items-center gap-1 rounded px-2 py-2 text-sm text-red-700 hover:bg-red-50"
+                className="ml-auto mb-0.5 inline-flex items-center rounded-lg p-2 text-desert-red transition hover:bg-desert-red/10"
               >
                 <IconTrash size={16} />
               </button>
@@ -1455,11 +1541,11 @@ function PetsField({
       <button
         type="button"
         onClick={addRow}
-        className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-desert-green hover:underline"
+        className="mt-3 inline-flex items-center gap-1 rounded-lg px-2 py-1 text-sm font-semibold text-desert-green transition hover:bg-desert-green/5"
       >
         <IconPlus size={16} /> Add pet
       </button>
-    </section>
+    </fieldset>
   )
 }
 

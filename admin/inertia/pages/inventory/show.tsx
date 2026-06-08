@@ -194,29 +194,34 @@ export default function InventoryShow(props: PageProps) {
       <div className="p-4 md:p-6 max-w-3xl mx-auto">
         <Link
           href="/readiness?tab=inventory"
-          className="inline-flex items-center gap-1 text-sm text-gray-600 mb-3 hover:text-desert-green"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-desert-stone-dark transition hover:text-desert-green"
         >
           <IconArrowLeft size={16} /> Back to Inventory
         </Link>
 
-        <h1 className="text-2xl font-bold text-desert-green mb-4">
+        <h1 className="mt-3 text-3xl font-bold tracking-tight text-desert-green">
           {isCreate ? 'Add item' : item!.name}
         </h1>
+        <p className="mt-1 text-sm text-desert-stone-dark">
+          {isCreate
+            ? 'Catalog a supply or piece of gear. Map it to a resource to feed the readiness calculator.'
+            : 'Edit this item. Map it to a resource to feed the readiness calculator.'}
+        </p>
 
         {message && (
           <div
             className={[
-              'mb-4 rounded border px-3 py-2 text-sm',
+              'mt-4 rounded-lg border px-3 py-2 text-sm',
               message.kind === 'ok'
-                ? 'border-emerald-300 bg-emerald-50 text-emerald-900'
-                : 'border-red-300 bg-red-50 text-red-900',
+                ? 'border-desert-olive/40 bg-desert-olive/10 text-desert-olive-dark'
+                : 'border-desert-red/40 bg-desert-red/10 text-desert-red-dark',
             ].join(' ')}
           >
             {message.text}
           </div>
         )}
 
-        <form onSubmit={onSave} className="space-y-5">
+        <form onSubmit={onSave} className="mt-6 space-y-5">
           {/* Basics — what the item is. */}
           <SectionCard icon="IconBox" title="Basics">
             <FormGroup label="Name" required>
@@ -432,17 +437,17 @@ function round3(n: number): number {
 }
 
 /**
- * Shared input styling for the form. White input on a white section card, with a
- * desert-stone border and a desert-green focus ring, so the page → card → input
- * layering reads clearly against the beige (desert-sand) page.
+ * Shared input styling for the form. White input on the white section card, with
+ * a desert-stone border and a desert-green focus ring, so the page → card →
+ * input layering reads clearly against the beige (desert-sand) page.
  */
 const INPUT_CLASS =
-  'w-full rounded-md border border-desert-stone-lighter bg-white px-2.5 py-1.5 text-sm text-gray-900 ' +
-  'focus:border-desert-green focus:outline-none focus:ring-1 focus:ring-desert-green'
+  'w-full rounded-lg border border-desert-stone-lighter bg-white px-3 py-2 text-sm text-desert-green-darker ' +
+  'placeholder:text-desert-stone-light transition focus:border-desert-green focus:outline-none focus:ring-2 focus:ring-desert-green/20'
 
 /**
- * An elevated white section card on the beige page: a desert-green header with a
- * tabler icon (via DynamicIcon) over a low-opacity shadow, grouping a set of
+ * An elevated white section card on the beige page: a gradient-headed strip with
+ * a tinted icon chip (DynamicIcon) over a soft layered shadow, grouping a set of
  * related fields. `optional` appends a muted "(optional)" to the header.
  */
 function SectionCard({
@@ -457,13 +462,15 @@ function SectionCard({
   children: React.ReactNode
 }) {
   return (
-    <section className="rounded-xl border border-desert-stone-lighter bg-white p-4 shadow-sm sm:p-5">
-      <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-desert-green">
-        <DynamicIcon icon={icon} className="h-4 w-4 text-desert-green" />
-        {title}
-        {optional && <span className="font-normal text-desert-stone">(optional)</span>}
-      </h2>
-      <div className="space-y-3">{children}</div>
+    <section className="overflow-hidden rounded-2xl border border-desert-stone-lighter/60 bg-desert-white shadow-[0_1px_2px_rgba(66,68,32,0.04),0_6px_18px_-12px_rgba(66,68,32,0.12)]">
+      <div className="flex items-center gap-2 border-b border-desert-stone-lighter/40 bg-gradient-to-b from-desert-sand/40 to-transparent px-5 py-3">
+        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-desert-green/10 text-desert-green">
+          <DynamicIcon icon={icon} className="h-4 w-4 text-desert-green" />
+        </span>
+        <h2 className="text-sm font-semibold tracking-tight text-desert-green-dark">{title}</h2>
+        {optional && <span className="text-xs font-normal text-desert-stone">(optional)</span>}
+      </div>
+      <div className="space-y-4 p-5">{children}</div>
     </section>
   )
 }
@@ -483,7 +490,7 @@ function FormGroup({
 }) {
   return (
     <div className={className}>
-      <label className="mb-1 block text-sm font-medium text-gray-700">
+      <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-desert-stone-dark">
         {label}
         {required && <span className="ml-0.5 text-desert-red">*</span>}
       </label>
