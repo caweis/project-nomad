@@ -25,6 +25,7 @@ import CollectionUpdatesController from '#controllers/collection_updates_control
 import ZimController from '#controllers/zim_controller'
 import WorkshopController from '#controllers/workshop_controller'
 import DrugReferenceController from '#controllers/drug_reference_controller'
+import ConditionsController from '#controllers/conditions_controller'
 import router from '@adonisjs/core/services/router'
 import transmit from '@adonisjs/transmit/services/main'
 import { middleware } from './kernel.js'
@@ -84,6 +85,20 @@ router
     router.post('/ingest', [DrugReferenceController, 'ingest'])
   })
   .prefix('/api/drug-reference')
+
+// "When to use what" — condition-first medical reference (Phase 1).
+// Browse a curated grid of first-aid situations (or free-text search a
+// situation) and see the matching OTC drugs, each linking to its Drug Reference
+// detail. Read-only page GETs, ungated like the /drug-reference page GETs; the
+// /api/conditions group only reads drug_labels (no disk write), so it mirrors
+// the ungated /api/drug-reference posture.
+router.get('/conditions', [ConditionsController, 'index'])
+router.get('/conditions/:slug', [ConditionsController, 'show'])
+router
+  .group(() => {
+    router.get('/drugs', [ConditionsController, 'drugsApi'])
+  })
+  .prefix('/api/conditions')
 
 // Self-Reliance Suite — Inventory (Phase 1). The inventory LIST now lives as
 // the "Inventory" tab of the Preparedness (ReadinessController supplies the

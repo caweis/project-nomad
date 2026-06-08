@@ -168,13 +168,20 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount }: PageProps
         <div className="mb-6">
           <div className="flex flex-wrap items-start justify-between gap-3 mb-1">
             <h1 className="text-2xl font-bold">Drug Reference</h1>
-            {rowCount > 0 && (
-              <Link href="/drug-reference/interactions">
+            <div className="flex flex-wrap items-center gap-2">
+              <Link href="/conditions">
                 <StyledButton variant="outline" size="sm" onClick={() => {}}>
-                  Compare interactions
+                  Browse by situation
                 </StyledButton>
               </Link>
-            )}
+              {rowCount > 0 && (
+                <Link href="/drug-reference/interactions">
+                  <StyledButton variant="outline" size="sm" onClick={() => {}}>
+                    Compare interactions
+                  </StyledButton>
+                </Link>
+              )}
+            </div>
           </div>
           <p className="text-sm opacity-70">
             Offline FDA drug labels — Rx + OTC. Search {rowCount > 0 ? `${rowCount.toLocaleString()} labels` : 'once data is downloaded'}.

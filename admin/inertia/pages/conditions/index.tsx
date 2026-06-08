@@ -1,0 +1,189 @@
+import { useState, useCallback, useRef, useMemo } from 'react'
+import { Head, Link } from '@inertiajs/react'
+import AppLayout from '~/layouts/AppLayout'
+import SafetyBanner from '~/components/conditions/SafetyBanner'
+import ConditionCard from '~/components/conditions/ConditionCard'
+import DrugResultRow from '~/components/drug-reference/DrugResultRow'
+import type { ConditionSummary, ConditionDrugsResult } from '../../../types/conditions'
+import type { DrugSearchResult } from '../../../types/drug_reference'
+
+interface PageProps {
+  conditions: ConditionSummary[]
+  drugRowCount: number
+}
+
+const DEBOUNCE_MS = 350
+
+/**
+ * "When to use what" — condition browse page.
+ *
+ * Empty state (drugRowCount === 0): the underlying FDA drug data hasn't been
+ * downloaded, so there is nothing to match — point the user to Drug Reference.
+ * Otherwise: a prominent SafetyBanner, free-text situation search (OTC drugs via
+ * /api/conditions/drugs?q=, rendered with the shared DrugResultRow), and the
+ * curated condition grid grouped by category.
+ */
+export default function ConditionsIndex({ conditions, drugRowCount }: PageProps) {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<DrugSearchResult[]>([])
+  const [loading, setLoading] = useState(false)
+  const [searched, setSearched] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Group the curated conditions by category, preserving curated order.
+  const grouped = useMemo(() => {
+    const map = new Map<string, ConditionSummary[]>()
+    for (const c of conditions) {
+      const bucket = map.get(c.category) ?? []
+      bucket.push(c)
+      map.set(c.category, bucket)
+    }
+    return Array.from(map.entries())
+  }, [conditions])
+
+  const doSearch = useCallback(async (q: string) => {
+    if (!q.trim()) {
+      setResults([])
+      setSearched(false)
+      setError(null)
+      return
+    }
+    setLoading(true)
+    setError(null)
+    try {
+      const params = new URLSearchParams({ q })
+      const resp = await fetch(`/api/conditions/drugs?${params}`)
+      if (!resp.ok) throw new Error(`Search failed: HTTP ${resp.status}`)
+      const json = (await resp.json()) as ConditionDrugsResult
+      setResults(json.drugs ?? [])
+      setSearched(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Search failed')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  const handleQueryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value
+    setQuery(val)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => doSearch(val), DEBOUNCE_MS)
+  }
+
+  const isEmpty = drugRowCount === 0
+
+  return (
+    <AppLayout>
+      <Head title="When to use what" />
+
+      <div className="p-4 max-w-4xl mx-auto">
+        <div className="mb-6">
+          <div className="flex flex-wrap items-start justify-between gap-3 mb-1">
+            <h1 className="text-2xl font-bold">When to use what</h1>
+            <Link href="/drug-reference">
+              <span className="text-xs px-2.5 py-1 rounded border border-desert-green text-desert-green hover:bg-desert-green hover:text-white transition-colors">
+                Search drugs by name
+              </span>
+            </Link>
+          </div>
+          <p className="text-sm opacity-70">
+            Pick a situation — or search one — to see over-the-counter drugs whose FDA labels list
+            it.
+          </p>
+        </div>
+
+        {/* Safety banner — hard ship requirement, top of page. */}
+        <SafetyBanner />
+
+        {isEmpty ? (
+          // ── Empty state — no FDA data ingested yet ─────────────────────────
+          <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+            <p className="text-lg font-semibold mb-2">No drug data yet</p>
+            <p className="mb-6 opacity-70">
+              This reference matches situations against offline FDA drug labels. Download the data
+              from Drug Reference first to enable it.
+            </p>
+            <Link href="/drug-reference">
+              <span className="inline-block rounded bg-desert-green px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-desert-green-dark">
+                Go to Drug Reference
+              </span>
+            </Link>
+          </div>
+        ) : (
+          <>
+            {/* Free-text situation search */}
+            <div className="mb-6">
+              <input
+                type="text"
+                value={query}
+                onChange={handleQueryChange}
+                placeholder="Search a situation — e.g. diarrhea, poison ivy, sprain…"
+                className="w-full border border-gray-300 rounded px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-desert-green"
+              />
+            </div>
+
+            {/* Search results (free text) */}
+            {loading && results.length === 0 && (
+              <div className="text-center py-8 opacity-60">Searching…</div>
+            )}
+
+            {error && (
+              <div className="text-red-600 text-sm mb-4 p-3 bg-red-50 rounded">{error}</div>
+            )}
+
+            {searched && results.length === 0 && !loading && (
+              <div className="text-center py-8 opacity-60">
+                No over-the-counter drugs match &ldquo;{query}&rdquo;. Try a curated situation
+                below, or search by drug name in{' '}
+                <Link href="/drug-reference" className="text-desert-green hover:underline">
+                  Drug Reference
+                </Link>
+                .
+              </div>
+            )}
+
+            {results.length > 0 && (
+              <div className="mb-8">
+                <p className="text-xs text-gray-500 mb-2">
+                  {results.length} OTC result{results.length !== 1 ? 's' : ''} for &ldquo;{query}
+                  &rdquo;
+                </p>
+                <div className="divide-y divide-gray-200 border border-gray-200 rounded-lg overflow-hidden">
+                  {results.map((r) => (
+                    <DrugResultRow key={`${r.id}`} result={r} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Curated condition grid, grouped by category */}
+            {!searched && (
+              <div className="space-y-6">
+                {grouped.map(([category, items]) => (
+                  <section key={category}>
+                    <h2 className="text-sm font-semibold text-gray-700 mb-2">{category}</h2>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                      {items.map((c) => (
+                        <ConditionCard key={c.slug} condition={c} />
+                      ))}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ── Source citation ───────────────────────────────────────────────── */}
+        <footer className="mt-8 pt-4 border-t border-gray-200 text-xs text-gray-500">
+          <strong>Source:</strong> U.S. Food &amp; Drug Administration drug labeling, via{' '}
+          <strong>openFDA</strong> — public domain (CC0 1.0). NOMAD is not affiliated with or
+          endorsed by the FDA. Matches are label-indication text only; do not rely on them for
+          medical decisions.
+        </footer>
+      </div>
+    </AppLayout>
+  )
+}

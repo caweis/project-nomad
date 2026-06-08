@@ -1,0 +1,174 @@
+/**
+ * "When to use what" — pure, unit-testable helpers (Phase 1).
+ *
+ * NO Lucid / AdonisJS / HTTP imports. These take plain objects and return plain
+ * objects so they run standalone under `node --experimental-strip-types` without
+ * booting MySQL or Redis. Mirrors the `drug_labels.ts` helper convention.
+ */
+
+import type { Condition, ConditionsFile, ConditionSummary } from '../types/conditions.js'
+import type { DrugSearchResult } from '../types/drug_reference.js'
+
+/**
+ * Canonical FDA product_type strings, mirrored from `PRODUCT_TYPES` in
+ * types/drug_reference.ts. Inlined here (not imported) so this module stays a
+ * pure, value-import-free helper runnable under `node --experimental-strip-types`
+ * (which does not rewrite `.js` specifiers to `.ts` for runtime value imports).
+ * The standalone test asserts these equal PRODUCT_TYPES.OTC / .RX, so they
+ * cannot drift from the canonical source.
+ */
+export const OTC_PRODUCT_TYPE = 'HUMAN OTC DRUG'
+export const RX_PRODUCT_TYPE = 'HUMAN PRESCRIPTION DRUG'
+
+// ─── Spine parsing (fail-soft) ────────────────────────────────────────────────
+
+/** Trim a value to a non-empty string, or return null. */
+function nonEmptyString(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+/**
+ * Validate + coerce one raw condition entry into a typed Condition.
+ *
+ * Returns null when the entry is structurally unusable (missing slug/label/
+ * category, or no usable searchTerms) so the caller can skip it rather than
+ * surface a broken row. searchTerms are de-duped (case-insensitive) and
+ * stripped of empties; an entry with zero usable terms is dropped (it could
+ * never match anything).
+ */
+export function parseConditionEntry(raw: unknown): Condition | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const r = raw as Record<string, unknown>
+
+  const slug = nonEmptyString(r.slug)
+  const label = nonEmptyString(r.label)
+  const category = nonEmptyString(r.category)
+  if (!slug || !label || !category) return null
+
+  if (!Array.isArray(r.searchTerms)) return null
+  const seen = new Set<string>()
+  const searchTerms: string[] = []
+  for (const term of r.searchTerms) {
+    const clean = nonEmptyString(term)
+    if (!clean) continue
+    const key = clean.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    searchTerms.push(clean)
+  }
+  if (searchTerms.length === 0) return null
+
+  return { slug, label, category, searchTerms }
+}
+
+/**
+ * Defensively parse a ConditionsFile-shaped object.
+ *
+ * A non-object, a missing/empty `conditions` array, or every entry being
+ * malformed all yield an empty `conditions` list (with a best-effort version)
+ * rather than throwing — the page then degrades to free-text-only search
+ * instead of crashing. Duplicate slugs keep the FIRST occurrence (the curated
+ * order is intentional).
+ */
+export function parseConditionsFile(json: unknown): ConditionsFile {
+  if (typeof json !== 'object' || json === null) {
+    return { version: 'unknown', conditions: [] }
+  }
+  const root = json as Record<string, unknown>
+  const version = nonEmptyString(root.version) ?? 'unknown'
+
+  if (!Array.isArray(root.conditions)) {
+    return { version, conditions: [] }
+  }
+
+  const seenSlugs = new Set<string>()
+  const conditions: Condition[] = []
+  for (const raw of root.conditions) {
+    const entry = parseConditionEntry(raw)
+    if (!entry) continue
+    if (seenSlugs.has(entry.slug)) continue
+    seenSlugs.add(entry.slug)
+    conditions.push(entry)
+  }
+
+  return { version, conditions }
+}
+
+// ─── Lookup + projection ──────────────────────────────────────────────────────
+
+/** Find a condition by its slug (exact match). Returns null when absent. */
+export function findConditionBySlug(conditions: Condition[], slug: string): Condition | null {
+  const target = slug.trim()
+  if (!target) return null
+  return conditions.find((c) => c.slug === target) ?? null
+}
+
+/** Project a Condition to the client-facing summary (drops searchTerms). */
+export function toConditionSummary(condition: Condition): ConditionSummary {
+  return {
+    slug: condition.slug,
+    label: condition.label,
+    category: condition.category,
+  }
+}
+
+// ─── FULLTEXT query construction ──────────────────────────────────────────────
+
+/**
+ * Build a MySQL NATURAL LANGUAGE MODE query string from a condition's
+ * searchTerms.
+ *
+ * - Multi-word terms are wrapped in double quotes so they match as a phrase
+ *   ("sore throat") rather than as two loose tokens — this tightens precision,
+ *   the trade-off the spec calls out for relevance-vs-precision.
+ * - Single-word terms are passed through bare.
+ * - Internal double-quotes inside a term are stripped (they would break the
+ *   phrase quoting).
+ * - Terms are de-duped (case-insensitive) and empties dropped. An all-empty
+ *   input yields '' so the caller can short-circuit to the LIKE fallback.
+ *
+ * NATURAL LANGUAGE MODE treats the space-joined terms as an OR-ish relevance
+ * query, which is what we want: any synonym can surface a matching label, ranked
+ * by relevance.
+ */
+export function buildIndicationQuery(searchTerms: string[]): string {
+  const seen = new Set<string>()
+  const parts: string[] = []
+  for (const raw of searchTerms) {
+    if (typeof raw !== 'string') continue
+    const term = raw.trim().replace(/"/g, '')
+    if (term.length === 0) continue
+    const key = term.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    parts.push(/\s/.test(term) ? `"${term}"` : term)
+  }
+  return parts.join(' ')
+}
+
+// ─── Result ordering ──────────────────────────────────────────────────────────
+
+/**
+ * Stable-sort drug results OTC-first.
+ *
+ * The condition browser is consumer-facing, so over-the-counter products are
+ * the most actionable and lead. Order within each tier (OTC → other → Rx) is
+ * preserved from the input (which the service already relevance-ranks), so this
+ * only re-buckets by product_type without disturbing relevance order.
+ *
+ * Bucketing: OTC = 0, anything not Rx-and-not-OTC = 1, Rx = 2. Returns a new
+ * array; the input is not mutated.
+ */
+export function orderOtcFirst(drugs: DrugSearchResult[]): DrugSearchResult[] {
+  const rank = (d: DrugSearchResult): number => {
+    if (d.product_type === OTC_PRODUCT_TYPE) return 0
+    if (d.product_type === RX_PRODUCT_TYPE) return 2
+    return 1
+  }
+  return drugs
+    .map((d, i) => ({ d, i }))
+    .sort((a, b) => rank(a.d) - rank(b.d) || a.i - b.i)
+    .map((x) => x.d)
+}

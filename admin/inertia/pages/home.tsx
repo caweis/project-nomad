@@ -1,6 +1,7 @@
 import {
   IconBolt,
   IconBox,
+  IconFirstAidKit,
   IconHelp,
   IconMapRoute,
   IconPill,
@@ -76,6 +77,21 @@ const DRUG_REFERENCE_ITEM = {
   icon: <IconPill size={48} />,
   installed: true,
   displayOrder: 6,
+  poweredBy: null,
+}
+
+// When to use what — condition-first medical reference (Core Capability).
+// displayOrder 6.5: between Drug Reference (6) and Preparedness (7). Browse a
+// curated grid of first-aid situations (or search one) and see the matching
+// OTC drugs, each linking into Drug Reference.
+const WHEN_TO_USE_WHAT_ITEM = {
+  label: 'When to use what',
+  to: '/conditions',
+  target: '',
+  description: 'Pick a situation — burn, fever, diarrhea — and see what OTC drugs treat it',
+  icon: <IconFirstAidKit size={48} />,
+  installed: true,
+  displayOrder: 6.5,
   poweredBy: null,
 }
 
@@ -218,6 +234,9 @@ export default function Home(props: {
 
   // Add Drug Reference as a Core Capability (offline FDA drug labels, v1)
   items.push(DRUG_REFERENCE_ITEM)
+
+  // Add "When to use what" — condition-first reference over the FDA labels
+  items.push(WHEN_TO_USE_WHAT_ITEM)
 
   // Add Preparedness as a Core Capability (Self-Reliance Suite Phases 1 + 2 + 3;
   // the former standalone Inventory tile is now its first tab)
