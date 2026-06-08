@@ -20,11 +20,6 @@ export const searchDrugValidator = vine.compile(
   })
 )
 
-/** POST /api/drug-reference/download — no body required; just trigger. */
-export const downloadDrugValidator = vine.compile(
-  vine.object({})
-)
-
 /**
  * GET /api/drug-reference/interactions?ids=1,2,3
  *

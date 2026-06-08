@@ -102,7 +102,9 @@ export default class WorkshopController {
     if (filters.search) {
       const term = `%${filters.search}%`
       query.where((q) => {
-        q.whereILike('name', term).orWhereILike('description', term)
+        q.whereILike('name', term)
+          .orWhereILike('description', term)
+          .orWhereILike('pdf_text_extract', term)
       })
     }
 
@@ -222,7 +224,11 @@ export default class WorkshopController {
       // Pass a boolean flag rather than the full 20 KB text in the page payload.
       // The frontend lazy-fetches /api/workshop/files/:id/pdf-text when the
       // disclosure is opened (spec open-q #2 — lazy fetch).
-      has_pdf_text: typeof row.pdf_text_extract === 'string' && row.pdf_text_extract.length > 0,
+      // Gated on file_type === 'pdf' so non-PDF rows never advertise a text extract.
+      has_pdf_text:
+        row.file_type === 'pdf' &&
+        typeof row.pdf_text_extract === 'string' &&
+        row.pdf_text_extract.length > 0,
       file_available: existsSync(join(StlScannerService.LIBRARY_ROOT, row.path)),
       enums: this.enumsForUi(),
       rights_acknowledged: await this.rightsAcknowledged(),
@@ -297,14 +303,19 @@ export default class WorkshopController {
     if (payload.name !== undefined) row.name = payload.name
     if (payload.category !== undefined) row.category = payload.category
     if (payload.tags !== undefined) row.tags = payload.tags
-    if (payload.material !== undefined) row.material = payload.material
-    if (payload.print_time_minutes !== undefined)
-      row.print_time_minutes = payload.print_time_minutes
-    if (payload.infill_pct !== undefined) row.infill_pct = payload.infill_pct
-    if (payload.difficulty !== undefined) row.difficulty = payload.difficulty
     if (payload.description !== undefined) row.description = payload.description
     if (payload.source_url !== undefined) row.source_url = payload.source_url
     if (payload.license !== undefined) row.license = payload.license
+
+    // STL-only metadata — skip silently for non-STL types so a mis-submitted
+    // payload can't corrupt fields that don't apply to the file's actual type.
+    if (row.file_type === 'stl') {
+      if (payload.material !== undefined) row.material = payload.material
+      if (payload.print_time_minutes !== undefined)
+        row.print_time_minutes = payload.print_time_minutes
+      if (payload.infill_pct !== undefined) row.infill_pct = payload.infill_pct
+      if (payload.difficulty !== undefined) row.difficulty = payload.difficulty
+    }
 
     row.metadata_pending = !StlFile.isMetadataComplete({
       file_type: row.file_type,
@@ -688,6 +699,16 @@ export default class WorkshopController {
       const thumbAbs = join(StlScannerService.LIBRARY_ROOT, row.thumbnail_path)
       await fs.unlink(thumbAbs).catch(() => {})
     }
+    // Best-effort cleanup of the pdf-pages preview directory for this row.
+    // The directory only exists for PDF rows, but rm with force:true on a
+    // non-existent path is a no-op, so this is safe for all file types.
+    const pdfPagesDir = join(
+      StlScannerService.LIBRARY_ROOT,
+      StlScannerService.THUMBNAIL_DIR,
+      'pdf-pages',
+      String(row.id)
+    )
+    await fs.rm(pdfPagesDir, { recursive: true, force: true }).catch(() => {})
   }
 
   private async rightsAcknowledged(): Promise<boolean> {

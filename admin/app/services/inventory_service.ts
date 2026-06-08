@@ -218,7 +218,7 @@ export class InventoryService {
       .whereNotNull('resource_type')
       .where('resource_contribution', '>', 0)
       .whereNotNull('expiry_date')
-      .where('expiry_date', '<', sqlDate)
+      .where('expiry_date', '<=', sqlDate)
       .orderBy('expiry_date', 'asc')
   }
 }

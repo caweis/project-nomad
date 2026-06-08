@@ -309,11 +309,25 @@ export class StlScannerService {
       existing.file_size_bytes = size
       existing.file_hash = hash
       existing.last_indexed_at = DateTime.now()
+
+      // Recompute file_type from the current extension — a file renamed on
+      // disk (e.g. .stl → .pdf) would otherwise keep a stale type forever.
+      const newFileType = classifyFileType(extname(relPath).toLowerCase()) ?? 'stl'
+      const typeChanged = existing.file_type !== newFileType
+      existing.file_type = newFileType
+
       if (hashChanged) {
         // File contents changed — drop the old thumbnail so it regenerates.
         existing.thumbnail_path = null
         existing.thumbnail_failed = false
+        // Also null the extracted text so it re-extracts on the next thumbnail pass.
+        existing.pdf_text_extract = null
       }
+      if (typeChanged && newFileType !== 'pdf') {
+        // File is no longer a PDF — text extract is no longer applicable.
+        existing.pdf_text_extract = null
+      }
+
       await existing.save()
       return 'updated'
     }
@@ -364,6 +378,14 @@ export class StlScannerService {
           const thumbAbs = join(StlScannerService.LIBRARY_ROOT, row.thumbnail_path)
           await fs.unlink(thumbAbs).catch(() => {})
         }
+        // Best-effort cleanup of the pdf-pages preview directory for this row.
+        const pdfPagesDir = join(
+          StlScannerService.LIBRARY_ROOT,
+          StlScannerService.THUMBNAIL_DIR,
+          'pdf-pages',
+          String(row.id)
+        )
+        await fs.rm(pdfPagesDir, { recursive: true, force: true }).catch(() => {})
         await row.delete()
         removed++
       }

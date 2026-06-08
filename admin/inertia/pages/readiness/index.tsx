@@ -1029,15 +1029,13 @@ function ConfigForm({
 
     // Build the base-unit needs JSON. food/power are system-agnostic; water
     // converts from the display unit back to liters.
+    // needs.power is always 0 — no per-person standard exists; the user's
+    // daily Wh load lives in readiness.powerPerDay instead.
     const needs = {
       water: toBase('water', toNonNegativeNumber(form.waterPerPerson), system),
       food: toNonNegativeNumber(form.foodPerPerson),
-      power: toNonNegativeNumber(form.powerPerDay) > 0 ? toNonNegativeNumber(form.powerPerDay) : 0,
+      power: 0,
     }
-
-    // The per-person power need stays 0 (no per-person standard); the user's
-    // daily Wh load lives in readiness.powerPerDay. Keep needs.power at 0.
-    needs.power = 0
 
     const updates: { key: string; value: string }[] = [
       { key: 'readiness.householdAdults', value: String(toNonNegativeInt(form.adults)) },
@@ -1193,8 +1191,8 @@ function NumberField({
   tooltip?: string
 }) {
   return (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
+    <div className="flex h-full flex-col">
+      <label className="mb-1 flex items-center gap-1 text-sm font-medium text-gray-700">
         {label}
         {tooltip && <InfoTooltip text={tooltip} />}
       </label>
@@ -1206,7 +1204,7 @@ function NumberField({
         max={max}
         step={step}
         onChange={(e) => onChange(e.target.value)}
-        className="block w-full rounded-md bg-white px-3 py-2 text-sm text-gray-900 border border-gray-400 focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-primary"
+        className="mt-auto block w-full rounded-md bg-white px-3 py-2 text-sm text-gray-900 border border-gray-400 focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-primary"
       />
     </div>
   )

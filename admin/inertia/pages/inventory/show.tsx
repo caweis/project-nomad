@@ -269,7 +269,10 @@ export default function InventoryShow(props: PageProps) {
               />
             </FormGroup>
 
-            <FormGroup label="Unit (e.g. gal, cans — consumables only)">
+            <FormGroup
+              label="Unit"
+              hint="For consumables (e.g. gal, cans). Leave blank for gear."
+            >
               <input
                 type="text"
                 value={form.unit}
@@ -279,7 +282,6 @@ export default function InventoryShow(props: PageProps) {
                   unitManuallyEdited.current = true
                   set('unit', e.target.value)
                 }}
-                required
                 className="w-full rounded border border-gray-300 px-2 py-1.5"
               />
             </FormGroup>
@@ -304,7 +306,10 @@ export default function InventoryShow(props: PageProps) {
               </datalist>
             </FormGroup>
 
-            <FormGroup label="Restock threshold (low-stock flag)">
+            <FormGroup
+              label="Restock threshold"
+              hint="Flags low stock when quantity drops to this."
+            >
               <input
                 type="number"
                 min={0}
@@ -417,11 +422,20 @@ function round3(n: number): number {
   return Number(n.toFixed(3))
 }
 
-function FormGroup({ label, children }: { label: string; children: React.ReactNode }) {
+function FormGroup({
+  label,
+  hint,
+  children,
+}: {
+  label: string
+  hint?: string
+  children: React.ReactNode
+}) {
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <label className="mb-1 block text-sm font-medium text-gray-700">{label}</label>
       {children}
+      {hint && <p className="mt-1 text-xs text-gray-500">{hint}</p>}
     </div>
   )
 }

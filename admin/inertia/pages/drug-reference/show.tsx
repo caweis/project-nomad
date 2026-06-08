@@ -160,6 +160,7 @@ export default function DrugReferenceShow({ label }: PageProps) {
           {label.set_id && (
             <p className="font-mono opacity-60">set_id: {label.set_id}</p>
           )}
+          <p className="opacity-60">Last refreshed: {label.ingested_at.slice(0, 10)}</p>
         </footer>
       </div>
     </AppLayout>

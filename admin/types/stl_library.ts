@@ -85,6 +85,12 @@ export interface StlFileSlim {
 
 /**
  * Full record returned by the detail endpoint.
+ *
+ * Intentionally omits `pdf_text_extract`: it can be up to 20 KB and is only
+ * needed when the user opens the PDF-text disclosure, so the detail view
+ * lazy-fetches it from `/api/workshop/files/:id/pdf-text` instead of shipping
+ * it in this payload. The page surfaces a `has_pdf_text` boolean to decide
+ * whether to offer that disclosure.
  */
 export interface StlFileDetail extends StlFileSlim {
   tags: string[]

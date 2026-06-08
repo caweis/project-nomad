@@ -81,7 +81,7 @@ export default function WorkshopFilters({ filters, enums, total }: Props) {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="name or description"
+            placeholder="name, description, or PDF text"
             className="flex-1 min-w-0 rounded border border-gray-300 px-2 py-1 text-sm"
           />
           <button
