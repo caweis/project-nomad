@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Head, Link, router } from '@inertiajs/react'
 import AppLayout from '~/layouts/AppLayout'
 import StyledButton from '~/components/StyledButton'
+import DynamicIcon, { type DynamicIconName } from '~/components/DynamicIcon'
 import { IconArrowLeft, IconTrash } from '@tabler/icons-react'
 import { displayUnitLabel, fromBase, toBase } from '../../../util/units'
 import type {
@@ -215,139 +216,145 @@ export default function InventoryShow(props: PageProps) {
           </div>
         )}
 
-        <form onSubmit={onSave} className="space-y-4">
-          <FormGroup label="Name *">
-            <input
-              type="text"
-              value={form.name}
-              onChange={(e) => set('name', e.target.value)}
-              required
-              className="w-full rounded border border-gray-300 px-2 py-1.5"
-            />
-          </FormGroup>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <FormGroup label="Category *">
-              <select
-                value={form.category}
-                onChange={(e) => set('category', e.target.value as InventoryCategory)}
-                required
-                className="w-full rounded border border-gray-300 px-2 py-1.5"
-              >
-                {props.enums.categories.map((c) => (
-                  <option key={c.value} value={c.value}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
-            </FormGroup>
-
-            <FormGroup label="Condition">
-              <select
-                value={form.condition}
-                onChange={(e) => set('condition', e.target.value)}
-                className="w-full rounded border border-gray-300 px-2 py-1.5 capitalize"
-              >
-                <option value="">— none —</option>
-                {props.enums.conditions.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-            </FormGroup>
-
-            <FormGroup label="Quantity *">
-              <input
-                type="number"
-                min={0}
-                step="0.001"
-                value={form.quantity}
-                onChange={(e) => set('quantity', e.target.value)}
-                required
-                className="w-full rounded border border-gray-300 px-2 py-1.5"
-              />
-            </FormGroup>
-
-            <FormGroup
-              label="Unit"
-              hint="For consumables (e.g. gal, cans). Leave blank for gear."
-            >
+        <form onSubmit={onSave} className="space-y-5">
+          {/* Basics — what the item is. */}
+          <SectionCard icon="IconBox" title="Basics">
+            <FormGroup label="Name" required>
               <input
                 type="text"
-                value={form.unit}
-                onChange={(e) => {
-                  // A hand-typed unit takes ownership of the field; the
-                  // resource-type/system auto-fill backs off from here on.
-                  unitManuallyEdited.current = true
-                  set('unit', e.target.value)
-                }}
-                className="w-full rounded border border-gray-300 px-2 py-1.5"
+                value={form.name}
+                onChange={(e) => set('name', e.target.value)}
+                required
+                className={INPUT_CLASS}
               />
             </FormGroup>
 
-            <FormGroup label="Location">
-              {/* Combobox: a free-text input wired to a datalist of known
-                  locations. Picking a suggestion fills the field; typing a
-                  brand-new value just saves on the item and shows up as a
-                  suggestion next time. Stays optional/nullable as before. */}
-              <input
-                type="text"
-                list="inventory-locations"
-                value={form.location}
-                onChange={(e) => set('location', e.target.value)}
-                placeholder="garage shelf B"
-                className="w-full rounded border border-gray-300 px-2 py-1.5"
-              />
-              <datalist id="inventory-locations">
-                {props.locations.map((loc) => (
-                  <option key={loc} value={loc} />
-                ))}
-              </datalist>
-            </FormGroup>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <FormGroup label="Category" required>
+                <select
+                  value={form.category}
+                  onChange={(e) => set('category', e.target.value as InventoryCategory)}
+                  required
+                  className={INPUT_CLASS}
+                >
+                  {props.enums.categories.map((c) => (
+                    <option key={c.value} value={c.value}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+              </FormGroup>
 
-            <FormGroup
-              label="Restock threshold"
-              hint="Flags low stock when quantity drops to this."
-            >
-              <input
-                type="number"
-                min={0}
-                step="0.001"
-                value={form.restock_threshold}
-                onChange={(e) => set('restock_threshold', e.target.value)}
-                className="w-full rounded border border-gray-300 px-2 py-1.5"
-              />
-            </FormGroup>
+              <FormGroup label="Condition">
+                <select
+                  value={form.condition}
+                  onChange={(e) => set('condition', e.target.value)}
+                  className={`${INPUT_CLASS} capitalize`}
+                >
+                  <option value="">— none —</option>
+                  {props.enums.conditions.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </FormGroup>
+            </div>
 
-            <FormGroup label="Expiry date">
-              <input
-                type="date"
-                value={form.expiry_date}
-                onChange={(e) => set('expiry_date', e.target.value)}
-                className="w-full rounded border border-gray-300 px-2 py-1.5"
+            <FormGroup label="Notes">
+              <textarea
+                value={form.notes}
+                onChange={(e) => set('notes', e.target.value)}
+                rows={3}
+                className={INPUT_CLASS}
               />
             </FormGroup>
-          </div>
+          </SectionCard>
 
-          <FormGroup label="Notes">
-            <textarea
-              value={form.notes}
-              onChange={(e) => set('notes', e.target.value)}
-              rows={3}
-              className="w-full rounded border border-gray-300 px-2 py-1.5"
-            />
-          </FormGroup>
+          {/* Stock & expiry — how much, where, and how long it lasts. */}
+          <SectionCard icon="IconStack2" title="Stock & expiry">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <FormGroup label="Quantity" required>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.001"
+                  value={form.quantity}
+                  onChange={(e) => set('quantity', e.target.value)}
+                  required
+                  className={INPUT_CLASS}
+                />
+              </FormGroup>
 
-          <fieldset className="rounded-lg border border-gray-200 p-4 space-y-3">
-            <legend className="px-1 text-sm font-semibold text-gray-700">
-              Readiness mapping (optional)
-            </legend>
-            <p className="text-xs text-gray-500">
+              <FormGroup
+                label="Unit"
+                hint="For consumables (e.g. gal, cans). Leave blank for gear."
+              >
+                <input
+                  type="text"
+                  value={form.unit}
+                  onChange={(e) => {
+                    // A hand-typed unit takes ownership of the field; the
+                    // resource-type/system auto-fill backs off from here on.
+                    unitManuallyEdited.current = true
+                    set('unit', e.target.value)
+                  }}
+                  className={INPUT_CLASS}
+                />
+              </FormGroup>
+
+              <FormGroup
+                label="Restock threshold"
+                hint="Flags low stock when quantity drops to this."
+              >
+                <input
+                  type="number"
+                  min={0}
+                  step="0.001"
+                  value={form.restock_threshold}
+                  onChange={(e) => set('restock_threshold', e.target.value)}
+                  className={INPUT_CLASS}
+                />
+              </FormGroup>
+
+              <FormGroup label="Expiry date">
+                <input
+                  type="date"
+                  value={form.expiry_date}
+                  onChange={(e) => set('expiry_date', e.target.value)}
+                  className={INPUT_CLASS}
+                />
+              </FormGroup>
+
+              <FormGroup label="Location" className="sm:col-span-2">
+                {/* Combobox: a free-text input wired to a datalist of known
+                    locations. Picking a suggestion fills the field; typing a
+                    brand-new value just saves on the item and shows up as a
+                    suggestion next time. Stays optional/nullable as before. */}
+                <input
+                  type="text"
+                  list="inventory-locations"
+                  value={form.location}
+                  onChange={(e) => set('location', e.target.value)}
+                  placeholder="garage shelf B"
+                  className={INPUT_CLASS}
+                />
+                <datalist id="inventory-locations">
+                  {props.locations.map((loc) => (
+                    <option key={loc} value={loc} />
+                  ))}
+                </datalist>
+              </FormGroup>
+            </div>
+          </SectionCard>
+
+          {/* Readiness mapping — optional link into the readiness calculator. */}
+          <SectionCard icon="IconShieldCheck" title="Readiness mapping" optional>
+            <p className="text-xs text-desert-stone">
               Map this item to a resource so it counts toward the readiness calculator. The
               contribution is the total this whole entry provides, shown in your current units.
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <FormGroup label="Resource type">
                 <select
                   value={form.resource_type}
@@ -358,7 +365,7 @@ export default function InventoryShow(props: PageProps) {
                     unitManuallyEdited.current = false
                     set('resource_type', e.target.value)
                   }}
-                  className="w-full rounded border border-gray-300 px-2 py-1.5 capitalize"
+                  className={`${INPUT_CLASS} capitalize`}
                 >
                   <option value="">— not mapped —</option>
                   {props.enums.resource_types.map((r) => (
@@ -380,11 +387,11 @@ export default function InventoryShow(props: PageProps) {
                   onChange={(e) => set('resource_contribution', e.target.value)}
                   disabled={form.resource_type === ''}
                   placeholder={form.resource_type === '' ? 'select a resource first' : ''}
-                  className="w-full rounded border border-gray-300 px-2 py-1.5 disabled:bg-gray-50"
+                  className={`${INPUT_CLASS} disabled:bg-desert-sand`}
                 />
               </FormGroup>
             </div>
-          </fieldset>
+          </SectionCard>
 
           <div className="flex items-center gap-3">
             {/* StyledButton renders type="button", so it never triggers the
@@ -411,7 +418,9 @@ export default function InventoryShow(props: PageProps) {
             )}
           </div>
 
-          <p className="text-xs text-gray-500">* required.</p>
+          <p className="text-xs text-desert-stone">
+            <span className="text-desert-red">*</span> required.
+          </p>
         </form>
       </div>
     </AppLayout>
@@ -422,20 +431,64 @@ function round3(n: number): number {
   return Number(n.toFixed(3))
 }
 
+/**
+ * Shared input styling for the form. White input on a white section card, with a
+ * desert-stone border and a desert-green focus ring, so the page → card → input
+ * layering reads clearly against the beige (desert-sand) page.
+ */
+const INPUT_CLASS =
+  'w-full rounded-md border border-desert-stone-lighter bg-white px-2.5 py-1.5 text-sm text-gray-900 ' +
+  'focus:border-desert-green focus:outline-none focus:ring-1 focus:ring-desert-green'
+
+/**
+ * An elevated white section card on the beige page: a desert-green header with a
+ * tabler icon (via DynamicIcon) over a low-opacity shadow, grouping a set of
+ * related fields. `optional` appends a muted "(optional)" to the header.
+ */
+function SectionCard({
+  icon,
+  title,
+  optional,
+  children,
+}: {
+  icon: DynamicIconName
+  title: string
+  optional?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <section className="rounded-xl border border-desert-stone-lighter bg-white p-4 shadow-sm sm:p-5">
+      <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-desert-green">
+        <DynamicIcon icon={icon} className="h-4 w-4 text-desert-green" />
+        {title}
+        {optional && <span className="font-normal text-desert-stone">(optional)</span>}
+      </h2>
+      <div className="space-y-3">{children}</div>
+    </section>
+  )
+}
+
 function FormGroup({
   label,
   hint,
+  required,
+  className,
   children,
 }: {
   label: string
   hint?: string
+  required?: boolean
+  className?: string
   children: React.ReactNode
 }) {
   return (
-    <div>
-      <label className="mb-1 block text-sm font-medium text-gray-700">{label}</label>
+    <div className={className}>
+      <label className="mb-1 block text-sm font-medium text-gray-700">
+        {label}
+        {required && <span className="ml-0.5 text-desert-red">*</span>}
+      </label>
       {children}
-      {hint && <p className="mt-1 text-xs text-gray-500">{hint}</p>}
+      {hint && <p className="mt-1 text-xs text-desert-stone">{hint}</p>}
     </div>
   )
 }
