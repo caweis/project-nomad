@@ -86,7 +86,7 @@ const DRUG_REFERENCE_ITEM = {
 // OTC drugs, each linking into Drug Reference.
 const WHEN_TO_USE_WHAT_ITEM = {
   label: 'When to use what',
-  to: '/conditions',
+  to: '/drug-reference?tab=conditions',
   target: '',
   description: 'Pick a situation — burn, fever, diarrhea — and see what OTC drugs treat it',
   icon: <IconFirstAidKit size={48} />,

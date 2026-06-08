@@ -1,6 +1,7 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import logger from '@adonisjs/core/services/logger'
 import { DrugReferenceService } from '#services/drug_reference_service'
+import { ConditionService } from '#services/condition_service'
 import { searchDrugValidator, interactionsValidator } from '#validators/drug_reference'
 import { parseCompareIds } from '../../util/compare_ids.js'
 
@@ -22,18 +23,22 @@ export default class DrugReferenceController {
   /**
    * GET /drug-reference — search page.
    * Passes the current row count and ingest status so the empty-state
-   * "download first" prompt can render server-side.
+   * "download first" prompt can render server-side. Also passes the curated
+   * condition spine so the "When to use what" tab (folded in from the former
+   * /conditions page) can render server-side. `?tab=conditions` deep-links to it.
    */
   async index({ inertia }: HttpContext) {
     try {
-      const [status, count] = await Promise.all([
+      const [status, count, conditions] = await Promise.all([
         this.service.getIngestStatus(),
         this.service.rowCount(),
+        Promise.resolve(new ConditionService().listConditions()),
       ])
 
       return inertia.render('drug-reference/index', {
         ingestStatus: status,
         rowCount: count,
+        conditions,
       })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -41,6 +46,7 @@ export default class DrugReferenceController {
       return inertia.render('drug-reference/index', {
         ingestStatus: null,
         rowCount: 0,
+        conditions: [],
       })
     }
   }

@@ -19,23 +19,14 @@ export default class ConditionsController {
   }
 
   /**
-   * GET /conditions — browse page.
-   * Renders the curated condition grid + the current drug row count so the
-   * empty-state ("download FDA data in Drug Reference first") can render
-   * server-side, matching DrugReferenceController.index.
+   * GET /conditions — legacy browse route.
+   * "When to use what" now lives as a tab on the Drug Reference page, so the
+   * standalone browse route permanently redirects to that tab. Any old bookmark
+   * or in-app link lands on the same content. The condition detail route
+   * (/conditions/:slug) is unchanged — condition cards still deep-link to it.
    */
-  async index({ inertia }: HttpContext) {
-    try {
-      const [conditions, drugRowCount] = await Promise.all([
-        Promise.resolve(this.service.listConditions()),
-        this.service.drugRowCount(),
-      ])
-      return inertia.render('conditions/index', { conditions, drugRowCount })
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      logger.error(`[ConditionsController] index failed: ${msg}`)
-      return inertia.render('conditions/index', { conditions: [], drugRowCount: 0 })
-    }
+  async index({ response }: HttpContext) {
+    return response.redirect('/drug-reference?tab=conditions')
   }
 
   /**

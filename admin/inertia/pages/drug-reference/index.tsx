@@ -4,15 +4,28 @@ import AppLayout from '~/layouts/AppLayout'
 import StyledButton from '~/components/StyledButton'
 import DrugResultRow from '~/components/drug-reference/DrugResultRow'
 import IngestStatus from '~/components/drug-reference/IngestStatus'
+import ConditionsBrowse from '~/components/conditions/ConditionsBrowse'
 import type { DrugSearchResult, DrugIngestStatus } from '../../../types/drug_reference'
+import type { ConditionSummary } from '../../../types/conditions'
 import { PRODUCT_TYPES } from '../../../types/drug_reference'
 
 interface PageProps {
   ingestStatus: DrugIngestStatus | null
   rowCount: number
+  conditions: ConditionSummary[]
 }
 
+type DrugTab = 'search' | 'conditions'
+
 const DEBOUNCE_MS = 350
+
+/** Read the initial tab from ?tab= so /drug-reference?tab=conditions deep-links. */
+function initialTab(): DrugTab {
+  if (typeof window === 'undefined') return 'search'
+  return new URLSearchParams(window.location.search).get('tab') === 'conditions'
+    ? 'conditions'
+    : 'search'
+}
 
 /**
  * Drug Reference search page.
@@ -21,7 +34,8 @@ const DEBOUNCE_MS = 350
  * the IngestStatus component. Once data is loaded, shows the search box,
  * OTC/Rx filter pills, collapsed results, and pagination.
  */
-export default function DrugReferenceIndex({ ingestStatus, rowCount }: PageProps) {
+export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions }: PageProps) {
+  const [tab, setTab] = useState<DrugTab>(initialTab)
   const [query, setQuery] = useState('')
   const [productType, setProductType] = useState<string | null>(null)
   const [scope, setScope] = useState<'name' | 'indication'>('name')
@@ -160,35 +174,75 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount }: PageProps
 
   const isEmpty = rowCount === 0
 
+  // Switch tabs and keep the URL's ?tab= in sync (without a server round-trip) so
+  // the conditions tab stays deep-linkable and refresh/back land where expected.
+  const switchTab = (next: DrugTab) => {
+    setTab(next)
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href)
+      if (next === 'conditions') url.searchParams.set('tab', 'conditions')
+      else url.searchParams.delete('tab')
+      window.history.replaceState(window.history.state, '', url.toString())
+    }
+  }
+
+  const tabClass = (active: boolean) =>
+    `px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+      active
+        ? 'border-desert-green text-desert-green'
+        : 'border-transparent text-gray-500 hover:text-desert-green hover:border-desert-green-lighter'
+    }`
+
   return (
     <AppLayout>
       <Head title="Drug Reference" />
 
       <div className="p-4 max-w-4xl mx-auto">
-        <div className="mb-6">
+        <div className="mb-4">
           <div className="flex flex-wrap items-start justify-between gap-3 mb-1">
             <h1 className="text-2xl font-bold">Drug Reference</h1>
-            <div className="flex flex-wrap items-center gap-2">
-              <Link href="/conditions">
+            {tab === 'search' && rowCount > 0 && (
+              <Link href="/drug-reference/interactions">
                 <StyledButton variant="outline" size="sm" onClick={() => {}}>
-                  Browse by situation
+                  Compare interactions
                 </StyledButton>
               </Link>
-              {rowCount > 0 && (
-                <Link href="/drug-reference/interactions">
-                  <StyledButton variant="outline" size="sm" onClick={() => {}}>
-                    Compare interactions
-                  </StyledButton>
-                </Link>
-              )}
-            </div>
+            )}
           </div>
           <p className="text-sm opacity-70">
-            Offline FDA drug labels — Rx + OTC. Search {rowCount > 0 ? `${rowCount.toLocaleString()} labels` : 'once data is downloaded'}.
+            {tab === 'search'
+              ? `Offline FDA drug labels — Rx + OTC. Search ${
+                  rowCount > 0 ? `${rowCount.toLocaleString()} labels` : 'once data is downloaded'
+                }.`
+              : 'Find the right over-the-counter drug for a situation, from offline FDA labels.'}
           </p>
         </div>
 
-        {isEmpty ? (
+        {/* Tab bar */}
+        <div className="flex gap-1 border-b border-gray-200 mb-6" role="tablist">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'search'}
+            className={tabClass(tab === 'search')}
+            onClick={() => switchTab('search')}
+          >
+            Search
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'conditions'}
+            className={tabClass(tab === 'conditions')}
+            onClick={() => switchTab('conditions')}
+          >
+            When to use what
+          </button>
+        </div>
+
+        {tab === 'conditions' ? (
+          <ConditionsBrowse conditions={conditions} drugRowCount={rowCount} />
+        ) : isEmpty ? (
           // ── Empty state ────────────────────────────────────────────────────
           <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
             <p className="text-lg font-semibold mb-2">No FDA drug data yet</p>
@@ -383,13 +437,16 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount }: PageProps
           </>
         )}
 
-        {/* ── Source citation (CC0, no-endorsement) ───────────────────────── */}
-        <footer className="mt-8 pt-4 border-t border-gray-200 text-xs text-gray-500">
-          <strong>Source:</strong> U.S. Food &amp; Drug Administration drug labeling, via{' '}
-          <strong>openFDA</strong> — public domain (CC0 1.0). NOMAD is not affiliated with or
-          endorsed by the FDA. Label data is provided as-is; do not rely on it for medical
-          decisions.
-        </footer>
+        {/* ── Source citation (CC0, no-endorsement) — search tab only; the
+              conditions tab carries its own citation footer. ─────────────── */}
+        {tab === 'search' && (
+          <footer className="mt-8 pt-4 border-t border-gray-200 text-xs text-gray-500">
+            <strong>Source:</strong> U.S. Food &amp; Drug Administration drug labeling, via{' '}
+            <strong>openFDA</strong> — public domain (CC0 1.0). NOMAD is not affiliated with or
+            endorsed by the FDA. Label data is provided as-is; do not rely on it for medical
+            decisions.
+          </footer>
+        )}
       </div>
     </AppLayout>
   )
