@@ -15,6 +15,7 @@ export const SETTINGS_KEYS: KVStoreKey[] = [
   'readiness.householdChildren',
   'readiness.needs',
   'readiness.targetHorizonDays',
+  'readiness.pets',
   'readiness.petWaterPerDay',
   'readiness.petFoodPerDay',
   'readiness.powerPerDay',

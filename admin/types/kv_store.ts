@@ -41,12 +41,22 @@ export const KV_STORE_SCHEMA = {
   // Supply horizon in days. Default '14' (shelter-at-home; American Red Cross +
   // FEMA FA-321 two-week supply). 3-day floor applies to evacuation.
   'readiness.targetHorizonDays': 'string',
-  // Total daily water intake for ALL pets combined, in base units (L/day),
-  // user-entered. No authoritative per-pet figure exists (AVMA gives durations
-  // only), so the user supplies their pets' normal intake. Default '0'.
+  // The household's pets as typed entries — a JSON array of { type, count }
+  // (for type 'other' also per-pet waterL + kcal). KV is schemaless, so this is
+  // a JSON string parsed defensively (parsePets) with a [] fallback. The
+  // calculator multiplies each entry by app/data/pet_needs.ts (typical-adult
+  // per-pet/day water L + food kcal) to derive the total pet water/food load
+  // fed into the readiness compute. Replaces the manual petWaterPerDay /
+  // petFoodPerDay totals (kept below as a read-only legacy fallback so existing
+  // installs don't lose their pet figures). Default '[]'.
+  'readiness.pets': 'string',
+  // LEGACY (read-only fallback): total daily water intake for ALL pets combined,
+  // in base units (L/day), from the pre-typed-pets manual field. Still READ as a
+  // fallback when readiness.pets is absent so existing installs keep their pet
+  // water, but no longer WRITTEN — typed pets in readiness.pets supersede it.
   'readiness.petWaterPerDay': 'string',
-  // Total daily food intake for ALL pets combined, in base units (kcal/day),
-  // user-entered. Default '0'.
+  // LEGACY (read-only fallback): total daily food intake for ALL pets combined,
+  // in base units (kcal/day). See readiness.petWaterPerDay.
   'readiness.petFoodPerDay': 'string',
   // Total daily power need in base units (Wh/day), user-entered. There is no
   // universal per-person watt-hour standard; fabricating one is a safety

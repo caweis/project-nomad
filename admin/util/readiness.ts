@@ -124,3 +124,89 @@ export function computeResourceReadiness(
 function clampNonNegative(value: number): number {
   return Number.isFinite(value) && value > 0 ? value : 0
 }
+
+// ─── Typed-pet load (Phase 2 patch) ──────────────────────────────────────────
+
+/**
+ * Per-pet/day needs in BASE units (water L, food kcal). The shape app/data/
+ * pet_needs.ts ships and the field this helper sums over. Kept here (not
+ * imported from app/data) so the math stays dependency-free and unit-testable;
+ * the caller supplies the table.
+ */
+export interface PetNeedRates {
+  waterL: number
+  kcal: number
+}
+
+/** A single pet row: a type key into the needs table, a count, and — for the
+ * manual 'other' type — its own per-pet water/kcal that override the table. */
+export interface PetLoadEntry {
+  type: string
+  count: number
+  /** Per-pet water (L), used when the type isn't in the rates table (e.g. 'other'). */
+  waterL?: number
+  /** Per-pet food (kcal), used when the type isn't in the rates table. */
+  kcal?: number
+}
+
+/** Total daily pet water + food in BASE units (L, kcal). */
+export interface PetLoad {
+  waterL: number
+  kcal: number
+}
+
+/**
+ * Sum a household's typed pets into total daily water (L) + food (kcal), both
+ * BASE units. Per-pet figures resolve as: the entry's own `waterL`/`kcal` when
+ * provided (the manual 'other' type, which has no built-in estimate), otherwise
+ * the table rate `rates[type]` (the typed species). An unknown type with no
+ * entry figures contributes nothing. Counts and per-pet figures are clamped
+ * non-negative so a stray bad value can't produce a negative or NaN total.
+ * Pure: the caller supplies `rates`.
+ */
+export function computePetLoad(
+  pets: PetLoadEntry[],
+  rates: Record<string, PetNeedRates>
+): PetLoad {
+  let waterL = 0
+  let kcal = 0
+  for (const pet of pets) {
+    const count = clampNonNegative(pet.count)
+    if (count === 0) continue
+    const rate = rates[pet.type]
+    // The entry's own figures (manual 'other') win over the table; fall back to
+    // the table rate for typed species; 0 when neither is present.
+    const perWater = pet.waterL !== undefined ? pet.waterL : (rate?.waterL ?? 0)
+    const perKcal = pet.kcal !== undefined ? pet.kcal : (rate?.kcal ?? 0)
+    waterL += count * clampNonNegative(perWater)
+    kcal += count * clampNonNegative(perKcal)
+  }
+  return { waterL, kcal }
+}
+
+/**
+ * The pet load expressed as a person-equivalent for one resource: how many
+ * extra "people" the pet draw is worth at the per-person daily need. Returns 0
+ * when the per-person need is unset (so the readout never divides by zero).
+ */
+export function petPersonEquivalent(petTotalBase: number, perPersonNeed: number): number {
+  const need = clampNonNegative(perPersonNeed)
+  if (need <= 0) return 0
+  return clampNonNegative(petTotalBase) / need
+}
+
+/**
+ * Days of supply WITHOUT the pet load, for the "X days (Y without pets)"
+ * readout. Strips the pet term from the daily need (people * perPersonNeed only)
+ * and recomputes days; null when that people-only need is <= 0.
+ */
+export function daysWithoutPets(
+  haveBase: number,
+  people: number,
+  perPersonNeed: number
+): number | null {
+  const have = clampNonNegative(haveBase)
+  const dailyNeed = clampNonNegative(people) * clampNonNegative(perPersonNeed)
+  if (dailyNeed <= 0) return null
+  return have / dailyNeed
+}

@@ -3,11 +3,15 @@ import KVStore from '#models/kv_store'
 import { InventoryService } from '#services/inventory_service'
 import {
   computeResourceReadiness,
+  computePetLoad,
   type ReadinessResource,
   type ResourceReadiness,
 } from '../../util/readiness.js'
 import { MEASUREMENT_SYSTEMS, type MeasurementSystem } from '../../types/inventory.js'
+import { PET_NEEDS, PET_TYPES } from '../data/pet_needs.js'
 import type {
+  PetEntry,
+  PetType,
   ReadinessConfig,
   ReadinessDashboard,
   ReadinessExpiryWarning,
@@ -59,13 +63,19 @@ export class ReadinessService {
     // people = adults + children (BOTH full persons; NO discount per §5.1.1).
     const people = config.adults + config.children
 
+    // Pet load: total daily water (L) + food (kcal) from the typed pets list,
+    // multiplying each entry by PET_NEEDS (or its own figures for 'other'). When
+    // there are no typed pets, fall back to the legacy manual totals so existing
+    // installs don't lose their pet figures.
+    const { water: petWaterPerDay, food: petFoodPerDay } = effectivePetTotals(config)
+
     const resources: ResourceReadiness[] = [
       computeResourceReadiness(
         'water',
         waterSum.total_base,
         people,
         config.needs.water,
-        config.petWaterPerDay,
+        petWaterPerDay,
         config.targetHorizonDays
       ),
       computeResourceReadiness(
@@ -73,7 +83,7 @@ export class ReadinessService {
         foodSum.total_base,
         people,
         config.needs.food,
-        config.petFoodPerDay,
+        petFoodPerDay,
         config.targetHorizonDays
       ),
       // Power: per-person need is the cited 0 default; the user-entered daily
@@ -127,6 +137,7 @@ export class ReadinessService {
       childrenRaw,
       needsRaw,
       horizonRaw,
+      petsRaw,
       petWaterRaw,
       petFoodRaw,
       powerRaw,
@@ -135,6 +146,7 @@ export class ReadinessService {
       KVStore.getValue('readiness.householdChildren'),
       KVStore.getValue('readiness.needs'),
       KVStore.getValue('readiness.targetHorizonDays'),
+      KVStore.getValue('readiness.pets'),
       KVStore.getValue('readiness.petWaterPerDay'),
       KVStore.getValue('readiness.petFoodPerDay'),
       KVStore.getValue('readiness.powerPerDay'),
@@ -145,6 +157,7 @@ export class ReadinessService {
       children: parseInteger(childrenRaw, DEFAULT_CHILDREN),
       targetHorizonDays: clampHorizon(parseInteger(horizonRaw, DEFAULT_HORIZON_DAYS)),
       needs: parseNeeds(needsRaw),
+      pets: parsePets(petsRaw),
       petWaterPerDay: parseNonNegativeFloat(petWaterRaw, DEFAULT_PET_WATER),
       petFoodPerDay: parseNonNegativeFloat(petFoodRaw, DEFAULT_PET_FOOD),
       powerPerDay: parseNonNegativeFloat(powerRaw, DEFAULT_POWER),
@@ -202,4 +215,56 @@ function parseNeeds(raw: string | null): { water: number; food: number; power: n
 /** A finite, non-negative number, else the fallback. */
 function nonNegativeOr(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : fallback
+}
+
+/** Set of known pet types for validating the parsed `readiness.pets` array. */
+const PET_TYPE_SET = new Set<string>(PET_TYPES)
+
+/**
+ * Defensively JSON-parse the `readiness.pets` blob into typed pet entries. Any
+ * missing/invalid array, entry, or field degrades to "skip that entry" (or [])
+ * rather than crashing the dashboard or feeding NaN into the calculator — the
+ * same kv_store consume pattern as parseNeeds. Unknown types are dropped; 'other'
+ * keeps its per-pet waterL/kcal (clamped non-negative).
+ */
+function parsePets(raw: string | null): PetEntry[] {
+  if (raw === null) return []
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return []
+  }
+  if (!Array.isArray(parsed)) return []
+
+  const out: PetEntry[] = []
+  for (const item of parsed) {
+    if (typeof item !== 'object' || item === null) continue
+    const rec = item as Record<string, unknown>
+    const type = rec.type
+    if (typeof type !== 'string' || !PET_TYPE_SET.has(type)) continue
+    const count = nonNegativeOr(rec.count, 0)
+    const entry: PetEntry = { type: type as PetType, count }
+    if (type === 'other') {
+      entry.waterL = nonNegativeOr(rec.waterL, 0)
+      entry.kcal = nonNegativeOr(rec.kcal, 0)
+    }
+    out.push(entry)
+  }
+  return out
+}
+
+/**
+ * The effective total daily pet water (L) + food (kcal) the calculator uses.
+ * Typed pets win: when readiness.pets has any entries, sum them against
+ * PET_NEEDS via computePetLoad. When there are none (a fresh install or one that
+ * predates typed pets), fall back to the legacy manual petWaterPerDay /
+ * petFoodPerDay totals so existing figures aren't lost.
+ */
+function effectivePetTotals(config: ReadinessConfig): { water: number; food: number } {
+  if (config.pets.length > 0) {
+    const load = computePetLoad(config.pets, PET_NEEDS)
+    return { water: load.waterL, food: load.kcal }
+  }
+  return { water: config.petWaterPerDay, food: config.petFoodPerDay }
 }

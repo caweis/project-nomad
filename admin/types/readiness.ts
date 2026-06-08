@@ -8,6 +8,36 @@ import type { ReadinessResource, ResourceReadiness } from '../util/readiness.js'
  * lives in util/readiness.ts (pure, unit-tested); these are the wire DTOs.
  */
 
+/** The selectable companion-animal types. 'other' carries user-entered figures. */
+export type PetType = 'dog' | 'cat' | 'rabbit' | 'guineaPig' | 'ferret' | 'bird' | 'other'
+
+/**
+ * Typical-adult per-pet/day needs in BASE units (water L, food kcal), with the
+ * cited basis for the two figures. Lives in app/data/pet_needs.ts.
+ */
+export interface PetNeed {
+  /** Water per pet per day, liters. */
+  waterL: number
+  /** Food per pet per day, kilocalories. */
+  kcal: number
+  /** Cited basis for the two figures (Merck/MSD, AAHA/WSAVA, etc.). */
+  source: string
+}
+
+/**
+ * One household pet row: a type and a count. For 'other' (no built-in estimate)
+ * the user also supplies per-pet water (L) and calories (kcal); for the typed
+ * species these are omitted and PET_NEEDS supplies the per-pet figures.
+ */
+export interface PetEntry {
+  type: PetType
+  count: number
+  /** Per-pet water (L/day), only meaningful for type 'other'. */
+  waterL?: number
+  /** Per-pet food (kcal/day), only meaningful for type 'other'. */
+  kcal?: number
+}
+
 /** The household config the dashboard reads + the config form edits. */
 export interface ReadinessConfig {
   adults: number
@@ -15,9 +45,22 @@ export interface ReadinessConfig {
   targetHorizonDays: number
   /** Per-person-per-day needs in BASE units (water L, food kcal, power Wh). */
   needs: { water: number; food: number; power: number }
-  /** Total daily pet water intake for all pets combined, base units (L/day). */
+  /**
+   * The household's pets as typed entries; the calculator multiplies each by
+   * PET_NEEDS (or the entry's own figures for 'other') to derive total pet
+   * water/food. Persisted as the `readiness.pets` KV JSON array.
+   */
+  pets: PetEntry[]
+  /**
+   * Total daily pet water intake for all pets combined, base units (L/day).
+   * Legacy fallback for installs that predate typed pets — read but no longer
+   * written.
+   */
   petWaterPerDay: number
-  /** Total daily pet food intake for all pets combined, base units (kcal/day). */
+  /**
+   * Total daily pet food intake for all pets combined, base units (kcal/day).
+   * Legacy fallback (see petWaterPerDay).
+   */
   petFoodPerDay: number
   /** Total daily power need, base units (Wh/day), user-entered. */
   powerPerDay: number

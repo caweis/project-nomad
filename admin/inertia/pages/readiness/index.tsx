@@ -19,12 +19,21 @@ import {
   IconInfoCircle,
   IconExternalLink,
   IconX,
+  IconPaw,
+  IconPlus,
+  IconTrash,
 } from '@tabler/icons-react'
 import { displayUnitLabel, fromBase, toBase } from '../../../util/units'
 import { pageList } from '../../../util/workshop_pagination'
-import { computeResourceReadiness } from '../../../util/readiness'
+import {
+  computeResourceReadiness,
+  computePetLoad,
+  petPersonEquivalent,
+  daysWithoutPets,
+} from '../../../util/readiness'
 import type { ReadinessResource, ResourceReadiness, ReadinessStatus } from '../../../util/readiness'
-import type { ReadinessConfig, ReadinessDashboard } from '../../../types/readiness'
+import { PET_NEEDS, PET_TYPES, PET_TYPE_LABELS } from '../../../app/data/pet_needs'
+import type { ReadinessConfig, ReadinessDashboard, PetEntry, PetType } from '../../../types/readiness'
 import type {
   InventoryCategory,
   InventoryCondition,
@@ -539,11 +548,38 @@ function SupplyReadinessTab({ dashboard }: { dashboard: ReadinessDashboard }) {
   const people = liveConfig.adults + liveConfig.children
   const horizon = liveConfig.targetHorizonDays
 
+  // Total daily pet water (L) + food (kcal) from the typed pets list, in base
+  // units. These feed the existing per-resource pet term and drive the per-card
+  // pet-load readout below. Mirrors the server's effectivePetTotals.
+  const petLoad = computePetLoad(liveConfig.pets, PET_NEEDS)
+
   const liveResources: ResourceReadiness[] = [
-    computeResourceReadiness('water', haveBase('water'), people, liveConfig.needs.water, liveConfig.petWaterPerDay, horizon),
-    computeResourceReadiness('food',  haveBase('food'),  people, liveConfig.needs.food,  liveConfig.petFoodPerDay,  horizon),
-    computeResourceReadiness('power', haveBase('power'), 1,      liveConfig.powerPerDay, 0,                         horizon),
+    computeResourceReadiness('water', haveBase('water'), people, liveConfig.needs.water, petLoad.waterL, horizon),
+    computeResourceReadiness('food',  haveBase('food'),  people, liveConfig.needs.food,  petLoad.kcal,   horizon),
+    computeResourceReadiness('power', haveBase('power'), 1,      liveConfig.powerPerDay, 0,              horizon),
   ]
+
+  // Per-resource pet-load readout inputs (water + food only). Each card shows the
+  // pet add to the daily need, its person-equivalent, and days with vs. without
+  // pets — but only when there are pets on hand for that resource.
+  const petReadout: Partial<Record<ReadinessResource, PetReadout>> = {
+    water:
+      petLoad.waterL > 0
+        ? {
+            petTotalBase: petLoad.waterL,
+            personEquivalent: petPersonEquivalent(petLoad.waterL, liveConfig.needs.water),
+            daysWithout: daysWithoutPets(haveBase('water'), people, liveConfig.needs.water),
+          }
+        : undefined,
+    food:
+      petLoad.kcal > 0
+        ? {
+            petTotalBase: petLoad.kcal,
+            personEquivalent: petPersonEquivalent(petLoad.kcal, liveConfig.needs.food),
+            daysWithout: daysWithoutPets(haveBase('food'), people, liveConfig.needs.food),
+          }
+        : undefined,
+  }
 
   return (
     <>
@@ -554,7 +590,12 @@ function SupplyReadinessTab({ dashboard }: { dashboard: ReadinessDashboard }) {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         {liveResources.map((r) => (
-          <ResourceCard key={r.resource} readiness={r} system={measurementSystem} />
+          <ResourceCard
+            key={r.resource}
+            readiness={r}
+            system={measurementSystem}
+            petReadout={petReadout[r.resource]}
+          />
         ))}
       </div>
 
@@ -851,18 +892,40 @@ function PlansEmptyState() {
   )
 }
 
+/**
+ * Per-resource pet-load readout inputs (water + food only). All amounts are in
+ * BASE units; the card converts to the display unit. Supplied only when the
+ * household has pets contributing to this resource.
+ */
+interface PetReadout {
+  /** Total daily pet draw for this resource, base units (water L / food kcal). */
+  petTotalBase: number
+  /** The pet draw expressed as extra "people" at the per-person need. */
+  personEquivalent: number
+  /** Days of supply WITHOUT the pet load, for the "(Y without pets)" note. */
+  daysWithout: number | null
+}
+
 function ResourceCard({
   readiness,
   system,
+  petReadout,
 }: {
   readiness: ResourceReadiness
   system: MeasurementSystem
+  petReadout?: PetReadout
 }) {
   const meta = RESOURCE_META[readiness.resource]
   const pill = STATUS_PILL[readiness.status]
   const unitLabel = displayUnitLabel(readiness.resource, system)
   const haveDisplay = round2(fromBase(readiness.resource, readiness.haveBase, system))
   const gapDisplay = round2(fromBase(readiness.resource, readiness.gapBase, system))
+
+  // Pet readout amount in the display unit; kcal/Wh are system-agnostic so this
+  // is an identity for food. Only shown when petReadout is supplied (pets > 0).
+  const petAddDisplay = petReadout
+    ? round2(fromBase(readiness.resource, petReadout.petTotalBase, system))
+    : 0
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm flex flex-col">
@@ -890,7 +953,12 @@ function ResourceCard({
               {readiness.days === null ? '—' : round1(readiness.days)}
               <span className="text-base font-normal text-gray-500 ml-1">days</span>
             </div>
-            <p className="text-xs text-gray-500 mt-0.5">of a {readiness.targetDays}-day target</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              of a {readiness.targetDays}-day target
+              {petReadout && petReadout.daysWithout !== null && (
+                <> ({round1(petReadout.daysWithout)} without pets)</>
+              )}
+            </p>
           </div>
 
           <dl className="mt-4 text-sm space-y-1 flex-1">
@@ -901,12 +969,19 @@ function ResourceCard({
               </dd>
             </div>
             <div className="flex justify-between">
-              <dt className="text-gray-500">Daily need</dt>
+              <dt className="text-gray-500">Household need/day</dt>
               <dd className="font-medium text-gray-800">
                 {round2(fromBase(readiness.resource, readiness.dailyNeed, system))} {unitLabel}/day
               </dd>
             </div>
           </dl>
+
+          {petReadout && (
+            <p className="mt-2 flex items-center gap-1.5 text-xs text-gray-500">
+              <IconPaw size={13} className="shrink-0 text-desert-green" />
+              Pets: +{petAddDisplay} {unitLabel}/day (≈ {round1(petReadout.personEquivalent)} people)
+            </p>
+          )}
 
           {readiness.gapBase > 0 && (
             <p className="mt-3 text-sm text-desert-stone-dark">
@@ -984,20 +1059,26 @@ function ConfigForm({
     targetHorizonDays: String(c.targetHorizonDays),
     waterPerPerson: String(round3(fromBase('water', c.needs.water, system))),
     foodPerPerson: String(round1(c.needs.food)),
-    petWaterPerDay: String(round3(fromBase('water', c.petWaterPerDay, system))),
-    petFoodPerDay: String(round1(c.petFoodPerDay)),
     powerPerDay: String(round1(c.powerPerDay)),
   })
+  // Typed pets, kept in their own state (a structured list, not form strings).
+  // Seeded from config.pets; legacy installs (no typed pets, but a saved
+  // petWaterPerDay/petFoodPerDay total) start empty here and the service's
+  // legacy fallback keeps surfacing their old totals until the user adds a pet.
+  const [pets, setPets] = useState<PetEntry[]>(c.pets)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
 
   /**
-   * Convert the current form strings to a ReadinessConfig (all base units) and
-   * fire onLiveChange so SupplyReadinessTab can immediately recompute the cards.
-   * Water display-unit values are converted back to L (toBase); food/power/petFood
-   * are system-agnostic. This mirrors the onSave base-unit math but is side-effect-free.
+   * Convert the current form strings + pets list to a ReadinessConfig (all base
+   * units) and fire onLiveChange so SupplyReadinessTab can immediately recompute
+   * the cards. Water display-unit values are converted back to L (toBase);
+   * food/power are system-agnostic. The pets list drives pet water/food via
+   * computePetLoad on the receiving side, so the legacy petWaterPerDay/
+   * petFoodPerDay are carried through unchanged (still read as a fallback). This
+   * mirrors the onSave base-unit math but is side-effect-free.
    */
-  const fireLiveChange = (next: typeof form) => {
+  const fireLiveChange = (next: typeof form, nextPets: PetEntry[]) => {
     onLiveChange({
       adults: toNonNegativeInt(next.adults),
       children: toNonNegativeInt(next.children),
@@ -1007,25 +1088,39 @@ function ConfigForm({
         food: toNonNegativeNumber(next.foodPerPerson),
         power: 0, // power need lives in powerPerDay (no per-person standard)
       },
-      petWaterPerDay: toBase('water', toNonNegativeNumber(next.petWaterPerDay), system),
-      petFoodPerDay: toNonNegativeNumber(next.petFoodPerDay),
+      pets: nextPets,
+      petWaterPerDay: c.petWaterPerDay,
+      petFoodPerDay: c.petFoodPerDay,
       powerPerDay: toNonNegativeNumber(next.powerPerDay),
     })
   }
 
-  // Editing only updates the form. The readiness cards recompute when the user
-  // clicks "Calculate" (onCalculate) — a deliberate, on-demand recompute rather
-  // than per-keystroke wiring, so the projected days/needs update reliably.
+  // Editing updates the form AND fires the live recompute, so the cards update
+  // on every keystroke. The "Calculate" button (onCalculate) re-runs the same
+  // recompute on demand — both paths share fireLiveChange.
   const set = <K extends keyof typeof form>(key: K, value: string) => {
-    setForm((prev) => ({ ...prev, [key]: value }))
+    setForm((prev) => {
+      const next = { ...prev, [key]: value }
+      fireLiveChange(next, pets)
+      return next
+    })
   }
 
   /**
-   * Recompute all readiness cards (water, food, power) from the current form by
-   * pushing it into the parent's liveConfig. Wired to the "Calculate" button —
-   * one action recalculates every resource at once.
+   * Apply a pets-list change: update the pets state AND fire the live recompute
+   * so the cards + per-resource pet readout track the edit on every change.
    */
-  const onCalculate = () => fireLiveChange(form)
+  const updatePets = (nextPets: PetEntry[]) => {
+    setPets(nextPets)
+    fireLiveChange(form, nextPets)
+  }
+
+  /**
+   * Recompute all readiness cards (water, food, power) from the current form +
+   * pets by pushing them into the parent's liveConfig. Wired to the "Calculate"
+   * button — a redundant on-demand path now that editing recomputes live.
+   */
+  const onCalculate = () => fireLiveChange(form, pets)
 
   const waterUnit = displayUnitLabel('water', system)
 
@@ -1045,6 +1140,9 @@ function ConfigForm({
       power: 0,
     }
 
+    // Pets persist as the readiness.pets JSON array (typed entries); the manual
+    // petWaterPerDay/petFoodPerDay totals are no longer written — the service
+    // still reads them as a fallback for installs that predate typed pets.
     const updates: { key: string; value: string }[] = [
       { key: 'readiness.householdAdults', value: String(toNonNegativeInt(form.adults)) },
       { key: 'readiness.householdChildren', value: String(toNonNegativeInt(form.children)) },
@@ -1053,11 +1151,7 @@ function ConfigForm({
         value: String(clampHorizon(toNonNegativeInt(form.targetHorizonDays))),
       },
       { key: 'readiness.needs', value: JSON.stringify(needs) },
-      {
-        key: 'readiness.petWaterPerDay',
-        value: String(toBase('water', toNonNegativeNumber(form.petWaterPerDay), system)),
-      },
-      { key: 'readiness.petFoodPerDay', value: String(toNonNegativeNumber(form.petFoodPerDay)) },
+      { key: 'readiness.pets', value: JSON.stringify(normalizePetsForSave(pets)) },
       { key: 'readiness.powerPerDay', value: String(toNonNegativeNumber(form.powerPerDay)) },
     ]
 
@@ -1088,9 +1182,11 @@ function ConfigForm({
       <h2 className="text-lg font-semibold text-gray-800 mb-1">Household</h2>
       <p className="text-sm text-gray-500 mb-4">
         Children count as full persons for water and food — needs are never discounted by age
-        (FEMA/Ready.gov). Pets and power are your own daily totals.
+        (FEMA/Ready.gov). The cards above show your household total; the rates below are the
+        per-person standards they multiply.
       </p>
 
+      {/* Top row: who's in the household, the target window, and pets. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <NumberField
           label="Adults"
@@ -1115,55 +1211,51 @@ function ConfigForm({
           step={1}
           tooltip={HORIZON_SOURCE}
         />
-
-        <NumberField
-          label={`Water per person (${waterUnit}/day)`}
-          value={form.waterPerPerson}
-          onChange={(v) => set('waterPerPerson', v)}
-          min={0}
-          step={0.1}
-          tooltip={SOURCE_NOTES.water}
-        />
-        <NumberField
-          label="Food per person (kcal/day)"
-          value={form.foodPerPerson}
-          onChange={(v) => set('foodPerPerson', v)}
-          min={0}
-          step={50}
-          tooltip={SOURCE_NOTES.food}
-        />
-        <NumberField
-          label="Power need (Wh/day)"
-          value={form.powerPerDay}
-          onChange={(v) => set('powerPerDay', v)}
-          min={0}
-          step={50}
-          tooltip={SOURCE_NOTES.power}
-        />
-
-        <NumberField
-          label={`Pet water total (${waterUnit}/day)`}
-          value={form.petWaterPerDay}
-          onChange={(v) => set('petWaterPerDay', v)}
-          min={0}
-          step={0.1}
-          tooltip={PET_SOURCE}
-        />
-        <NumberField
-          label="Pet food total (kcal/day)"
-          value={form.petFoodPerDay}
-          onChange={(v) => set('petFoodPerDay', v)}
-          min={0}
-          step={50}
-          tooltip={PET_SOURCE}
-        />
       </div>
 
-      <div className="mt-5 flex items-center gap-3">
+      <PetsField pets={pets} system={system} onChange={updatePets} />
+
+      <section className="mt-6">
+        <h3 className="text-sm font-semibold text-gray-700">
+          Per-person daily needs (editable standards)
+        </h3>
+        <p className="text-xs text-gray-500 mt-0.5 mb-3">
+          What one person uses per day (FEMA/Ready.gov defaults). Your household total is computed
+          on the cards above.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <NumberField
+            label={`Water per person (${waterUnit}/day)`}
+            value={form.waterPerPerson}
+            onChange={(v) => set('waterPerPerson', v)}
+            min={0}
+            step={0.1}
+            tooltip={SOURCE_NOTES.water}
+          />
+          <NumberField
+            label="Food per person (kcal/day)"
+            value={form.foodPerPerson}
+            onChange={(v) => set('foodPerPerson', v)}
+            min={0}
+            step={50}
+            tooltip={SOURCE_NOTES.food}
+          />
+          <NumberField
+            label="Power need (Wh/day)"
+            value={form.powerPerDay}
+            onChange={(v) => set('powerPerDay', v)}
+            min={0}
+            step={50}
+            tooltip={SOURCE_NOTES.power}
+          />
+        </div>
+      </section>
+
+      <div className="mt-6 flex items-center gap-3">
         {/* StyledButton renders type="button", so submission is wired via
-            onClick rather than the form's onSubmit. "Calculate" recomputes the
-            cards (water/food/power) from the current inputs; "Save" persists +
-            reloads. */}
+            onClick rather than the form's onSubmit. The cards now recompute live
+            as the user edits; "Calculate" re-runs that recompute on demand and
+            "Save" persists + reloads. */}
         <StyledButton variant="primary" icon="IconCalculator" onClick={onCalculate}>
           Calculate
         </StyledButton>
@@ -1223,6 +1315,151 @@ function NumberField({
   )
 }
 
+/**
+ * Typed-pets editor. Each row is a count + a species dropdown; selecting "Other"
+ * reveals per-pet water + calorie inputs (no built-in estimate for that type).
+ * The first row always renders (count 0 when there are no pets yet); "+ add pet"
+ * appends another removable row. The per-pet estimate behind each typed species
+ * comes from PET_NEEDS — the calculator multiplies it by the count. Water is
+ * shown in the user's display unit; food (kcal) is system-agnostic.
+ */
+function PetsField({
+  pets,
+  system,
+  onChange,
+}: {
+  pets: PetEntry[]
+  system: MeasurementSystem
+  onChange: (pets: PetEntry[]) => void
+}) {
+  const waterUnit = displayUnitLabel('water', system)
+  // Always show at least one row so the household always has a pets control; an
+  // empty/zero-count first row contributes nothing to the calculator.
+  const rows: PetEntry[] = pets.length > 0 ? pets : [{ type: 'dog', count: 0 }]
+
+  const updateRow = (index: number, patch: Partial<PetEntry>) => {
+    const next = rows.map((row, i) => (i === index ? { ...row, ...patch } : row))
+    onChange(next)
+  }
+
+  const changeType = (index: number, type: PetType) => {
+    // Selecting "Other" seeds blank per-pet figures; any other type drops them
+    // (PET_NEEDS supplies the per-pet estimate).
+    const patch: Partial<PetEntry> =
+      type === 'other' ? { type, waterL: 0, kcal: 0 } : { type, waterL: undefined, kcal: undefined }
+    updateRow(index, patch)
+  }
+
+  const addRow = () => onChange([...rows, { type: 'dog', count: 0 }])
+  const removeRow = (index: number) => {
+    const next = rows.filter((_, i) => i !== index)
+    onChange(next)
+  }
+
+  return (
+    <section className="mt-6">
+      <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-1.5">
+        <IconPaw size={15} className="text-desert-green" />
+        Pets
+        <InfoTooltip text={PET_SOURCE} />
+      </h3>
+      <p className="text-xs text-gray-500 mt-0.5 mb-3">
+        Typical-adult estimates; needs vary with weight.
+      </p>
+
+      <div className="space-y-3">
+        {rows.map((row, i) => (
+          <div key={i} className="flex flex-wrap items-end gap-3">
+            <div className="flex flex-col">
+              <label className="mb-1 text-sm font-medium text-gray-700">Pets</label>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={0}
+                step={1}
+                value={String(row.count)}
+                onChange={(e) => updateRow(i, { count: toNonNegativeInt(e.target.value) })}
+                className="block w-24 rounded-md bg-white px-3 py-2 text-sm text-gray-900 border border-gray-400 focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-primary"
+              />
+            </div>
+
+            <div className="flex flex-col">
+              <label className="mb-1 text-sm font-medium text-gray-700">Pet type</label>
+              <select
+                value={row.type}
+                onChange={(e) => changeType(i, e.target.value as PetType)}
+                className="block rounded-md bg-white px-3 py-2 text-sm text-gray-900 border border-gray-400 focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-primary"
+              >
+                {PET_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {PET_TYPE_LABELS[t]}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {row.type === 'other' && (
+              <>
+                <div className="flex flex-col">
+                  <label className="mb-1 text-sm font-medium text-gray-700">
+                    Water/pet ({waterUnit}/day)
+                  </label>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    step={0.1}
+                    value={String(round3(fromBase('water', row.waterL ?? 0, system)))}
+                    onChange={(e) =>
+                      updateRow(i, {
+                        waterL: toBase('water', toNonNegativeNumber(e.target.value), system),
+                      })
+                    }
+                    className="block w-32 rounded-md bg-white px-3 py-2 text-sm text-gray-900 border border-gray-400 focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-primary"
+                  />
+                </div>
+                <div className="flex flex-col">
+                  <label className="mb-1 text-sm font-medium text-gray-700">
+                    Food/pet (kcal/day)
+                  </label>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    step={50}
+                    value={String(round1(row.kcal ?? 0))}
+                    onChange={(e) => updateRow(i, { kcal: toNonNegativeNumber(e.target.value) })}
+                    className="block w-32 rounded-md bg-white px-3 py-2 text-sm text-gray-900 border border-gray-400 focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-primary"
+                  />
+                </div>
+              </>
+            )}
+
+            {rows.length > 1 && (
+              <button
+                type="button"
+                onClick={() => removeRow(i)}
+                aria-label="Remove pet"
+                className="mb-1 inline-flex items-center gap-1 rounded px-2 py-2 text-sm text-red-700 hover:bg-red-50"
+              >
+                <IconTrash size={16} />
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <button
+        type="button"
+        onClick={addRow}
+        className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-desert-green hover:underline"
+      >
+        <IconPlus size={16} /> Add pet
+      </button>
+    </section>
+  )
+}
+
 // ─── pure display/parse helpers ──────────────────────────────────────────────
 
 function round1(n: number): number {
@@ -1251,4 +1488,20 @@ function toNonNegativeInt(raw: string): number {
 function clampHorizon(days: number): number {
   if (!Number.isFinite(days) || days < 1) return 14
   return Math.min(days, 365)
+}
+
+/**
+ * Prepare the pets list for persistence: drop zero-count rows (a row the user
+ * left empty contributes nothing) and keep per-pet waterL/kcal only for 'other'
+ * (typed species read their figures from PET_NEEDS, so storing them would
+ * duplicate canonical data).
+ */
+function normalizePetsForSave(pets: PetEntry[]): PetEntry[] {
+  return pets
+    .filter((p) => p.count > 0)
+    .map((p) =>
+      p.type === 'other'
+        ? { type: p.type, count: p.count, waterL: p.waterL ?? 0, kcal: p.kcal ?? 0 }
+        : { type: p.type, count: p.count }
+    )
 }
