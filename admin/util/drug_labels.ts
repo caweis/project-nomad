@@ -429,6 +429,47 @@ export function resolveIngestRecordsShown(
 }
 
 /**
+ * Reduce a raw job failure message to something a human can read in the UI.
+ *
+ * A knex/mysql2 error message embeds the ENTIRE failed SQL statement — for a
+ * 500-row drug-label insert that is thousands of characters of SQL plus full
+ * label text, which the status panel then rendered verbatim (a wall of red).
+ * The meaningful part is the driver error the database appended at the END
+ * ("Duplicate entry … for key …", "Data too long for column …", etc.).
+ *
+ * Strategy: match the known MySQL driver-error shapes anywhere in the message
+ * and return just that sentence; otherwise fall back to the first line,
+ * hard-capped. Pure + unit-testable.
+ */
+export function summarizeJobError(raw: string | null | undefined, maxLen = 300): string | undefined {
+  if (!raw) return undefined
+  const msg = String(raw).trim()
+  if (!msg) return undefined
+
+  const driverPatterns: RegExp[] = [
+    /Duplicate entry .{0,120}? for key '[^']+'/,
+    /Data too long for column '[^']+'[^\n]{0,80}/,
+    /Incorrect \w+ value: .{0,120}/,
+    /Unknown column '[^']+' in '[^']+'/,
+    /Deadlock found[^\n]{0,120}/,
+    /Lock wait timeout[^\n]{0,120}/,
+    /ER_[A-Z_]+[^\n]{0,160}/,
+    /connect ECONNREFUSED [^\s]+/,
+    /timed out after \d+ms[^\n]{0,160}/,
+  ]
+  for (const pat of driverPatterns) {
+    const m = msg.match(pat)
+    if (m) return m[0].slice(0, maxLen)
+  }
+
+  // No recognizable driver error — take the first line, capped. A leading
+  // "insert into `drug_labels` (…)" dump is all one line, so the cap is what
+  // actually saves the UI here.
+  const firstLine = msg.split('\n')[0]
+  return firstLine.length > maxLen ? `${firstLine.slice(0, maxLen)}…` : firstLine
+}
+
+/**
  * Derive the top-level ingest phase from the two sub-phase states + the live row
  * count. This is the state machine the UI keys off of:
  *

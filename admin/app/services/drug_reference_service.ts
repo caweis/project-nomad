@@ -10,6 +10,7 @@ import {
   deriveIngestPhase,
   resolveExpectedTotal,
   resolveIngestRecordsShown,
+  summarizeJobError,
 } from '../../util/drug_labels.js'
 import KVStore from '#models/kv_store'
 import { parseCompareIds, MAX_COMPARE } from '../../util/compare_ids.js'
@@ -517,7 +518,8 @@ export class DrugReferenceService {
       totalParts: dlData.totalParts ?? marker?.totalParts ?? 0,
       bytesDownloaded: dlData.bytesDownloaded,
       currentPartName: dlData.currentPartName ?? null,
-      failedReason: dlState === 'failed' ? downloadJob?.failedReason || undefined : undefined,
+      failedReason:
+        dlState === 'failed' ? summarizeJobError(downloadJob?.failedReason) : undefined,
     }
 
     // ── Ingest sub-status ───────────────────────────────────────────────────
@@ -555,7 +557,7 @@ export class DrugReferenceService {
       partsDone: ingData.partIndex ?? 0,
       totalParts: ingData.totalParts ?? marker?.totalParts ?? 0,
       currentPartName: ingData.currentPartName ?? null,
-      failedReason: ingState === 'failed' ? ingestJob?.failedReason || undefined : undefined,
+      failedReason: ingState === 'failed' ? summarizeJobError(ingestJob?.failedReason) : undefined,
     }
 
     const phase = deriveIngestPhase(download, ingest, count)
