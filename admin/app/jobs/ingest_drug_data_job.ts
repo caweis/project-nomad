@@ -369,13 +369,33 @@ export class IngestDrugDataJob {
     const yauzl = await import('yauzl')
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore — stream-json resolved at runtime from dependencies
-    const { parser: createParser } = await import('stream-json')
+    const createParser = (await import('stream-json')).default.parser
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore — stream-json deep subpath resolved at runtime
-    const { pick: createPick } = await import('stream-json/filters/Pick.js')
+    const createPick = (await import('stream-json/filters/Pick.js')).default.pick
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore — stream-json deep subpath resolved at runtime
-    const { streamArray: createStreamArray } = await import('stream-json/streamers/StreamArray.js')
+    const createStreamArray = (await import('stream-json/streamers/StreamArray.js')).default.streamArray
+
+    // Defensive: stream-json 1.9.1 (CJS) exposes its factories only as
+    // `.default.parser` / `.default.pick` / `.default.streamArray` under ESM
+    // dynamic import — there is NO `parser`/`pick`/`streamArray` named export, so
+    // destructuring those silently yielded `undefined`. Calling an undefined
+    // "factory" then threw inside the yauzl openReadStream callback (not a
+    // promise), the process-level backstop swallowed the uncaughtException, the
+    // streamIngestPart promise never settled, and the 90s watchdog fired in a
+    // retry loop with zero records. THIS was the real ingest hang. Validate the
+    // imports here so any future interop slip fails loud in the async body.
+    if (
+      typeof createParser !== 'function' ||
+      typeof createPick !== 'function' ||
+      typeof createStreamArray !== 'function'
+    ) {
+      throw new Error(
+        'stream-json factory imports did not resolve to functions ' +
+          `(parser=${typeof createParser}, pick=${typeof createPick}, streamArray=${typeof createStreamArray})`
+      )
+    }
 
     // Lazy-import DrugLabel model inside the job (not at module top level) so
     // that the util helpers (tested without Lucid) stay importable in pure tests.
