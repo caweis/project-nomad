@@ -4882,20 +4882,31 @@ cmd_build_check() {
 
   local img="${NOMAD_ADMIN_IMAGE:-ghcr.io/caweis/project-nomad-macos-arm64:edge}"
   local dep_rev; dep_rev="$(docker image inspect "$img" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' 2>/dev/null)"
+  local dep_ver; dep_ver="$(docker image inspect "$img" --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' 2>/dev/null)"
   local dep_short="${dep_rev:0:7}"; [[ -z "$dep_short" ]] && dep_short="(none pulled yet)"
 
-  echo "  origin/main HEAD:     ${head:0:7}"
-  echo "  latest image build:   rev ${b_sha:0:7}  (${b_status:-?}${b_concl:+/$b_concl})  ${b_created}"
-  echo "  deployed :edge image: rev ${dep_short}"
+  # Resolve the human version (root package.json "version", e.g. 0.2.717-macos)
+  # next to each SHA, so build-check reports versions not just build revisions.
+  # GitHub contents API with the raw media type returns the file directly (no
+  # base64 decode needed); jq pulls .version.
+  local head_ver b_ver
+  head_ver="$(curl -fsSL --max-time 8 -H 'Accept: application/vnd.github.raw' "$api/contents/package.json?ref=main" 2>/dev/null | jq -r '.version // ""' 2>/dev/null)"
+  if [[ -n "$b_sha" ]]; then
+    b_ver="$(curl -fsSL --max-time 8 -H 'Accept: application/vnd.github.raw' "$api/contents/package.json?ref=$b_sha" 2>/dev/null | jq -r '.version // ""' 2>/dev/null)"
+  fi
+
+  echo "  origin/main HEAD:     ${head_ver:+${head_ver}  }${head:0:7}"
+  echo "  latest image build:   ${b_ver:+${b_ver}  }rev ${b_sha:0:7}  (${b_status:-?}${b_concl:+/$b_concl})  ${b_created}"
+  echo "  deployed :edge image: ${dep_ver:+${dep_ver}  }rev ${dep_short}"
   echo
   if [[ "$b_status" == "in_progress" || "$b_status" == "queued" ]]; then
     warn "a build is running now — :edge isn't updated yet. Re-check in a few minutes before 'nomad upgrade'."
   elif [[ -n "$b_concl" && "$b_concl" != "success" ]]; then
     warn "latest image build did not succeed (${b_concl}) — check CI before upgrading."
   elif [[ -n "$dep_rev" && "$dep_rev" == "$b_sha" ]]; then
-    ok "deployed image already matches the latest build (rev ${b_sha:0:7}) — you're up to date."
+    ok "deployed image already matches the latest build (${b_ver:+${b_ver}, }rev ${b_sha:0:7}) — you're up to date."
   else
-    ok "latest image build complete (rev ${b_sha:0:7}) — 'nomad upgrade' will pull it."
+    ok "latest image build complete (${b_ver:+${b_ver}, }rev ${b_sha:0:7}) — 'nomad upgrade' will pull it."
   fi
   log "proxy/script changes ship via 'nomad update' (no image build needed)."
 }

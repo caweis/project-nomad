@@ -104,6 +104,25 @@ jobs:
             TAGS="${TAGS},${IMAGE}:edge"
           fi
 
+          # Resolve the human version for the OCI image.version label. On a normal
+          # push to main, github.ref_name is just "main" — useless as a version,
+          # and it's what made `nomad upgrade` / `nomad build-check` show a build
+          # rev with no version. Read the real version from the root package.json
+          # (e.g. 0.2.718-macos). A tag push or explicit workflow_dispatch version
+          # still takes precedence.
+          PKG_VERSION="$(jq -r '.version // ""' package.json 2>/dev/null)"
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref_type }}" == "tag" ]]; then
+            IMAGE_VERSION="${GITHUB_REF#refs/tags/}"
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ inputs.version }}" ]]; then
+            IMAGE_VERSION="${{ inputs.version }}"
+          elif [[ -n "$PKG_VERSION" ]]; then
+            IMAGE_VERSION="$PKG_VERSION"
+          else
+            IMAGE_VERSION="${{ github.ref_name }}"
+          fi
+          echo "version=${IMAGE_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Resolved version label: ${IMAGE_VERSION}"
+
           echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
           echo "Resolved tags:"
           echo "${TAGS}" | tr ',' '\n' | sed 's/^/  - /'
@@ -119,6 +138,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
-            VERSION=${{ inputs.version || github.ref_name }}
+            VERSION=${{ steps.tags.outputs.version || inputs.version || github.ref_name }}
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
             VCS_REF=${{ github.sha }}
