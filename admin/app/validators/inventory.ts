@@ -2,6 +2,7 @@ import vine from '@vinejs/vine'
 import {
   INVENTORY_CATEGORIES,
   INVENTORY_CONDITIONS,
+  INVENTORY_KINDS,
   RESOURCE_TYPES,
 } from '../../types/inventory.js'
 
@@ -30,6 +31,8 @@ export const createInventoryItemValidator = vine.compile(
   vine.object({
     name: vine.string().trim().minLength(1).maxLength(255),
     category: vine.enum(INVENTORY_CATEGORIES),
+    // kind defaults to 'consumable' at the service when omitted.
+    kind: vine.enum(INVENTORY_KINDS).optional(),
     quantity: vine.number().min(0),
     // Unit is OPTIONAL: consumables have one (gal/cans), but gear (a water
     // filter, a stove) has no consumable unit. The column is NOT NULL with a
@@ -39,6 +42,7 @@ export const createInventoryItemValidator = vine.compile(
     notes: vine.string().trim().maxLength(5000).nullable().optional(),
     expiry_date: vine.date().nullable().optional(),
     restock_threshold: vine.number().min(0).nullable().optional(),
+    never_expires: vine.boolean().optional(),
     condition: vine.enum(INVENTORY_CONDITIONS).nullable().optional(),
     resource_type: vine.enum(RESOURCE_TYPES).nullable().optional(),
     resource_contribution: vine.number().min(0).nullable().optional(),
@@ -49,12 +53,14 @@ export const updateInventoryItemValidator = vine.compile(
   vine.object({
     name: vine.string().trim().minLength(1).maxLength(255).optional(),
     category: vine.enum(INVENTORY_CATEGORIES).optional(),
+    kind: vine.enum(INVENTORY_KINDS).optional(),
     quantity: vine.number().min(0).optional(),
     unit: vine.string().trim().maxLength(32).optional(),
     location: vine.string().trim().maxLength(255).nullable().optional(),
     notes: vine.string().trim().maxLength(5000).nullable().optional(),
     expiry_date: vine.date().nullable().optional(),
     restock_threshold: vine.number().min(0).nullable().optional(),
+    never_expires: vine.boolean().optional(),
     condition: vine.enum(INVENTORY_CONDITIONS).nullable().optional(),
     resource_type: vine.enum(RESOURCE_TYPES).nullable().optional(),
     resource_contribution: vine.number().min(0).nullable().optional(),
@@ -64,6 +70,8 @@ export const updateInventoryItemValidator = vine.compile(
 export const listInventoryItemsValidator = vine.compile(
   vine.object({
     category: vine.enum(INVENTORY_CATEGORIES).optional(),
+    kind: vine.enum(INVENTORY_KINDS).optional(),
+    condition: vine.enum(INVENTORY_CONDITIONS).optional(),
     location: vine.string().trim().minLength(1).maxLength(255).optional(),
     search: vine.string().trim().minLength(1).maxLength(200).optional(),
     expiring_within_days: vine.number().min(0).max(3650).optional(),

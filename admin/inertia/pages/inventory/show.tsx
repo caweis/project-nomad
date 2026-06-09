@@ -9,12 +9,14 @@ import type {
   InventoryCategory,
   InventoryCondition,
   InventoryItemDetail,
+  InventoryKind,
   MeasurementSystem,
   ResourceType,
 } from '../../../types/inventory'
 
 interface Enums {
   categories: { value: InventoryCategory; label: string }[]
+  kinds: InventoryKind[]
   conditions: InventoryCondition[]
   resource_types: ResourceType[]
   resource_base_units: Record<ResourceType, string>
@@ -48,11 +50,13 @@ export default function InventoryShow(props: PageProps) {
   const [form, setForm] = useState({
     name: item?.name ?? '',
     category: item?.category ?? ('other' as InventoryCategory),
+    kind: item?.kind ?? ('consumable' as InventoryKind),
     quantity: item?.quantity != null ? String(item.quantity) : '',
     unit: item?.unit ?? '',
     location: item?.location ?? '',
     notes: item?.notes ?? '',
     expiry_date: item?.expiry_date ?? '',
+    never_expires: item?.never_expires ?? false,
     restock_threshold: item?.restock_threshold != null ? String(item.restock_threshold) : '',
     condition: item?.condition ?? '',
     resource_type: item?.resource_type ?? '',
@@ -109,17 +113,22 @@ export default function InventoryShow(props: PageProps) {
       )
     }
 
+    const isGear = form.kind === 'gear'
+
     return {
       name: form.name.trim(),
       category: form.category,
+      kind: form.kind,
       quantity: form.quantity === '' ? 0 : Number(form.quantity),
-      unit: form.unit.trim(),
+      unit: isGear ? '' : form.unit.trim(),
       location: form.location.trim() === '' ? null : form.location.trim(),
       notes: form.notes.trim() === '' ? null : form.notes.trim(),
-      expiry_date: form.expiry_date === '' ? null : form.expiry_date,
-      restock_threshold:
-        form.restock_threshold === '' ? null : Number(form.restock_threshold),
-      condition: form.condition === '' ? null : form.condition,
+      // Consumable-only fields — gear sends null/false
+      expiry_date: isGear ? null : form.never_expires ? null : form.expiry_date === '' ? null : form.expiry_date,
+      never_expires: isGear ? false : form.never_expires,
+      restock_threshold: isGear ? null : form.restock_threshold === '' ? null : Number(form.restock_threshold),
+      // Gear-only fields — consumable sends null
+      condition: isGear ? (form.condition === '' ? null : form.condition) : null,
       resource_type: resourceType,
       resource_contribution: resourceContribution,
     }
@@ -250,6 +259,24 @@ export default function InventoryShow(props: PageProps) {
                 </select>
               </FormGroup>
 
+              <FormGroup label="Kind" required hint="Consumables track expiry/restock; gear tracks condition.">
+                <select
+                  value={form.kind}
+                  onChange={(e) => set('kind', e.target.value as InventoryKind)}
+                  required
+                  className={INPUT_CLASS}
+                >
+                  {props.enums.kinds.map((k) => (
+                    <option key={k} value={k}>
+                      {k.charAt(0).toUpperCase() + k.slice(1)}
+                    </option>
+                  ))}
+                </select>
+              </FormGroup>
+            </div>
+
+            {/* Condition — gear only */}
+            {form.kind === 'gear' && (
               <FormGroup label="Condition">
                 <select
                   value={form.condition}
@@ -264,7 +291,7 @@ export default function InventoryShow(props: PageProps) {
                   ))}
                 </select>
               </FormGroup>
-            </div>
+            )}
 
             <FormGroup label="Notes">
               <textarea
@@ -291,45 +318,73 @@ export default function InventoryShow(props: PageProps) {
                 />
               </FormGroup>
 
-              <FormGroup
-                label="Unit"
-                hint="For consumables (e.g. gal, cans). Leave blank for gear."
-              >
-                <input
-                  type="text"
-                  value={form.unit}
-                  onChange={(e) => {
-                    // A hand-typed unit takes ownership of the field; the
-                    // resource-type/system auto-fill backs off from here on.
-                    unitManuallyEdited.current = true
-                    set('unit', e.target.value)
-                  }}
-                  className={INPUT_CLASS}
-                />
-              </FormGroup>
+              {/* Unit — consumable only (gear has no consumable unit) */}
+              {form.kind === 'consumable' && (
+                <FormGroup
+                  label="Unit"
+                  hint="e.g. gal, cans, rounds"
+                >
+                  <input
+                    type="text"
+                    value={form.unit}
+                    onChange={(e) => {
+                      // A hand-typed unit takes ownership of the field; the
+                      // resource-type/system auto-fill backs off from here on.
+                      unitManuallyEdited.current = true
+                      set('unit', e.target.value)
+                    }}
+                    className={INPUT_CLASS}
+                  />
+                </FormGroup>
+              )}
 
-              <FormGroup
-                label="Restock threshold"
-                hint="Flags low stock when quantity drops to this."
-              >
-                <input
-                  type="number"
-                  min={0}
-                  step="0.001"
-                  value={form.restock_threshold}
-                  onChange={(e) => set('restock_threshold', e.target.value)}
-                  className={INPUT_CLASS}
-                />
-              </FormGroup>
+              {/* Restock threshold — consumable only */}
+              {form.kind === 'consumable' && (
+                <FormGroup
+                  label="Restock threshold"
+                  hint="Flags low stock when quantity drops to this."
+                >
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.001"
+                    value={form.restock_threshold}
+                    onChange={(e) => set('restock_threshold', e.target.value)}
+                    className={INPUT_CLASS}
+                  />
+                </FormGroup>
+              )}
 
-              <FormGroup label="Expiry date">
-                <input
-                  type="date"
-                  value={form.expiry_date}
-                  onChange={(e) => set('expiry_date', e.target.value)}
-                  className={INPUT_CLASS}
-                />
-              </FormGroup>
+              {/* Expiry — consumable only */}
+              {form.kind === 'consumable' && (
+                <FormGroup label="Expiry date">
+                  <input
+                    type="date"
+                    value={form.expiry_date}
+                    onChange={(e) => set('expiry_date', e.target.value)}
+                    disabled={form.never_expires}
+                    className={`${INPUT_CLASS} disabled:bg-desert-sand disabled:text-desert-stone`}
+                  />
+                </FormGroup>
+              )}
+
+              {/* Never expires toggle — consumable only */}
+              {form.kind === 'consumable' && (
+                <FormGroup label="No expiry" className="flex items-center gap-2 pt-4">
+                  <label className="flex items-center gap-2 text-sm text-desert-green-darker cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={form.never_expires}
+                      onChange={(e) => {
+                        set('never_expires', e.target.checked)
+                        if (e.target.checked) set('expiry_date', '')
+                      }}
+                      className="h-4 w-4 rounded border-desert-stone accent-desert-green"
+                    />
+                    This item never expires
+                  </label>
+                </FormGroup>
+              )}
 
               <FormGroup label="Location" className="sm:col-span-2">
                 {/* Combobox: a free-text input wired to a datalist of known

@@ -52,8 +52,16 @@ export default class ScenarioPlanStep extends BaseModel {
   @column()
   declare zim_ref: string | null
 
-  @column.dateTime({ autoCreate: true })
-  declare created_at: DateTime
+  /**
+   * Snapshot of the linked target's display name at link time. Preserved when the
+   * FK is SET NULL'd on target deletion so the UI can show "was: <name>" rather
+   * than blanking the step's link info entirely.
+   */
+  @column()
+  declare linked_name_snapshot: string | null
+
+  @column.dateTime({ autoCreate: true, columnName: 'added_at' })
+  declare added_at: DateTime
 
   @column.dateTime({ autoCreate: true, autoUpdate: true })
   declare updated_at: DateTime

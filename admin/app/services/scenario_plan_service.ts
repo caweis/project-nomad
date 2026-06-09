@@ -1,5 +1,7 @@
 import ScenarioPlan from '#models/scenario_plan'
 import ScenarioPlanStep from '#models/scenario_plan_step'
+import InventoryItem from '#models/inventory_item'
+import StlFile from '#models/stl_file'
 import type { Scenario, ScenarioPlanSlim } from '../../types/scenarios.js'
 
 /**
@@ -153,6 +155,7 @@ export class ScenarioPlanService {
     step.inventory_item_id = data.inventory_item_id ?? null
     step.stl_file_id = data.stl_file_id ?? null
     step.zim_ref = normalizeZimRef(data.zim_ref)
+    step.linked_name_snapshot = await resolveLinkedName(step.inventory_item_id, step.stl_file_id)
     await step.save()
     return step
   }
@@ -175,6 +178,10 @@ export class ScenarioPlanService {
     if (data.inventory_item_id !== undefined) step.inventory_item_id = data.inventory_item_id ?? null
     if (data.stl_file_id !== undefined) step.stl_file_id = data.stl_file_id ?? null
     if (data.zim_ref !== undefined) step.zim_ref = normalizeZimRef(data.zim_ref)
+    // Re-snapshot the linked name whenever either link field changed.
+    if (data.inventory_item_id !== undefined || data.stl_file_id !== undefined) {
+      step.linked_name_snapshot = await resolveLinkedName(step.inventory_item_id, step.stl_file_id)
+    }
 
     await step.save()
     return step
@@ -210,4 +217,24 @@ function normalizeZimRef(value: string | null | undefined): string | null {
   if (value === null || value === undefined) return null
   const trimmed = value.trim()
   return trimmed === '' ? null : trimmed
+}
+
+/**
+ * Look up the display name for the linked inventory item or STL file. Returns
+ * null when neither link is set (unlinked step) or the target doesn't exist yet
+ * (race condition on a brand-new id). One awaited query at most per write.
+ */
+async function resolveLinkedName(
+  inventoryItemId: number | null,
+  stlFileId: number | null
+): Promise<string | null> {
+  if (inventoryItemId !== null) {
+    const item = await InventoryItem.find(inventoryItemId)
+    return item?.name ?? null
+  }
+  if (stlFileId !== null) {
+    const file = await StlFile.find(stlFileId)
+    return file?.name ?? null
+  }
+  return null
 }

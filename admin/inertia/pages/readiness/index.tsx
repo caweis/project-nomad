@@ -37,6 +37,7 @@ import type { ReadinessConfig, ReadinessDashboard, PetEntry, PetType } from '../
 import type {
   InventoryCategory,
   InventoryCondition,
+  InventoryKind,
   InventoryItemSlim,
   InventoryListFilters,
   MeasurementSystem,
@@ -95,6 +96,7 @@ interface Pagination {
 interface Enums {
   scenarios: { value: Scenario; label: string }[]
   categories: { value: InventoryCategory; label: string }[]
+  kinds: InventoryKind[]
   conditions: InventoryCondition[]
   resource_types: ResourceType[]
   resource_base_units: Record<ResourceType, string>
@@ -364,7 +366,7 @@ function InventoryTab({
       <div className="flex flex-col md:flex-row gap-4">
         <InventoryFilters
           filters={filters}
-          enums={{ categories: enums.categories }}
+          enums={{ categories: enums.categories, kinds: enums.kinds, conditions: enums.conditions }}
           locations={locations}
           total={pagination?.total ?? items.length}
         />

@@ -4,6 +4,7 @@ import InventoryItem from '#models/inventory_item'
 import type {
   InventoryCategory,
   InventoryCondition,
+  InventoryKind,
   InventoryItemSlim,
   InventoryListFilters,
   ResourceType,
@@ -24,12 +25,14 @@ import type {
 export interface CreateInventoryData {
   name: string
   category: InventoryCategory
+  kind?: InventoryKind
   quantity: number
   unit: string
   location?: string | null
   notes?: string | null
   expiry_date?: Date | null
   restock_threshold?: number | null
+  never_expires?: boolean
   condition?: InventoryCondition | null
   resource_type?: ResourceType | null
   resource_contribution?: number | null
@@ -48,12 +51,14 @@ export class InventoryService {
     const row = new InventoryItem()
     row.name = data.name
     row.category = data.category
+    row.kind = data.kind ?? 'consumable'
     row.quantity = data.quantity
     row.unit = data.unit
     row.location = data.location ?? null
     row.notes = data.notes ?? null
     row.expiry_date = toDateTime(data.expiry_date)
     row.restock_threshold = data.restock_threshold ?? null
+    row.never_expires = data.never_expires ?? false
     row.condition = data.condition ?? null
     row.resource_type = data.resource_type ?? null
     row.resource_contribution = data.resource_contribution ?? null
@@ -71,12 +76,14 @@ export class InventoryService {
 
     if (data.name !== undefined) row.name = data.name
     if (data.category !== undefined) row.category = data.category
+    if (data.kind !== undefined) row.kind = data.kind
     if (data.quantity !== undefined) row.quantity = data.quantity
     if (data.unit !== undefined) row.unit = data.unit
     if (data.location !== undefined) row.location = data.location ?? null
     if (data.notes !== undefined) row.notes = data.notes ?? null
     if (data.expiry_date !== undefined) row.expiry_date = toDateTime(data.expiry_date)
     if (data.restock_threshold !== undefined) row.restock_threshold = data.restock_threshold ?? null
+    if (data.never_expires !== undefined) row.never_expires = data.never_expires
     if (data.condition !== undefined) row.condition = data.condition ?? null
     if (data.resource_type !== undefined) row.resource_type = data.resource_type ?? null
     if (data.resource_contribution !== undefined)
@@ -115,13 +122,18 @@ export class InventoryService {
     const query = InventoryItem.query()
 
     if (filters.category) query.where('category', filters.category)
+    if (filters.kind) query.where('kind', filters.kind)
+    if (filters.condition) query.where('condition', filters.condition)
     if (filters.location) query.whereILike('location', `%${filters.location}%`)
     if (filters.search) query.whereILike('name', `%${filters.search}%`)
 
     if (filters.expiring_within_days !== undefined) {
       const horizon = DateTime.now().plus({ days: filters.expiring_within_days }).toSQLDate()
       if (horizon) {
-        query.whereNotNull('expiry_date').where('expiry_date', '<=', horizon)
+        query
+          .whereNotNull('expiry_date')
+          .where('expiry_date', '<=', horizon)
+          .where('never_expires', false)
       }
     }
 
@@ -142,11 +154,14 @@ export class InventoryService {
       id: row.id,
       name: row.name,
       category: row.category,
+      kind: row.kind,
       quantity: row.quantity,
       unit: row.unit,
       location: row.location,
       expiry_date: row.expiry_date ? row.expiry_date.toISODate() : null,
       restock_threshold: row.restock_threshold,
+      never_expires: row.never_expires,
+      condition: row.condition,
       resource_type: row.resource_type,
       resource_contribution: row.resource_contribution,
     }))
@@ -219,6 +234,7 @@ export class InventoryService {
       .where('resource_contribution', '>', 0)
       .whereNotNull('expiry_date')
       .where('expiry_date', '<=', sqlDate)
+      .where('never_expires', false)
       .orderBy('expiry_date', 'asc')
   }
 }

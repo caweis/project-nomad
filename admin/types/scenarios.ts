@@ -57,6 +57,12 @@ export interface ScenarioPlanStepDto extends StepLinkFields {
   checked: boolean
   /** Resolved display label for the linked inventory item / STL file, if any. */
   linked_name: string | null
+  /**
+   * Snapshot of the linked target's display name at the time the link was set.
+   * Preserved when the FK is SET NULL'd on target deletion so the UI can show
+   * "was: <name>" rather than silently blanking the step's link info.
+   */
+  linked_name_snapshot: string | null
 }
 
 /**

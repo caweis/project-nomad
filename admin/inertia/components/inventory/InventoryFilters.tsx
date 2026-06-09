@@ -1,10 +1,17 @@
 import { router } from '@inertiajs/react'
 import { useState } from 'react'
 import { IconSearch, IconX } from '@tabler/icons-react'
-import type { InventoryCategory, InventoryListFilters } from '../../../types/inventory'
+import type {
+  InventoryCategory,
+  InventoryCondition,
+  InventoryKind,
+  InventoryListFilters,
+} from '../../../types/inventory'
 
 interface FilterEnum {
   categories: { value: InventoryCategory; label: string }[]
+  conditions?: InventoryCondition[]
+  kinds?: InventoryKind[]
 }
 
 interface Props {
@@ -50,6 +57,8 @@ export default function InventoryFilters({ filters, enums, total, locations }: P
 
   const hasActiveFilters =
     !!filters.category ||
+    !!filters.kind ||
+    !!filters.condition ||
     !!filters.location ||
     !!filters.search ||
     filters.expiring_within_days !== undefined ||
@@ -109,6 +118,44 @@ export default function InventoryFilters({ filters, enums, total, locations }: P
           ))}
         </select>
       </FilterGroup>
+
+      {enums.kinds && enums.kinds.length > 0 && (
+        <FilterGroup label="Kind">
+          <select
+            value={filters.kind ?? ''}
+            onChange={(e) =>
+              updateFilter({ kind: (e.target.value || undefined) as InventoryKind | undefined })
+            }
+            className="w-full rounded border border-gray-300 px-2 py-1 text-sm capitalize"
+          >
+            <option value="">All kinds</option>
+            {enums.kinds.map((k) => (
+              <option key={k} value={k} className="capitalize">
+                {k.charAt(0).toUpperCase() + k.slice(1)}
+              </option>
+            ))}
+          </select>
+        </FilterGroup>
+      )}
+
+      {enums.conditions && enums.conditions.length > 0 && (
+        <FilterGroup label="Condition">
+          <select
+            value={filters.condition ?? ''}
+            onChange={(e) =>
+              updateFilter({ condition: (e.target.value || undefined) as InventoryCondition | undefined })
+            }
+            className="w-full rounded border border-gray-300 px-2 py-1 text-sm capitalize"
+          >
+            <option value="">All conditions</option>
+            {enums.conditions.map((c) => (
+              <option key={c} value={c} className="capitalize">
+                {c.charAt(0).toUpperCase() + c.slice(1)}
+              </option>
+            ))}
+          </select>
+        </FilterGroup>
+      )}
 
       <FilterGroup label="Location">
         {/* A select of known locations — picking one issues the same Inertia GET

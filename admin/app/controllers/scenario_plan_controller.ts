@@ -60,6 +60,7 @@ export default class ScenarioPlanController {
       // The preloaded relation is null when the FK is null or was SET NULL'd
       // (target deleted); the UI shows "linked item removed" in that case.
       linked_name: step.inventoryItem?.name ?? step.stlFile?.name ?? null,
+      linked_name_snapshot: step.linked_name_snapshot,
     }))
 
     const detail: ScenarioPlanDetail = {

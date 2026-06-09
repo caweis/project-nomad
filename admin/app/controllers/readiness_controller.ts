@@ -8,6 +8,7 @@ import {
   CATEGORY_LABELS,
   INVENTORY_CATEGORIES,
   INVENTORY_CONDITIONS,
+  INVENTORY_KINDS,
   MEASUREMENT_SYSTEMS,
   RESOURCE_BASE_UNITS,
   RESOURCE_TYPES,
@@ -62,6 +63,7 @@ export default class ReadinessController {
         // a measurable cost.
         scenarios: SCENARIOS.map((s) => ({ value: s, label: SCENARIO_LABELS[s] })),
         categories: INVENTORY_CATEGORIES.map((c) => ({ value: c, label: CATEGORY_LABELS[c] })),
+        kinds: [...INVENTORY_KINDS],
         conditions: [...INVENTORY_CONDITIONS],
         resource_types: [...RESOURCE_TYPES],
         resource_base_units: RESOURCE_BASE_UNITS,

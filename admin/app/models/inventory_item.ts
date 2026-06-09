@@ -3,8 +3,10 @@ import { BaseModel, column, SnakeCaseNamingStrategy } from '@adonisjs/lucid/orm'
 import type {
   InventoryCategory,
   InventoryCondition,
+  InventoryKind,
   ResourceType,
 } from '../../types/inventory.js'
+import { contributesToReadiness as utilContributesToReadiness } from '../../util/inventory.js'
 
 /**
  * Self-Reliance Suite — Inventory catalog entry.
@@ -34,6 +36,10 @@ export default class InventoryItem extends BaseModel {
 
   @column()
   declare category: InventoryCategory
+
+  /** Discriminates consumable (expiry/restock-tracked) from gear (condition-tracked). varchar(16). */
+  @column()
+  declare kind: InventoryKind
 
   /**
    * MySQL returns DECIMAL columns as strings via the driver. A defensive
@@ -70,6 +76,10 @@ export default class InventoryItem extends BaseModel {
   @column({ consume: toNullableNumber })
   declare resource_contribution: number | null
 
+  /** When true the item never expires; excluded from all expiry warnings and queries. */
+  @column()
+  declare never_expires: boolean
+
   @column.dateTime({ autoCreate: true, columnName: 'added_at' })
   declare added_at: DateTime
 
@@ -77,19 +87,15 @@ export default class InventoryItem extends BaseModel {
   declare updated_at: DateTime
 
   /**
-   * Whether this row feeds the readiness calculator. Mirrors the static-
-   * predicate style of StlFile.isMetadataComplete. Used by the service when
-   * summing per resource and by the UI to badge "counts toward readiness."
+   * Whether this row feeds the readiness calculator. Thin wrapper around
+   * util/inventory.ts so the logic is a single source of truth importable from
+   * both the backend and the inertia client.
    */
   static contributesToReadiness(row: {
     resource_type: ResourceType | null
     resource_contribution: number | null
   }): boolean {
-    return (
-      row.resource_type !== null &&
-      row.resource_contribution !== null &&
-      row.resource_contribution > 0
-    )
+    return utilContributesToReadiness(row)
   }
 }
 

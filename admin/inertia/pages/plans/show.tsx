@@ -349,6 +349,11 @@ function StepRow({ planId, step }: { planId: number; step: ScenarioPlanStepDto }
             {link.kind === 'zim' && <IconExternalLink size={12} />}
           </a>
         )}
+        {link.kind === 'none' && step.linked_name_snapshot && (
+          <p className="mt-1 text-xs text-desert-sand/60 italic">
+            was: {step.linked_name_snapshot}
+          </p>
+        )}
       </div>
       <div className="flex items-center gap-1 shrink-0">
         <button

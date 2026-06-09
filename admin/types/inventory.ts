@@ -13,6 +13,15 @@
  * without an ALTER TABLE — exactly the stl_library.ts pattern.
  */
 
+/**
+ * Item kind — discriminates consumables (tracked by expiry/restock) from gear
+ * (tracked by condition). varchar(16) in the DB; validated at the Vine layer
+ * so the set can grow without an ALTER TABLE — the stl_library.ts pattern.
+ */
+export const INVENTORY_KINDS = ['consumable', 'gear'] as const
+
+export type InventoryKind = (typeof INVENTORY_KINDS)[number]
+
 export const INVENTORY_CATEGORIES = [
   'food',
   'water',
@@ -91,13 +100,17 @@ export interface InventoryItemSlim {
   id: number
   name: string
   category: InventoryCategory
+  /** Discriminates consumable (expiry/restock-tracked) from gear (condition-tracked). */
+  kind: InventoryKind
   quantity: number
   unit: string
   location: string | null
   expiry_date: string | null
   restock_threshold: number | null
+  condition: InventoryCondition | null
   resource_type: ResourceType | null
   resource_contribution: number | null
+  never_expires: boolean
 }
 
 /**
@@ -105,7 +118,6 @@ export interface InventoryItemSlim {
  */
 export interface InventoryItemDetail extends InventoryItemSlim {
   notes: string | null
-  condition: InventoryCondition | null
   added_at: string
   updated_at: string
 }
@@ -115,6 +127,8 @@ export interface InventoryItemDetail extends InventoryItemSlim {
  */
 export interface InventoryListFilters {
   category?: InventoryCategory
+  kind?: InventoryKind
+  condition?: InventoryCondition
   location?: string
   search?: string
   expiring_within_days?: number

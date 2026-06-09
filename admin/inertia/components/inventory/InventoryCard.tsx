@@ -4,10 +4,12 @@ import {
   IconClock,
   IconLeaf,
   IconPackage,
+  IconTool,
 } from '@tabler/icons-react'
 import type { InventoryItemSlim } from '../../../types/inventory'
 import { CATEGORY_LABELS } from '../../../types/inventory'
 import { isExpiringWithin, isLowStock } from '../../../util/units'
+import { contributesToReadiness } from '../../../util/inventory'
 
 interface InventoryCardProps {
   item: InventoryItemSlim
@@ -25,12 +27,13 @@ interface InventoryCardProps {
  * Mirrors StlCard's link-to-detail behavior and graceful null formatting.
  */
 export default function InventoryCard({ item, expiringWithinDays }: InventoryCardProps) {
-  const lowStock = isLowStock(item.quantity, item.restock_threshold)
-  const expiringSoon = isExpiringWithin(item.expiry_date, expiringWithinDays, new Date())
-  const countsTowardReadiness =
-    item.resource_type !== null &&
-    item.resource_contribution !== null &&
-    item.resource_contribution > 0
+  const isGear = item.kind === 'gear'
+  const lowStock = !isGear && isLowStock(item.quantity, item.restock_threshold)
+  const expiringSoon =
+    !isGear &&
+    !item.never_expires &&
+    isExpiringWithin(item.expiry_date, expiringWithinDays, new Date())
+  const countsTowardReadiness = contributesToReadiness(item)
 
   return (
     <Link
@@ -43,7 +46,11 @@ export default function InventoryCard({ item, expiringWithinDays }: InventoryCar
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <IconPackage size={20} className="shrink-0 text-desert-green" aria-hidden="true" />
+          {isGear ? (
+            <IconTool size={20} className="shrink-0 text-desert-stone-dark" aria-hidden="true" />
+          ) : (
+            <IconPackage size={20} className="shrink-0 text-desert-green" aria-hidden="true" />
+          )}
           <span className="font-semibold text-sm text-gray-900 truncate" title={item.name}>
             {item.name}
           </span>
@@ -62,10 +69,28 @@ export default function InventoryCard({ item, expiringWithinDays }: InventoryCar
         <span className="inline-block rounded-full bg-desert-green-light text-white px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide">
           {CATEGORY_LABELS[item.category]}
         </span>
+        {/* Kind badge — only shown for gear so consumables don't show redundant chrome */}
+        {isGear && (
+          <span className="inline-block rounded-full bg-desert-stone-lighter/60 text-desert-stone-dark px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide">
+            Gear
+          </span>
+        )}
         <span className="font-medium text-gray-800">
           {formatQuantity(item.quantity)} {item.unit}
         </span>
       </div>
+
+      {/* Condition — relevant for gear */}
+      {isGear && item.condition && (
+        <div className="text-[11px] text-gray-500 capitalize">
+          Condition: {item.condition}
+        </div>
+      )}
+
+      {/* Expiry — only for consumables that expire */}
+      {!isGear && item.never_expires && (
+        <div className="text-[11px] text-desert-stone italic">No expiry</div>
+      )}
 
       {item.location && (
         <div className="text-[11px] text-gray-500 truncate" title={item.location}>
