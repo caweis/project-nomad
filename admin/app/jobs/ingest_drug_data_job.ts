@@ -14,6 +14,45 @@ import type {
 
 const BATCH_SIZE = 500
 
+// A single 500-row updateOrCreateMany should finish in seconds even on the
+// FULLTEXT-indexed drug_labels table. If one batch exceeds this, the DB is
+// locked/overloaded — reject loudly so the ingest FAILS VISIBLY (and retries via
+// BullMQ) instead of hanging forever with the worker's lock still renewing,
+// which reads in the UI as a frozen "part 1 of 13, 0 rows". 0.2.714 removed the
+// un-awaited-update worker crash; this removes the remaining silent hang.
+const UPSERT_TIMEOUT_MS = 120_000
+
+/**
+ * updateOrCreateMany with a hard timeout. mysql2 has no default query timeout, so
+ * a stuck DB call (metadata lock, exhausted connection pool, FULLTEXT stall)
+ * would otherwise never settle and the part-stream would back-pressure to a halt.
+ * Promise.race turns that into a rejection the caller can log + fail + retry.
+ */
+async function withUpsertTimeout<T>(
+  work: Promise<T>,
+  rowCount: number,
+  timeoutMs: number
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () =>
+        reject(
+          new Error(
+            `updateOrCreateMany timed out after ${timeoutMs}ms (batch of ${rowCount} rows) — ` +
+              'the database may be locked or overloaded'
+          )
+        ),
+      timeoutMs
+    )
+  })
+  try {
+    return await Promise.race([work, timeout])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
 // ─── Local type aliases for yauzl callbacks ───────────────────────────────────
 // yauzl/stream-json are loaded via dynamic import() with @ts-ignore (see
 // streamIngestPart). The real @types ship in devDependencies and resolve on the
@@ -338,6 +377,8 @@ export class IngestDrugDataJob {
     let recordsIngested = 0
     let recordsSkipped = 0
     let batch: ReturnType<typeof mapDrugLabelRecord>[] = []
+    let batchNum = 0
+    let firstRecordSeen = false
 
     // Cast to `any` so callback parameters get explicit annotations below rather
     // than triggering implicit-any in tsconfigs that don't find the yauzl types.
@@ -372,6 +413,10 @@ export class IngestDrugDataJob {
               return
             }
 
+            logger.info(
+              `[IngestDrugDataJob] part ${partIndex + 1}/${totalParts}: reading zip entry ${entry.fileName}`
+            )
+
             // The JSON envelope is { meta, results: [...] }
             // Pick the `results` path → StreamArray emits one record at a time
             const jsonParser = createParser({ jsonStreaming: false })
@@ -385,6 +430,12 @@ export class IngestDrugDataJob {
               objectMode: true,
               write(chunk: { value: unknown }, _encoding: BufferEncoding, callback: (err?: Error | null) => void) {
                 const record = chunk.value
+                if (!firstRecordSeen) {
+                  firstRecordSeen = true
+                  logger.info(
+                    `[IngestDrugDataJob] part ${partIndex + 1}/${totalParts}: first record received from parser`
+                  )
+                }
 
                 // Map the record
                 let row: ReturnType<typeof mapDrugLabelRecord>
@@ -413,13 +464,30 @@ export class IngestDrugDataJob {
                   return
                 }
 
-                // Batch full — flush and hold callback until upsert resolves
+                // Batch full — flush and hold the callback until the upsert
+                // resolves (this is the back-pressure point).
                 const currentBatch = batch
                 batch = []
+                const myBatch = ++batchNum
+                const t0 = Date.now()
+                logger.info(
+                  `[IngestDrugDataJob] part ${partIndex + 1}/${totalParts}: upserting batch ${myBatch} (${currentBatch.length} rows)…`
+                )
 
-                DrugLabel.updateOrCreateMany('set_id', currentBatch as Parameters<typeof DrugLabel.updateOrCreateMany>[1])
+                withUpsertTimeout(
+                  DrugLabel.updateOrCreateMany(
+                    'set_id',
+                    currentBatch as Parameters<typeof DrugLabel.updateOrCreateMany>[1]
+                  ),
+                  currentBatch.length,
+                  UPSERT_TIMEOUT_MS
+                )
                   .then((rows) => {
                     recordsIngested += rows.length
+                    logger.info(
+                      `[IngestDrugDataJob] part ${partIndex + 1}/${totalParts}: batch ${myBatch} ok in ${Date.now() - t0}ms ` +
+                        `(${rows.length} rows; part running ${recordsIngested})`
+                    )
 
                     // Update progress: parts-done fraction + within-part fraction
                     const withinFraction = recordsIngested / Math.max(1, 20000)
@@ -446,12 +514,16 @@ export class IngestDrugDataJob {
                     callback()
                   })
                   .catch((upsertErr: unknown) => {
-                    logger.warn(
-                      `[IngestDrugDataJob] Batch upsert failed: ${upsertErr instanceof Error ? upsertErr.message : String(upsertErr)}`
+                    // LOUD failure — fail the part. callback(err) destroys the
+                    // Writable → batchWriter 'error' → the streamIngestPart promise
+                    // rejects → the job fails and BullMQ retries. Silently skipping
+                    // here is exactly how a first ingest finishes "ready" with 0
+                    // rows; surface the real DB error instead.
+                    const msg = upsertErr instanceof Error ? upsertErr.message : String(upsertErr)
+                    logger.error(
+                      `[IngestDrugDataJob] part ${partIndex + 1}/${totalParts}: batch ${myBatch} FAILED after ${Date.now() - t0}ms: ${msg}`
                     )
-                    // Count the batch as skipped and continue — per-batch failure ≠ abort
-                    recordsSkipped += currentBatch.length
-                    callback()
+                    callback(upsertErr instanceof Error ? upsertErr : new Error(msg))
                   })
               },
               final(callback: (err?: Error | null) => void) {
@@ -463,23 +535,41 @@ export class IngestDrugDataJob {
 
                 const remainingBatch = batch
                 batch = []
+                const t0 = Date.now()
+                logger.info(
+                  `[IngestDrugDataJob] part ${partIndex + 1}/${totalParts}: upserting final batch (${remainingBatch.length} rows)…`
+                )
 
-                DrugLabel.updateOrCreateMany('set_id', remainingBatch as Parameters<typeof DrugLabel.updateOrCreateMany>[1])
+                withUpsertTimeout(
+                  DrugLabel.updateOrCreateMany(
+                    'set_id',
+                    remainingBatch as Parameters<typeof DrugLabel.updateOrCreateMany>[1]
+                  ),
+                  remainingBatch.length,
+                  UPSERT_TIMEOUT_MS
+                )
                   .then((rows) => {
                     recordsIngested += rows.length
+                    logger.info(
+                      `[IngestDrugDataJob] part ${partIndex + 1}/${totalParts}: final batch ok in ${Date.now() - t0}ms (${rows.length} rows)`
+                    )
                     callback()
                   })
                   .catch((upsertErr: unknown) => {
-                    logger.warn(
-                      `[IngestDrugDataJob] Final batch upsert failed: ${upsertErr instanceof Error ? upsertErr.message : String(upsertErr)}`
+                    const msg = upsertErr instanceof Error ? upsertErr.message : String(upsertErr)
+                    logger.error(
+                      `[IngestDrugDataJob] part ${partIndex + 1}/${totalParts}: final batch FAILED after ${Date.now() - t0}ms: ${msg}`
                     )
-                    recordsSkipped += remainingBatch.length
-                    callback()
+                    callback(upsertErr instanceof Error ? upsertErr : new Error(msg))
                   })
               },
             })
 
             batchWriter.on('finish', () => {
+              logger.info(
+                `[IngestDrugDataJob] part ${partIndex + 1}/${totalParts}: stream finished — ` +
+                  `ingested=${recordsIngested} skipped=${recordsSkipped} batches=${batchNum}`
+              )
               resolve({ recordsIngested, recordsSkipped })
             })
 

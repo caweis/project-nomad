@@ -1,7 +1,6 @@
 import {
   IconBolt,
   IconBox,
-  IconFirstAidKit,
   IconHelp,
   IconMapRoute,
   IconPill,
@@ -68,30 +67,18 @@ const WORKSHOP_ITEM = {
 }
 
 // Drug Reference v1 — offline FDA drug-label search (Core Capability).
-// displayOrder 6: between Workshop (5) and Preparedness (7).
+// displayOrder 6: between Workshop (5) and Preparedness (7). ONE surface: search
+// by drug name OR by situation (burn, fever, diarrhea) via the curated chips. The
+// former separate "When to use what" tile is folded in here — both tiles routed
+// to /drug-reference, so the second was pure duplication.
 const DRUG_REFERENCE_ITEM = {
   label: 'Drug Reference',
   to: '/drug-reference',
   target: '',
-  description: 'Offline, searchable FDA drug labels (Rx + OTC)',
+  description: 'Offline FDA drug labels: search by drug name or by situation',
   icon: <IconPill size={48} />,
   installed: true,
   displayOrder: 6,
-  poweredBy: null,
-}
-
-// When to use what — situation-first entry into the unified Drug Reference
-// surface (Core Capability). displayOrder 6.5: between Drug Reference (6) and
-// Preparedness (7). Lands on the same page as the Drug Reference tile, where the
-// curated situation chips browse the matching OTC drugs.
-const WHEN_TO_USE_WHAT_ITEM = {
-  label: 'When to use what',
-  to: '/drug-reference',
-  target: '',
-  description: 'Pick a situation — burn, fever, diarrhea — and see what OTC drugs treat it',
-  icon: <IconFirstAidKit size={48} />,
-  installed: true,
-  displayOrder: 6.5,
   poweredBy: null,
 }
 
@@ -232,11 +219,10 @@ export default function Home(props: {
   // stl-library/)
   items.push(WORKSHOP_ITEM)
 
-  // Add Drug Reference as a Core Capability (offline FDA drug labels, v1)
+  // Add Drug Reference as a Core Capability (offline FDA drug labels, v1 —
+  // search by drug name or by situation; the former "When to use what" tile is
+  // folded in here since both routed to the same /drug-reference page)
   items.push(DRUG_REFERENCE_ITEM)
-
-  // Add "When to use what" — condition-first reference over the FDA labels
-  items.push(WHEN_TO_USE_WHAT_ITEM)
 
   // Add Preparedness as a Core Capability (Self-Reliance Suite Phases 1 + 2 + 3;
   // the former standalone Inventory tile is now its first tab)
