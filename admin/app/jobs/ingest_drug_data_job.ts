@@ -14,6 +14,24 @@ import type {
 
 const BATCH_SIZE = 500
 
+/**
+ * Dedupe a batch by set_id (last occurrence wins). openFDA ships records that
+ * share an SPL set_id; when two land in the SAME batch, updateOrCreateMany tries
+ * to INSERT both (neither exists yet) and the second hits the unique
+ * uniq_drug_labels_set_id index, failing the whole batch (this aborted ingest at
+ * part 5). Collapsing to one row per set_id before the upsert prevents it.
+ * Cross-batch duplicates are fine — updateOrCreateMany updates the existing row.
+ */
+function dedupeBySetId(
+  rows: ReturnType<typeof mapDrugLabelRecord>[]
+): ReturnType<typeof mapDrugLabelRecord>[] {
+  const bySetId = new Map<string, ReturnType<typeof mapDrugLabelRecord>>()
+  for (const r of rows) {
+    if (r) bySetId.set(r.set_id, r)
+  }
+  return [...bySetId.values()]
+}
+
 // A single 500-row updateOrCreateMany should finish in seconds even on the
 // FULLTEXT-indexed drug_labels table. If one batch exceeds this, the DB is
 // locked/overloaded — reject loudly so the ingest FAILS VISIBLY (and retries via
@@ -537,7 +555,7 @@ export class IngestDrugDataJob {
 
                 // Batch full — flush and hold the callback until the upsert
                 // resolves (this is the back-pressure point).
-                const currentBatch = batch
+                const currentBatch = dedupeBySetId(batch)
                 batch = []
                 const myBatch = ++batchNum
                 const t0 = Date.now()
@@ -585,16 +603,24 @@ export class IngestDrugDataJob {
                     callback()
                   })
                   .catch((upsertErr: unknown) => {
-                    // LOUD failure — fail the part. callback(err) destroys the
-                    // Writable → batchWriter 'error' → the streamIngestPart promise
-                    // rejects → the job fails and BullMQ retries. Silently skipping
-                    // here is exactly how a first ingest finishes "ready" with 0
-                    // rows; surface the real DB error instead.
                     const msg = upsertErr instanceof Error ? upsertErr.message : String(upsertErr)
+                    if (/timed out/i.test(msg)) {
+                      // Systemic DB hang — fail the part loudly so BullMQ retries.
+                      logger.error(
+                        `[IngestDrugDataJob] part ${partIndex + 1}/${totalParts}: batch ${myBatch} TIMED OUT after ${Date.now() - t0}ms: ${msg}`
+                      )
+                      callback(upsertErr instanceof Error ? upsertErr : new Error(msg))
+                      return
+                    }
+                    // Per-batch data error (a row the schema rejects, etc.) — log,
+                    // count as skipped, and CONTINUE. One bad batch must not abort
+                    // the whole ~259k ingest (over-correcting to fail-loud here is
+                    // what let a single duplicate set_id kill the run at part 5).
                     logger.error(
-                      `[IngestDrugDataJob] part ${partIndex + 1}/${totalParts}: batch ${myBatch} FAILED after ${Date.now() - t0}ms: ${msg}`
+                      `[IngestDrugDataJob] part ${partIndex + 1}/${totalParts}: batch ${myBatch} skipped after error (${Date.now() - t0}ms): ${msg}`
                     )
-                    callback(upsertErr instanceof Error ? upsertErr : new Error(msg))
+                    recordsSkipped += currentBatch.length
+                    callback()
                   })
               },
               final(callback: (err?: Error | null) => void) {
@@ -604,7 +630,7 @@ export class IngestDrugDataJob {
                   return
                 }
 
-                const remainingBatch = batch
+                const remainingBatch = dedupeBySetId(batch)
                 batch = []
                 const t0 = Date.now()
                 logger.info(
@@ -628,10 +654,18 @@ export class IngestDrugDataJob {
                   })
                   .catch((upsertErr: unknown) => {
                     const msg = upsertErr instanceof Error ? upsertErr.message : String(upsertErr)
+                    if (/timed out/i.test(msg)) {
+                      logger.error(
+                        `[IngestDrugDataJob] part ${partIndex + 1}/${totalParts}: final batch TIMED OUT after ${Date.now() - t0}ms: ${msg}`
+                      )
+                      callback(upsertErr instanceof Error ? upsertErr : new Error(msg))
+                      return
+                    }
                     logger.error(
-                      `[IngestDrugDataJob] part ${partIndex + 1}/${totalParts}: final batch FAILED after ${Date.now() - t0}ms: ${msg}`
+                      `[IngestDrugDataJob] part ${partIndex + 1}/${totalParts}: final batch skipped after error (${Date.now() - t0}ms): ${msg}`
                     )
-                    callback(upsertErr instanceof Error ? upsertErr : new Error(msg))
+                    recordsSkipped += remainingBatch.length
+                    callback()
                   })
               },
             })

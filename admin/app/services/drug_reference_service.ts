@@ -459,7 +459,18 @@ export class DrugReferenceService {
       const continuation = activeJobs
         .filter((j) => j.id !== deterministicJobId)
         .sort((a, b) => (b.data?.partIndex ?? 0) - (a.data?.partIndex ?? 0))[0]
-      if (continuation) job = continuation
+      if (continuation) {
+        job = continuation
+      } else {
+        // No live continuation. If the continuation chain FAILED partway, surface
+        // the failed job so the status reads 'failed' — otherwise we fall back to
+        // the completed pass-0 job and falsely report 'ready' with only part 1's
+        // count (the "stopped at 20k / says ready" miscount).
+        const failed = (await queue.getJobs(['failed']))
+          .filter((j) => j.id !== deterministicJobId)
+          .sort((a, b) => (b.data?.partIndex ?? 0) - (a.data?.partIndex ?? 0))[0]
+        if (failed) job = failed
+      }
     }
     return job
   }
@@ -531,10 +542,11 @@ export class DrugReferenceService {
     // count from max(jobRecords, live rowCount) so a first ingest tracks the table
     // filling 0 → ~259k, while a re-ingest into a populated table still rides the
     // per-job counter. Outside the running phase, trust the job's own total.
-    const records =
-      ingestPhaseState === 'running'
-        ? resolveIngestRecordsShown(jobRecords, count, expectedTotal)
-        : jobRecords
+    // Always reconcile against the live row count. The per-job recordsIngested can
+    // be a partial/stale total — the completed pass-0 job only counted part 1, and
+    // a failed continuation stops mid-run — so trust the table's real count,
+    // clamped to the expected total, in every phase (not just while running).
+    const records = resolveIngestRecordsShown(jobRecords, count, expectedTotal)
 
     const ingest: DrugIngestPhaseStatus = {
       state: ingestPhaseState,
