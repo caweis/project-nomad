@@ -22,6 +22,13 @@ const BATCH_SIZE = 500
 // un-awaited-update worker crash; this removes the remaining silent hang.
 const UPSERT_TIMEOUT_MS = 120_000
 
+// No record parsed within this window (the zip-open + JSON-parse stage, BEFORE the
+// first batch) means the part is almost certainly corrupt/truncated: yauzl's
+// inflate stream hangs with no 'end' and no 'error', so the ingest sat on
+// "part 1, 0 rows" forever with the worker's lock still renewing. Fail loud
+// instead. Once records flow, the per-batch upsert timeout governs.
+const STALL_MS = 90_000
+
 /**
  * updateOrCreateMany with a hard timeout. mysql2 has no default query timeout, so
  * a stuck DB call (metadata lock, exhausted connection pool, FULLTEXT stall)
@@ -389,7 +396,50 @@ export class IngestDrugDataJob {
       cb: (err: Error | null, zipFile: YauzlZipFile | null) => void
     ) => void
 
-    return new Promise<{ recordsIngested: number; recordsSkipped: number }>((resolve, reject) => {
+    return new Promise<{ recordsIngested: number; recordsSkipped: number }>((resolveRaw, rejectRaw) => {
+      // Stall watchdog. The per-batch upsert has a timeout, but the stage BEFORE
+      // the first record (zip-open + JSON parse) had none — a corrupt/truncated
+      // part makes yauzl's inflate stream hang with no 'end' and no 'error', so
+      // the ingest froze on "part 1, 0 rows". If no record is parsed within
+      // STALL_MS, fail the part loudly (the reason lands in the job's failedReason
+      // → the status panel) and destroy the stuck stream. resolve/reject are
+      // wrapped (shadowing the raw executor params) so every existing handler
+      // routes through the once-guard + watchdog cleanup.
+      let settled = false
+      let activeReadStream: Readable | null = null
+      let watchdog: ReturnType<typeof setInterval> | undefined
+      const watchStart = Date.now()
+      const settle = () => {
+        settled = true
+        if (watchdog) clearInterval(watchdog)
+        try {
+          activeReadStream?.destroy()
+        } catch {
+          // best-effort stream teardown
+        }
+      }
+      const resolve = (v: { recordsIngested: number; recordsSkipped: number }) => {
+        if (settled) return
+        settle()
+        resolveRaw(v)
+      }
+      const reject = (e: Error) => {
+        if (settled) return
+        settle()
+        rejectRaw(e)
+      }
+      watchdog = setInterval(() => {
+        if (!settled && !firstRecordSeen && Date.now() - watchStart > STALL_MS) {
+          reject(
+            new Error(
+              `Ingest stalled: no records parsed from part ${partIndex + 1}/${totalParts} ` +
+                `within ${Math.round(STALL_MS / 1000)}s. The downloaded part is likely corrupt ` +
+                'or truncated — re-download FDA data, then ingest again.'
+            )
+          )
+        }
+      }, 10_000)
+
       yauzlOpen(zipPath, { lazyEntries: true, autoClose: true }, (err, zipFile) => {
         if (err || !zipFile) {
           reject(err ?? new Error(`Failed to open zip: ${zipPath}`))
@@ -416,6 +466,7 @@ export class IngestDrugDataJob {
             logger.info(
               `[IngestDrugDataJob] part ${partIndex + 1}/${totalParts}: reading zip entry ${entry.fileName}`
             )
+            activeReadStream = readStream
 
             // The JSON envelope is { meta, results: [...] }
             // Pick the `results` path → StreamArray emits one record at a time
