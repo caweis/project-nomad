@@ -219,4 +219,41 @@ export default class DrugReferenceController {
       return response.internalServerError({ error: 'Could not reset ingest' })
     }
   }
+
+  /**
+   * GET /api/drug-reference/ingest-log
+   * Tail the persisted app log for ingest/download lines. In production the logger
+   * writes JSON to /app/storage/logs/admin.log (both the admin and worker
+   * containers share that volume), so the worker's [IngestDrugDataJob] trace lands
+   * there even when its stdout never reaches the log viewer. This surfaces it over
+   * HTTP so the exact stall stage (zip-open vs first-record vs batch) is visible
+   * without container access. Reads only the last slice of the file.
+   */
+  async ingestLog({ request, response }: HttpContext) {
+    const LOG_PATH = '/app/storage/logs/admin.log'
+    const TAIL_BYTES = 128 * 1024
+    const limit = Math.min(Number(request.input('lines', 400)) || 400, 2000)
+    try {
+      const { stat, open } = await import('node:fs/promises')
+      const st = await stat(LOG_PATH)
+      const start = Math.max(0, st.size - TAIL_BYTES)
+      const fh = await open(LOG_PATH, 'r')
+      try {
+        const buf = Buffer.alloc(st.size - start)
+        await fh.read(buf, 0, buf.length, start)
+        const all = buf.toString('utf8').split('\n')
+        // Keep only ingest/download/worker-relevant lines; for JSON pino lines the
+        // substring match still works against the embedded "msg" field.
+        const re =
+          /IngestDrugDataJob|DownloadDrugDataJob|DrugReference|drug-ingest|drug-download|unhandledRejection|uncaughtException|queue:work|stalled/i
+        const matched = all.filter((l) => re.test(l)).slice(-limit)
+        return { ok: true, path: LOG_PATH, size: st.size, count: matched.length, lines: matched }
+      } finally {
+        await fh.close()
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      return response.notFound({ ok: false, path: LOG_PATH, error: msg })
+    }
+  }
 }

@@ -84,6 +84,7 @@ router
     router.post('/download', [DrugReferenceController, 'download'])
     router.post('/ingest', [DrugReferenceController, 'ingest'])
     router.post('/reset-ingest', [DrugReferenceController, 'resetIngest'])
+    router.get('/ingest-log', [DrugReferenceController, 'ingestLog'])
   })
   .prefix('/api/drug-reference')
 
