@@ -18,6 +18,7 @@ import {
   orderOtcFirst,
   findConditionBySlug,
   toConditionSummary,
+  situationsForIndications,
   OTC_PRODUCT_TYPE,
   RX_PRODUCT_TYPE,
 } from '../../util/conditions.ts'
@@ -202,6 +203,71 @@ check('toConditionSummary strips searchTerms', () => {
   })
   assert.deepEqual(summary, { slug: 'fever', label: 'Fever', category: 'Pain' })
   assert.equal('searchTerms' in summary, false)
+})
+
+// ── situationsForIndications (reverse link) ───────────────────────────────────
+const sampleConditions = parseConditionsFile({
+  version: 'v',
+  conditions: [
+    { slug: 'fever', label: 'Fever', category: 'Pain', searchTerms: ['fever', 'reduces fever'] },
+    { slug: 'pain', label: 'Pain', category: 'Pain', searchTerms: ['pain', 'minor aches'] },
+    { slug: 'cough', label: 'Cough', category: 'Cold', searchTerms: ['cough', 'cough suppressant'] },
+    {
+      slug: 'sore-throat',
+      label: 'Sore throat',
+      category: 'Cold',
+      searchTerms: ['sore throat', 'throat pain'],
+    },
+  ],
+}).conditions
+
+check('situationsForIndications matches a single-word term, case-insensitively', () => {
+  const out = situationsForIndications('Temporarily reduces FEVER and relieves minor aches', sampleConditions)
+  assert.deepEqual(
+    out.map((c) => c.slug),
+    ['fever', 'pain']
+  )
+})
+
+check('situationsForIndications matches a multi-word phrase term', () => {
+  const out = situationsForIndications('For the temporary relief of sore throat', sampleConditions)
+  assert.deepEqual(
+    out.map((c) => c.slug),
+    ['sore-throat']
+  )
+})
+
+check('situationsForIndications preserves curated order, not text order', () => {
+  // text mentions cough first, then fever, but curated order is fever before cough
+  const out = situationsForIndications('Controls cough; also reduces fever', sampleConditions)
+  assert.deepEqual(
+    out.map((c) => c.slug),
+    ['fever', 'cough']
+  )
+})
+
+check('situationsForIndications returns summaries (no searchTerms leak)', () => {
+  const out = situationsForIndications('pain', sampleConditions)
+  assert.equal(out.length, 1)
+  assert.equal('searchTerms' in out[0], false)
+  assert.deepEqual(out[0], { slug: 'pain', label: 'Pain', category: 'Pain' })
+})
+
+check('situationsForIndications returns [] for blank/empty/null input', () => {
+  assert.deepEqual(situationsForIndications('', sampleConditions), [])
+  assert.deepEqual(situationsForIndications('   ', sampleConditions), [])
+  assert.deepEqual(situationsForIndications(null, sampleConditions), [])
+  assert.deepEqual(situationsForIndications(undefined, sampleConditions), [])
+})
+
+check('situationsForIndications returns [] when nothing matches', () => {
+  assert.deepEqual(situationsForIndications('antiseptic for minor cuts', sampleConditions), [])
+})
+
+check('situationsForIndications dedupes by slug (one hit per condition)', () => {
+  // both "pain" and "minor aches" appear; pain must surface exactly once
+  const out = situationsForIndications('relieves minor aches and pain', sampleConditions)
+  assert.equal(out.filter((c) => c.slug === 'pain').length, 1)
 })
 
 // ── shipped spine smoke check ─────────────────────────────────────────────────

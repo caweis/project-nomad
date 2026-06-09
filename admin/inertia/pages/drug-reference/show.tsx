@@ -1,11 +1,14 @@
 import { Head, Link } from '@inertiajs/react'
 import AppLayout from '~/layouts/AppLayout'
-import { IconArrowLeft, IconAlertTriangle } from '@tabler/icons-react'
+import { IconArrowLeft, IconAlertTriangle, IconFirstAidKit } from '@tabler/icons-react'
 import type { DrugLabelDetail } from '../../../types/drug_reference'
+import type { ConditionSummary } from '../../../types/conditions'
 import { PRODUCT_TYPES } from '../../../types/drug_reference'
 
 interface PageProps {
   label: DrugLabelDetail
+  /** Curated situations this label treats (matched from its indications text). */
+  situations?: ConditionSummary[]
 }
 
 /**
@@ -15,7 +18,7 @@ interface PageProps {
  * Boxed Warning appears first as a prominent red callout.
  * Drug Interactions carries a note that this is single-drug label text.
  */
-export default function DrugReferenceShow({ label }: PageProps) {
+export default function DrugReferenceShow({ label, situations = [] }: PageProps) {
   const isRx = label.product_type === PRODUCT_TYPES.RX
   const isOtc = label.product_type === PRODUCT_TYPES.OTC
 
@@ -49,12 +52,12 @@ export default function DrugReferenceShow({ label }: PageProps) {
             </h1>
             {/* OTC / Rx badge */}
             {isRx && (
-              <span className="inline-block mt-1 px-2 py-0.5 rounded text-xs font-semibold bg-orange-100 text-orange-700 border border-orange-300">
+              <span className="inline-block mt-1 px-2 py-0.5 rounded text-xs font-semibold bg-desert-orange/10 text-desert-orange-dark border border-desert-orange/30">
                 Rx
               </span>
             )}
             {isOtc && (
-              <span className="inline-block mt-1 px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-blue-700 border border-blue-300">
+              <span className="inline-block mt-1 px-2 py-0.5 rounded text-xs font-semibold bg-desert-olive/10 text-desert-olive-dark border border-desert-olive/30">
                 OTC
               </span>
             )}
@@ -110,6 +113,31 @@ export default function DrugReferenceShow({ label }: PageProps) {
         {/* 2. Indications & Usage */}
         {label.indications && (
           <LabelSection title="Indications & Usage" body={label.indications} />
+        )}
+
+        {/* Reverse link — curated situations this label treats. The other half of
+            the symbiotic surface: each chip jumps back to Drug Reference with the
+            situation pre-searched. */}
+        {situations.length > 0 && (
+          <section className="mb-6 rounded-2xl border border-desert-stone-lighter/60 bg-desert-sand/40 p-4">
+            <div className="mb-2 flex items-center gap-2">
+              <IconFirstAidKit size={18} className="flex-shrink-0 text-desert-olive-dark" />
+              <h2 className="text-sm font-bold uppercase tracking-wide text-desert-green-darker">
+                Commonly used for
+              </h2>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {situations.map((s) => (
+                <Link
+                  key={s.slug}
+                  href={`/drug-reference?situation=${encodeURIComponent(s.slug)}`}
+                  className="rounded-full border border-desert-olive/40 bg-white px-3 py-1 text-sm text-desert-olive-dark transition-colors hover:border-desert-olive hover:bg-desert-olive hover:text-white"
+                >
+                  {s.label}
+                </Link>
+              ))}
+            </div>
+          </section>
         )}
 
         {/* 3. Dosage & Administration */}

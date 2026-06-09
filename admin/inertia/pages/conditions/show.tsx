@@ -33,11 +33,11 @@ export default function ConditionsShow({ condition, drugs, drugRowCount }: PageP
         {/* Back nav */}
         <div className="mb-4">
           <Link
-            href="/drug-reference?tab=conditions"
+            href="/drug-reference"
             className="inline-flex items-center gap-1 text-sm text-desert-green hover:underline"
           >
             <IconArrowLeft size={16} />
-            When to use what
+            Drug Reference
           </Link>
         </div>
 

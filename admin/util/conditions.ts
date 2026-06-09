@@ -114,6 +114,44 @@ export function toConditionSummary(condition: Condition): ConditionSummary {
   }
 }
 
+// ─── Reverse link: indications text → curated situations ──────────────────────
+
+/**
+ * The other direction of the symbiotic relationship: given a single drug's
+ * indications-and-usage text, find which curated situations it treats.
+ *
+ * A condition matches when ANY of its searchTerms appears as a case-insensitive
+ * substring of the indications text. Substring (not word-boundary or FULLTEXT)
+ * matching mirrors the FULLTEXT/LIKE intent of the forward search closely enough
+ * for a "Commonly used for" affordance, while staying a pure string operation
+ * with no DB. Curated order is preserved and results are deduped by slug.
+ *
+ * Blank/empty input → [] (a label with no indications treats nothing here).
+ */
+export function situationsForIndications(
+  indicationsText: string | null | undefined,
+  conditions: Condition[]
+): ConditionSummary[] {
+  if (typeof indicationsText !== 'string') return []
+  const haystack = indicationsText.toLowerCase()
+  if (haystack.trim().length === 0) return []
+
+  const matched: ConditionSummary[] = []
+  const seen = new Set<string>()
+  for (const condition of conditions) {
+    if (seen.has(condition.slug)) continue
+    const hit = condition.searchTerms.some((term) => {
+      const needle = term.trim().toLowerCase()
+      return needle.length > 0 && haystack.includes(needle)
+    })
+    if (hit) {
+      seen.add(condition.slug)
+      matched.push(toConditionSummary(condition))
+    }
+  }
+  return matched
+}
+
 // ─── FULLTEXT query construction ──────────────────────────────────────────────
 
 /**

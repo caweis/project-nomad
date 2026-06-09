@@ -29,12 +29,12 @@ export default function DrugResultRow({ result }: Props) {
 
           {/* OTC / Rx badge */}
           {isRx && (
-            <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-orange-100 text-orange-700 border border-orange-200 flex-shrink-0">
+            <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-desert-orange/10 text-desert-orange-dark border border-desert-orange/30 flex-shrink-0">
               Rx
             </span>
           )}
           {isOtc && (
-            <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-blue-100 text-blue-700 border border-blue-200 flex-shrink-0">
+            <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-desert-olive/10 text-desert-olive-dark border border-desert-olive/30 flex-shrink-0">
               OTC
             </span>
           )}

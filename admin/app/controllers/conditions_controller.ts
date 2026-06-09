@@ -20,13 +20,14 @@ export default class ConditionsController {
 
   /**
    * GET /conditions — legacy browse route.
-   * "When to use what" now lives as a tab on the Drug Reference page, so the
-   * standalone browse route permanently redirects to that tab. Any old bookmark
-   * or in-app link lands on the same content. The condition detail route
-   * (/conditions/:slug) is unchanged — condition cards still deep-link to it.
+   * Situation browsing now lives directly on the unified Drug Reference page, so
+   * the standalone browse route permanently redirects there. Any old bookmark or
+   * in-app link lands on the same content. The condition detail route
+   * (/conditions/:slug) is unchanged — situation chips still deep-link to it via
+   * /drug-reference?situation=<slug>.
    */
   async index({ response }: HttpContext) {
-    return response.redirect('/drug-reference?tab=conditions')
+    return response.redirect('/drug-reference')
   }
 
   /**

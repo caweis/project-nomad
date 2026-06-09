@@ -1,12 +1,16 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useMemo, useEffect } from 'react'
 import { Head, Link, router } from '@inertiajs/react'
 import AppLayout from '~/layouts/AppLayout'
 import StyledButton from '~/components/StyledButton'
 import DrugResultRow from '~/components/drug-reference/DrugResultRow'
 import IngestStatus from '~/components/drug-reference/IngestStatus'
-import ConditionsBrowse from '~/components/conditions/ConditionsBrowse'
-import type { DrugSearchResult, DrugIngestStatus } from '../../../types/drug_reference'
-import type { ConditionSummary } from '../../../types/conditions'
+import SafetyBanner from '~/components/conditions/SafetyBanner'
+import { IconSearch, IconFirstAidKit } from '@tabler/icons-react'
+import type {
+  DrugSearchResult,
+  DrugIngestStatus,
+} from '../../../types/drug_reference'
+import type { ConditionSummary, ConditionDrugsResult } from '../../../types/conditions'
 import { PRODUCT_TYPES } from '../../../types/drug_reference'
 
 interface PageProps {
@@ -15,36 +19,73 @@ interface PageProps {
   conditions: ConditionSummary[]
 }
 
-type DrugTab = 'search' | 'conditions'
-
 const DEBOUNCE_MS = 350
+const LIMIT = 50
 
-/** Read the initial tab from ?tab= so /drug-reference?tab=conditions deep-links. */
-function initialTab(): DrugTab {
-  if (typeof window === 'undefined') return 'search'
-  return new URLSearchParams(window.location.search).get('tab') === 'conditions'
-    ? 'conditions'
-    : 'search'
+/** Shared elevated-card surface, matching the Supply Readiness elegance pass. */
+const CARD_SURFACE =
+  'rounded-2xl border border-desert-stone-lighter/60 bg-desert-white ' +
+  'shadow-[0_1px_2px_rgba(66,68,32,0.04),0_8px_24px_-12px_rgba(66,68,32,0.12)]'
+
+/** Read an initial situation slug from ?situation= (reverse-link deep link). */
+function initialSituationSlug(): string | null {
+  if (typeof window === 'undefined') return null
+  return new URLSearchParams(window.location.search).get('situation')
 }
 
 /**
- * Drug Reference search page.
+ * Match a free-text query to a curated situation by slug or label (case-insensitive:
+ * exact first, then "contains"). Returns the matched summary or null. The curated
+ * `searchTerms` are server-only, so off-list queries fall through to free-text on the
+ * API — which still resolves a situation against the FULLTEXT index.
+ */
+function matchSituation(query: string, conditions: ConditionSummary[]): ConditionSummary | null {
+  const q = query.trim().toLowerCase()
+  if (!q) return null
+  const exact = conditions.find((c) => c.slug.toLowerCase() === q || c.label.toLowerCase() === q)
+  if (exact) return exact
+  return (
+    conditions.find(
+      (c) => c.label.toLowerCase().includes(q) || c.slug.replace(/-/g, ' ').includes(q)
+    ) ?? null
+  )
+}
+
+/** Stable key for a collapsed drug result (brand+generic identity). */
+function drugKey(d: DrugSearchResult): string {
+  return `${(d.brand_name ?? '').toLowerCase()}|${(d.generic_name ?? '').toLowerCase()}`
+}
+
+/**
+ * Unified Drug Reference surface.
  *
- * Empty state (rowCount === 0): shows a "download FDA drug data" prompt +
- * the IngestStatus component. Once data is loaded, shows the search box,
- * OTC/Rx filter pills, collapsed results, and pagination.
+ * One search box runs BOTH directions of the symbiotic relationship:
+ *   - drug-name search   (a drug → identity)         → "Drugs" section
+ *   - situation matching (a situation → its drugs)   → "For …" section
+ * Curated situation chips are always visible for browsing; clicking one searches it.
+ *
+ * Empty state (rowCount === 0): the "download FDA drug data" prompt + IngestStatus.
+ * Once data is loaded: chips + dual-section results, with the FDA-data update control
+ * and source citation at the foot.
  */
 export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions }: PageProps) {
-  const [tab, setTab] = useState<DrugTab>(initialTab)
   const [query, setQuery] = useState('')
   const [productType, setProductType] = useState<string | null>(null)
-  const [scope, setScope] = useState<'name' | 'indication'>('name')
-  const [results, setResults] = useState<DrugSearchResult[]>([])
-  const [loading, setLoading] = useState(false)
-  const [searched, setSearched] = useState(false)
+
+  // Drug-name results.
+  const [drugResults, setDrugResults] = useState<DrugSearchResult[]>([])
+  const [drugLoading, setDrugLoading] = useState(false)
   const [offset, setOffset] = useState(0)
   const [hasMore, setHasMore] = useState(false)
+
+  // Situation results.
+  const [situation, setSituation] = useState<ConditionSummary | null>(null)
+  const [situationDrugs, setSituationDrugs] = useState<DrugSearchResult[]>([])
+  const [situationLoading, setSituationLoading] = useState(false)
+
+  const [searched, setSearched] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
   const [triggering, setTriggering] = useState(false)
   const [ingesting, setIngesting] = useState(false)
   const [status, setStatus] = useState<DrugIngestStatus | null>(ingestStatus)
@@ -53,72 +94,136 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions 
   // Top-level phase derived from the two sub-phases. `busy` = a phase is running.
   const phase = status?.phase ?? 'idle'
   const busy = phase === 'downloading' || phase === 'ingesting'
-  // The manual "Ingest into search" button is available once parts are on disk
-  // (download completed) and ingest is not already running. phase 'downloaded'
-  // and 'failed' (with a completed download) both qualify.
+  // The manual "Ingest into search" button is available once parts are on disk.
   const canIngestFromDisk =
     status?.download.state === 'completed' && status?.ingest.state !== 'running'
 
-  const LIMIT = 50
+  // Group curated conditions by category, preserving curated order.
+  const grouped = useMemo(() => {
+    const map = new Map<string, ConditionSummary[]>()
+    for (const c of conditions) {
+      const bucket = map.get(c.category) ?? []
+      bucket.push(c)
+      map.set(c.category, bucket)
+    }
+    return Array.from(map.entries())
+  }, [conditions])
 
-  const doSearch = useCallback(
-    async (q: string, pt: string | null, sc: 'name' | 'indication', off: number, append: boolean) => {
+  /** Drug-name search (one direction). Appends on "Load more". */
+  const searchDrugs = useCallback(
+    async (q: string, pt: string | null, off: number, append: boolean) => {
       if (!q.trim()) {
-        setResults([])
-        setSearched(false)
+        setDrugResults([])
         setHasMore(false)
         return
       }
-      setLoading(true)
-      setError(null)
+      setDrugLoading(true)
       try {
         const params = new URLSearchParams({ q, limit: String(LIMIT), offset: String(off) })
         if (pt) params.set('product_type', pt)
-        if (sc === 'indication') params.set('scope', 'indication')
         const resp = await fetch(`/api/drug-reference/search?${params}`)
         if (!resp.ok) throw new Error(`Search failed: HTTP ${resp.status}`)
         const json = (await resp.json()) as { results: DrugSearchResult[] }
-        const newResults = json.results ?? []
-        setResults(append ? (prev) => [...prev, ...newResults] : newResults)
-        setHasMore(newResults.length === LIMIT)
-        setSearched(true)
+        const next = json.results ?? []
+        setDrugResults(append ? (prev) => [...prev, ...next] : next)
+        setHasMore(next.length === LIMIT)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Search failed')
       } finally {
-        setLoading(false)
+        setDrugLoading(false)
       }
     },
     []
   )
 
+  /**
+   * Situation search (the other direction). Resolves the query to a curated
+   * situation (by slug) or free text, fetches that situation's OTC drugs.
+   * Pass an explicit slug (chip / deep link) to force the curated path.
+   */
+  const searchSituation = useCallback(
+    async (q: string, conds: ConditionSummary[], forceSlug?: string) => {
+      const matched = forceSlug
+        ? conds.find((c) => c.slug === forceSlug) ?? null
+        : matchSituation(q, conds)
+      if (!q.trim() && !forceSlug) {
+        setSituation(null)
+        setSituationDrugs([])
+        return
+      }
+      setSituationLoading(true)
+      try {
+        const params = new URLSearchParams()
+        if (matched) params.set('slug', matched.slug)
+        else params.set('q', q)
+        const resp = await fetch(`/api/conditions/drugs?${params}`)
+        if (!resp.ok) throw new Error(`Search failed: HTTP ${resp.status}`)
+        const json = (await resp.json()) as ConditionDrugsResult
+        setSituation(json.condition ?? matched ?? { slug: '', label: q.trim(), category: 'Search' })
+        setSituationDrugs(json.drugs ?? [])
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Search failed')
+      } finally {
+        setSituationLoading(false)
+      }
+    },
+    []
+  )
+
+  /** Run both directions for a query. */
+  const runSearch = useCallback(
+    (q: string, pt: string | null) => {
+      setError(null)
+      setOffset(0)
+      setSearched(q.trim().length > 0)
+      searchDrugs(q, pt, 0, false)
+      searchSituation(q, conditions)
+    },
+    [conditions, searchDrugs, searchSituation]
+  )
+
   const handleQueryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value
     setQuery(val)
-    setOffset(0)
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => {
-      doSearch(val, productType, scope, 0, false)
-    }, DEBOUNCE_MS)
+    debounceRef.current = setTimeout(() => runSearch(val, productType), DEBOUNCE_MS)
   }
 
   const handleFilterChange = (pt: string | null) => {
     setProductType(pt)
     setOffset(0)
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    doSearch(query, pt, scope, 0, false)
+    // Product-type filter only narrows the drug-name section.
+    searchDrugs(query, pt, 0, false)
   }
 
-  const handleScopeChange = (sc: 'name' | 'indication') => {
-    setScope(sc)
-    setOffset(0)
-    if (debounceRef.current) clearTimeout(debounceRef.current)
-    doSearch(query, productType, sc, 0, false)
-  }
+  /** Click a chip (or follow a deep link): set the box and search that situation. */
+  const selectSituation = useCallback(
+    (c: ConditionSummary) => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+      setQuery(c.label)
+      setError(null)
+      setOffset(0)
+      setSearched(true)
+      searchDrugs(c.label, productType, 0, false)
+      searchSituation(c.label, conditions, c.slug)
+    },
+    [conditions, productType, searchDrugs, searchSituation]
+  )
+
+  // Honor a ?situation= deep link from the drug-detail reverse link, once.
+  useEffect(() => {
+    const slug = initialSituationSlug()
+    if (!slug) return
+    const target = conditions.find((c) => c.slug === slug)
+    if (target) selectSituation(target)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleLoadMore = () => {
     const newOffset = offset + LIMIT
     setOffset(newOffset)
-    doSearch(query, productType, scope, newOffset, true)
+    searchDrugs(query, productType, newOffset, true)
   }
 
   const refreshStatus = async () => {
@@ -126,7 +231,6 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions 
     if (statusResp.ok) setStatus(await statusResp.json())
   }
 
-  // Primary action — start the download phase (auto-chains ingest on completion).
   const handleTriggerDownload = async () => {
     if (triggering) return
     setTriggering(true)
@@ -141,7 +245,6 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions 
     }
   }
 
-  // Secondary action — re-run ingest from the on-disk parts (no re-download).
   const handleIngestFromDisk = async () => {
     if (ingesting) return
     setIngesting(true)
@@ -162,7 +265,6 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions 
       if (resp.ok) {
         const newStatus = (await resp.json()) as DrugIngestStatus
         setStatus(newStatus)
-        // If ingest just finished, reload the page to show updated rowCount.
         if (newStatus.phase === 'ready' && newStatus.rowCount > rowCount) {
           router.reload({ only: ['rowCount', 'ingestStatus'] })
         }
@@ -173,35 +275,35 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions 
   }
 
   const isEmpty = rowCount === 0
+  const hasQuery = query.trim().length > 0
+  const loading = drugLoading || situationLoading
 
-  // Switch tabs and keep the URL's ?tab= in sync (without a server round-trip) so
-  // the conditions tab stays deep-linkable and refresh/back land where expected.
-  const switchTab = (next: DrugTab) => {
-    setTab(next)
-    if (typeof window !== 'undefined') {
-      const url = new URL(window.location.href)
-      if (next === 'conditions') url.searchParams.set('tab', 'conditions')
-      else url.searchParams.delete('tab')
-      window.history.replaceState(window.history.state, '', url.toString())
-    }
-  }
+  // Dedupe: a drug shown in the situation section is suppressed from the drug-name
+  // section so the same product never appears twice on one screen.
+  const situationKeys = useMemo(
+    () => new Set(situationDrugs.map(drugKey)),
+    [situationDrugs]
+  )
+  const dedupedDrugResults = useMemo(
+    () => drugResults.filter((d) => !situationKeys.has(drugKey(d))),
+    [drugResults, situationKeys]
+  )
 
-  const tabClass = (active: boolean) =>
-    `px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${
-      active
-        ? 'border-desert-green text-desert-green'
-        : 'border-transparent text-gray-500 hover:text-desert-green hover:border-desert-green-lighter'
-    }`
+  const showSituationSection = situation !== null && situationDrugs.length > 0
+  const showDrugSection = dedupedDrugResults.length > 0
+  const nothingFound =
+    searched && !loading && !showSituationSection && !showDrugSection
 
   return (
     <AppLayout>
       <Head title="Drug Reference" />
 
       <div className="p-4 max-w-4xl mx-auto">
+        {/* Header */}
         <div className="mb-4">
           <div className="flex flex-wrap items-start justify-between gap-3 mb-1">
-            <h1 className="text-2xl font-bold">Drug Reference</h1>
-            {tab === 'search' && rowCount > 0 && (
+            <h1 className="text-2xl font-bold text-desert-green-darker">Drug Reference</h1>
+            {rowCount > 0 && (
               <Link href="/drug-reference/interactions">
                 <StyledButton variant="outline" size="sm" onClick={() => {}}>
                   Compare interactions
@@ -210,45 +312,19 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions 
             )}
           </div>
           <p className="text-sm opacity-70">
-            {tab === 'search'
-              ? `Offline FDA drug labels — Rx + OTC. Search ${
-                  rowCount > 0 ? `${rowCount.toLocaleString()} labels` : 'once data is downloaded'
-                }.`
-              : 'Find the right over-the-counter drug for a situation, from offline FDA labels.'}
+            Search a drug by name, or a situation — burn, fever, diarrhea — to see the
+            over-the-counter drugs whose offline FDA labels treat it.{' '}
+            {rowCount > 0 ? `${rowCount.toLocaleString()} labels.` : ''}
           </p>
         </div>
 
-        {/* Tab bar */}
-        <div className="flex gap-1 border-b border-gray-200 mb-6" role="tablist">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'search'}
-            className={tabClass(tab === 'search')}
-            onClick={() => switchTab('search')}
-          >
-            Search
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'conditions'}
-            className={tabClass(tab === 'conditions')}
-            onClick={() => switchTab('conditions')}
-          >
-            When to use what
-          </button>
-        </div>
-
-        {tab === 'conditions' ? (
-          <ConditionsBrowse conditions={conditions} drugRowCount={rowCount} />
-        ) : isEmpty ? (
+        {isEmpty ? (
           // ── Empty state ────────────────────────────────────────────────────
-          <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
-            <p className="text-lg font-semibold mb-2">No FDA drug data yet</p>
+          <div className="border-2 border-dashed border-desert-stone-lighter rounded-2xl p-8 text-center bg-desert-white">
+            <p className="text-lg font-semibold mb-2 text-desert-green-darker">No FDA drug data yet</p>
             <p className="mb-6 opacity-70">
-              Download the openFDA drug-label dataset to enable offline search.
-              Requires ~1.7 GB compressed download (~8–10 GB after ingestion).
+              Download the openFDA drug-label dataset to enable offline search. Requires ~1.7 GB
+              compressed download (~8–10 GB after ingestion).
             </p>
 
             <div className="flex flex-wrap items-center justify-center gap-3">
@@ -284,130 +360,164 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions 
             )}
           </div>
         ) : (
-          // ── Search UI ──────────────────────────────────────────────────────
+          // ── Unified search surface ─────────────────────────────────────────
           <>
             {/* Search box */}
-            <div className="mb-3">
+            <div className="relative mb-3">
+              <IconSearch
+                size={18}
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-desert-stone"
+              />
               <input
                 type="text"
                 value={query}
                 onChange={handleQueryChange}
-                placeholder={
-                  scope === 'indication'
-                    ? 'Search by condition — e.g. heartburn, allergies, high blood pressure'
-                    : 'Search by drug name or generic name…'
-                }
-                className="w-full border border-gray-300 rounded px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-desert-green"
+                placeholder="Search a drug or a situation — ibuprofen, heartburn, poison ivy…"
+                className="w-full rounded-lg border border-desert-stone-lighter bg-white py-2 pl-10 pr-4 text-sm text-desert-green-darker transition focus:border-desert-green focus:outline-none focus:ring-2 focus:ring-desert-green/20"
               />
             </div>
 
-            {/* Scope toggle — Name vs What it treats */}
-            <div className="flex gap-2 mb-4 flex-wrap items-center">
-              <span className="text-xs text-gray-500 mr-1">Search by:</span>
-              <button
-                type="button"
-                onClick={() => handleScopeChange('name')}
-                className={`px-3 py-1 rounded-full text-sm border transition-colors ${
-                  scope === 'name'
-                    ? 'bg-desert-green text-white border-desert-green'
-                    : 'bg-white text-gray-700 border-gray-300 hover:border-desert-green'
-                }`}
-              >
-                Name
-              </button>
-              <button
-                type="button"
-                onClick={() => handleScopeChange('indication')}
-                className={`px-3 py-1 rounded-full text-sm border transition-colors ${
-                  scope === 'indication'
-                    ? 'bg-desert-green text-white border-desert-green'
-                    : 'bg-white text-gray-700 border-gray-300 hover:border-desert-green'
-                }`}
-              >
-                What it treats
-              </button>
-            </div>
-
-            {/* OTC / Rx filter pills */}
-            <div className="flex gap-2 mb-4 flex-wrap">
-              <button
-                type="button"
-                onClick={() => handleFilterChange(null)}
-                className={`px-3 py-1 rounded-full text-sm border transition-colors ${
-                  productType === null
-                    ? 'bg-desert-green text-white border-desert-green'
-                    : 'bg-white text-gray-700 border-gray-300 hover:border-desert-green'
-                }`}
-              >
+            {/* OTC / Rx filter pills — narrow the by-name drug section */}
+            <div className="flex flex-wrap gap-2 mb-6">
+              <FilterPill active={productType === null} onClick={() => handleFilterChange(null)}>
                 All
-              </button>
-              <button
-                type="button"
+              </FilterPill>
+              <FilterPill
+                active={productType === PRODUCT_TYPES.OTC}
+                tone="olive"
                 onClick={() => handleFilterChange(PRODUCT_TYPES.OTC)}
-                className={`px-3 py-1 rounded-full text-sm border transition-colors ${
-                  productType === PRODUCT_TYPES.OTC
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-white text-gray-700 border-gray-300 hover:border-blue-600'
-                }`}
               >
                 OTC
-              </button>
-              <button
-                type="button"
+              </FilterPill>
+              <FilterPill
+                active={productType === PRODUCT_TYPES.RX}
+                tone="orange"
                 onClick={() => handleFilterChange(PRODUCT_TYPES.RX)}
-                className={`px-3 py-1 rounded-full text-sm border transition-colors ${
-                  productType === PRODUCT_TYPES.RX
-                    ? 'bg-orange-600 text-white border-orange-600'
-                    : 'bg-white text-gray-700 border-gray-300 hover:border-orange-600'
-                }`}
               >
                 Rx
-              </button>
+              </FilterPill>
             </div>
 
-            {/* Results */}
-            {loading && results.length === 0 && (
+            {error && (
+              <div className="mb-4 rounded-lg border border-desert-red/30 bg-desert-red/5 p-3 text-sm text-desert-red-dark">
+                {error}
+              </div>
+            )}
+
+            {loading && !showSituationSection && !showDrugSection && (
               <div className="text-center py-8 opacity-60">Searching…</div>
             )}
 
-            {error && (
-              <div className="text-red-600 text-sm mb-4 p-3 bg-red-50 rounded">{error}</div>
-            )}
-
-            {searched && results.length === 0 && !loading && (
-              <div className="text-center py-8 opacity-60">No results for "{query}"</div>
-            )}
-
-            {results.length > 0 && (
-              <>
-                <p className="text-xs text-gray-500 mb-2">
-                  Showing {results.length} result{results.length !== 1 ? 's' : ''}
-                  {query ? ` for "${query}"` : ''}
-                </p>
-                <div className="divide-y divide-gray-200 border border-gray-200 rounded-lg overflow-hidden">
-                  {results.map((r) => (
-                    <DrugResultRow key={`${r.id}`} result={r} />
+            {/* ── Situation section (a situation → its drugs) ───────────────── */}
+            {showSituationSection && (
+              <section className={`${CARD_SURFACE} mb-6 overflow-hidden`}>
+                <div className="flex items-center gap-2.5 border-b border-desert-stone-lighter/40 bg-desert-sand/40 px-4 py-3">
+                  <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-desert-olive/10 text-desert-olive-dark">
+                    <IconFirstAidKit size={18} />
+                  </span>
+                  <h2 className="text-sm font-bold text-desert-green-darker">
+                    For{' '}
+                    <span className="text-desert-olive-dark">
+                      &ldquo;{situation?.label}&rdquo;
+                    </span>
+                  </h2>
+                  <span className="ml-auto text-xs text-desert-stone">
+                    {situationDrugs.length} OTC option{situationDrugs.length !== 1 ? 's' : ''}
+                  </span>
+                </div>
+                <div className="divide-y divide-desert-stone-lighter/40">
+                  {situationDrugs.map((d) => (
+                    <DrugResultRow key={`sit-${d.id}`} result={d} />
                   ))}
                 </div>
+              </section>
+            )}
 
+            {/* ── Drug-name section (a drug → identity) ─────────────────────── */}
+            {showDrugSection && (
+              <section className={`${CARD_SURFACE} mb-6 overflow-hidden`}>
+                <div className="flex items-center gap-2.5 border-b border-desert-stone-lighter/40 bg-desert-sand/40 px-4 py-3">
+                  <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-desert-green/10 text-desert-green">
+                    <IconSearch size={18} />
+                  </span>
+                  <h2 className="text-sm font-bold text-desert-green-darker">Drugs</h2>
+                  <span className="ml-auto text-xs text-desert-stone">
+                    {dedupedDrugResults.length} match
+                    {dedupedDrugResults.length !== 1 ? 'es' : ''}
+                  </span>
+                </div>
+                <div className="divide-y divide-desert-stone-lighter/40">
+                  {dedupedDrugResults.map((d) => (
+                    <DrugResultRow key={`drug-${d.id}`} result={d} />
+                  ))}
+                </div>
                 {hasMore && (
-                  <div className="mt-4 flex justify-center">
-                    <StyledButton
-                      variant="secondary"
-                      onClick={handleLoadMore}
-                      disabled={loading}
-                    >
-                      {loading ? 'Loading…' : 'Load more'}
+                  <div className="flex justify-center border-t border-desert-stone-lighter/40 p-3">
+                    <StyledButton variant="secondary" onClick={handleLoadMore} disabled={drugLoading}>
+                      {drugLoading ? 'Loading…' : 'Load more'}
                     </StyledButton>
                   </div>
                 )}
-              </>
+              </section>
             )}
 
-            {/* Update control */}
-            <div className="mt-8 pt-6 border-t border-gray-200">
+            {nothingFound && (
+              <div className="text-center py-8 opacity-60">
+                No drugs or situations match &ldquo;{query}&rdquo;. Try a situation below.
+              </div>
+            )}
+
+            {/* ── Browse: curated situation chips (always visible) ──────────── */}
+            <section className={`${CARD_SURFACE} overflow-hidden`}>
+              <div className="border-b border-desert-stone-lighter/40 bg-gradient-to-b from-desert-sand/50 to-transparent px-5 py-4">
+                <div className="flex items-center gap-2.5">
+                  <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-desert-olive/10 text-desert-olive-dark">
+                    <IconFirstAidKit size={18} />
+                  </span>
+                  <h2 className="text-sm font-bold text-desert-green-darker">Browse by situation</h2>
+                </div>
+                <p className="mt-1.5 text-xs text-desert-stone">
+                  {hasQuery
+                    ? 'Or pick another situation to see its over-the-counter options.'
+                    : 'Pick a situation to see the over-the-counter drugs whose FDA labels list it.'}
+                </p>
+              </div>
+
+              <div className="space-y-5 p-5">
+                <SafetyBanner />
+                {grouped.map(([category, items]) => (
+                  <div key={category}>
+                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-desert-tan-dark">
+                      {category}
+                    </h3>
+                    <div className="flex flex-wrap gap-2">
+                      {items.map((c) => {
+                        const active = situation?.slug === c.slug
+                        return (
+                          <button
+                            key={c.slug}
+                            type="button"
+                            onClick={() => selectSituation(c)}
+                            className={`rounded-full border px-3 py-1 text-sm transition-colors ${
+                              active
+                                ? 'border-desert-olive bg-desert-olive text-white'
+                                : 'border-desert-stone-lighter bg-white text-desert-green-darker hover:border-desert-olive hover:bg-desert-olive/5'
+                            }`}
+                          >
+                            {c.label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            {/* ── FDA data update control ───────────────────────────────────── */}
+            <div className="mt-8 pt-6 border-t border-desert-stone-lighter/40">
               <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                <h3 className="text-sm font-semibold">FDA data</h3>
+                <h3 className="text-sm font-semibold text-desert-green-darker">FDA data</h3>
                 <div className="flex flex-wrap items-center gap-2">
                   {canIngestFromDisk && (
                     <StyledButton
@@ -437,17 +547,54 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions 
           </>
         )}
 
-        {/* ── Source citation (CC0, no-endorsement) — search tab only; the
-              conditions tab carries its own citation footer. ─────────────── */}
-        {tab === 'search' && (
-          <footer className="mt-8 pt-4 border-t border-gray-200 text-xs text-gray-500">
-            <strong>Source:</strong> U.S. Food &amp; Drug Administration drug labeling, via{' '}
-            <strong>openFDA</strong> — public domain (CC0 1.0). NOMAD is not affiliated with or
-            endorsed by the FDA. Label data is provided as-is; do not rely on it for medical
-            decisions.
-          </footer>
-        )}
+        {/* ── Source citation (CC0, no-endorsement) ───────────────────────── */}
+        <footer className="mt-8 pt-4 border-t border-desert-stone-lighter/40 text-xs text-desert-stone">
+          <strong>Source:</strong> U.S. Food &amp; Drug Administration drug labeling, via{' '}
+          <strong>openFDA</strong> — public domain (CC0 1.0). NOMAD is not affiliated with or
+          endorsed by the FDA. Label data and situation matches are label-text only; do not rely on
+          them for medical decisions.
+        </footer>
       </div>
     </AppLayout>
+  )
+}
+
+// ─── Filter pill ──────────────────────────────────────────────────────────────
+
+function FilterPill({
+  active,
+  tone = 'green',
+  onClick,
+  children,
+}: {
+  active: boolean
+  tone?: 'green' | 'olive' | 'orange'
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  const activeClass =
+    tone === 'orange'
+      ? 'bg-desert-orange text-white border-desert-orange'
+      : tone === 'olive'
+        ? 'bg-desert-olive text-white border-desert-olive'
+        : 'bg-desert-green text-white border-desert-green'
+  const hoverClass =
+    tone === 'orange'
+      ? 'hover:border-desert-orange'
+      : tone === 'olive'
+        ? 'hover:border-desert-olive'
+        : 'hover:border-desert-green'
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-full border px-3 py-1 text-sm transition-colors ${
+        active
+          ? activeClass
+          : `border-desert-stone-lighter bg-white text-desert-green-darker ${hoverClass}`
+      }`}
+    >
+      {children}
+    </button>
   )
 }

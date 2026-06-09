@@ -80,13 +80,13 @@ const DRUG_REFERENCE_ITEM = {
   poweredBy: null,
 }
 
-// When to use what — condition-first medical reference (Core Capability).
-// displayOrder 6.5: between Drug Reference (6) and Preparedness (7). Browse a
-// curated grid of first-aid situations (or search one) and see the matching
-// OTC drugs, each linking into Drug Reference.
+// When to use what — situation-first entry into the unified Drug Reference
+// surface (Core Capability). displayOrder 6.5: between Drug Reference (6) and
+// Preparedness (7). Lands on the same page as the Drug Reference tile, where the
+// curated situation chips browse the matching OTC drugs.
 const WHEN_TO_USE_WHAT_ITEM = {
   label: 'When to use what',
-  to: '/drug-reference?tab=conditions',
+  to: '/drug-reference',
   target: '',
   description: 'Pick a situation — burn, fever, diarrhea — and see what OTC drugs treat it',
   icon: <IconFirstAidKit size={48} />,

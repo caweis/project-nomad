@@ -35,6 +35,15 @@ export class ConditionService {
     return this.spine.map(toConditionSummary)
   }
 
+  /**
+   * The full curated spine (WITH searchTerms) for server-side matching such as
+   * the drug-detail reverse link (situationsForIndications). Stays server-only —
+   * searchTerms are a search-implementation detail the client never receives.
+   */
+  allConditions(): Condition[] {
+    return this.spine
+  }
+
   /** Find a curated condition by slug. Returns null when absent. */
   findCondition(slug: string): Condition | null {
     return findConditionBySlug(this.spine, slug)

@@ -4,6 +4,7 @@ import { DrugReferenceService } from '#services/drug_reference_service'
 import { ConditionService } from '#services/condition_service'
 import { searchDrugValidator, interactionsValidator } from '#validators/drug_reference'
 import { parseCompareIds } from '../../util/compare_ids.js'
+import { situationsForIndications } from '../../util/conditions.js'
 
 /**
  * Drug Reference v1 — HTTP boundary.
@@ -21,11 +22,11 @@ export default class DrugReferenceController {
   }
 
   /**
-   * GET /drug-reference — search page.
+   * GET /drug-reference — unified search page.
    * Passes the current row count and ingest status so the empty-state
    * "download first" prompt can render server-side. Also passes the curated
-   * condition spine so the "When to use what" tab (folded in from the former
-   * /conditions page) can render server-side. `?tab=conditions` deep-links to it.
+   * condition spine so the always-visible situation chips (and the situation→
+   * drugs direction of the unified surface) can render server-side.
    */
   async index({ inertia }: HttpContext) {
     try {
@@ -66,7 +67,15 @@ export default class DrugReferenceController {
         return response.notFound({ error: 'Drug label not found' })
       }
 
-      return inertia.render('drug-reference/show', { label })
+      // Reverse link — the other direction of the symbiotic relationship: which
+      // curated situations does THIS label's indications text treat? Matched
+      // server-side against the curated spine so searchTerms stay server-only.
+      const situations = situationsForIndications(
+        label.indications,
+        new ConditionService().allConditions()
+      )
+
+      return inertia.render('drug-reference/show', { label, situations })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       logger.error(`[DrugReferenceController] show(${id}) failed: ${msg}`)
