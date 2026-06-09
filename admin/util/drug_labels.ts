@@ -410,20 +410,27 @@ export function resolveExpectedTotal(
  * count barely moves (upserts replace existing rows), so it would understate
  * progress; there the per-job `recordsIngested` is the better source.
  *
- * Taking max(jobRecords, rowCount) satisfies both:
- *   - first ingest: rowCount climbs and exceeds the lagging jobRecords → live count;
- *   - re-ingest: rowCount is already high and static, jobRecords climbs from 0 and
- *     overtakes it → per-job count, never regressing below what is on disk.
+ * `startRowCount` is the table's row count when THIS RUN began (pass 0 stamps
+ * it into job data; continuations carry it). It fixes the re-ingest lie: into a
+ * populated table, raw rowCount made the counter read ~100% from second zero.
+ * The live-table progress signal for this run is rowCount - startRowCount (new
+ * rows only); jobRecords covers the upsert-update case where the table count
+ * barely moves. Taking max of the two:
+ *   - first ingest (start 0): identical to the old max(jobRecords, rowCount);
+ *   - re-ingest: rowCount - start stays near 0, jobRecords climbs 0 → ~259k and
+ *     drives the counter honestly.
  *
- * Clamped to `expectedTotal` (when known) so the live count can't briefly read
- * past the denominator and push the bar over 100%.
+ * Clamped to `expectedTotal` (when known) so the count can't briefly read past
+ * the denominator and push the bar over 100%.
  */
 export function resolveIngestRecordsShown(
   jobRecords: number,
   rowCount: number,
-  expectedTotal: number
+  expectedTotal: number,
+  startRowCount = 0
 ): number {
-  const best = Math.max(jobRecords, rowCount)
+  const newRows = Math.max(0, rowCount - Math.max(0, startRowCount))
+  const best = Math.max(jobRecords, newRows)
   if (expectedTotal > 0) return Math.min(best, expectedTotal)
   return best
 }

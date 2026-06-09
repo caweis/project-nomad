@@ -99,6 +99,13 @@ export interface IngestDrugDataJobParams {
   recordsSkipped?: number
   /** Epoch ms when the ingest began (set on pass 0, carried through continuations). */
   startedAt?: number
+  /**
+   * drug_labels row count when this ingest RUN began (set on pass 0, carried
+   * through continuations). Progress baseline: on a re-ingest into a full table
+   * the raw row count reads ~100% from second zero, so this-run progress is
+   * driven by jobRecords vs max(0, rowCount - startRowCount) instead.
+   */
+  startRowCount?: number
   currentPartName?: string | null
   phase?: 'ingesting' | 'ready' | 'failed'
 }

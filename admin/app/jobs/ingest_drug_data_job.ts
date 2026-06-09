@@ -213,6 +213,21 @@ export class IngestDrugDataJob {
     const runningSkipped = params.recordsSkipped ?? 0
     const startedAt = params.startedAt ?? Date.now()
 
+    // Progress baseline (pass 0 only): the table's row count BEFORE this run.
+    // Without it, a re-ingest into a populated table shows ~100% from second
+    // zero because the live row count dominates the shown counter.
+    let startRowCount = params.startRowCount
+    if (startRowCount === undefined) {
+      try {
+        const { default: db } = await import('@adonisjs/lucid/services/db')
+        const result = await db.rawQuery('SELECT COUNT(*) AS cnt FROM drug_labels')
+        const rows = result[0] as Array<{ cnt: number | string }>
+        startRowCount = Number(rows[0]?.cnt ?? 0)
+      } catch {
+        startRowCount = 0
+      }
+    }
+
     logger.info(`[IngestDrugDataJob] Starting pass partIndex=${partIndex}`)
 
     // Resolve the part list: manifest in job data, else the KV download marker.
@@ -256,6 +271,7 @@ export class IngestDrugDataJob {
       recordsSkipped: runningSkipped,
       manifest,
       startedAt,
+      startRowCount,
     })
     await job.updateProgress(Math.floor((partIndex / totalParts) * 100))
 
@@ -291,6 +307,7 @@ export class IngestDrugDataJob {
         recordsIngested: totalIngested,
         recordsSkipped: totalSkipped,
         startedAt,
+        startRowCount,
       }
 
       await queue.add(IngestDrugDataJob.key, continuationParams, {

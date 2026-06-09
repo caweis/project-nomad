@@ -544,11 +544,16 @@ export class DrugReferenceService {
     // count from max(jobRecords, live rowCount) so a first ingest tracks the table
     // filling 0 → ~259k, while a re-ingest into a populated table still rides the
     // per-job counter. Outside the running phase, trust the job's own total.
-    // Always reconcile against the live row count. The per-job recordsIngested can
-    // be a partial/stale total — the completed pass-0 job only counted part 1, and
-    // a failed continuation stops mid-run — so trust the table's real count,
-    // clamped to the expected total, in every phase (not just while running).
-    const records = resolveIngestRecordsShown(jobRecords, count, expectedTotal)
+    // Always reconcile against the live row count (the per-job recordsIngested can
+    // be a partial/stale total — a completed pass-0 job only counted part 1; a
+    // failed continuation stops mid-run). WHILE RUNNING, additionally subtract the
+    // run's start-row baseline so a re-ingest into a populated table shows THIS
+    // run's progress (0 → ~259k) instead of reading ~100% from second zero.
+    // Outside running, start=0 so 'ready'/'failed' reflect total searchable rows.
+    const records =
+      ingestPhaseState === 'running'
+        ? resolveIngestRecordsShown(jobRecords, count, expectedTotal, ingData.startRowCount ?? 0)
+        : resolveIngestRecordsShown(jobRecords, count, expectedTotal)
 
     const ingest: DrugIngestPhaseStatus = {
       state: ingestPhaseState,
