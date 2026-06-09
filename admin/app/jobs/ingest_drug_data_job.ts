@@ -15,21 +15,48 @@ import type {
 const BATCH_SIZE = 500
 
 /**
- * Dedupe a batch by set_id (last occurrence wins). openFDA ships records that
- * share an SPL set_id; when two land in the SAME batch, updateOrCreateMany tries
- * to INSERT both (neither exists yet) and the second hits the unique
- * uniq_drug_labels_set_id index, failing the whole batch (this aborted ingest at
- * part 5). Collapsing to one row per set_id before the upsert prevents it.
- * Cross-batch duplicates are fine — updateOrCreateMany updates the existing row.
+ * Dedupe a batch by set_id, CASE-INSENSITIVELY (last occurrence wins). MySQL's
+ * uniq_drug_labels_set_id index uses a case-insensitive collation, so two ids
+ * differing only in case are ONE row to the database — the dedupe key must agree
+ * with the database's notion of equality or a batch can still collide with
+ * itself.
  */
 function dedupeBySetId(
   rows: ReturnType<typeof mapDrugLabelRecord>[]
-): ReturnType<typeof mapDrugLabelRecord>[] {
-  const bySetId = new Map<string, ReturnType<typeof mapDrugLabelRecord>>()
+): NonNullable<ReturnType<typeof mapDrugLabelRecord>>[] {
+  const bySetId = new Map<string, NonNullable<ReturnType<typeof mapDrugLabelRecord>>>()
   for (const r of rows) {
-    if (r) bySetId.set(r.set_id, r)
+    if (r) bySetId.set(r.set_id.toLowerCase(), r)
   }
   return [...bySetId.values()]
+}
+
+/**
+ * Upsert one batch with MySQL-native `INSERT … ON DUPLICATE KEY UPDATE`
+ * (knex onConflict().merge()) instead of Lucid's updateOrCreateMany.
+ *
+ * WHY: updateOrCreateMany SELECTs existing rows and matches them to incoming
+ * rows IN JAVASCRIPT — a case-sensitive string compare. The DB's unique key on
+ * set_id is case-INsensitive, so when openFDA ships the same set_id with
+ * different casing across parts (seen live: part 5's '93A0696B-…' colliding
+ * with an earlier part's variant), Lucid misses the match, INSERTs, and the
+ * unique key rejects it — aborting the run. A native upsert makes the unique
+ * key itself the arbiter: same-key rows update, new rows insert, intra-batch
+ * duplicates take the update path. No JS equality anywhere.
+ *
+ * `ingested_at` is stamped explicitly (raw knex bypasses Lucid's autoCreate);
+ * merge() refreshes every inserted column on conflict, preserving the previous
+ * "re-ingest updates the row + timestamp" behavior.
+ */
+async function upsertDrugLabelBatch(
+  rows: NonNullable<ReturnType<typeof mapDrugLabelRecord>>[]
+): Promise<number> {
+  if (rows.length === 0) return 0
+  const { default: db } = await import('@adonisjs/lucid/services/db')
+  const now = new Date()
+  const withTs = rows.map((r) => ({ ...r, ingested_at: now }))
+  await db.knexQuery().table('drug_labels').insert(withTs).onConflict('set_id').merge()
+  return rows.length
 }
 
 // A single 500-row updateOrCreateMany should finish in seconds even on the
@@ -415,10 +442,6 @@ export class IngestDrugDataJob {
       )
     }
 
-    // Lazy-import DrugLabel model inside the job (not at module top level) so
-    // that the util helpers (tested without Lucid) stay importable in pure tests.
-    const { default: DrugLabel } = await import('#models/drug_label')
-
     let recordsIngested = 0
     let recordsSkipped = 0
     let batch: ReturnType<typeof mapDrugLabelRecord>[] = []
@@ -564,18 +587,15 @@ export class IngestDrugDataJob {
                 )
 
                 withUpsertTimeout(
-                  DrugLabel.updateOrCreateMany(
-                    'set_id',
-                    currentBatch as Parameters<typeof DrugLabel.updateOrCreateMany>[1]
-                  ),
+                  upsertDrugLabelBatch(currentBatch),
                   currentBatch.length,
                   UPSERT_TIMEOUT_MS
                 )
-                  .then((rows) => {
-                    recordsIngested += rows.length
+                  .then((rowCount) => {
+                    recordsIngested += rowCount
                     logger.info(
                       `[IngestDrugDataJob] part ${partIndex + 1}/${totalParts}: batch ${myBatch} ok in ${Date.now() - t0}ms ` +
-                        `(${rows.length} rows; part running ${recordsIngested})`
+                        `(${rowCount} rows; part running ${recordsIngested})`
                     )
 
                     // Update progress: parts-done fraction + within-part fraction
@@ -638,17 +658,14 @@ export class IngestDrugDataJob {
                 )
 
                 withUpsertTimeout(
-                  DrugLabel.updateOrCreateMany(
-                    'set_id',
-                    remainingBatch as Parameters<typeof DrugLabel.updateOrCreateMany>[1]
-                  ),
+                  upsertDrugLabelBatch(remainingBatch),
                   remainingBatch.length,
                   UPSERT_TIMEOUT_MS
                 )
-                  .then((rows) => {
-                    recordsIngested += rows.length
+                  .then((rowCount) => {
+                    recordsIngested += rowCount
                     logger.info(
-                      `[IngestDrugDataJob] part ${partIndex + 1}/${totalParts}: final batch ok in ${Date.now() - t0}ms (${rows.length} rows)`
+                      `[IngestDrugDataJob] part ${partIndex + 1}/${totalParts}: final batch ok in ${Date.now() - t0}ms (${rowCount} rows)`
                     )
                     callback()
                   })
