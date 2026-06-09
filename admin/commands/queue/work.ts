@@ -38,6 +38,18 @@ export default class QueueWork extends BaseCommand {
       process.exit(1)
     }
 
+    // Backstop: a stray unhandled rejection (e.g. an un-awaited job.updateData
+    // racing a Redis hiccup during a long ingest) must NOT crash this worker
+    // process — a crashed worker stops renewing its job lock, which BullMQ then
+    // reports as "job stalled more than allowable limit". Log it and survive.
+    process.on('unhandledRejection', (reason) => {
+      const msg = reason instanceof Error ? reason.stack || reason.message : String(reason)
+      this.logger.error(`[queue:work] unhandledRejection (survived): ${msg}`)
+    })
+    process.on('uncaughtException', (err) => {
+      this.logger.error(`[queue:work] uncaughtException (survived): ${err.stack || err.message}`)
+    })
+
     const [jobHandlers, allQueues] = await this.loadJobHandlers()
 
     // Determine which queues to process

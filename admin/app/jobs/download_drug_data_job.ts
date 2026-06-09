@@ -176,8 +176,9 @@ export class DownloadDrugDataJob {
         partBytes = progress.downloadedBytes
         const downloadFraction = progress.downloadedBytes / (progress.totalBytes || 1)
         const pct = Math.floor(((partIndex + downloadFraction) / totalParts) * 100)
-        job.updateProgress(pct)
-        job.updateData({ ...job.data, bytesDownloaded: progress.downloadedBytes })
+        // Fire-and-forget; swallow transient reject so it can't crash the worker.
+        void job.updateProgress(pct).catch(() => {})
+        void job.updateData({ ...job.data, bytesDownloaded: progress.downloadedBytes }).catch(() => {})
       },
     })
     logger.info(`[DownloadDrugDataJob] Download complete: ${zipPath} (${partBytes} bytes)`)

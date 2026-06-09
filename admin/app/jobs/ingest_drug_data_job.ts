@@ -426,14 +426,23 @@ export class IngestDrugDataJob {
                     const pct = Math.floor(
                       ((partIndex + withinFraction) / totalParts) * 100
                     )
-                    job.updateProgress(
-                      Math.min(pct, Math.floor(((partIndex + 1) / totalParts) * 100) - 1)
-                    )
-                    job.updateData({
-                      ...job.data,
-                      recordsIngested: runningIngested + recordsIngested,
-                      recordsSkipped: runningSkipped + recordsSkipped,
-                    })
+                    // Fire-and-forget progress writes. Swallow transient Redis/
+                    // job-update rejections: an un-awaited reject would otherwise
+                    // bubble to an unhandledRejection and crash the worker, which
+                    // BullMQ then reports as "job stalled more than allowable
+                    // limit" (a dead worker stops renewing its lock).
+                    void job
+                      .updateProgress(
+                        Math.min(pct, Math.floor(((partIndex + 1) / totalParts) * 100) - 1)
+                      )
+                      .catch(() => {})
+                    void job
+                      .updateData({
+                        ...job.data,
+                        recordsIngested: runningIngested + recordsIngested,
+                        recordsSkipped: runningSkipped + recordsSkipped,
+                      })
+                      .catch(() => {})
                     callback()
                   })
                   .catch((upsertErr: unknown) => {
