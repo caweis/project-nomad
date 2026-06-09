@@ -463,14 +463,25 @@ export class DrugReferenceService {
       if (continuation) {
         job = continuation
       } else {
-        // No live continuation. If the continuation chain FAILED partway, surface
-        // the failed job so the status reads 'failed' — otherwise we fall back to
-        // the completed pass-0 job and falsely report 'ready' with only part 1's
-        // count (the "stopped at 20k / says ready" miscount).
-        const failed = (await queue.getJobs(['failed']))
-          .filter((j) => j.id !== deterministicJobId)
-          .sort((a, b) => (b.data?.partIndex ?? 0) - (a.data?.partIndex ?? 0))[0]
-        if (failed) job = failed
+        // No live continuation. If the chain FAILED partway, surface the failed
+        // job so the status reads 'failed' instead of falsely 'ready' with only
+        // part 1's count. BUT removeOnFail keeps history: a STALE failure from a
+        // prior run must not mask a newer successful one (seen live: a fixed
+        // re-run completed, yet the panel stayed 'failed' on last night's
+        // duplicate-key job). Compare finish times and only surface the failed
+        // job when it is the most recent terminal outcome.
+        const [failedJobs, completedJobs] = await Promise.all([
+          queue.getJobs(['failed']),
+          queue.getJobs(['completed']),
+        ])
+        const newestFailed = failedJobs.sort((a, b) => (b.finishedOn ?? 0) - (a.finishedOn ?? 0))[0]
+        const newestCompletedFinish = completedJobs.reduce(
+          (max, j) => Math.max(max, j.finishedOn ?? 0),
+          0
+        )
+        if (newestFailed && (newestFailed.finishedOn ?? 0) > newestCompletedFinish) {
+          job = newestFailed
+        }
       }
     }
     return job
