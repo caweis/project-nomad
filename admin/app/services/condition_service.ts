@@ -1,29 +1,46 @@
 import db from '@adonisjs/lucid/services/db'
 import logger from '@adonisjs/core/services/logger'
 import { CONDITIONS_FILE } from '../data/conditions.js'
+import { NATURAL_REMEDIES_FILE } from '../data/natural_remedies.js'
 import {
   parseConditionsFile,
+  parseNaturalRemediesFile,
   findConditionBySlug,
   toConditionSummary,
   buildIndicationQuery,
   orderOtcFirst,
+  remediesForCondition,
+  remediesForFreeText,
 } from '../../util/conditions.js'
 import { PRODUCT_TYPES } from '../../types/drug_reference.js'
-import type { Condition, ConditionSummary, ConditionDrugsResult } from '../../types/conditions.js'
+import type {
+  Condition,
+  ConditionSummary,
+  ConditionDrugsResult,
+  NaturalRemedy,
+  NaturalRemediesFile,
+} from '../../types/conditions.js'
 import type { DrugSearchResult } from '../../types/drug_reference.js'
 
 /**
- * "When to use what" — condition-first service (Phase 1).
+ * "When to use what" — condition-first service (Phase 1 + Phase 2).
  *
  * Resolves a curated condition (or a free-text situation) to the OTC drugs whose
- * FDA label indications match it. Reuses the Drug Reference indication-search
- * machinery: the same combined-FULLTEXT index (ft_drug_labels_name_indications),
- * the same MAX(MATCH …) aggregate pattern required under MySQL 8 ONLY_FULL_GROUP_BY,
- * and the same brand+generic collapse — then re-buckets results OTC-first.
+ * FDA label indications match it, plus the natural remedies (NCCIH) whose curated
+ * condition mapping includes the resolved slug.
  *
- * No new table, no migration. Phase 2 adds the natural-remedies half against a
- * separate table using the same condition spine.
+ * Reuses the Drug Reference indication-search machinery: the same combined-FULLTEXT
+ * index (ft_drug_labels_name_indications), the same MAX(MATCH …) aggregate pattern
+ * required under MySQL 8 ONLY_FULL_GROUP_BY, and the same brand+generic collapse —
+ * then re-buckets results OTC-first.
+ *
+ * Natural remedies are in-memory (no DB table, no migration) — one module-level
+ * parse of NATURAL_REMEDIES_FILE, reused across all requests.
  */
+
+/** Module-level parsed natural-remedies file (fail-soft). */
+const REMEDIES_FILE: NaturalRemediesFile = parseNaturalRemediesFile(NATURAL_REMEDIES_FILE)
+
 export class ConditionService {
   /** Parsed (fail-soft) curated spine — bad entries are dropped, not fatal. */
   private get spine(): Condition[] {
@@ -50,29 +67,65 @@ export class ConditionService {
   }
 
   /**
-   * Resolve a curated condition (by slug) to its matching OTC drugs.
-   * Returns null when the slug is not in the curated spine so the controller can
-   * 404. Drugs are OTC-only and OTC-first-ordered.
+   * Resolve a curated condition (by slug) to its matching OTC drugs and natural
+   * remedies. Returns null when the slug is not in the curated spine so the
+   * controller can 404. Drugs are OTC-only and OTC-first-ordered.
    */
   async drugsForSlug(slug: string, limit = 50): Promise<ConditionDrugsResult | null> {
     const condition = this.findCondition(slug)
     if (!condition) return null
 
     const drugs = await this.searchIndications(condition.searchTerms, limit)
-    return { condition: toConditionSummary(condition), drugs }
+    const remedies: NaturalRemedy[] = remediesForCondition(REMEDIES_FILE, slug)
+    return { condition: toConditionSummary(condition), drugs, remedies }
   }
 
   /**
-   * Resolve a free-text situation (off-list condition) to matching OTC drugs.
-   * Treats the raw query as a single search term. Returns a synthetic condition
-   * summary echoing the query so the UI can render a consistent header.
+   * Resolve a free-text situation (off-list condition) to matching OTC drugs and
+   * natural remedies. Treats the raw query as a single search term. Returns a
+   * synthetic condition summary echoing the query so the UI can render a consistent
+   * header.
+   *
+   * Remedy resolution for free text:
+   *   1. Try to resolve the query to a curated condition slug (exact or substring
+   *      match on slug/label). If found, use remediesForCondition — this is the
+   *      primary path (e.g. "burns" typed free-form still finds aloe/tea-tree).
+   *   2. Secondary fallback: remediesForFreeText searches remedy name/uses by
+   *      substring so an unmapped query ("athlete's foot") can still surface a
+   *      relevant remedy. Results from both paths are unioned and de-duped by slug.
    */
   async drugsForFreeText(query: string, limit = 50): Promise<ConditionDrugsResult> {
     const trimmed = query.trim()
     const drugs = trimmed.length > 0 ? await this.searchIndications([trimmed], limit) : []
+
+    // Phase 2: union condition-mapped + free-text-matched remedies.
+    const remedyMap = new Map<string, NaturalRemedy>()
+    if (trimmed.length > 0) {
+      // Primary: resolve to a curated condition slug the same way the client-side
+      // matchSituation helper does (case-insensitive exact/substring on slug+label).
+      const q = trimmed.toLowerCase()
+      const matchedCondition =
+        this.spine.find((c) => c.slug.toLowerCase() === q || c.label.toLowerCase() === q) ??
+        this.spine.find(
+          (c) =>
+            c.label.toLowerCase().includes(q) || c.slug.replace(/-/g, ' ').toLowerCase().includes(q)
+        ) ??
+        null
+      if (matchedCondition) {
+        for (const r of remediesForCondition(REMEDIES_FILE, matchedCondition.slug)) {
+          remedyMap.set(r.slug, r)
+        }
+      }
+      // Secondary: name/uses substring fallback.
+      for (const r of remediesForFreeText(REMEDIES_FILE, trimmed)) {
+        if (!remedyMap.has(r.slug)) remedyMap.set(r.slug, r)
+      }
+    }
+
     return {
       condition: { slug: '', label: trimmed, category: 'Search' },
       drugs,
+      remedies: Array.from(remedyMap.values()),
     }
   }
 

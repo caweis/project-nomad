@@ -5,12 +5,12 @@ import StyledButton from '~/components/StyledButton'
 import DrugResultRow from '~/components/drug-reference/DrugResultRow'
 import IngestStatus from '~/components/drug-reference/IngestStatus'
 import SafetyBanner from '~/components/conditions/SafetyBanner'
-import { IconSearch, IconFirstAidKit } from '@tabler/icons-react'
+import { IconSearch, IconFirstAidKit, IconLeaf, IconExternalLink } from '@tabler/icons-react'
 import type {
   DrugSearchResult,
   DrugIngestStatus,
 } from '../../../types/drug_reference'
-import type { ConditionSummary, ConditionDrugsResult } from '../../../types/conditions'
+import type { ConditionSummary, ConditionDrugsResult, NaturalRemedy } from '../../../types/conditions'
 import { PRODUCT_TYPES } from '../../../types/drug_reference'
 
 interface PageProps {
@@ -81,6 +81,7 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions 
   // Situation results.
   const [situation, setSituation] = useState<ConditionSummary | null>(null)
   const [situationDrugs, setSituationDrugs] = useState<DrugSearchResult[]>([])
+  const [situationRemedies, setSituationRemedies] = useState<NaturalRemedy[]>([])
   const [situationLoading, setSituationLoading] = useState(false)
 
   const [searched, setSearched] = useState(false)
@@ -139,7 +140,8 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions 
 
   /**
    * Situation search (the other direction). Resolves the query to a curated
-   * situation (by slug) or free text, fetches that situation's OTC drugs.
+   * situation (by slug) or free text, fetches that situation's OTC drugs and
+   * natural remedies (Phase 2).
    * Pass an explicit slug (chip / deep link) to force the curated path.
    */
   const searchSituation = useCallback(
@@ -150,6 +152,7 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions 
       if (!q.trim() && !forceSlug) {
         setSituation(null)
         setSituationDrugs([])
+        setSituationRemedies([])
         return
       }
       setSituationLoading(true)
@@ -162,6 +165,7 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions 
         const json = (await resp.json()) as ConditionDrugsResult
         setSituation(json.condition ?? matched ?? { slug: '', label: q.trim(), category: 'Search' })
         setSituationDrugs(json.drugs ?? [])
+        setSituationRemedies(json.remedies ?? [])
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Search failed')
       } finally {
@@ -316,7 +320,7 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions 
     [drugResults, situationKeys]
   )
 
-  const showSituationSection = situation !== null && situationDrugs.length > 0
+  const showSituationSection = situation !== null && (situationDrugs.length > 0 || situationRemedies.length > 0)
   const showDrugSection = dedupedDrugResults.length > 0
   const nothingFound =
     searched && !loading && !showSituationSection && !showDrugSection
@@ -448,9 +452,10 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions 
               <div className="text-center py-8 opacity-60">Searching…</div>
             )}
 
-            {/* ── Situation section (a situation → its drugs) ───────────────── */}
+            {/* ── Situation section (a situation → its drugs + remedies) ──────── */}
             {showSituationSection && (
               <section className={`${CARD_SURFACE} mb-6 overflow-hidden`}>
+                {/* Section header */}
                 <div className="flex items-center gap-2.5 border-b border-desert-stone-lighter/40 bg-desert-sand/40 px-4 py-3">
                   <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-desert-olive/10 text-desert-olive-dark">
                     <IconFirstAidKit size={18} />
@@ -462,14 +467,52 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions 
                     </span>
                   </h2>
                   <span className="ml-auto text-xs text-desert-stone">
-                    {situationDrugs.length} OTC option{situationDrugs.length !== 1 ? 's' : ''}
+                    {situationDrugs.length} OTC{situationDrugs.length !== 1 ? '' : ''}{' '}
+                    {situationRemedies.length > 0 &&
+                      `· ${situationRemedies.length} natural`}
                   </span>
                 </div>
-                <div className="divide-y divide-desert-stone-lighter/40">
-                  {situationDrugs.map((d) => (
-                    <DrugResultRow key={`sit-${d.id}`} result={d} />
-                  ))}
-                </div>
+
+                {/* OTC drugs sub-section */}
+                {situationDrugs.length > 0 && (
+                  <>
+                    {situationRemedies.length > 0 && (
+                      <div className="px-4 py-2 bg-desert-white border-b border-desert-stone-lighter/30">
+                        <span className="text-xs font-semibold text-desert-stone uppercase tracking-wide">
+                          Over-the-counter options
+                        </span>
+                      </div>
+                    )}
+                    <div className="divide-y divide-desert-stone-lighter/40">
+                      {situationDrugs.map((d) => (
+                        <DrugResultRow key={`sit-${d.id}`} result={d} />
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {/* Natural remedies sub-section */}
+                {situationRemedies.length > 0 && (
+                  <div className="border-t border-desert-tan-lighter/40 bg-desert-sand/20">
+                    <div className="flex items-center gap-2 px-4 py-2 border-b border-desert-tan-lighter/30">
+                      <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-desert-tan-dark">
+                        <IconLeaf size={14} />
+                      </span>
+                      <span className="text-xs font-semibold text-desert-tan-dark uppercase tracking-wide">
+                        Natural remedies
+                      </span>
+                    </div>
+                    <p className="px-4 py-2 text-xs text-desert-stone-dark border-b border-desert-tan-lighter/20">
+                      Complementary remedies — limited evidence, not FDA-evaluated. Talk to a
+                      clinician before use.
+                    </p>
+                    <div className="divide-y divide-desert-tan-lighter/30">
+                      {situationRemedies.map((r) => (
+                        <SituationRemedyRow key={r.slug} remedy={r} />
+                      ))}
+                    </div>
+                  </div>
+                )}
               </section>
             )}
 
@@ -596,6 +639,38 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions 
         </footer>
       </div>
     </AppLayout>
+  )
+}
+
+// ─── Situation remedy row (compact, inside the situation card) ────────────────
+
+function SituationRemedyRow({ remedy }: { remedy: NaturalRemedy }) {
+  return (
+    <div className="px-4 py-3">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="text-sm font-semibold text-desert-tan-dark">{remedy.name}</p>
+          {remedy.commonNames.length > 0 && (
+            <p className="text-xs text-desert-stone">{remedy.commonNames.join(', ')}</p>
+          )}
+        </div>
+        <a
+          href={remedy.sourceUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex-shrink-0 inline-flex items-center gap-1 text-xs text-desert-tan hover:text-desert-tan-dark hover:underline mt-0.5"
+        >
+          NCCIH
+          <IconExternalLink size={11} />
+        </a>
+      </div>
+      <p className="mt-1.5 text-xs text-desert-green-darker">{remedy.uses}</p>
+      {remedy.cautions && (
+        <p className="mt-1 text-xs text-desert-red-dark">
+          <strong>Cautions:</strong> {remedy.cautions}
+        </p>
+      )}
+    </div>
   )
 }
 

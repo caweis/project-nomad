@@ -1,14 +1,15 @@
 import { Head, Link } from '@inertiajs/react'
-import { IconArrowLeft } from '@tabler/icons-react'
+import { IconArrowLeft, IconLeaf, IconExternalLink } from '@tabler/icons-react'
 import AppLayout from '~/layouts/AppLayout'
 import SafetyBanner from '~/components/conditions/SafetyBanner'
 import DrugResultRow from '~/components/drug-reference/DrugResultRow'
-import type { ConditionSummary } from '../../../types/conditions'
+import type { ConditionSummary, NaturalRemedy } from '../../../types/conditions'
 import type { DrugSearchResult } from '../../../types/drug_reference'
 
 interface PageProps {
   condition: ConditionSummary | null
   drugs: DrugSearchResult[]
+  remedies: NaturalRemedy[]
   drugRowCount: number
 }
 
@@ -21,7 +22,7 @@ interface PageProps {
  * "no FDA data yet" (drugRowCount === 0 → point to Drug Reference) from
  * "data present, but nothing matched this situation".
  */
-export default function ConditionsShow({ condition, drugs, drugRowCount }: PageProps) {
+export default function ConditionsShow({ condition, drugs, remedies, drugRowCount }: PageProps) {
   const label = condition?.label ?? 'Condition'
   const noData = drugRowCount === 0
 
@@ -91,6 +92,47 @@ export default function ConditionsShow({ condition, drugs, drugRowCount }: PageP
           </>
         )}
 
+        {/* ── Natural remedies section (Phase 2) ───────────────────────────── */}
+        {remedies.length > 0 && (
+          <div className="mt-8">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-desert-tan/20 text-desert-tan-dark">
+                <IconLeaf size={16} />
+              </span>
+              <h2 className="text-base font-semibold text-desert-tan-dark">Natural remedies</h2>
+              <span className="text-xs text-desert-stone ml-auto">
+                {remedies.length} {remedies.length !== 1 ? 'remedies' : 'remedy'}
+              </span>
+            </div>
+
+            {/* Caveat — prominent, before the cards. */}
+            <p className="mb-3 text-xs text-desert-stone-dark bg-desert-sand/60 border border-desert-tan-lighter/60 rounded-lg px-3 py-2">
+              <strong>Complementary remedies</strong> — limited or mixed evidence, not FDA-evaluated.
+              These are not substitutes for medical treatment. Talk to a clinician before use.
+            </p>
+
+            <div className="space-y-3">
+              {remedies.map((r) => (
+                <NaturalRemedyCard key={r.slug} remedy={r} />
+              ))}
+            </div>
+
+            <p className="mt-3 text-xs text-desert-stone">
+              Source:{' '}
+              <a
+                href="https://www.nccih.nih.gov/health/herbsataglance"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-desert-tan-dark hover:underline"
+              >
+                NCCIH — Herbs at a Glance
+              </a>{' '}
+              (National Center for Complementary and Integrative Health, NIH). Public domain (US
+              government work).
+            </p>
+          </div>
+        )}
+
         {/* ── Source citation ───────────────────────────────────────────────── */}
         <footer className="mt-8 pt-4 border-t border-gray-200 text-xs text-gray-500 space-y-1">
           <p>
@@ -105,5 +147,43 @@ export default function ConditionsShow({ condition, drugs, drugRowCount }: PageP
         </footer>
       </div>
     </AppLayout>
+  )
+}
+
+// ─── Natural remedy card ──────────────────────────────────────────────────────
+
+function NaturalRemedyCard({ remedy }: { remedy: NaturalRemedy }) {
+  return (
+    <div className="rounded-lg border border-desert-tan-lighter/60 bg-desert-white overflow-hidden">
+      {/* Card header */}
+      <div className="flex items-start justify-between gap-2 bg-desert-tan/10 px-4 py-3 border-b border-desert-tan-lighter/40">
+        <div>
+          <p className="font-semibold text-sm text-desert-tan-dark">{remedy.name}</p>
+          {remedy.commonNames.length > 0 && (
+            <p className="text-xs text-desert-stone mt-0.5">{remedy.commonNames.join(', ')}</p>
+          )}
+        </div>
+        <a
+          href={remedy.sourceUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex-shrink-0 inline-flex items-center gap-1 text-xs text-desert-tan-dark hover:underline mt-0.5"
+        >
+          NCCIH
+          <IconExternalLink size={12} />
+        </a>
+      </div>
+
+      {/* Card body */}
+      <div className="px-4 py-3 space-y-2 text-sm">
+        <p className="text-desert-green-darker">{remedy.uses}</p>
+        <p className="text-xs text-desert-stone-dark border-l-2 border-desert-tan-lighter pl-2">
+          <strong className="text-desert-tan-dark">Evidence:</strong> {remedy.evidence}
+        </p>
+        <p className="text-xs text-desert-red-dark bg-desert-red/5 rounded px-2 py-1.5 border border-desert-red-lighter/30">
+          <strong>Cautions:</strong> {remedy.cautions}
+        </p>
+      </div>
+    </div>
   )
 }

@@ -1,12 +1,18 @@
 /**
- * "When to use what" — pure, unit-testable helpers (Phase 1).
+ * "When to use what" — pure, unit-testable helpers (Phase 1 + Phase 2).
  *
  * NO Lucid / AdonisJS / HTTP imports. These take plain objects and return plain
  * objects so they run standalone under `node --experimental-strip-types` without
  * booting MySQL or Redis. Mirrors the `drug_labels.ts` helper convention.
  */
 
-import type { Condition, ConditionsFile, ConditionSummary } from '../types/conditions.js'
+import type {
+  Condition,
+  ConditionsFile,
+  ConditionSummary,
+  NaturalRemedy,
+  NaturalRemediesFile,
+} from '../types/conditions.js'
 import type { DrugSearchResult } from '../types/drug_reference.js'
 
 /**
@@ -184,6 +190,124 @@ export function buildIndicationQuery(searchTerms: string[]): string {
     parts.push(/\s/.test(term) ? `"${term}"` : term)
   }
   return parts.join(' ')
+}
+
+// ─── Natural remedies (Phase 2) — parsing + lookup ───────────────────────────
+
+/**
+ * Validate + coerce one raw remedy entry into a typed NaturalRemedy.
+ *
+ * Returns null when the entry is structurally unusable (missing required string
+ * fields or conditions array) so the caller can skip it rather than surface a
+ * broken row. Mirrors the defensive posture of parseConditionEntry.
+ */
+export function parseRemedyEntry(raw: unknown): NaturalRemedy | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const r = raw as Record<string, unknown>
+
+  const slug = nonEmptyString(r.slug)
+  const name = nonEmptyString(r.name)
+  const uses = nonEmptyString(r.uses)
+  const evidence = nonEmptyString(r.evidence)
+  const cautions = nonEmptyString(r.cautions)
+  const sourceUrl = nonEmptyString(r.sourceUrl)
+  if (!slug || !name || !uses || !evidence || !cautions || !sourceUrl) return null
+
+  if (!Array.isArray(r.commonNames)) return null
+  const commonNames: string[] = []
+  for (const cn of r.commonNames) {
+    const clean = nonEmptyString(cn)
+    if (clean) commonNames.push(clean)
+  }
+
+  if (!Array.isArray(r.conditions)) return null
+  const conditions: string[] = []
+  for (const c of r.conditions) {
+    const clean = nonEmptyString(c)
+    if (clean) conditions.push(clean)
+  }
+  // A remedy with no conditions never surfaces — drop it.
+  if (conditions.length === 0) return null
+
+  return { slug, name, commonNames, conditions, uses, evidence, cautions, sourceUrl }
+}
+
+/**
+ * Defensively parse a NaturalRemediesFile-shaped object.
+ *
+ * A non-object, missing/empty `remedies` array, or all malformed entries yield
+ * an empty `remedies` list (with a best-effort version) rather than throwing —
+ * the UI degrades to "no natural remedies for this condition" instead of
+ * crashing. Duplicate remedy slugs keep the FIRST occurrence.
+ */
+export function parseNaturalRemediesFile(json: unknown): NaturalRemediesFile {
+  const empty: NaturalRemediesFile = {
+    version: 'unknown',
+    source: { name: '', url: '', license: '' },
+    remedies: [],
+  }
+
+  if (typeof json !== 'object' || json === null) return empty
+  const root = json as Record<string, unknown>
+  const version = nonEmptyString(root.version) ?? 'unknown'
+
+  let source = { name: '', url: '', license: '' }
+  if (typeof root.source === 'object' && root.source !== null) {
+    const s = root.source as Record<string, unknown>
+    source = {
+      name: nonEmptyString(s.name) ?? '',
+      url: nonEmptyString(s.url) ?? '',
+      license: nonEmptyString(s.license) ?? '',
+    }
+  }
+
+  if (!Array.isArray(root.remedies)) return { version, source, remedies: [] }
+
+  const seenSlugs = new Set<string>()
+  const remedies: NaturalRemedy[] = []
+  for (const raw of root.remedies) {
+    const entry = parseRemedyEntry(raw)
+    if (!entry) continue
+    if (seenSlugs.has(entry.slug)) continue
+    seenSlugs.add(entry.slug)
+    remedies.push(entry)
+  }
+
+  return { version, source, remedies }
+}
+
+/**
+ * Return all remedies whose `conditions` array includes the given slug.
+ *
+ * Stable order (preserves the curated order of the remedies array). Pure O(remedies)
+ * filter — no DB, no fuzzy matching. Returns [] when nothing matches or when file
+ * has no remedies.
+ */
+export function remediesForCondition(file: NaturalRemediesFile, slug: string): NaturalRemedy[] {
+  const target = slug.trim()
+  if (!target) return []
+  return file.remedies.filter((r) => r.conditions.includes(target))
+}
+
+/**
+ * Return all remedies matching a free-text query as a secondary fallback.
+ *
+ * Case-insensitive substring match over `name` and `uses`. Used when a free-text
+ * query does not resolve to a curated condition slug. Deduped by slug.
+ */
+export function remediesForFreeText(file: NaturalRemediesFile, query: string): NaturalRemedy[] {
+  const q = query.trim().toLowerCase()
+  if (!q) return []
+  const seen = new Set<string>()
+  const results: NaturalRemedy[] = []
+  for (const r of file.remedies) {
+    if (seen.has(r.slug)) continue
+    if (r.name.toLowerCase().includes(q) || r.uses.toLowerCase().includes(q)) {
+      seen.add(r.slug)
+      results.push(r)
+    }
+  }
+  return results
 }
 
 // ─── Result ordering ──────────────────────────────────────────────────────────

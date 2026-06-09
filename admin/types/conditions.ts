@@ -1,13 +1,14 @@
 /**
- * "When to use what" — condition-first reference types (Phase 1).
+ * "When to use what" — condition-first reference types (Phase 1 + Phase 2).
  *
  * A condition (situation) is a curated first-aid / emergency scenario the user
  * browses or searches. Each carries `searchTerms` (synonyms) that drive the
  * FULLTEXT search over `drug_labels.indications` — the same machinery the
  * Drug Reference indication search (#11) uses.
  *
- * Phase 1 maps conditions → OTC drugs only. Natural remedies (Phase 2) reuse
- * the same condition spine against a separate table and are out of scope here.
+ * Phase 1 maps conditions → OTC drugs.
+ * Phase 2 adds natural remedies from NCCIH, resolved against the same condition
+ * spine (in-memory, no DB table).
  *
  * All server → client transfer shapes for this feature live in this file.
  */
@@ -43,6 +44,47 @@ export interface ConditionsFile {
   conditions: Condition[]
 }
 
+// ─── Natural remedies (Phase 2) ───────────────────────────────────────────────
+
+/**
+ * One curated natural / herbal remedy from NCCIH "Herbs at a Glance".
+ *
+ * - `slug`        URL-safe stable id (e.g. "ginger"). Used for dedup.
+ * - `name`        Human-facing name (e.g. "Ginger").
+ * - `commonNames` Botanical / alternate names (e.g. ["Zingiber officinale"]).
+ * - `conditions`  Curated mapping to condition slugs. The join key — a remedy
+ *                 surfaces for a condition if its slug appears here.
+ * - `uses`        Plain-language summary of traditional / common use.
+ * - `evidence`    NCCIH evidence tone ("limited/mixed evidence" etc.).
+ * - `cautions`    Key safety notes, interactions, who should avoid.
+ * - `sourceUrl`   Canonical NCCIH fact-sheet URL for the "Learn more" link.
+ */
+export interface NaturalRemedy {
+  slug: string
+  name: string
+  commonNames: string[]
+  conditions: string[]
+  uses: string
+  evidence: string
+  cautions: string
+  sourceUrl: string
+}
+
+/**
+ * The versioned natural-remedies file shape. Mirrors the ConditionsFile
+ * convention — `version` tracks the curation date; `source` carries the
+ * public-domain credit required by NCCIH's terms.
+ */
+export interface NaturalRemediesFile {
+  version: string
+  source: {
+    name: string
+    url: string
+    license: string
+  }
+  remedies: NaturalRemedy[]
+}
+
 // ─── DTOs (server → client) ───────────────────────────────────────────────────
 
 /**
@@ -56,14 +98,18 @@ export interface ConditionSummary {
 }
 
 /**
- * Result of resolving a condition (by slug or free text) to matching OTC drugs.
+ * Result of resolving a condition (by slug or free text) to matching OTC drugs
+ * and natural remedies (Phase 2).
  *
  * - `condition` is the matched curated condition when resolving by slug, or a
  *   synthetic summary echoing the free-text query when off-list.
  * - `drugs` reuses the Drug Reference collapsed search result shape so the
  *   existing DrugResultRow renders them unchanged.
+ * - `remedies` is the Phase-2 natural-remedy list — empty array when none match
+ *   (never undefined so client code can always iterate safely).
  */
 export interface ConditionDrugsResult {
   condition: ConditionSummary
   drugs: DrugSearchResult[]
+  remedies: NaturalRemedy[]
 }

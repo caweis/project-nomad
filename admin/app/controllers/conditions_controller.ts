@@ -54,6 +54,7 @@ export default class ConditionsController {
       return inertia.render('conditions/show', {
         condition: result?.condition ?? null,
         drugs: result?.drugs ?? [],
+        remedies: result?.remedies ?? [],
         drugRowCount,
       })
     } catch (err) {
