@@ -88,6 +88,7 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions 
 
   const [triggering, setTriggering] = useState(false)
   const [ingesting, setIngesting] = useState(false)
+  const [resetting, setResetting] = useState(false)
   const [status, setStatus] = useState<DrugIngestStatus | null>(ingestStatus)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -259,6 +260,32 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions 
     }
   }
 
+  // Escape hatch for a wedged ingest: a worker killed mid-ingest (e.g. during an
+  // upgrade) can leave the job 'active' with a stale lock, which disables the
+  // normal buttons ("Indexing…") until lockDuration elapses. This force-clears
+  // that job and restarts ingest from the on-disk parts (no re-download).
+  const handleResetIngest = async () => {
+    if (resetting) return
+    if (
+      !window.confirm(
+        'Restart the ingest? This clears the current (possibly stuck) ingest job and ' +
+          're-runs it from the already-downloaded files.'
+      )
+    ) {
+      return
+    }
+    setResetting(true)
+    try {
+      const resp = await fetch('/api/drug-reference/reset-ingest', { method: 'POST' })
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+      await refreshStatus()
+    } catch {
+      // ignore — status will update on next poll
+    } finally {
+      setResetting(false)
+    }
+  }
+
   const handleStatusRefresh = async () => {
     try {
       const resp = await fetch('/api/drug-reference/status')
@@ -349,6 +376,19 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions 
                   disabled={ingesting || busy}
                 >
                   {ingesting ? 'Starting…' : 'Ingest into search'}
+                </StyledButton>
+              )}
+
+              {/* Escape hatch — only while ingest appears to be running. Clears a
+                  wedged "Indexing…" state (stale active job from a killed worker)
+                  and restarts from the already-downloaded files. */}
+              {phase === 'ingesting' && (
+                <StyledButton
+                  variant="outline"
+                  onClick={handleResetIngest}
+                  disabled={resetting}
+                >
+                  {resetting ? 'Restarting…' : 'Restart ingest'}
                 </StyledButton>
               )}
             </div>

@@ -199,4 +199,24 @@ export default class DrugReferenceController {
       return response.internalServerError({ error: 'Could not trigger ingest' })
     }
   }
+
+  /**
+   * POST /api/drug-reference/reset-ingest
+   * Force-clears a wedged ingest job (e.g. one left 'active' by a worker killed
+   * mid-ingest during an upgrade) and restarts it from the on-disk parts. The
+   * escape hatch for a stuck "Indexing…" state.
+   */
+  async resetIngest({ response }: HttpContext) {
+    try {
+      const result = await this.service.resetAndReingest()
+      if (result.nothingDownloaded) {
+        return response.notFound({ error: result.message })
+      }
+      return { success: true, created: result.created, message: result.message }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      logger.error(`[DrugReferenceController] reset-ingest failed: ${msg}`)
+      return response.internalServerError({ error: 'Could not reset ingest' })
+    }
+  }
 }

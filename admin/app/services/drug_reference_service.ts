@@ -401,6 +401,46 @@ export class DrugReferenceService {
   }
 
   /**
+   * Force-clear a wedged ingest and restart it from the on-disk parts.
+   *
+   * A worker killed mid-ingest (e.g. during a `nomad upgrade`) leaves its job
+   * 'active' holding a lock BullMQ won't reclaim until lockDuration elapses, so
+   * the normal dispatch refuses to start a new ingest and the UI button stays
+   * disabled ("Indexing…") with no way out. Obliterating the single-purpose
+   * drug-ingest queue removes the stuck job (force = even active/locked); we then
+   * re-dispatch from disk. The downloaded parts and the download-state marker are
+   * left untouched, so this restarts ingest WITHOUT re-downloading.
+   */
+  async resetAndReingest() {
+    const marker = parseDownloadState(await KVStore.getValue('drugReference.downloadState'))
+    if (!marker) {
+      return {
+        job: undefined,
+        created: false,
+        message: 'Nothing downloaded — run Download FDA data first.',
+        nothingDownloaded: true,
+      }
+    }
+
+    const queue = QueueService.getInstance().getQueue(IngestDrugDataJob.queue)
+    try {
+      // force: true removes the active/locked stuck job too. Scoped to the
+      // single-purpose ingest queue, so nothing else is affected.
+      await queue.obliterate({ force: true })
+      logger.info('[DrugReferenceService] drug-ingest queue obliterated for restart')
+    } catch (err) {
+      logger.warn(
+        `[DrugReferenceService] ingest queue obliterate failed (continuing to dispatch): ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      )
+    }
+
+    const result = await IngestDrugDataJob.dispatch()
+    return { ...result, nothingDownloaded: false }
+  }
+
+  /**
    * Resolve the canonical deterministic job for a phase's queue, falling back to
    * the most-progressed auto-id continuation when the deterministic job is
    * absent or completed (passes > 0 use auto-generated ids). Each phase has its
