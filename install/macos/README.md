@@ -82,9 +82,16 @@ Pull a different tier later: `nomad models pull large`. List installed with per-
 
 Default OrbStack VM allocation is too small for NOMAD's full stack on machines with serious RAM. `nomad install` auto-tunes to ~80% of host RAM (proportional formula, scales 8 GB Air → 192 GB Studio). Re-tune later with `nomad orbstack-tune` or `nomad orbstack-tune 64` for explicit GB.
 
-## Workshop — offline STL library
+## Drug Reference and Preparedness
 
-Database-backed catalog of 3D-printable files (.stl, .3mf) that live on `${NOMAD_DATA_ROOT}/storage/stl-library/`. Tile appears in the Command Center alongside Maps; at `/workshop` in the admin UI.
+Two tiles added in this fork. Both work offline once their data is in place.
+
+- **Drug Reference** — offline FDA drug-label search (about 259,000 labels, Rx and OTC, from openFDA's bulk export, public domain CC0). The download is ~1.7 GB zipped, staged at `${NOMAD_DATA_ROOT}/storage/drug-data`; ingest writes ~8–10 GB into MySQL and is idempotent, so re-running it is safe. Search by drug name or by situation; herbal fact sheets from NIH's NCCIH (also public domain) render alongside the drugs, marked as complementary. Needs internet once for the download, then it's fully offline.
+- **Preparedness** — supply inventory (consumables and gear), a readiness calculator (days of water, food, and power for the household, pets included), and per-scenario checklists. No external data to download; the readiness figures are cited in the UI (Ready.gov/FEMA/CDC for water, FDA dietary guidelines for calories).
+
+## Workshop — offline maker library
+
+Database-backed catalog of maker files — 3D prints (.stl, .3mf), CAD, PDFs, and reference images — that live on `${NOMAD_DATA_ROOT}/storage/stl-library/`. Tile appears in the Command Center alongside Maps; at `/workshop` in the admin UI.
 
 Architecture:
 

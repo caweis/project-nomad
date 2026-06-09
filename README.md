@@ -33,7 +33,9 @@ The admin home page has tiles for:
 - **Information Library** — Wikipedia (your choice of size, from 50 MB to 96 GB), plus reference works on medicine, mechanics, cooking, survival, anything else you download.
 - **Education Platform** — Kolibri (Khan Academy and other coursework).
 - **Maps** — offline regional maps.
-- **Workshop** — catalog of 3D-printable files (STL/3MF) you've collected.
+- **Workshop** — catalog of maker files you've collected: 3D prints (STL/3MF), CAD, PDFs, and reference images, with thumbnails.
+- **Drug Reference** — offline FDA drug labels (about 259,000, Rx and OTC), pulled straight from openFDA. Search by drug name, or by situation — burn, fever, diarrhea — and see which OTC drugs treat it. Herbal remedies from NIH's NCCIH fact sheets show up alongside the drugs, cited and clearly marked as complementary.
+- **Preparedness** — supply inventory (consumables and gear), a readiness calculator that turns what's on the shelf into days of water, food, and power for your household (pets included), and per-scenario checklists.
 - **Notes** — local-only notebook.
 - **Data Tools** — CyberChef for encoding / encryption / data conversion.
 
@@ -62,6 +64,7 @@ The model names are the same whichever backend you run. On Ollama, `nomad models
 - Migrations and seeders run during install. There's a worker container so download jobs actually progress.
 - Updating and lifecycle are one command each from the Terminal (`nomad update`, `nomad upgrade`).
 - Optional oMLX (Apple MLX) backend, selectable at install or via `nomad backend`; the admin is unchanged because a local proxy speaks the Ollama API on its behalf.
+- Drug Reference and Preparedness are additions in this fork; upstream doesn't have them. Both work fully offline once their data is in (the FDA download is ~1.7 GB and needs internet once; the readiness math and remedy data ship with the app).
 
 ## Updating
 
@@ -102,6 +105,6 @@ Full reference: [`install/macos/README.md`](./install/macos/README.md), or `man 
 
 This fork uses an independent SemVer scheme with a `-macos` pre-release suffix. The label in `package.json` (and the admin About panel) reflects fork releases, **not** upstream's `1.x.x` line.
 
-Our merge-base with upstream is commit [`c668396`](https://github.com/Crosstalk-Solutions/project-nomad/commit/c668396) (October 2025). Upstream changes from `v1.29.1` → `v1.31.1` (and now `v1.32.0-rc`) are forward-ported commit-by-commit when applicable; the fork's version label is bumped on its own cadence rather than tracking upstream's numbers. This makes the fork status explicit instead of implying a feature parity the code may not have.
+Our merge-base with upstream is commit [`8bb8b41`](https://github.com/Crosstalk-Solutions/project-nomad/commit/8bb8b41) (March 2026). Upstream changes since then (through `v1.32.1`) are forward-ported commit-by-commit when applicable; the fork's version label is bumped on its own cadence rather than tracking upstream's numbers. This makes the fork status explicit instead of implying a feature parity the code may not have.
 
 Apache-2.0.
