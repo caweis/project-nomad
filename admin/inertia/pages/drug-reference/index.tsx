@@ -5,12 +5,13 @@ import StyledButton from '~/components/StyledButton'
 import DrugResultRow from '~/components/drug-reference/DrugResultRow'
 import IngestStatus from '~/components/drug-reference/IngestStatus'
 import SafetyBanner from '~/components/conditions/SafetyBanner'
-import { IconSearch, IconFirstAidKit, IconLeaf, IconExternalLink } from '@tabler/icons-react'
+import { IconSearch, IconFirstAidKit, IconLeaf } from '@tabler/icons-react'
 import type {
   DrugSearchResult,
   DrugIngestStatus,
 } from '../../../types/drug_reference'
 import type { ConditionSummary, ConditionDrugsResult, NaturalRemedy } from '../../../types/conditions'
+import { remedySourceName } from '../../../util/conditions'
 import { PRODUCT_TYPES } from '../../../types/drug_reference'
 
 interface PageProps {
@@ -816,15 +817,11 @@ function SituationRemedyRow({ remedy }: { remedy: NaturalRemedy }) {
             <p className="text-xs text-desert-stone">{remedy.commonNames.join(', ')}</p>
           )}
         </div>
-        <a
-          href={remedy.sourceUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex-shrink-0 inline-flex items-center gap-1 text-xs text-desert-tan hover:text-desert-tan-dark hover:underline mt-0.5"
-        >
-          {remedy.kind === 'self-care' ? 'Source (online)' : 'NCCIH (online)'}
-          <IconExternalLink size={11} />
-        </a>
+        {/* Plain-text attribution — deliberately NOT a link. The card is fully
+            self-contained for offline use; nothing on it needs internet. */}
+        <span className="flex-shrink-0 text-xs text-desert-stone mt-0.5">
+          Source: {remedySourceName(remedy)}
+        </span>
       </div>
       <p className="mt-1.5 text-xs text-desert-green-darker">{remedy.uses}</p>
       {remedy.how && (

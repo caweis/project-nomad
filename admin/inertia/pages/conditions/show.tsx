@@ -1,9 +1,10 @@
 import { Head, Link } from '@inertiajs/react'
-import { IconArrowLeft, IconLeaf, IconExternalLink } from '@tabler/icons-react'
+import { IconArrowLeft, IconLeaf } from '@tabler/icons-react'
 import AppLayout from '~/layouts/AppLayout'
 import SafetyBanner from '~/components/conditions/SafetyBanner'
 import DrugResultRow from '~/components/drug-reference/DrugResultRow'
 import type { ConditionSummary, NaturalRemedy } from '../../../types/conditions'
+import { remedySourceName } from '../../../util/conditions'
 import type { DrugSearchResult } from '../../../types/drug_reference'
 
 interface PageProps {
@@ -117,18 +118,10 @@ export default function ConditionsShow({ condition, drugs, remedies, drugRowCoun
               ))}
             </div>
 
+            {/* Plain-text credit — no link-out; the reference is fully bundled. */}
             <p className="mt-3 text-xs text-desert-stone">
-              Source:{' '}
-              <a
-                href="https://www.nccih.nih.gov/health/herbsataglance"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-desert-tan-dark hover:underline"
-              >
-                NCCIH — Herbs at a Glance
-              </a>{' '}
-              (National Center for Complementary and Integrative Health, NIH). Public domain (US
-              government work).
+              Sources: NCCIH &ldquo;Herbs at a Glance&rdquo; (NIH) and US-government health
+              guidance (CDC, MedlinePlus/NLM, FDA). Public domain (US government works).
             </p>
           </div>
         )}
@@ -168,15 +161,11 @@ function NaturalRemedyCard({ remedy }: { remedy: NaturalRemedy }) {
             <p className="text-xs text-desert-stone mt-0.5">{remedy.commonNames.join(', ')}</p>
           )}
         </div>
-        <a
-          href={remedy.sourceUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex-shrink-0 inline-flex items-center gap-1 text-xs text-desert-tan-dark hover:underline mt-0.5"
-        >
-          {remedy.kind === 'self-care' ? 'Source (online)' : 'NCCIH (online)'}
-          <IconExternalLink size={12} />
-        </a>
+        {/* Plain-text attribution — deliberately NOT a link. The card is fully
+            self-contained for offline use; nothing on it needs internet. */}
+        <span className="flex-shrink-0 text-xs text-desert-stone mt-0.5">
+          Source: {remedySourceName(remedy)}
+        </span>
       </div>
 
       {/* Card body */}

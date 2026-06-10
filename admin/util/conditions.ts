@@ -294,6 +294,22 @@ export function remediesForCondition(file: NaturalRemediesFile, slug: string): N
 }
 
 /**
+ * Short, display-friendly source attribution for a remedy — plain text, NOT a
+ * link. NOMAD is offline-first: remedy cards carry everything needed to act and
+ * never link out to the internet; this credit satisfies the public-domain
+ * attribution without implying connectivity.
+ */
+export function remedySourceName(remedy: { kind?: 'herb' | 'self-care'; sourceUrl: string }): string {
+  if ((remedy.kind ?? 'herb') === 'herb') return 'NCCIH'
+  const url = remedy.sourceUrl.toLowerCase()
+  if (url.includes('cdc.gov')) return 'CDC'
+  if (url.includes('fda.gov')) return 'FDA'
+  if (url.includes('medlineplus.gov')) return 'MedlinePlus (NLM)'
+  if (url.includes('nih.gov')) return 'NIH'
+  return 'US government source'
+}
+
+/**
  * Return all remedies matching a free-text query as a secondary fallback.
  *
  * Case-insensitive substring match over `name` and `uses`. Used when a free-text
