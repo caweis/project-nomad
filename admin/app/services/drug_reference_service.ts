@@ -52,7 +52,14 @@ export class DrugReferenceService {
    */
   async search(
     query: string,
-    options: { productType?: string; limit?: number; offset?: number; scope?: 'name' | 'indication' }
+    options: {
+      productType?: string
+      route?: string
+      sort?: 'relevance' | 'name'
+      limit?: number
+      offset?: number
+      scope?: 'name' | 'indication'
+    }
   ): Promise<DrugSearchResult[]> {
     const limit = options.limit ?? 50
     const offset = options.offset ?? 0
@@ -81,7 +88,7 @@ export class DrugReferenceService {
     if (!useLike) {
       // FULLTEXT path
       try {
-        return await this.searchFulltext(normalized, options.productType, limit, offset)
+        return await this.searchFulltext(normalized, options, limit, offset)
       } catch (err) {
         logger.warn(
           `[DrugReferenceService] FULLTEXT search failed, falling back to LIKE: ${
@@ -92,12 +99,12 @@ export class DrugReferenceService {
     }
 
     // LIKE fallback
-    return await this.searchLike(normalized, options.productType, limit, offset)
+    return await this.searchLike(normalized, options, limit, offset)
   }
 
   private async searchFulltext(
     normalized: string,
-    productType: string | undefined,
+    opts: { productType?: string; route?: string; sort?: 'relevance' | 'name' },
     limit: number,
     offset: number
   ): Promise<DrugSearchResult[]> {
@@ -116,14 +123,19 @@ export class DrugReferenceService {
     `
     const bindings: unknown[] = [normalized, normalized]
 
-    if (productType) {
+    if (opts.productType) {
       sql += ' AND product_type = ?'
-      bindings.push(productType)
+      bindings.push(opts.productType)
+    }
+    if (opts.route) {
+      // `route` is a comma-joined uppercase list (e.g. "ORAL, TOPICAL").
+      sql += ' AND route LIKE ?'
+      bindings.push(`%${opts.route.toUpperCase()}%`)
     }
 
     sql += `
       GROUP BY brand_name, generic_name
-      ORDER BY relevance DESC
+      ORDER BY ${opts.sort === 'name' ? 'COALESCE(brand_name, generic_name) ASC' : 'relevance DESC'}
       LIMIT ? OFFSET ?
     `
     bindings.push(limit, offset)
@@ -134,7 +146,7 @@ export class DrugReferenceService {
 
   private async searchLike(
     normalized: string,
-    productType: string | undefined,
+    opts: { productType?: string; route?: string; sort?: 'relevance' | 'name' },
     limit: number,
     offset: number
   ): Promise<DrugSearchResult[]> {
@@ -153,9 +165,13 @@ export class DrugReferenceService {
     `
     const bindings: unknown[] = [term, term]
 
-    if (productType) {
+    if (opts.productType) {
       sql += ' AND product_type = ?'
-      bindings.push(productType)
+      bindings.push(opts.productType)
+    }
+    if (opts.route) {
+      sql += ' AND route LIKE ?'
+      bindings.push(`%${opts.route.toUpperCase()}%`)
     }
 
     sql += `

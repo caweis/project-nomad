@@ -93,6 +93,8 @@ export default class DrugReferenceController {
       const params = await request.validateUsing(searchDrugValidator)
       const results = await this.service.search(params.q, {
         productType: params.product_type,
+        route: params.route,
+        sort: params.sort,
         limit: params.limit,
         offset: params.offset,
         scope: params.scope,

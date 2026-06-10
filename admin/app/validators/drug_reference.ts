@@ -14,6 +14,11 @@ export const searchDrugValidator = vine.compile(
   vine.object({
     q: vine.string().trim().minLength(1).maxLength(200),
     product_type: vine.enum(PRODUCT_TYPE_VALUES).optional(),
+    // Administration-route filter (openFDA `route`, e.g. ORAL, TOPICAL). Matched
+    // with LIKE because the column holds a comma-joined list; the UI sends
+    // curated values, the cap just bounds free input.
+    route: vine.string().trim().minLength(2).maxLength(40).optional(),
+    sort: vine.enum(['relevance', 'name'] as const).optional(),
     limit: vine.number().min(1).max(200).optional(),
     offset: vine.number().min(0).optional(),
     scope: vine.enum(['name', 'indication'] as const).optional(),

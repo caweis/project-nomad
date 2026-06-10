@@ -65,6 +65,13 @@ export interface NaturalRemedy {
   commonNames: string[]
   conditions: string[]
   uses: string
+  /**
+   * Practical offline instructions ("how to do/prepare it") sourced from the
+   * same cited page. Optional — absent when the source gives no actionable
+   * how-to (we never invent dosages or steps). The offline-mission field: the
+   * sourceUrl link is dead without internet, so the card must carry the how.
+   */
+  how?: string
   evidence: string
   cautions: string
   sourceUrl: string

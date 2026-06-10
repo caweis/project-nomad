@@ -229,7 +229,11 @@ export function parseRemedyEntry(raw: unknown): NaturalRemedy | null {
   // A remedy with no conditions never surfaces — drop it.
   if (conditions.length === 0) return null
 
-  return { slug, name, commonNames, conditions, uses, evidence, cautions, sourceUrl }
+  // Optional practical how-to (the offline-mission field) — carried when present.
+  const how = nonEmptyString(r.how)
+  return how
+    ? { slug, name, commonNames, conditions, uses, how, evidence, cautions, sourceUrl }
+    : { slug, name, commonNames, conditions, uses, evidence, cautions, sourceUrl }
 }
 
 /**

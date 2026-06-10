@@ -26,6 +26,30 @@ interface PageProps {
  */
 const NATURAL_FILTER = 'NATURAL'
 
+/**
+ * Curated administration routes for the route filter — the common openFDA
+ * `route` values a field user actually reaches for. The column holds a
+ * comma-joined uppercase list, so the backend matches with LIKE.
+ */
+const ROUTE_OPTIONS = [
+  'ORAL',
+  'TOPICAL',
+  'OPHTHALMIC',
+  'OTIC',
+  'NASAL',
+  'INHALATION',
+  'SUBLINGUAL',
+  'RECTAL',
+  'VAGINAL',
+  'TRANSDERMAL',
+  'DENTAL',
+] as const
+
+/** Title-case a route value for display (ORAL → Oral). */
+function routeLabel(r: string): string {
+  return r.charAt(0) + r.slice(1).toLowerCase()
+}
+
 /** Case-insensitive remedy match on name / common names / uses. */
 function matchRemedies(remedies: NaturalRemedy[], query: string): NaturalRemedy[] {
   const q = query.trim().toLowerCase()
@@ -90,6 +114,9 @@ function drugKey(d: DrugSearchResult): string {
 export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions, remedies }: PageProps) {
   const [query, setQuery] = useState('')
   const [productType, setProductType] = useState<string | null>(null)
+  const [route, setRoute] = useState<string | null>(null)
+  const [sort, setSort] = useState<'relevance' | 'name'>('relevance')
+  const [remedyKind, setRemedyKind] = useState<'all' | 'herb' | 'self-care'>('all')
 
   // Drug-name results.
   const [drugResults, setDrugResults] = useState<DrugSearchResult[]>([])
@@ -132,7 +159,14 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions,
 
   /** Drug-name search (one direction). Appends on "Load more". */
   const searchDrugs = useCallback(
-    async (q: string, pt: string | null, off: number, append: boolean) => {
+    async (
+      q: string,
+      pt: string | null,
+      rt: string | null,
+      srt: 'relevance' | 'name',
+      off: number,
+      append: boolean
+    ) => {
       // The Natural pill routes the by-name direction to the curated herb list
       // (client-side, see remedyMatches) — drug_labels isn't queried at all.
       if (pt === NATURAL_FILTER || !q.trim()) {
@@ -144,6 +178,8 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions,
       try {
         const params = new URLSearchParams({ q, limit: String(LIMIT), offset: String(off) })
         if (pt) params.set('product_type', pt)
+        if (rt) params.set('route', rt)
+        if (srt && srt !== 'relevance') params.set('sort', srt)
         const resp = await fetch(`/api/drug-reference/search?${params}`)
         if (!resp.ok) throw new Error(`Search failed: HTTP ${resp.status}`)
         const json = (await resp.json()) as { results: DrugSearchResult[] }
@@ -198,11 +234,11 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions,
 
   /** Run both directions for a query. */
   const runSearch = useCallback(
-    (q: string, pt: string | null) => {
+    (q: string, pt: string | null, rt: string | null, srt: 'relevance' | 'name') => {
       setError(null)
       setOffset(0)
       setSearched(q.trim().length > 0)
-      searchDrugs(q, pt, 0, false)
+      searchDrugs(q, pt, rt, srt, 0, false)
       searchSituation(q, conditions)
     },
     [conditions, searchDrugs, searchSituation]
@@ -212,7 +248,7 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions,
     const val = e.target.value
     setQuery(val)
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => runSearch(val, productType), DEBOUNCE_MS)
+    debounceRef.current = setTimeout(() => runSearch(val, productType, route, sort), DEBOUNCE_MS)
   }
 
   const handleFilterChange = (pt: string | null) => {
@@ -220,7 +256,21 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions,
     setOffset(0)
     if (debounceRef.current) clearTimeout(debounceRef.current)
     // Product-type filter only narrows the drug-name section.
-    searchDrugs(query, pt, 0, false)
+    searchDrugs(query, pt, route, sort, 0, false)
+  }
+
+  const handleRouteChange = (rt: string | null) => {
+    setRoute(rt)
+    setOffset(0)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    searchDrugs(query, productType, rt, sort, 0, false)
+  }
+
+  const handleSortChange = (srt: 'relevance' | 'name') => {
+    setSort(srt)
+    setOffset(0)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    searchDrugs(query, productType, route, srt, 0, false)
   }
 
   /** Click a chip (or follow a deep link): set the box and search that situation. */
@@ -231,10 +281,10 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions,
       setError(null)
       setOffset(0)
       setSearched(true)
-      searchDrugs(c.label, productType, 0, false)
+      searchDrugs(c.label, productType, route, sort, 0, false)
       searchSituation(c.label, conditions, c.slug)
     },
-    [conditions, productType, searchDrugs, searchSituation]
+    [conditions, productType, route, sort, searchDrugs, searchSituation]
   )
 
   // Honor a ?situation= deep link from the drug-detail reverse link, once.
@@ -249,7 +299,7 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions,
   const handleLoadMore = () => {
     const newOffset = offset + LIMIT
     setOffset(newOffset)
-    searchDrugs(query, productType, newOffset, true)
+    searchDrugs(query, productType, route, sort, newOffset, true)
   }
 
   const refreshStatus = async () => {
@@ -346,12 +396,17 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions,
   // name/common-names/uses. Under Rx/OTC the user asked for drugs specifically,
   // so the remedy block stays out of the way.
   const remedyMatches = useMemo(() => {
+    let base: NaturalRemedy[]
     if (productType === NATURAL_FILTER) {
-      return query.trim() ? matchRemedies(remedies, query) : remedies
+      base = query.trim() ? matchRemedies(remedies, query) : remedies
+    } else if (productType === null) {
+      base = matchRemedies(remedies, query)
+    } else {
+      return []
     }
-    if (productType === null) return matchRemedies(remedies, query)
-    return []
-  }, [remedies, query, productType])
+    if (remedyKind === 'all') return base
+    return base.filter((r) => (r.kind ?? 'herb') === remedyKind)
+  }, [remedies, query, productType, remedyKind])
 
   const showSituationSection = situation !== null && (situationDrugs.length > 0 || situationRemedies.length > 0)
   const showDrugSection = dedupedDrugResults.length > 0
@@ -481,6 +536,43 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions,
               >
                 Natural
               </FilterPill>
+
+              {/* Secondary controls: route + sort for the drug-name search, or
+                  herb/self-care sub-filter when Natural is active. */}
+              {productType === NATURAL_FILTER ? (
+                <div className="flex items-center gap-2 ml-auto">
+                  {(['all', 'herb', 'self-care'] as const).map((k) => (
+                    <FilterPill key={k} active={remedyKind === k} onClick={() => setRemedyKind(k)}>
+                      {k === 'all' ? 'All kinds' : k === 'herb' ? 'Herbs' : 'Self-care'}
+                    </FilterPill>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 ml-auto">
+                  <select
+                    value={route ?? ''}
+                    onChange={(e) => handleRouteChange(e.target.value || null)}
+                    className="rounded-lg border border-desert-stone-lighter bg-white px-2 py-1 text-xs text-desert-green-darker focus:border-desert-green focus:outline-none"
+                    aria-label="Filter by administration route"
+                  >
+                    <option value="">Any route</option>
+                    {ROUTE_OPTIONS.map((r) => (
+                      <option key={r} value={r}>
+                        {routeLabel(r)}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={sort}
+                    onChange={(e) => handleSortChange(e.target.value as 'relevance' | 'name')}
+                    className="rounded-lg border border-desert-stone-lighter bg-white px-2 py-1 text-xs text-desert-green-darker focus:border-desert-green focus:outline-none"
+                    aria-label="Sort drug results"
+                  >
+                    <option value="relevance">Best match</option>
+                    <option value="name">A–Z</option>
+                  </select>
+                </div>
+              )}
             </div>
 
             {error && (
@@ -730,11 +822,16 @@ function SituationRemedyRow({ remedy }: { remedy: NaturalRemedy }) {
           rel="noopener noreferrer"
           className="flex-shrink-0 inline-flex items-center gap-1 text-xs text-desert-tan hover:text-desert-tan-dark hover:underline mt-0.5"
         >
-          {remedy.kind === 'self-care' ? 'Source' : 'NCCIH'}
+          {remedy.kind === 'self-care' ? 'Source (online)' : 'NCCIH (online)'}
           <IconExternalLink size={11} />
         </a>
       </div>
       <p className="mt-1.5 text-xs text-desert-green-darker">{remedy.uses}</p>
+      {remedy.how && (
+        <p className="mt-1 text-xs text-desert-green-darker">
+          <strong>How:</strong> {remedy.how}
+        </p>
+      )}
       {remedy.cautions && (
         <p className="mt-1 text-xs text-desert-red-dark">
           <strong>Cautions:</strong> {remedy.cautions}

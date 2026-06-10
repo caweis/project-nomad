@@ -174,7 +174,7 @@ function NaturalRemedyCard({ remedy }: { remedy: NaturalRemedy }) {
           rel="noopener noreferrer"
           className="flex-shrink-0 inline-flex items-center gap-1 text-xs text-desert-tan-dark hover:underline mt-0.5"
         >
-          {remedy.kind === 'self-care' ? 'Source' : 'NCCIH'}
+          {remedy.kind === 'self-care' ? 'Source (online)' : 'NCCIH (online)'}
           <IconExternalLink size={12} />
         </a>
       </div>
@@ -182,6 +182,11 @@ function NaturalRemedyCard({ remedy }: { remedy: NaturalRemedy }) {
       {/* Card body */}
       <div className="px-4 py-3 space-y-2 text-sm">
         <p className="text-desert-green-darker">{remedy.uses}</p>
+        {remedy.how && (
+          <p className="text-xs text-desert-green-darker bg-desert-sand/40 rounded px-2 py-1.5 border border-desert-stone-lighter/40">
+            <strong>How:</strong> {remedy.how}
+          </p>
+        )}
         <p className="text-xs text-desert-stone-dark border-l-2 border-desert-tan-lighter pl-2">
           <strong className="text-desert-tan-dark">Evidence:</strong> {remedy.evidence}
         </p>
