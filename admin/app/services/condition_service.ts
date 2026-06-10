@@ -53,6 +53,15 @@ export class ConditionService {
   }
 
   /**
+   * The full curated natural-remedies list (NCCIH herbs). Small enough to ship
+   * as page props, which lets the Drug Reference search match remedies by name
+   * client-side and offer a "Natural" browse with no extra round trip.
+   */
+  listRemedies(): NaturalRemedy[] {
+    return REMEDIES_FILE.remedies
+  }
+
+  /**
    * The full curated spine (WITH searchTerms) for server-side matching such as
    * the drug-detail reverse link (situationsForIndications). Stays server-only —
    * searchTerms are a search-implementation detail the client never receives.

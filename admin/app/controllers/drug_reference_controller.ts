@@ -30,16 +30,17 @@ export default class DrugReferenceController {
    */
   async index({ inertia }: HttpContext) {
     try {
-      const [status, count, conditions] = await Promise.all([
+      const conditionService = new ConditionService()
+      const [status, count] = await Promise.all([
         this.service.getIngestStatus(),
         this.service.rowCount(),
-        Promise.resolve(new ConditionService().listConditions()),
       ])
 
       return inertia.render('drug-reference/index', {
         ingestStatus: status,
         rowCount: count,
-        conditions,
+        conditions: conditionService.listConditions(),
+        remedies: conditionService.listRemedies(),
       })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)

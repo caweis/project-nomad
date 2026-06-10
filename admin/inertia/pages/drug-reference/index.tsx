@@ -17,6 +17,25 @@ interface PageProps {
   ingestStatus: DrugIngestStatus | null
   rowCount: number
   conditions: ConditionSummary[]
+  remedies: NaturalRemedy[]
+}
+
+/**
+ * Sentinel for the type filter's "Natural" pill. Not an FDA product_type — it
+ * routes the search to the curated NCCIH herb list instead of drug_labels.
+ */
+const NATURAL_FILTER = 'NATURAL'
+
+/** Case-insensitive remedy match on name / common names / uses. */
+function matchRemedies(remedies: NaturalRemedy[], query: string): NaturalRemedy[] {
+  const q = query.trim().toLowerCase()
+  if (!q) return []
+  return remedies.filter(
+    (r) =>
+      r.name.toLowerCase().includes(q) ||
+      r.commonNames.some((cn) => cn.toLowerCase().includes(q)) ||
+      r.uses.toLowerCase().includes(q)
+  )
 }
 
 const DEBOUNCE_MS = 350
@@ -68,7 +87,7 @@ function drugKey(d: DrugSearchResult): string {
  * Once data is loaded: chips + dual-section results, with the FDA-data update control
  * and source citation at the foot.
  */
-export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions }: PageProps) {
+export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions, remedies }: PageProps) {
   const [query, setQuery] = useState('')
   const [productType, setProductType] = useState<string | null>(null)
 
@@ -114,7 +133,9 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions 
   /** Drug-name search (one direction). Appends on "Load more". */
   const searchDrugs = useCallback(
     async (q: string, pt: string | null, off: number, append: boolean) => {
-      if (!q.trim()) {
+      // The Natural pill routes the by-name direction to the curated herb list
+      // (client-side, see remedyMatches) — drug_labels isn't queried at all.
+      if (pt === NATURAL_FILTER || !q.trim()) {
         setDrugResults([])
         setHasMore(false)
         return
@@ -320,10 +341,23 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions 
     [drugResults, situationKeys]
   )
 
+  // Remedy matches for the by-name direction. With the Natural pill active an
+  // empty box browses the whole curated list; with a query it narrows by
+  // name/common-names/uses. Under Rx/OTC the user asked for drugs specifically,
+  // so the remedy block stays out of the way.
+  const remedyMatches = useMemo(() => {
+    if (productType === NATURAL_FILTER) {
+      return query.trim() ? matchRemedies(remedies, query) : remedies
+    }
+    if (productType === null) return matchRemedies(remedies, query)
+    return []
+  }, [remedies, query, productType])
+
   const showSituationSection = situation !== null && (situationDrugs.length > 0 || situationRemedies.length > 0)
   const showDrugSection = dedupedDrugResults.length > 0
+  const showRemedySection = remedyMatches.length > 0
   const nothingFound =
-    searched && !loading && !showSituationSection && !showDrugSection
+    searched && !loading && !showSituationSection && !showDrugSection && !showRemedySection
 
   return (
     <AppLayout>
@@ -440,6 +474,13 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions 
               >
                 Rx
               </FilterPill>
+              <FilterPill
+                active={productType === NATURAL_FILTER}
+                tone="olive"
+                onClick={() => handleFilterChange(NATURAL_FILTER)}
+              >
+                Natural
+              </FilterPill>
             </div>
 
             {error && (
@@ -544,9 +585,33 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions 
               </section>
             )}
 
+            {/* ── Natural remedies by name (or full browse on the Natural pill) ── */}
+            {showRemedySection && (
+              <section className={`${CARD_SURFACE} mb-6 overflow-hidden`}>
+                <div className="flex items-center gap-2.5 border-b border-desert-tan-lighter/40 bg-desert-sand/40 px-4 py-3">
+                  <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-desert-tan/10 text-desert-tan-dark">
+                    <IconLeaf size={18} />
+                  </span>
+                  <h2 className="text-sm font-bold text-desert-green-darker">Natural remedies</h2>
+                  <span className="ml-auto text-xs text-desert-stone">
+                    {remedyMatches.length} match{remedyMatches.length !== 1 ? 'es' : ''}
+                  </span>
+                </div>
+                <p className="px-4 py-2 text-xs text-desert-stone-dark border-b border-desert-tan-lighter/20">
+                  Complementary remedies — limited evidence, not FDA-evaluated. Talk to a
+                  clinician before use.
+                </p>
+                <div className="divide-y divide-desert-tan-lighter/30">
+                  {remedyMatches.map((r) => (
+                    <SituationRemedyRow key={`name-${r.slug}`} remedy={r} />
+                  ))}
+                </div>
+              </section>
+            )}
+
             {nothingFound && (
               <div className="text-center py-8 opacity-60">
-                No drugs or situations match &ldquo;{query}&rdquo;. Try a situation below.
+                No drugs, remedies, or situations match &ldquo;{query}&rdquo;. Try a situation below.
               </div>
             )}
 
