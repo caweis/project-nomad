@@ -68,6 +68,13 @@ export interface NaturalRemedy {
   evidence: string
   cautions: string
   sourceUrl: string
+  /**
+   * Which curated corpus the entry came from. 'herb' = NCCIH herbal fact
+   * sheets; 'self-care' = non-herbal home-care measures from CDC/NIH/FDA pages
+   * (issue #23). Assigned at merge time in condition_service — the JSON files
+   * don't carry it. Optional so older data parses; absent means 'herb'.
+   */
+  kind?: 'herb' | 'self-care'
 }
 
 /**

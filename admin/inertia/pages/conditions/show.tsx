@@ -158,7 +158,12 @@ function NaturalRemedyCard({ remedy }: { remedy: NaturalRemedy }) {
       {/* Card header */}
       <div className="flex items-start justify-between gap-2 bg-desert-tan/10 px-4 py-3 border-b border-desert-tan-lighter/40">
         <div>
-          <p className="font-semibold text-sm text-desert-tan-dark">{remedy.name}</p>
+          <p className="font-semibold text-sm text-desert-tan-dark">
+            {remedy.name}
+            <span className="ml-2 inline-block rounded-full bg-desert-tan/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-desert-tan-dark align-middle">
+              {remedy.kind === 'self-care' ? 'Self-care' : 'Herb'}
+            </span>
+          </p>
           {remedy.commonNames.length > 0 && (
             <p className="text-xs text-desert-stone mt-0.5">{remedy.commonNames.join(', ')}</p>
           )}
@@ -169,7 +174,7 @@ function NaturalRemedyCard({ remedy }: { remedy: NaturalRemedy }) {
           rel="noopener noreferrer"
           className="flex-shrink-0 inline-flex items-center gap-1 text-xs text-desert-tan-dark hover:underline mt-0.5"
         >
-          NCCIH
+          {remedy.kind === 'self-care' ? 'Source' : 'NCCIH'}
           <IconExternalLink size={12} />
         </a>
       </div>

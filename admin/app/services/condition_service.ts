@@ -2,6 +2,7 @@ import db from '@adonisjs/lucid/services/db'
 import logger from '@adonisjs/core/services/logger'
 import { CONDITIONS_FILE } from '../data/conditions.js'
 import { NATURAL_REMEDIES_FILE } from '../data/natural_remedies.js'
+import { HOME_REMEDIES_FILE } from '../data/home_remedies.js'
 import {
   parseConditionsFile,
   parseNaturalRemediesFile,
@@ -38,8 +39,22 @@ import type { DrugSearchResult } from '../../types/drug_reference.js'
  * parse of NATURAL_REMEDIES_FILE, reused across all requests.
  */
 
-/** Module-level parsed natural-remedies file (fail-soft). */
-const REMEDIES_FILE: NaturalRemediesFile = parseNaturalRemediesFile(NATURAL_REMEDIES_FILE)
+/**
+ * Module-level merged remedies corpus (fail-soft): the NCCIH herbs plus the
+ * non-herbal home-care measures (CDC/NIH/FDA, issue #23), each entry tagged
+ * with its kind so the UI can badge them apart. Slugs are disjoint between the
+ * two files (validated at curation time).
+ */
+const HERB_FILE = parseNaturalRemediesFile(NATURAL_REMEDIES_FILE)
+const HOME_FILE = parseNaturalRemediesFile(HOME_REMEDIES_FILE)
+const REMEDIES_FILE: NaturalRemediesFile = {
+  version: HERB_FILE.version,
+  source: HERB_FILE.source,
+  remedies: [
+    ...HERB_FILE.remedies.map((r) => ({ ...r, kind: 'herb' as const })),
+    ...HOME_FILE.remedies.map((r) => ({ ...r, kind: 'self-care' as const })),
+  ],
+}
 
 export class ConditionService {
   /** Parsed (fail-soft) curated spine — bad entries are dropped, not fatal. */
