@@ -30,6 +30,24 @@ from src.utils.logging import get_logger
 OllamaResponse = Union[OllamaGenerateResponse, OllamaChatResponse]
 OllamaStreamResponse = OllamaGenerateResponse  # They use the same format for streaming
 
+# Family-default stop sequences, injected when the client supplied none.
+# oMLX does not always honor a model's chat-template turn delimiter as an
+# end-of-sequence token — seen live with gemma3:1b: the model finished its
+# answer, emitted "<end_of_turn>", then generated looping garbage until the
+# token limit. Keyed by a substring of the (Ollama-style) model name.
+FAMILY_DEFAULT_STOPS: Dict[str, List[str]] = {
+    "gemma": ["<end_of_turn>"],
+}
+
+
+def default_stops_for_model(model_name: str) -> Optional[List[str]]:
+    """Return the family's default stop sequences for a model name, if any."""
+    lowered = model_name.lower()
+    for family, stops in FAMILY_DEFAULT_STOPS.items():
+        if family in lowered:
+            return list(stops)
+    return None
+
 
 class ChatTranslator(
     BaseTranslator[
@@ -81,6 +99,15 @@ class ChatTranslator(
             options = {}
             if ollama_request.options:
                 options = self.extract_options(ollama_request.options)
+
+            # Inject family-default stop sequences when the client sent none, so
+            # a model whose chat-template delimiter isn't an eos for oMLX (e.g.
+            # gemma's <end_of_turn>) stops at end of answer instead of running
+            # away. An explicit client `stop` always wins.
+            if not options.get("stop"):
+                default_stops = default_stops_for_model(ollama_request.model)
+                if default_stops:
+                    options["stop"] = default_stops
 
             # Handle tools (Phase 2 feature)
             tools = None
