@@ -79,7 +79,7 @@ export default function SupportPage() {
               </li>
               <li>
                 <a
-                  href="https://github.com/Crosstalk-Solutions/project-nomad/issues"
+                  href="https://github.com/caweis/project-nomad/issues"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-blue-600 hover:underline"
