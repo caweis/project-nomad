@@ -11,6 +11,24 @@ import classNames from '~/lib/classNames'
 import { IconMenu2, IconX } from '@tabler/icons-react'
 import { useSystemSetting } from '~/hooks/useSystemSetting'
 
+/**
+ * Build a chat-failure message that names the likely cause instead of the old
+ * generic "error processing your request". The most common real failure (seen
+ * live, issue #25) is the selected model not being loadable — e.g. a 70B model
+ * on a 32 GB Mac, or a model whose files were removed — which surfaced as a
+ * generic error with no hint that switching models fixes it.
+ */
+function chatFailureText(error: unknown, model: string): string {
+  const detail =
+    error instanceof Error && error.message && error.message !== 'Failed to fetch'
+      ? ` (${error.message.slice(0, 200)})`
+      : ''
+  const modelHint = model
+    ? ` This often means "${model}" isn't installed or is too large to load on this Mac — try a different model from the dropdown.`
+    : ''
+  return `Sorry, the chat request failed${detail}.${modelHint}`
+}
+
 interface ChatProps {
   enabled: boolean
   isInModal?: boolean
@@ -135,7 +153,7 @@ export default function Chat({
       const errorMessage: ChatMessage = {
         id: `msg-${Date.now()}-error`,
         role: 'assistant',
-        content: 'Sorry, there was an error processing your request. Please try again.',
+        content: chatFailureText(error, selectedModel),
         timestamp: new Date(),
       }
       setMessages((prev) => [...prev, errorMessage])
@@ -326,7 +344,7 @@ export default function Chat({
                 {
                   id: assistantMsgId,
                   role: 'assistant',
-                  content: 'Sorry, there was an error processing your request. Please try again.',
+                  content: chatFailureText(error, selectedModel),
                   timestamp: new Date(),
                 },
               ]
@@ -413,7 +431,10 @@ export default function Chat({
                 >
                   {installedModels.map((model) => (
                     <option key={model.name} value={model.name}>
-                      {model.name} ({formatBytes(model.size)})
+                      {/* On the oMLX backend the proxy reports size 0 for chat
+                          models (no size in the OpenAI API) — "(0 Bytes)" read
+                          as "not installed" (issue #25), so omit it. */}
+                      {model.size > 0 ? `${model.name} (${formatBytes(model.size)})` : model.name}
                     </option>
                   ))}
                 </select>
