@@ -25,6 +25,11 @@ export class RagService {
   private embeddingModelVerified = false
   public static UPLOADS_STORAGE_PATH = 'storage/kb_uploads'
   public static CONTENT_COLLECTION_NAME = 'nomad_knowledge_base'
+  // Upper bound on distinct sources returned by Qdrant's facet API. Real
+  // NOMADs cap out at a few hundred ZIM files + uploaded PDFs; 10k leaves
+  // generous headroom without paying the cost of an unbounded request.
+  // (Forward-port of upstream 97c65cc.)
+  public static FACET_SOURCE_LIMIT = 10_000
   public static EMBEDDING_MODEL = 'nomic-embed-text:v1.5'
   public static EMBEDDING_DIMENSION = 768 // Nomic Embed Text v1.5 dimension is 768
   public static MODEL_CONTEXT_LENGTH = 2048 // nomic-embed-text has 2K token context
@@ -1008,35 +1013,33 @@ export class RagService {
         RagService.EMBEDDING_DIMENSION
       )
 
-      const sources = new Set<string>()
-      let offset: string | number | null | Record<string, unknown> = null
-      const batchSize = 100
-
-      // Scroll through all points in the collection (only fetch source field)
-      do {
-        const scrollResult = await this.qdrant!.scroll(RagService.CONTENT_COLLECTION_NAME, {
-          limit: batchSize,
-          offset: offset,
-          with_payload: ['source'],
-          with_vector: false,
-        })
-
-        // Extract unique source values from payloads
-        scrollResult.points.forEach((point) => {
-          const source = point.payload?.source
-          if (source && typeof source === 'string') {
-            sources.add(source)
-          }
-        })
-
-        offset = scrollResult.next_page_offset || null
-      } while (offset !== null)
-
+      const sources = await this.facetDistinctSources()
       return Array.from(sources)
     } catch (error) {
       logger.error('Error retrieving stored files:', error)
       return []
     }
+  }
+
+  /**
+   * Enumerate the distinct `source` payload values in the content collection
+   * via Qdrant's facet API (one call). The previous implementation scrolled
+   * EVERY point in the collection, 100 per page, just to learn the unique
+   * sources — on a fully-ingested NOMAD (millions of points) that took 50+
+   * seconds per endpoint. `exact: true` so counts match an exhaustive walk.
+   * Forward-port of upstream 97c65cc (perf(KB), #928).
+   */
+  private async facetDistinctSources(): Promise<Set<string>> {
+    const sources = new Set<string>()
+    const facetResult = await this.qdrant!.facet(RagService.CONTENT_COLLECTION_NAME, {
+      key: 'source',
+      limit: RagService.FACET_SOURCE_LIMIT,
+      exact: true,
+    })
+    for (const hit of facetResult.hits) {
+      if (typeof hit.value === 'string') sources.add(hit.value)
+    }
+    return sources
   }
 
   /**
@@ -1205,28 +1208,8 @@ export class RagService {
         RagService.EMBEDDING_DIMENSION
       )
 
-      const sourcesInQdrant = new Set<string>()
-      let offset: string | number | null | Record<string, unknown> = null
-      const batchSize = 100
-
-      // Scroll through all points to get sources
-      do {
-        const scrollResult = await this.qdrant!.scroll(RagService.CONTENT_COLLECTION_NAME, {
-          limit: batchSize,
-          offset: offset,
-          with_payload: ['source'], // Only fetch source field for efficiency
-          with_vector: false,
-        })
-
-        scrollResult.points.forEach((point) => {
-          const source = point.payload?.source
-          if (source && typeof source === 'string') {
-            sourcesInQdrant.add(source)
-          }
-        })
-
-        offset = scrollResult.next_page_offset || null
-      } while (offset !== null)
+      // One facet call instead of scrolling every point (see facetDistinctSources).
+      const sourcesInQdrant = await this.facetDistinctSources()
 
       logger.info(`[RAG] Found ${sourcesInQdrant.size} unique sources in Qdrant`)
 
