@@ -62,11 +62,36 @@ already validated end-to-end on the M4 mini. The app contains NO install logic.
   `NOTARY_ISSUER_ID`, `NOTARY_KEY_P8`. Chris provisions these once.
 - **DMG**: `create-dmg` (or hdiutil) with the app + an Applications symlink +
   background art (desert theme). DMG itself signed + notarized.
-- **CI**: a new workflow `build-gui-installer.yml`, manual dispatch + on tag,
-  runs on `macos-14` runners: xcodebuild archive → sign → notarize → staple →
-  DMG → attach to the GitHub Release. (No GHCR involvement.)
+- **CI**: a new workflow `build-gui-installer.yml`, manual dispatch + on `v*`
+  tag, runs on `macos-14` runners: xcodebuild archive → sign → notarize → staple
+  → DMG. (No GHCR involvement.)
 - **README**: Install section gains "Or download the installer app" pointing at
   the latest release DMG; curl one-liner stays for Terminal folk.
+
+## Release automation (folded in — same job as the installer)
+The fork ships images and bumps the version but has never cut GitHub **Releases**
+(git tags exist through ~0.2.78, then lapsed during the 0.2.7xx sprint). The
+installer needs a Release to host its DMG, so we stand up release automation as
+part of this work — and it incidentally fixes the in-app update check (issue
+#27), which can finally point at a real `releases/latest`.
+
+- **Cadence**: milestone-based, NOT per-patch. A version tag (`vX.Y.Z-macos+DATE`,
+  the existing convention) is pushed only at meaningful milestones. The 0.2.7xx
+  per-patch flurry stays untagged/unreleased — `:edge` + `nomad update` remain
+  the rapid-iteration path.
+- **Workflow** (`release.yml`, on `v*` tag push): (1) build + sign + notarize the
+  DMG (reuse `build-gui-installer.yml` or call it); (2) `gh release create` with
+  the tag, the DMG attached, and release notes; (3) the existing image workflow
+  already tags `:vX.Y.Z` + `:latest` on the same tag, so image + release line up.
+- **Release notes**: drafted per release — humanizer + fact-check + don't-be-a-dick
+  (Maxims 23/24), credit-first, found from `git log <prev-tag>..HEAD` (the
+  release-notes discipline), NOT just the tip. Chris reviews before publish.
+- **First release = the installer**: cut as a clean milestone (candidate `v0.3.0`)
+  whose headline is "the macOS app + everything since 0.2.5" (drug reference,
+  preparedness, remedies, the installer). The DMG is its payload.
+- **Update-check fix (closes #27 part 1)**: once releases exist, repoint
+  `system_service.checkLatestVersion` at `caweis/project-nomad/releases/latest`
+  and compare against the fork's own version line instead of upstream's 1.x.
 
 ## Stability gate before advertising
 Build → Chris validates the DMG on a CLEAN macOS user account (ideally a wiped
@@ -76,11 +101,15 @@ re-run repairs. Only then does the README/community post mention it.
 ## Phases (each its own session/patch)
 1. **P1 — app skeleton**: Xcode project under `install/macos/installer-app/`
    (SwiftUI, wizard, drive/tier/backend pickers, PTY runner, sudo interception,
-   progress view). Runs unsigned locally for dev.
+   progress view). Runs unsigned locally for dev. START with the PTY/sudo spike —
+   it's the only novel code and it determines feasibility.
 2. **P2 — packaging pipeline**: signing + notarization + DMG in CI; secrets
-   provisioning checklist for Chris.
-3. **P3 — release + docs**: attach to release, README + community-post mention
-   after the clean-Mac validation passes.
+   provisioning checklist for Chris (Developer ID cert .p12, notarytool API key).
+3. **P3 — release automation**: `release.yml` on `v*` tag → DMG + `gh release
+   create` + notes; repoint the in-app update check at the fork's releases
+   (closes #27 part 1). First milestone release (v0.3.0) carries the DMG.
+4. **P4 — docs + announce**: README "download the app" path; community-post
+   mention — only AFTER the clean-Mac Gatekeeper/install validation passes.
 
 ## Out of scope (YAGNI)
 - Uninstaller GUI (the CLI has `nomad uninstall`; the app's Welcome links docs).
