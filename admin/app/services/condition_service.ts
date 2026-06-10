@@ -95,11 +95,15 @@ export class ConditionService {
    * remedies. Returns null when the slug is not in the curated spine so the
    * controller can 404. Drugs are OTC-only and OTC-first-ordered.
    */
-  async drugsForSlug(slug: string, limit = 50): Promise<ConditionDrugsResult | null> {
+  async drugsForSlug(
+    slug: string,
+    limit = 50,
+    opts?: { route?: string; sort?: 'relevance' | 'name' }
+  ): Promise<ConditionDrugsResult | null> {
     const condition = this.findCondition(slug)
     if (!condition) return null
 
-    const drugs = await this.searchIndications(condition.searchTerms, limit)
+    const drugs = await this.searchIndications(condition.searchTerms, limit, opts)
     const remedies: NaturalRemedy[] = remediesForCondition(REMEDIES_FILE, slug)
     return { condition: toConditionSummary(condition), drugs, remedies }
   }
@@ -118,9 +122,13 @@ export class ConditionService {
    *      substring so an unmapped query ("athlete's foot") can still surface a
    *      relevant remedy. Results from both paths are unioned and de-duped by slug.
    */
-  async drugsForFreeText(query: string, limit = 50): Promise<ConditionDrugsResult> {
+  async drugsForFreeText(
+    query: string,
+    limit = 50,
+    opts?: { route?: string; sort?: 'relevance' | 'name' }
+  ): Promise<ConditionDrugsResult> {
     const trimmed = query.trim()
-    const drugs = trimmed.length > 0 ? await this.searchIndications([trimmed], limit) : []
+    const drugs = trimmed.length > 0 ? await this.searchIndications([trimmed], limit, opts) : []
 
     // Phase 2: union condition-mapped + free-text-matched remedies.
     const remedyMap = new Map<string, NaturalRemedy>()
@@ -166,7 +174,11 @@ export class ConditionService {
    * already-OTC set, but kept so a future relaxation of the OTC filter stays
    * correctly ordered).
    */
-  async searchIndications(searchTerms: string[], limit = 50): Promise<DrugSearchResult[]> {
+  async searchIndications(
+    searchTerms: string[],
+    limit = 50,
+    opts?: { route?: string; sort?: 'relevance' | 'name' }
+  ): Promise<DrugSearchResult[]> {
     const ftQuery = buildIndicationQuery(searchTerms)
     // A FULLTEXT query needs a token >= innodb_ft_min_token_size (3). If the
     // longest bare token is shorter, NATURAL LANGUAGE MODE returns nothing, so
@@ -179,7 +191,7 @@ export class ConditionService {
 
     if (useFulltext) {
       try {
-        const rows = await this.searchIndicationFulltext(ftQuery, limit)
+        const rows = await this.searchIndicationFulltext(ftQuery, limit, opts)
         return orderOtcFirst(rows)
       } catch (err) {
         logger.warn(
@@ -190,7 +202,7 @@ export class ConditionService {
       }
     }
 
-    const rows = await this.searchIndicationLike(searchTerms, limit)
+    const rows = await this.searchIndicationLike(searchTerms, limit, opts)
     return orderOtcFirst(rows)
   }
 
@@ -205,9 +217,10 @@ export class ConditionService {
    */
   private async searchIndicationFulltext(
     ftQuery: string,
-    limit: number
+    limit: number,
+    opts?: { route?: string; sort?: 'relevance' | 'name' }
   ): Promise<DrugSearchResult[]> {
-    const sql = `
+    let sql = `
       SELECT
         MIN(id) AS id,
         brand_name,
@@ -220,11 +233,22 @@ export class ConditionService {
       FROM drug_labels
       WHERE MATCH(searchable_name, indications) AGAINST(? IN NATURAL LANGUAGE MODE)
         AND product_type = ?
+    `
+    const bindings: unknown[] = [ftQuery, ftQuery, PRODUCT_TYPES.OTC]
+
+    if (opts?.route) {
+      sql += ' AND route LIKE ?'
+      bindings.push(`%${opts.route.toUpperCase()}%`)
+    }
+
+    sql += `
       GROUP BY brand_name, generic_name
-      ORDER BY relevance DESC
+      ORDER BY ${opts?.sort === 'name' ? 'COALESCE(brand_name, generic_name) ASC' : 'relevance DESC'}
       LIMIT ?
     `
-    const rows = await db.rawQuery(sql, [ftQuery, ftQuery, PRODUCT_TYPES.OTC, limit])
+    bindings.push(limit)
+
+    const rows = await db.rawQuery(sql, bindings)
     return this.mapSearchRows(rows[0])
   }
 
@@ -236,13 +260,14 @@ export class ConditionService {
    */
   private async searchIndicationLike(
     searchTerms: string[],
-    limit: number
+    limit: number,
+    opts?: { route?: string; sort?: 'relevance' | 'name' }
   ): Promise<DrugSearchResult[]> {
     const terms = searchTerms.map((t) => t.trim()).filter((t) => t.length > 0)
     if (terms.length === 0) return []
 
     const likeClauses = terms.map(() => 'indications LIKE ?').join(' OR ')
-    const sql = `
+    let sql = `
       SELECT
         MIN(id) AS id,
         brand_name,
@@ -254,11 +279,21 @@ export class ConditionService {
       FROM drug_labels
       WHERE (${likeClauses})
         AND product_type = ?
+    `
+    const bindings: unknown[] = [...terms.map((t) => `%${t}%`), PRODUCT_TYPES.OTC]
+
+    if (opts?.route) {
+      sql += ' AND route LIKE ?'
+      bindings.push(`%${opts.route.toUpperCase()}%`)
+    }
+
+    sql += `
       GROUP BY brand_name, generic_name
-      ORDER BY brand_name ASC
+      ORDER BY ${opts?.sort === 'name' ? 'COALESCE(brand_name, generic_name) ASC' : 'brand_name ASC'}
       LIMIT ?
     `
-    const bindings: unknown[] = [...terms.map((t) => `%${t}%`), PRODUCT_TYPES.OTC, limit]
+    bindings.push(limit)
+
     const rows = await db.rawQuery(sql, bindings)
     return this.mapSearchRows(rows[0])
   }

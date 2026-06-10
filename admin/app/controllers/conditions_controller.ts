@@ -77,8 +77,13 @@ export default class ConditionsController {
         return response.badRequest({ error: 'Provide either slug or q, not both' })
       }
 
+      const filterOpts = {
+        route: params.route,
+        sort: params.sort,
+      }
+
       if (params.slug) {
-        const result = await this.service.drugsForSlug(params.slug, params.limit)
+        const result = await this.service.drugsForSlug(params.slug, params.limit, filterOpts)
         if (!result) {
           return response.notFound({ error: 'Condition not found' })
         }
@@ -86,7 +91,7 @@ export default class ConditionsController {
       }
 
       if (params.q) {
-        return await this.service.drugsForFreeText(params.q, params.limit)
+        return await this.service.drugsForFreeText(params.q, params.limit, filterOpts)
       }
 
       return response.badRequest({ error: 'Provide a slug or q query parameter' })

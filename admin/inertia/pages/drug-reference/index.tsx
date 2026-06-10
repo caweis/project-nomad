@@ -201,9 +201,16 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions,
    * situation (by slug) or free text, fetches that situation's OTC drugs and
    * natural remedies (Phase 2).
    * Pass an explicit slug (chip / deep link) to force the curated path.
+   * opts.route and opts.sort are forwarded to the backend so the situation drug
+   * stack respects the active filter controls.
    */
   const searchSituation = useCallback(
-    async (q: string, conds: ConditionSummary[], forceSlug?: string) => {
+    async (
+      q: string,
+      conds: ConditionSummary[],
+      forceSlug?: string,
+      opts?: { route: string | null; sort: 'relevance' | 'name' }
+    ) => {
       const matched = forceSlug
         ? conds.find((c) => c.slug === forceSlug) ?? null
         : matchSituation(q, conds)
@@ -218,6 +225,8 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions,
         const params = new URLSearchParams()
         if (matched) params.set('slug', matched.slug)
         else params.set('q', q)
+        if (opts?.route) params.set('route', opts.route)
+        if (opts?.sort && opts.sort !== 'relevance') params.set('sort', opts.sort)
         const resp = await fetch(`/api/conditions/drugs?${params}`)
         if (!resp.ok) throw new Error(`Search failed: HTTP ${resp.status}`)
         const json = (await resp.json()) as ConditionDrugsResult
@@ -240,7 +249,7 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions,
       setOffset(0)
       setSearched(q.trim().length > 0)
       searchDrugs(q, pt, rt, srt, 0, false)
-      searchSituation(q, conditions)
+      searchSituation(q, conditions, undefined, { route: rt, sort: srt })
     },
     [conditions, searchDrugs, searchSituation]
   )
@@ -265,6 +274,11 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions,
     setOffset(0)
     if (debounceRef.current) clearTimeout(debounceRef.current)
     searchDrugs(query, productType, rt, sort, 0, false)
+    // Re-fetch the active situation with the new route filter.
+    if (situation) {
+      const forceSlug = situation.slug || undefined
+      searchSituation(query, conditions, forceSlug, { route: rt, sort })
+    }
   }
 
   const handleSortChange = (srt: 'relevance' | 'name') => {
@@ -272,6 +286,11 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions,
     setOffset(0)
     if (debounceRef.current) clearTimeout(debounceRef.current)
     searchDrugs(query, productType, route, srt, 0, false)
+    // Re-fetch the active situation with the new sort order.
+    if (situation) {
+      const forceSlug = situation.slug || undefined
+      searchSituation(query, conditions, forceSlug, { route, sort: srt })
+    }
   }
 
   /** Click a chip (or follow a deep link): set the box and search that situation. */
@@ -409,7 +428,20 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions,
     return base.filter((r) => (r.kind ?? 'herb') === remedyKind)
   }, [remedies, query, productType, remedyKind])
 
-  const showSituationSection = situation !== null && (situationDrugs.length > 0 || situationRemedies.length > 0)
+  // When the Natural pill is active, hide the OTC drugs sub-section in the
+  // situation card (user asked for herbs/self-care only).
+  const visibleSituationDrugs = productType === NATURAL_FILTER ? [] : situationDrugs
+
+  // When a specific remedyKind filter is active, narrow the situation remedies too.
+  // Show remedies only when Natural pill (NATURAL_FILTER) or All-types (null).
+  const visibleSituationRemedies = useMemo(() => {
+    if (productType !== null && productType !== NATURAL_FILTER) return []
+    if (remedyKind === 'all') return situationRemedies
+    return situationRemedies.filter((r) => (r.kind ?? 'herb') === remedyKind)
+  }, [situationRemedies, productType, remedyKind])
+
+  const showSituationSection =
+    situation !== null && (visibleSituationDrugs.length > 0 || visibleSituationRemedies.length > 0)
   const showDrugSection = dedupedDrugResults.length > 0
   const showRemedySection = remedyMatches.length > 0
   const nothingFound =
@@ -601,16 +633,16 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions,
                     </span>
                   </h2>
                   <span className="ml-auto text-xs text-desert-stone">
-                    {situationDrugs.length} OTC{situationDrugs.length !== 1 ? '' : ''}{' '}
-                    {situationRemedies.length > 0 &&
-                      `· ${situationRemedies.length} natural`}
+                    {visibleSituationDrugs.length > 0 && `${visibleSituationDrugs.length} OTC`}
+                    {visibleSituationDrugs.length > 0 && visibleSituationRemedies.length > 0 && ' · '}
+                    {visibleSituationRemedies.length > 0 && `${visibleSituationRemedies.length} natural`}
                   </span>
                 </div>
 
                 {/* OTC drugs sub-section */}
-                {situationDrugs.length > 0 && (
+                {visibleSituationDrugs.length > 0 && (
                   <>
-                    {situationRemedies.length > 0 && (
+                    {visibleSituationRemedies.length > 0 && (
                       <div className="px-4 py-2 bg-desert-white border-b border-desert-stone-lighter/30">
                         <span className="text-xs font-semibold text-desert-stone uppercase tracking-wide">
                           Over-the-counter options
@@ -618,7 +650,7 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions,
                       </div>
                     )}
                     <div className="divide-y divide-desert-stone-lighter/40">
-                      {situationDrugs.map((d) => (
+                      {visibleSituationDrugs.map((d) => (
                         <DrugResultRow key={`sit-${d.id}`} result={d} />
                       ))}
                     </div>
@@ -626,7 +658,7 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions,
                 )}
 
                 {/* Natural remedies sub-section */}
-                {situationRemedies.length > 0 && (
+                {visibleSituationRemedies.length > 0 && (
                   <div className="border-t border-desert-tan-lighter/40 bg-desert-sand/20">
                     <div className="flex items-center gap-2 px-4 py-2 border-b border-desert-tan-lighter/30">
                       <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-desert-tan-dark">
@@ -641,7 +673,7 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions,
                       clinician before use.
                     </p>
                     <div className="divide-y divide-desert-tan-lighter/30">
-                      {situationRemedies.map((r) => (
+                      {visibleSituationRemedies.map((r) => (
                         <SituationRemedyRow key={r.slug} remedy={r} />
                       ))}
                     </div>

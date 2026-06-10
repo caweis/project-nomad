@@ -19,5 +19,7 @@ export const conditionDrugsValidator = vine.compile(
     slug: vine.string().trim().minLength(1).maxLength(80).optional(),
     q: vine.string().trim().minLength(1).maxLength(200).optional(),
     limit: vine.number().min(1).max(200).optional(),
+    route: vine.string().trim().minLength(1).maxLength(40).optional(),
+    sort: vine.enum(['relevance', 'name']).optional(),
   })
 )
