@@ -2,10 +2,11 @@ import SwiftUI
 
 @main
 struct NomadInstallerApp: App {
+    @State private var vm = WizardViewModel()
+
     var body: some Scene {
         Window("Install NOMAD", id: "main") {
-            Text("NOMAD Installer")
-                .frame(width: 640, height: 460)
+            WizardView(vm: vm)
         }
         .windowResizability(.contentSize)
     }
