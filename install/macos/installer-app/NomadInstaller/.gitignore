@@ -1,0 +1,7 @@
+.build/
+.swiftpm/
+Sources/NomadInstaller/Resources/payload/*
+!Sources/NomadInstaller/Resources/payload/.keep
+*.app
+*.dmg
+*.zip
