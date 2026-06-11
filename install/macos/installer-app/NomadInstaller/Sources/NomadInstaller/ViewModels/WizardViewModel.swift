@@ -6,7 +6,7 @@ import Observation
 @MainActor
 @Observable
 final class WizardViewModel {
-    enum Step: Int, CaseIterable { case welcome, dataDrive, modelTier, backend, progress }
+    enum Step: Int, CaseIterable { case welcome, dataDrive, modelTier, backend, review, progress }
     enum RunState: Equatable { case idle, running, needsPassword, succeeded, failed(Int32) }
 
     var step: Step = .welcome

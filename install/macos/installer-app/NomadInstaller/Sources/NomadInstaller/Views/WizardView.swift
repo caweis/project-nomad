@@ -27,6 +27,7 @@ struct WizardView: View {
         case .dataDrive: DataDriveStep(vm: vm)
         case .modelTier: ModelTierStep(vm: vm)
         case .backend: BackendStep(vm: vm)
+        case .review: ReviewStep(vm: vm)
         case .progress: ProgressStep(vm: vm)
         }
     }
@@ -37,7 +38,7 @@ struct WizardView: View {
                 Button("Back") { vm.back() }
             }
             Spacer()
-            Button(vm.step == .backend ? "Install" : "Continue") { vm.advance() }
+            Button(vm.step == .review ? "Begin Installation" : "Continue") { vm.advance() }
                 .keyboardShortcut(.defaultAction)
                 .disabled(!vm.canAdvance(from: vm.step))
         }
@@ -50,7 +51,7 @@ private struct StepHeader: View {
 
     private let labels: [(WizardViewModel.Step, String)] = [
         (.welcome, "Welcome"), (.dataDrive, "Drive"), (.modelTier, "Models"),
-        (.backend, "Backend"), (.progress, "Install"),
+        (.backend, "Backend"), (.review, "Review"), (.progress, "Install"),
     ]
 
     var body: some View {
