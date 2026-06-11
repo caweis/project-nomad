@@ -939,4 +939,41 @@ Uninstaller GUI (CLI `nomad uninstall` exists), app self-update (Sparkle), Intel
 - **SwiftPM → notarized .app** — the `.app` is script-assembled, not Xcode-archived; verify hardened-runtime signing + notarization on the assembled bundle early in P2 (a single dry run on a throwaway build before wiring CI).
 - **Payload completeness** — Task 6 Step 2 audits exactly what `nomad install` reads from its own dir so nothing essential is missing from the bundle.
 - **Notarization secrets** — isolated to P2 so they can't block P1.
+
+---
+
+## P1 review (2026-06-10 — code-complete)
+
+P1 shipped across 9 commits (`f388235` spike → `4f4c31e` assembly). All pure
+logic is unit-tested (15 tests, 0 failures): tier ladder, backend eligibility,
+output parsing, arg building, and the CRLF line splitter. The PTY install engine
+is integration-tested through a real pseudo-terminal.
+
+**Verified (green, automated):**
+- `swift build` + `swift test` — 15/15 pass.
+- PTY + sudo interception — proven by the spike *and* the PTYRunner integration test.
+- `--selfcheck` on the assembled, ad-hoc-signed `.app`: `Bundle.module` resolves,
+  the payload stages, `nomad` is executable, `compose.yaml` is present, and
+  arch/OS → tier/backend detection is correct.
+
+**Bug found + fixed in P1 (covered by regression tests):** PTYs emit CRLF and Swift
+treats `"\r\n"` as a single `Character`, so the line splitter's `firstIndex(of:
+"\n")` never matched — the install deadlocked because the sudo prompt was never
+isolated. Fixed by splitting on the LF *scalar* and stripping trailing CR.
+
+**Refinements vs. the spec/plan:**
+- SwiftPM-only (no Xcode project), reusing the proven `CPTY` target.
+- `PTYRunner` allows natural sudo re-prompts (typo recovery), `@Sendable`-clean.
+- The VM bridges PTY lines to the main actor via an ordered `AsyncStream`.
+- Added a `--selfcheck` mode (headless verification + future CI smoke test).
+
+**Still operator-gated (Task 11 Step 3) — needs Chris on a real machine:**
+- A real `nomad install` run on a scratch/external volume via the `.app`.
+- GUI rendering + the sudo sheet round-trip + the "Open NOMAD" success path.
+- Idempotent re-run repair.
+
+**Blocked on Chris for P2:** Developer ID Application cert (`.p12`) + App Store
+Connect notarytool API key, provisioned as repo secrets.
+
+All commits are local on `main` (not pushed).
 ```
