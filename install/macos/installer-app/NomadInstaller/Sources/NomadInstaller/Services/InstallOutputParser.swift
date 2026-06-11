@@ -13,7 +13,7 @@ enum InstallOutputParser {
     }
 
     static func classify(_ rawLine: String) -> InstallLine {
-        let clean = stripANSI(rawLine).trimmingCharacters(in: .whitespaces)
+        let clean = stripANSI(rawLine).trimmingCharacters(in: .whitespacesAndNewlines)
 
         if clean.hasPrefix("Password:") { return InstallLine(kind: .prompt) }
 
