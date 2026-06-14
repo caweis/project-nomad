@@ -8,9 +8,13 @@ enum AIBackend: String, CaseIterable, Identifiable, Sendable {
     var id: String { rawValue }
     var displayName: String { self == .ollama ? "Ollama" : "oMLX (Apple MLX)" }
 
+    /// oMLX requirements — mirror nomad backend_eligible(), asserted by parity tests.
+    static let requiredArch = "arm64"
+    static let omlxMinOSMajor = 15
+
     /// nomad backend_eligible(): Apple Silicon + macOS 15+.
     static func omlxEligible(arch: String, osMajor: Int) -> Bool {
-        arch == "arm64" && osMajor >= 15
+        arch == requiredArch && osMajor >= omlxMinOSMajor
     }
 
     /// nomad recommend_backend(): oMLX when eligible, else Ollama.

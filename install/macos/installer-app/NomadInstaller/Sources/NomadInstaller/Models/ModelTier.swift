@@ -29,17 +29,18 @@ enum ModelTier: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// Exclusive upper RAM bounds (GB) for tiers tiny…xl — mirrors nomad
+    /// auto_tier() and is asserted against the CLI by the parity tests.
+    static let autoThresholdsGB = [12, 20, 40, 72, 128]
+    private static let autoOrder: [ModelTier] = [.tiny, .small, .medium, .large, .xl, .dreamy]
+
     /// Mirror of nomad auto_tier(): integer-GB floor of physical memory → tier.
     static func auto(forPhysicalMemoryBytes bytes: UInt64) -> ModelTier {
         let gb = Int(bytes / 1_073_741_824)
-        switch gb {
-        case ..<12: return .tiny
-        case ..<20: return .small
-        case ..<40: return .medium
-        case ..<72: return .large
-        case ..<128: return .xl
-        default: return .dreamy
+        for (index, threshold) in autoThresholdsGB.enumerated() where gb < threshold {
+            return autoOrder[index]
         }
+        return .dreamy
     }
 
     /// Auto-detected tier for this machine.
