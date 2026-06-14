@@ -22,6 +22,10 @@ for bundle in "$BIN_DIR"/*_NomadInstaller.bundle; do
     [ -d "$bundle" ] && cp -R "$bundle" "$APP/Contents/Resources/"
 done
 
+# App icon (Info.plist CFBundleIconFile=AppIcon). Regenerate it if missing.
+[ -f "$HERE/AppIcon.icns" ] || bash "$HERE/Scripts/make-icon.sh" || true
+[ -f "$HERE/AppIcon.icns" ] && cp "$HERE/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+
 # Ad-hoc signature so the dev build launches without a Developer ID cert.
 codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
 

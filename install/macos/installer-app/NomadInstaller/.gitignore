@@ -5,3 +5,4 @@ Sources/NomadInstaller/Resources/payload/*
 *.app
 *.dmg
 *.zip
+AppIcon.icns
