@@ -9,8 +9,16 @@ struct InstallVolume: Identifiable, Equatable, Sendable {
     let totalBytes: Int64
     let isInternal: Bool
 
-    /// Default data-root under this volume (matches the CLI's project-nomad convention).
-    var dataRoot: String { (path as NSString).appendingPathComponent("project-nomad") }
+    /// Default data-root for this volume, mirroring the CLI's convention exactly
+    /// (install/macos/nomad:1334/1357/1360). The internal/boot volume's root is
+    /// read-only, so it uses ~/project-nomad-data; external drives use
+    /// <volume>/project-nomad.
+    var dataRoot: String {
+        if isInternal {
+            return (NSHomeDirectory() as NSString).appendingPathComponent("project-nomad-data")
+        }
+        return (path as NSString).appendingPathComponent("project-nomad")
+    }
 }
 
 enum VolumeScanner {
