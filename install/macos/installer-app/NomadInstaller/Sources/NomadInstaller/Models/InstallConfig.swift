@@ -5,12 +5,18 @@ struct InstallConfig: Equatable, Sendable {
     var dataRoot: String
     var tier: ModelTier?   // nil = let the CLI auto-resolve (--tier auto)
     var backend: AIBackend
+    var skipModels: Bool   // true = --no-models (install now, pull models later)
 
-    /// argv for `bash nomad <args>`. Always --yes (unattended); --tier auto when unset.
+    /// argv for `bash nomad <args>`. Always --yes (unattended). Skipping models
+    /// passes --no-models and omits --tier; otherwise --tier auto when unset.
     func installArguments() -> [String] {
-        ["install", "--yes",
-         "--data-root", dataRoot,
-         "--tier", tier?.rawValue ?? "auto",
-         "--backend", backend.rawValue]
+        var args = ["install", "--yes", "--data-root", dataRoot]
+        if skipModels {
+            args.append("--no-models")
+        } else {
+            args += ["--tier", tier?.rawValue ?? "auto"]
+        }
+        args += ["--backend", backend.rawValue]
+        return args
     }
 }

@@ -17,8 +17,14 @@ struct ModelTierStep: View {
             }
             .pickerStyle(.radioGroup)
             .labelsHidden()
+            .disabled(vm.skipModels)
+            .opacity(vm.skipModels ? 0.4 : 1)
 
-            Text("Larger tiers need more RAM and disk. You can change models later with the CLI.")
+            Divider().padding(.vertical, 2)
+
+            Toggle("Skip for now — install NOMAD and download models later", isOn: $vm.skipModels)
+
+            Text("Larger tiers need more RAM and disk. Skipping installs everything except the models; pull them anytime with the CLI.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
         }

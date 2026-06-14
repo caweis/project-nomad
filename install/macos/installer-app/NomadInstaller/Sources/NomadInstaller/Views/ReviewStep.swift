@@ -13,7 +13,7 @@ struct ReviewStep: View {
             GroupBox {
                 VStack(alignment: .leading, spacing: 12) {
                     summaryRow("externaldrive", "Install location", vm.selectedVolume?.dataRoot ?? "—")
-                    summaryRow("brain", "Models", "\(vm.tier.displayName) — about \(vm.tier.approxPullGB) GB to download")
+                    summaryRow("brain", "Models", vm.skipModels ? "Skipped — download later with the CLI" : "\(vm.tier.displayName) — about \(vm.tier.approxPullGB) GB to download")
                     summaryRow("cpu", "AI backend", vm.backend.displayName)
                 }
                 .padding(8)

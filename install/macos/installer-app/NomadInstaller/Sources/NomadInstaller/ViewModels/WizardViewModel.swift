@@ -15,6 +15,7 @@ final class WizardViewModel {
     var volumes: [InstallVolume] = []
     var selectedVolume: InstallVolume?
     var tier: ModelTier = .autoDetected
+    var skipModels: Bool = false
     var backend: AIBackend = .recommended(arch: AIBackend.currentArch, osMajor: AIBackend.currentOSMajor)
 
     var omlxEligible: Bool {
@@ -72,7 +73,7 @@ final class WizardViewModel {
 
     func startInstall() {
         guard let volume = selectedVolume else { return }
-        let cfg = InstallConfig(dataRoot: volume.dataRoot, tier: tier, backend: backend)
+        let cfg = InstallConfig(dataRoot: volume.dataRoot, tier: tier, backend: backend, skipModels: skipModels)
         runState = .running
         lines = []
         currentSection = ""
