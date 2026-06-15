@@ -86,6 +86,23 @@ narrow common interface** with **two explicit implementations**, protocol differ
 round-trips a real/simulated message, and re-assert our logging config on import (or isolate MeshCore
 in a worker). Ship Meshtastic first; add MeshCore behind the same narrow seam (P3).
 
+## Packaging — mimic upstream's Supply Depot (and add Meshtastic Web)
+
+Decided 2026-06-15 (after the upstream maintainer flagged the overlap): adopt upstream's **Supply
+Depot** container model (`v1.33.0-rc.1`) — a curated app catalog that also supports bring-your-own
+containers — as the surface for all mesh apps, mirroring their containerized-app pattern.
+
+- **Add Meshtastic Web** — the official Meshtastic web client (the node management UI), containerized
+  and cataloged as a Supply Depot app, mirroring upstream's "Meshtastic Web." This is the node's web
+  console, *not* our AI bridge — additive, and an easy first win that keeps the two forks lined up.
+- **Our AI bridge + MeshCore surface as Supply Depot containers**, not via the old `service_seeder`/
+  `apps.tsx` path. The `nomad_mesh` service becomes a Supply Depot entry.
+
+This aligns the fork with where upstream is going and makes the mesh work the cleanest thing to hand
+upstream eventually. **Prerequisite:** forward-port / adopt the Supply Depot catalog from upstream
+(ties to #24); its exact catalog format and custom-container mechanism are being mapped from the
+`v1.33.0-rc.1` code so we mimic it faithfully.
+
 ## Hard constraints (designed around, not wished away)
 
 - **Payload.** Meshtastic ~200 bytes usable (233 hard cap); MeshCore 133 chars / 163-byte datagrams.
@@ -107,6 +124,16 @@ in a worker). Ship Meshtastic first; add MeshCore behind the same narrow seam (P
   real channels, not the chatbot. (Every surveyed bridge ships exactly this posture; NOMAD's stakes are higher.)
 
 ## Phased plan — each phase ships something testable
+
+> Build patterns (chunking, ACK pacing, reconnect, safe prompting, Docker hardening) are distilled
+> with citations in `2026-06-15-nomad-mesh-research.md` — the build guide for P0–P4.
+
+### Phase S — Supply Depot + Meshtastic Web (foundation)
+- Forward-port / adopt upstream's Supply Depot container catalog (`v1.33.0-rc.1`): curated + bring-your-own
+  containers. Map its catalog format and custom-container mechanism from the upstream code first, then port.
+- Add **Meshtastic Web** as a Supply Depot app (the official containerized node console) — the easy win
+  that mirrors upstream and lines the forks up.
+- This is the surface every later mesh app rides on (the `nomad_mesh` service is a Supply Depot entry).
 
 ### Phase 0 — Service skeleton + wiring (no radio needed)
 A Python service (`install/macos/mesh-service/`, modeled on `omlx-proxy`) that exposes a small HTTP
