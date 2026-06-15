@@ -1,5 +1,6 @@
 import type { DrugInteractionEntry } from '../../../types/drug_reference'
 import { PRODUCT_TYPES } from '../../../types/drug_reference'
+import { parseInteractions, isSectionHeader, type InteractionBlock } from '../../../util/drug_interactions'
 
 interface Props {
   entry: DrugInteractionEntry
@@ -54,12 +55,12 @@ export default function InteractionColumn({ entry, onRemove }: Props) {
         </div>
       </div>
 
-      {/* Label text */}
-      <div className="px-4 py-3 flex-1">
+      {/* Label text, parsed into readable blocks (FDA wording kept verbatim). */}
+      <div className="px-4 py-3 flex-1 space-y-3">
         {entry.drug_interactions ? (
-          <p className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
-            {entry.drug_interactions}
-          </p>
+          parseInteractions(entry.drug_interactions).map((block, i) => (
+            <InteractionBlockView key={i} block={block} />
+          ))
         ) : (
           <p className="text-sm text-gray-400 italic">
             No labeled interaction text on this label.
@@ -67,5 +68,40 @@ export default function InteractionColumn({ entry, onRemove }: Props) {
         )}
       </div>
     </div>
+  )
+}
+
+/**
+ * Renders one parsed interaction block: a bullet list, the muted section header,
+ * or a paragraph with its subsection number ("7.1") shown as a small badge.
+ */
+function InteractionBlockView({ block }: { block: InteractionBlock }) {
+  if (block.bullets) {
+    return (
+      <ul className="list-disc pl-5 space-y-1.5 text-sm text-gray-800 leading-relaxed">
+        {block.bullets.map((item, i) => (
+          <li key={i}>{item}</li>
+        ))}
+      </ul>
+    )
+  }
+
+  if (isSectionHeader(block.text)) {
+    return (
+      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+        {block.text!.replace(/^\s*\d{1,2}\s+/, '')}
+      </p>
+    )
+  }
+
+  return (
+    <p className="text-sm text-gray-800 leading-relaxed">
+      {block.label && (
+        <span className="inline-block mr-1.5 px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 text-xs font-semibold align-baseline">
+          {block.label}
+        </span>
+      )}
+      {block.text}
+    </p>
   )
 }
