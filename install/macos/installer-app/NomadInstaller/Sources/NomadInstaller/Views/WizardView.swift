@@ -7,17 +7,32 @@ struct WizardView: View {
         VStack(spacing: 0) {
             StepHeader(mode: vm.mode, steps: vm.steps, current: vm.step)
             Divider()
-            content
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .padding(24)
+            stepBody
             if vm.step != .progress {
                 Divider()
                 footer
             }
         }
-        .frame(width: 640, height: 460)
+        .frame(width: 640, height: 560)
         .sheet(isPresented: Binding(get: { vm.runState == .needsPassword }, set: { _ in })) {
             SudoPasswordSheet(vm: vm)
+        }
+    }
+
+    // Non-progress steps scroll if their content is tall, so the footer (Back /
+    // Continue) is always visible. Progress manages its own layout.
+    @ViewBuilder private var stepBody: some View {
+        if vm.step == .progress {
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(24)
+        } else {
+            ScrollView {
+                content
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .padding(24)
+            }
+            .frame(maxHeight: .infinity)
         }
     }
 
