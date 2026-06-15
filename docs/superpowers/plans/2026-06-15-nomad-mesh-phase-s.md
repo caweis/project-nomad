@@ -12,13 +12,13 @@
 
 ---
 
-## DECISION PENDING (Chris owns this) — which mesh Web client ships Wave 1
+## DECISION (Chris, 2026-06-15) — BOTH mesh Web clients ship Wave 1
 
 Audit-confirmed facts (read directly from the refs):
 - **`v1.33.0-rc.1` already ships Meshtastic Web** — `ghcr.io/meshtastic/web` (official image), port 8450→8080, category `networking`, docs in place (`service_seeder.ts:367`). Our "add Meshtastic Web" goal becomes a *forward-port of an existing curated row*, not a build.
 - **`feat/supply-depot-meshcore-web` adds a *separate* MeshCore Web** — `ghcr.io/axistem-dev/meshcore-web` (a **third-party** prebuild of Liam Cottle's client for MeshCore, a sibling LoRa protocol), served over HTTPS via a self-signed cert + nginx-SSL preinstall hook. Different app, different protocol, different trust profile.
 
-**Recommendation:** Meshtastic-Web-first (official image, larger ecosystem, lowest arch risk), MeshCore Web as a fast-follow whose real prize is the reusable `_ensureSelfSignedCert` HTTPS helper. The plan below is written that way; swapping the lead is a one-line change. The protocol priority and the `axistem-dev` third-party-image trust call are Chris's.
+**Decision: ship BOTH this wave.** Meshtastic Web (Task 4) and MeshCore Web (Task 6) both land in Wave 1, along with the shared `_ensureSelfSignedCert` HTTPS helper (which also DRYs up Vaultwarden's cert path). Chris accepted the `axistem-dev` third-party image; it MUST still be pinned to a digest/version (never `:latest`) per fork policy, and the pinned digest is recorded in the seed commit.
 
 **Resolved by audit (no longer a question):** our service API routes already sit under `.prefix('/api/system')` (`routes.ts:285-290`) — identical to upstream's `/api/system/services/*`. There is **no** route-prefix divergence; the earlier "keep vs rename" question is moot.
 
@@ -119,9 +119,9 @@ Audit-confirmed facts (read directly from the refs):
 - [ ] **Step 3: Implement** the anchor map + link builder + a `## Meshtastic Web {% #meshtastic-web %}` docs section.
 - [ ] **Step 4: Run → PASS. Step 5: Commit.**
 
-## Task 6 (FAST-FOLLOW, Wave 1, gated on the decision): MeshCore Web + `_ensureSelfSignedCert`
+## Task 6 (Wave 1, confirmed): MeshCore Web + `_ensureSelfSignedCert`
 
-Port from `crosstalk/feat/supply-depot-meshcore-web`: extract `_ensureSelfSignedCert(certDir, commonName)` in `docker_service.ts` (10-yr idempotent self-signed pair), refactor `_runPreinstallActions__Vaultwarden` to use it (DRY, verify Vaultwarden still gets its cert), add `_runPreinstallActions__MeshCoreWeb` (cert + nginx-SSL conf into `storage/meshcore-web`), add `MESHCORE_WEB` constant + seed entry (**pin** `ghcr.io/axistem-dev/meshcore-web`, 443→8500, two ro binds anchored to `NOMAD_STORAGE_ABS_PATH`), docs section. TDD + per-file commits. **Requires Chris's trust call on the `axistem-dev` image.**
+Port from `crosstalk/feat/supply-depot-meshcore-web`: extract `_ensureSelfSignedCert(certDir, commonName)` in `docker_service.ts` (10-yr idempotent self-signed pair), refactor `_runPreinstallActions__Vaultwarden` to use it (DRY, verify Vaultwarden still gets its cert), add `_runPreinstallActions__MeshCoreWeb` (cert + nginx-SSL conf into `storage/meshcore-web`), add `MESHCORE_WEB` constant + seed entry (**pin** `ghcr.io/axistem-dev/meshcore-web` to a digest, never `:latest`, 443→8500, two ro binds anchored to `NOMAD_STORAGE_ABS_PATH`), docs section. TDD + per-file commits. The Vaultwarden cert-path refactor must keep Vaultwarden's existing behavior identical (verify it still provisions its cert before shipping).
 
 ## Task 7 (Wave 2 — separate plan + GitHub issue): curated catalog batch
 
