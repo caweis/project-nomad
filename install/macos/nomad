@@ -5366,17 +5366,23 @@ cmd_uninstall() {
     rm -rf "$state_root" && ok "state root cleaned: $state_root  (mysql + redis data gone)"
   fi
 
-  # 7. Optionally remove data drive contents (content — Wikipedia, models, maps)
+  # 7. Optionally remove data drive contents (content — Wikipedia, models, maps).
+  # --keep-data preserves it even under --yes — this is the GUI installer's
+  # data-safe path, so "uninstall the stack" never silently wipes the content drive.
   if [[ -n "$data_root" && -d "$data_root" ]]; then
-    echo
-    echo "Content at $data_root:"
-    du -sh "$data_root"/* 2>/dev/null | sed 's/^/  /'
-    echo
-    if confirm "Also remove all content on the data drive? (storage, ollama-models)"; then
-      rm -rf "$data_root"
-      ok "data drive cleaned: $data_root"
+    if [[ "$KEEP_DATA" == 1 ]]; then
+      log "preserving content at $data_root (--keep-data) — re-run 'nomad install' to reuse it"
     else
-      log "preserving content at $data_root — re-run 'nomad install' to reuse it"
+      echo
+      echo "Content at $data_root:"
+      du -sh "$data_root"/* 2>/dev/null | sed 's/^/  /'
+      echo
+      if confirm "Also remove all content on the data drive? (storage, ollama-models)"; then
+        rm -rf "$data_root"
+        ok "data drive cleaned: $data_root"
+      else
+        log "preserving content at $data_root — re-run 'nomad install' to reuse it"
+      fi
     fi
   fi
 
@@ -6896,6 +6902,7 @@ BACKEND_ARG=""         # explicit --backend omlx|ollama; empty = use recommendat
 TIER="auto"            # auto | tiny | small | medium | large | xl | dreamy
 MODELS=""              # if non-empty, overrides tier resolution
 SKIP_MODELS=0
+KEEP_DATA=0            # uninstall: 1 = preserve data-drive content even under --yes
 # Track which model-related flags the user explicitly passed. Without these
 # markers we can't tell "user said --tier auto" from "user didn't pass --tier"
 # — both end up TIER=auto. The model-picker prompt skips when the user has
@@ -6920,6 +6927,7 @@ while [[ $# -gt 0 ]]; do
     --tier)       TIER="$2"; TIER_EXPLICIT=1; shift 2 ;;
     --models)     MODELS="$2"; MODELS_EXPLICIT=1; shift 2 ;;
     --no-models)  SKIP_MODELS=1; SKIP_MODELS_EXPLICIT=1; shift ;;
+    --keep-data)  KEEP_DATA=1; shift ;;
     --yes|-y)     NOMAD_YES=1; shift ;;
     --help|-h)    CMD="help"; shift ;;
     *)            EXTRA_ARGS+=("$1"); shift ;;

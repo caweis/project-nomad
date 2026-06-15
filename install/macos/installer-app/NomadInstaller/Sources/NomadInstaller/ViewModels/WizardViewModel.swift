@@ -6,9 +6,11 @@ import Observation
 @MainActor
 @Observable
 final class WizardViewModel {
-    enum Step: Int, CaseIterable { case welcome, dataDrive, modelTier, backend, review, progress }
+    enum Mode: Equatable { case install, uninstall }
+    enum Step: Equatable { case welcome, dataDrive, modelTier, backend, review, uninstallReview, progress }
     enum RunState: Equatable { case idle, running, needsPassword, succeeded, failed(Int32) }
 
+    var mode: Mode = .install
     var step: Step = .welcome
 
     // Choices
@@ -17,6 +19,9 @@ final class WizardViewModel {
     var tier: ModelTier = .autoDetected
     var skipModels: Bool = false
     var backend: AIBackend = .recommended(arch: AIBackend.currentArch, osMajor: AIBackend.currentOSMajor)
+
+    // Uninstall: also erase downloaded content (models/maps/Wikipedia). Default keep.
+    var wipeContent: Bool = false
 
     var omlxEligible: Bool {
         AIBackend.omlxEligible(arch: AIBackend.currentArch, osMajor: AIBackend.currentOSMajor)
@@ -34,6 +39,15 @@ final class WizardViewModel {
         if selectedVolume == nil { selectedVolume = volumes.first }
     }
 
+    /// The step sequence for the current mode. Install keeps its full six-step
+    /// path; uninstall is a short Welcome → Confirm → Progress flow.
+    var steps: [Step] {
+        switch mode {
+        case .install: [.welcome, .dataDrive, .modelTier, .backend, .review, .progress]
+        case .uninstall: [.welcome, .uninstallReview, .progress]
+        }
+    }
+
     func canAdvance(from step: Step) -> Bool {
         switch step {
         case .dataDrive: selectedVolume != nil
@@ -42,13 +56,22 @@ final class WizardViewModel {
     }
 
     func advance() {
-        guard let next = Step(rawValue: step.rawValue + 1) else { return }
-        step = next
-        if next == .progress { startInstall() }
+        guard let i = steps.firstIndex(of: step), i + 1 < steps.count else { return }
+        step = steps[i + 1]
+        if step == .progress { start() }
     }
 
     func back() {
-        if let prev = Step(rawValue: step.rawValue - 1) { step = prev }
+        guard let i = steps.firstIndex(of: step), i > 0 else { return }
+        step = steps[i - 1]
+    }
+
+    /// Run the action for the current mode (also used by the progress "Try again").
+    func start() {
+        switch mode {
+        case .install: startInstall()
+        case .uninstall: startUninstall()
+        }
     }
 
     // MARK: - Sudo bridge
@@ -92,6 +115,36 @@ final class WizardViewModel {
                 let code = try await PTYRunner().run(
                     command: nomad.path,
                     arguments: cfg.installArguments(),
+                    onLine: { continuation.yield($0) },
+                    passwordProvider: { await self.requestPassword() }
+                )
+                continuation.finish()
+                await MainActor.run { self.runState = code == 0 ? .succeeded : .failed(code) }
+            } catch {
+                continuation.finish()
+                await MainActor.run { self.runState = .failed(-1) }
+            }
+        }
+    }
+
+    func startUninstall() {
+        let cfg = UninstallConfig(keepData: !wipeContent)
+        runState = .running
+        lines = []
+        currentSection = ""
+
+        let (stream, continuation) = AsyncStream.makeStream(of: InstallLine.self)
+        Task { @MainActor in
+            for await line in stream { self.handle(line) }
+        }
+
+        Task.detached { [weak self] in
+            guard let self else { continuation.finish(); return }
+            do {
+                let nomad = try PayloadProvider.stage()
+                let code = try await PTYRunner().run(
+                    command: nomad.path,
+                    arguments: cfg.uninstallArguments(),
                     onLine: { continuation.yield($0) },
                     passwordProvider: { await self.requestPassword() }
                 )

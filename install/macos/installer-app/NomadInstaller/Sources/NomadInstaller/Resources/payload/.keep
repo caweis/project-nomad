@@ -1,2 +1,0 @@
-Placeholder so SwiftPM's .copy("Resources/payload") resource exists before
-Scripts/stage-payload.sh populates this directory with the install tree.

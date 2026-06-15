@@ -16,7 +16,8 @@ struct ProgressStep: View {
     @ViewBuilder private var header: some View {
         switch vm.runState {
         case .succeeded:
-            Label("NOMAD is installed", systemImage: "checkmark.circle.fill")
+            Label(vm.mode == .install ? "NOMAD is installed" : "NOMAD removed",
+                  systemImage: "checkmark.circle.fill")
                 .font(.title2).bold().foregroundStyle(.green)
         case .failed:
             Label("Install hit a problem", systemImage: "xmark.octagon.fill")
@@ -59,16 +60,21 @@ struct ProgressStep: View {
         case .succeeded:
             HStack {
                 Spacer()
-                Button("Open NOMAD") {
-                    if let url = URL(string: "http://localhost:8080") { NSWorkspace.shared.open(url) }
+                if vm.mode == .install {
+                    Button("Open NOMAD") {
+                        if let url = URL(string: "http://localhost:8080") { NSWorkspace.shared.open(url) }
+                    }
+                    .keyboardShortcut(.defaultAction)
+                } else {
+                    Button("Quit") { NSApplication.shared.terminate(nil) }
+                        .keyboardShortcut(.defaultAction)
                 }
-                .keyboardShortcut(.defaultAction)
             }
         case .failed:
             HStack {
                 Button("Copy full log") { copyLog() }
                 Spacer()
-                Button("Try again") { vm.startInstall() }
+                Button("Try again") { vm.start() }
                     .keyboardShortcut(.defaultAction)
             }
         default:

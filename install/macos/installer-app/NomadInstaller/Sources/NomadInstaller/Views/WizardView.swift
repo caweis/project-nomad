@@ -5,7 +5,7 @@ struct WizardView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            StepHeader(current: vm.step)
+            StepHeader(mode: vm.mode, steps: vm.steps, current: vm.step)
             Divider()
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -23,12 +23,21 @@ struct WizardView: View {
 
     @ViewBuilder private var content: some View {
         switch vm.step {
-        case .welcome: WelcomeStep()
+        case .welcome: WelcomeStep(vm: vm)
         case .dataDrive: DataDriveStep(vm: vm)
         case .modelTier: ModelTierStep(vm: vm)
         case .backend: BackendStep(vm: vm)
         case .review: ReviewStep(vm: vm)
+        case .uninstallReview: UninstallReviewStep(vm: vm)
         case .progress: ProgressStep(vm: vm)
+        }
+    }
+
+    private var footerTitle: String {
+        switch vm.step {
+        case .review: "Begin Installation"
+        case .uninstallReview: "Uninstall NOMAD"
+        default: "Continue"
         }
     }
 
@@ -38,7 +47,7 @@ struct WizardView: View {
                 Button("Back") { vm.back() }
             }
             Spacer()
-            Button(vm.step == .review ? "Begin Installation" : "Continue") { vm.advance() }
+            Button(footerTitle) { vm.advance() }
                 .keyboardShortcut(.defaultAction)
                 .disabled(!vm.canAdvance(from: vm.step))
         }
@@ -47,26 +56,35 @@ struct WizardView: View {
 }
 
 private struct StepHeader: View {
+    let mode: WizardViewModel.Mode
+    let steps: [WizardViewModel.Step]
     let current: WizardViewModel.Step
-
-    private let labels: [(WizardViewModel.Step, String)] = [
-        (.welcome, "Welcome"), (.dataDrive, "Drive"), (.modelTier, "Models"),
-        (.backend, "Backend"), (.review, "Review"), (.progress, "Install"),
-    ]
 
     var body: some View {
         HStack(spacing: 6) {
-            ForEach(Array(labels.enumerated()), id: \.offset) { index, item in
-                Text(item.1)
+            ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
+                Text(label(step))
                     .font(.caption)
-                    .fontWeight(item.0 == current ? .semibold : .regular)
-                    .foregroundStyle(item.0 == current ? Color.primary : .secondary)
-                if index < labels.count - 1 {
+                    .fontWeight(step == current ? .semibold : .regular)
+                    .foregroundStyle(step == current ? Color.primary : .secondary)
+                if index < steps.count - 1 {
                     Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
                 }
             }
         }
         .padding(.vertical, 10)
+    }
+
+    private func label(_ step: WizardViewModel.Step) -> String {
+        switch step {
+        case .welcome: "Welcome"
+        case .dataDrive: "Drive"
+        case .modelTier: "Models"
+        case .backend: "Backend"
+        case .review: "Review"
+        case .uninstallReview: "Confirm"
+        case .progress: mode == .install ? "Install" : "Uninstall"
+        }
     }
 }
 

@@ -107,6 +107,13 @@ import Foundation
         }
     }
 
+    @Test func uninstallKeepDataFlagAcceptedByCLI() throws {
+        let src = try Self.nomadSource()
+        // UninstallConfig emits --keep-data for the data-safe uninstall path.
+        let accepted = src.contains("--keep-data)") || src.contains("--keep-data|")
+        #expect(accepted, "CLI parser no longer handles --keep-data (the GUI's data-safe uninstall flag)")
+    }
+
     // MARK: - #7 Data-root convention
 
     @Test func dataRootConventionMatchesCLI() throws {
