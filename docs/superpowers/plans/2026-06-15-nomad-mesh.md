@@ -54,18 +54,37 @@ internally, which is the intended model.
    modeled on `/chat`), backed by the mesh service's HTTP API.
 3. **Outbound alerts.** NOMAD pushes weather/status/scheduled messages to a mesh channel.
 
-## Both protocols, one boundary
+## Both protocols — a narrow interface, NOT a unified abstraction
 
-A single `MeshAdapter` interface (connect, send_text(dest, channel, text), subscribe(on_message),
-list_nodes) with two implementations:
+Adversarial research (verified 2026-06-15 against primary sources) killed the "one `MeshAdapter`
+hides the protocol" idea. The only real-world Meshtastic↔MeshCore bridge (AkitaEngineering) uses
+*separate per-protocol handlers*, and a unified abstraction leaks at four seams. So: a **deliberately
+narrow common interface** with **two explicit implementations**, protocol differences surfaced as
+**capability flags**, not flattened.
 
-- **Meshtastic** — `meshtastic-py` (mature, de-facto official). `TCPInterface(hostname, 4403)`;
-  receive via PyPubSub `meshtastic.receive.text`; send via `sendText(text, destinationId, channelIndex)`.
-- **MeshCore** — `meshcore-py` (younger but viable; `meshcore-ha` + `meshcore-proxy` prove the path).
-  `MeshCore.create_tcp(host, 4000)`; async-first.
+- Interface: `connect()`, `sendText(to, body)`, `onMessage(cb)`, `listContacts()`, plus capability
+  descriptors `identityKind`, `maxTextBytes` (runtime-queried, not hardcoded), `ackSupport`.
+- **Meshtastic** (`meshtastic-py`) — synchronous: daemon reader thread + PyPubSub callbacks on that
+  thread. `TCPInterface(hostname, 4403)`; `sendText(text, destinationId, channelIndex)`.
+- **MeshCore** (`meshcore-py`) — asyncio-native. Run it on its OWN dedicated asyncio loop thread; hand
+  messages across the thread↔loop boundary via a thread-safe queue. Never call an async MeshCore
+  command from a Meshtastic PyPubSub callback. `MeshCore.create_tcp(host, 4000)`.
 
-Both converge on the same USB-radio → host-TCP-bridge → container-over-TCP topology, so the adapter
-boundary makes the second protocol low-risk. Build Meshtastic first, MeshCore right after.
+**Four seams the interface must NOT flatten** (each verified):
+1. **Concurrency** — Meshtastic sync/threads vs MeshCore asyncio. Isolate the loops; queue across.
+2. **Identity** — Meshtastic stable `!hexid`; MeshCore 6-byte pubkey-prefix (collision-prone) for DMs
+   and *no sender id at all* on channel messages. Model identity as `{protocol, nodeId?|pubkeyPrefix?,
+   name}`; make "unknown/ambiguous sender" a first-class state.
+3. **Payload size** — per-implementation, runtime-queried; MeshCore publishes no fixed number. Don't
+   hardcode 133/200; enforce conservatively with an explicit truncate/fragment/reject policy.
+4. **Delivery/ACK** — protocol-specific status enum, "unknown" not "delivered"; never a single bool.
+
+**Dependency discipline (MeshCore is Beta).** `meshcore-py` is self-classified Development Status 4
+(Beta), ~15 months old (created 2025-03, active), with a point release that broke message-receive
+(issue #81) and a root-logger hygiene smell (#58). So: pin exact versions (`meshcore==2.3.7`,
+`meshtastic==<pinned>`), track MeshCore by commit SHA, gate every bump behind an integration test that
+round-trips a real/simulated message, and re-assert our logging config on import (or isolate MeshCore
+in a worker). Ship Meshtastic first; add MeshCore behind the same narrow seam (P3).
 
 ## Hard constraints (designed around, not wished away)
 
