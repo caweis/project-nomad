@@ -125,7 +125,17 @@ Port from `crosstalk/feat/supply-depot-meshcore-web`: extract `_ensureSelfSigned
 
 ## Task 7 (Wave 2 — separate plan + GitHub issue): curated catalog batch
 
-Forward-port the SAFE upstream curated apps — **Stirling-PDF, IT-Tools, Excalidraw, Homebox, Vaultwarden, FileBrowser** — each pinned off `:latest` to a verified arm64 digest, `source_repo` populated, with constant + docs anchor + catalog test. **Defer & verify-then-ship:** MeshtasticD (radio-less on Mac + inconsistent multi-arch), Calibre-Web (heavy native stack), Jellyfin (no VAAPI on OrbStack; 2GB/20GB). File as a `backlog`+`enhancement` issue with per-app risk notes.
+Forward-port the clean-fit curated apps, each pinned off `:latest` to a verified arm64 digest, `source_repo` populated, with constant + docs anchor + catalog test:
+- **Adopt:** Vaultwarden (security), Stirling-PDF (productivity), IT-Tools (utility), Excalidraw (productivity), Calibre-Web (verify the LSIO arm64 tag — heavier native stack).
+- **Grocy (food module, NEW — not upstream-curated):** bundle as a curated food app. This is the canonical food/pantry system per [decision](#); pin a verified arm64 tag. Ties to the federated-readiness work item below.
+- **Skip:** Homebox (duplicates our native inventory), MeshtasticD (radio-less on Mac, wrong mechanism — our Phase 2 host bridge is the real path).
+- **Defer / verify-then-ship:** FileBrowser (ships root + hardcoded default credential — adopt only with the credential overridden), Jellyfin (no VAAPI on OrbStack; 2 GB/20 GB footprint).
+
+File as a `backlog`+`enhancement` issue with per-app risk notes.
+
+## Work item (separate plan + GitHub issue): Grocy federated readiness
+
+Decided 2026-06-15: Grocy owns food; our `inventory_items` cedes food; our **Supply Readiness** reads food/calorie stock from Grocy's REST API so days-of-supply is one unified number across food + water + power + medical + comms, degrading gracefully if Grocy is absent. Depends on Grocy running as a Supply Depot app (Task 7). Needs its own design pass against our `RESOURCE_TYPES`/days-of-supply model + Grocy's calorie/stock API. See memory `grocy-preparedness-architecture`. File as its own plan + issue; do NOT bolt onto Phase S.
 
 ## Task 8 (Wave 3 — separate plan + GitHub issue): custom-container + auto-update surface
 
