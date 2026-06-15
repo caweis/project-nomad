@@ -128,12 +128,23 @@ upstream eventually. **Prerequisite:** forward-port / adopt the Supply Depot cat
 > Build patterns (chunking, ACK pacing, reconnect, safe prompting, Docker hardening) are distilled
 > with citations in `2026-06-15-nomad-mesh-research.md` — the build guide for P0–P4.
 
-### Phase S — Supply Depot + Meshtastic Web (foundation)
-- Forward-port / adopt upstream's Supply Depot container catalog (`v1.33.0-rc.1`): curated + bring-your-own
-  containers. Map its catalog format and custom-container mechanism from the upstream code first, then port.
-- Add **Meshtastic Web** as a Supply Depot app (the official containerized node console) — the easy win
-  that mirrors upstream and lines the forks up.
-- This is the surface every later mesh app rides on (the `nomad_mesh` service is a Supply Depot entry).
+### Phase S — Supply Depot foundation + Meshtastic Web
+**Approach (decided 2026-06-15): forward-port and reconcile by hand.** Port upstream's data model
+(`is_custom` + `category` columns on the `services` table), the `supply-depot.tsx` page, the
+curated-catalog pattern, and the per-app docs model; reconcile against our diverged `services` code
+(drug reference, macOS-specific services) by hand. Map the upstream implementation first
+(`admin/app/controllers/supply_depot_controller.ts`, the supply-depot + curated-collections migrations,
+`admin/inertia/pages/supply-depot.tsx`, the curated catalog seed), then port.
+
+**Apps in two waves** (mesh leads; third-party app porting must not block it):
+- **Wave 1 (this phase):** Supply Depot infra + **Meshtastic Web** (one real curated app validates the
+  pipeline and mirrors upstream).
+- **Wave 2 (after the mesh bridge):** port upstream's curated catalog as a *vetted* batch — Stirling PDF,
+  File Browser, Calibre-Web, IT Tools, and the others their services carry (Kolibri, CyberChef, Flatnotes;
+  ~8–9 total). **Vet each on arm64/OrbStack before shipping** — some upstream services don't port to macOS
+  Docker (cf. `disk-collector`, removed for file-sharing incompatibility). Adopt what's clean; skip what isn't.
+
+This is the surface every mesh app rides on (the `nomad_mesh` service becomes a Supply Depot entry).
 
 ### Phase 0 — Service skeleton + wiring (no radio needed)
 A Python service (`install/macos/mesh-service/`, modeled on `omlx-proxy`) that exposes a small HTTP
