@@ -31,6 +31,14 @@ process and exposed over TCP, and the container connects to a *configurable TCP 
 no radio yet, that endpoint is a mock during development and a real bridge later — the container
 never changes.
 
+**Isolation (explicit requirement).** All logic lives inside the isolated `nomad_mesh` Docker
+image — both mesh adapters, the AI client, the responder loop, the console API, and the entire
+safety model. The host-side serial→TCP bridge is a *dumb pipe with zero business logic*; it exists
+only because OrbStack can't pass a USB device into a container. So the feature is fully containerized
+except for that unavoidable hardware shim, and the shim is trivially replaceable (a networked radio
+needs no host process at all). The container runs least-privilege: no host mounts, no Docker socket,
+talking only to the host serial-TCP endpoint and the local AI API.
+
 **How it reaches the AI.** The container joins the `project-nomad_default` network, sets
 `extra_hosts: ['host.docker.internal:host-gateway']`, and calls the OpenAI/Ollama-compatible API
 at `${NOMAD_OLLAMA_URL}` (`http://host.docker.internal:11436` in oMLX mode, `:11434` in Ollama
@@ -126,13 +134,11 @@ API and an AI client, with a **mock mesh adapter** so the whole loop is testable
   `install/macos/scripts/test-host-command-allowlist.sh`, `.github/workflows/build-nomad-macos-image.yml`
   (build the mesh image), and a controller + `admin/start/routes.ts` for P4.
 
-## Scoping decision needed
+## Scope: full build (decided 2026-06-15)
 
-Two ways to take v1:
-- **Full vision** — spec and build all five phases (multi-week).
-- **Tight v1 (recommended to start)** — P0 + P1 (Meshtastic responder, mockable then real over TCP),
-  with MeshCore (P3), the host bridge (P2), and the console/alerts (P4) as fast-follows. Ships the
-  headline "AI over radio" feature soonest and de-risks the rest behind the adapter boundary.
+Chris: "go big or go home, let's do it all." All five phases, both protocols, all three flows.
+The adapter boundary and the mock-first P0 still let us build and verify incrementally — full
+scope, phased delivery, each phase shippable and tested in order P0 → P1 → P2 → P3 → P4.
 
 ## Risks
 
