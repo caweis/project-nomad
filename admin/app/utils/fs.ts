@@ -6,6 +6,11 @@ import { LSBlockDevice, NomadDiskInfoRaw } from '../../types/system.js'
 
 export const ZIM_STORAGE_PATH = '/storage/zim'
 
+// MeshCore Web (HTTPS) preinstall writes a self-signed cert + nginx-ssl.conf here;
+// the seeder bind-mounts both into the container. See
+// DockerService._runPreinstallActions__MeshCoreWeb.
+export const MESHCORE_WEB_STORAGE_PATH = '/storage/meshcore-web'
+
 export async function listDirectoryContents(path: string): Promise<FileEntry[]> {
   const entries = await readdir(path, { withFileTypes: true })
   const results: FileEntry[] = []

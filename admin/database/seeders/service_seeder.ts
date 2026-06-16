@@ -227,6 +227,41 @@ export default class ServiceSeeder extends BaseSeeder {
       category: 'networking',
       depends_on: null,
     },
+    {
+      service_name: SERVICE_NAMES.MESHCORE_WEB,
+      friendly_name: 'MeshCore Web',
+      powered_by: 'MeshCore',
+      display_order: 6,
+      description: 'Browser-based client for MeshCore mesh radio devices',
+      icon: 'IconAntenna',
+      // aXistem's prebuilt image of Liam Cottle's MeshCore web client (MeshCore is a sibling LoRa
+      // mesh project to Meshtastic).
+      container_image: 'ghcr.io/axistem-dev/meshcore-web:v1.45.0',
+      source_repo: 'https://github.com/aXistem-dev/meshcore-web',
+      container_command: null,
+      container_config: JSON.stringify({
+        HostConfig: {
+          RestartPolicy: { Name: 'unless-stopped' },
+          // Stock nginx serving a Flutter build over HTTP on 80. MeshCore's client reaches a radio via
+          // Web Bluetooth / Web Serial, which browsers only allow from a secure (HTTPS) context — so
+          // _runPreinstallActions__MeshCoreWeb writes a self-signed cert + SSL config into
+          // storage/meshcore-web, and we bind both in (the config over the image's default.conf) and
+          // publish 443. The https: prefix on ui_location builds an https:// Open link.
+          PortBindings: { '443/tcp': [{ HostPort: '8500' }] },
+          Binds: [
+            `${ServiceSeeder.NOMAD_STORAGE_ABS_PATH}/meshcore-web/nginx-ssl.conf:/etc/nginx/conf.d/default.conf:ro`,
+            `${ServiceSeeder.NOMAD_STORAGE_ABS_PATH}/meshcore-web/certs:/certs:ro`,
+          ],
+        },
+        ExposedPorts: { '443/tcp': {} },
+      }),
+      ui_location: 'https:8500',
+      installed: false,
+      installation_status: 'idle',
+      is_dependency_service: false,
+      category: 'networking',
+      depends_on: null,
+    },
   ]
 
   async run() {

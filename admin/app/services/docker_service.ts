@@ -5,11 +5,11 @@ import { inject } from '@adonisjs/core'
 import transmit from '@adonisjs/transmit/services/main'
 import { doResumableDownloadWithRetry } from '../utils/downloads.js'
 import { join } from 'path'
-import { ZIM_STORAGE_PATH } from '../utils/fs.js'
+import { ZIM_STORAGE_PATH, MESHCORE_WEB_STORAGE_PATH } from '../utils/fs.js'
 import { SERVICE_NAMES } from '../../constants/service_names.js'
 import { exec } from 'child_process'
 import { promisify } from 'util'
-// import { readdir } from 'fs/promises'
+import { mkdir, access, chmod, writeFile } from 'node:fs/promises'
 import KVStore from '#models/kv_store'
 import { BROADCAST_CHANNELS } from '../../constants/broadcast.js'
 import env from '#start/env'
@@ -495,6 +495,15 @@ export class DockerService {
         )
       }
 
+      if (service.service_name === SERVICE_NAMES.MESHCORE_WEB) {
+        await this._runPreinstallActions__MeshCoreWeb()
+        this._broadcast(
+          service.service_name,
+          'preinstall-complete',
+          `Pre-install actions for MeshCore Web completed successfully.`
+        )
+      }
+
       // Native Ollama: skip container creation entirely, just mark as installed
       if (service.service_name === SERVICE_NAMES.OLLAMA && DockerService.isNativeOllama()) {
         const nativeUrl = env.get('OLLAMA_HOST')!
@@ -751,6 +760,106 @@ export class DockerService {
         SERVICE_NAMES.KIWIX,
         'preinstall-error',
         `Failed to download Wikipedia ZIM file: ${error.message}`
+      )
+      throw new Error(`Pre-install action failed: ${error.message}`)
+    }
+  }
+
+  /**
+   * Ensure a self-signed TLS cert (cert.pem + key.pem) exists in `certDir`, generating one if not.
+   * Used by apps that need a secure (HTTPS) context but run on a LAN appliance with no public DNS to
+   * get a trusted cert for. Idempotent: an existing pair is left untouched, so the cert is stable
+   * across reinstalls (no fresh browser warning each time) and a cert an admin swapped in by hand is
+   * never clobbered. The private key is locked to 0600; the cert stays world-readable.
+   */
+  private async _ensureSelfSignedCert(
+    certDir: string,
+    commonName: string
+  ): Promise<{ certPath: string; keyPath: string }> {
+    const certPath = join(certDir, 'cert.pem')
+    const keyPath = join(certDir, 'key.pem')
+
+    await mkdir(certDir, { recursive: true })
+
+    const alreadyHasCert = await Promise.all([
+      access(certPath)
+        .then(() => true)
+        .catch(() => false),
+      access(keyPath)
+        .then(() => true)
+        .catch(() => false),
+    ]).then(([c, k]) => c && k)
+
+    if (alreadyHasCert) return { certPath, keyPath }
+
+    // 10-year self-signed cert. CN/SAN are cosmetic for a self-signed cert (the browser warns
+    // regardless), but a SAN keeps it structurally valid for clients that require one.
+    const execAsync = promisify(exec)
+    await execAsync(
+      `openssl req -x509 -newkey rsa:2048 -nodes ` +
+        `-keyout "${keyPath}" -out "${certPath}" -days 3650 ` +
+        `-subj "/CN=${commonName}" ` +
+        `-addext "subjectAltName=DNS:nomad,DNS:localhost"`
+    )
+
+    await chmod(keyPath, 0o600)
+    await chmod(certPath, 0o644)
+
+    return { certPath, keyPath }
+  }
+
+  /**
+   * The MeshCore web client (aXistem's prebuilt image) is stock nginx serving a static Flutter build
+   * over plain HTTP. The client reaches a radio over Web Bluetooth / Web Serial, which browsers only
+   * permit from a secure (HTTPS) context — so over plain HTTP the app loads but can't connect to a
+   * thing. We generate a self-signed cert and a small SSL nginx config here; the seeder bind-mounts
+   * both into the container (the config over the image's default.conf) so it serves the same static
+   * files over HTTPS instead. Same one-time-browser-warning approach as other HTTPS-only apps.
+   */
+  private async _runPreinstallActions__MeshCoreWeb(): Promise<void> {
+    const appDir = join(process.cwd(), MESHCORE_WEB_STORAGE_PATH)
+    const certDir = join(appDir, 'certs')
+    const nginxConfPath = join(appDir, 'nginx-ssl.conf')
+
+    this._broadcast(
+      SERVICE_NAMES.MESHCORE_WEB,
+      'preinstall',
+      `Running pre-install actions for MeshCore Web...`
+    )
+
+    try {
+      await this._ensureSelfSignedCert(certDir, 'Project NOMAD MeshCore Web')
+
+      // SSL server block bind-mounted over the image's default.conf. Serves the Flutter build that
+      // already lives at /usr/share/nginx/html in the image, over HTTPS only, with the SPA fallback
+      // single-page apps need. Cert paths match the /certs bind mount set in the seeder.
+      const nginxConf =
+        [
+          'server {',
+          '    listen 443 ssl;',
+          '    server_name _;',
+          '    ssl_certificate     /certs/cert.pem;',
+          '    ssl_certificate_key /certs/key.pem;',
+          '    root /usr/share/nginx/html;',
+          '    index index.html;',
+          '    location / {',
+          '        try_files $uri $uri/ /index.html;',
+          '    }',
+          '}',
+        ].join('\n') + '\n'
+      await writeFile(nginxConfPath, nginxConf)
+      await chmod(nginxConfPath, 0o644)
+
+      this._broadcast(
+        SERVICE_NAMES.MESHCORE_WEB,
+        'preinstall',
+        `MeshCore Web HTTPS certificate and config are ready.`
+      )
+    } catch (error) {
+      this._broadcast(
+        SERVICE_NAMES.MESHCORE_WEB,
+        'preinstall-error',
+        `Failed to prepare MeshCore Web HTTPS: ${error.message}`
       )
       throw new Error(`Pre-install action failed: ${error.message}`)
     }
