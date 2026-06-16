@@ -1,0 +1,10 @@
+# NOMAD Mesh Bridge runtime deps. Pinned for reproducible multi-arch builds.
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+httpx==0.28.1
+
+# Radio protocol libraries arrive with their adapters (P1 / P3). Pinned exactly
+# because meshcore-py is Beta and a point release has broken message-receive
+# before — every bump rides an integration test.
+#   meshtastic==<pinned in P1>
+#   meshcore==2.3.7   # P3
