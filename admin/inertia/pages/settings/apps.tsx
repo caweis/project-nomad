@@ -413,14 +413,14 @@ export default function SettingsPage(props: {
 
   return (
     <SettingsLayout>
-      <Head title="App Settings" />
+      <Head title="Supply Depot" />
       <div className="xl:pl-72 w-full">
         <main className="px-12 py-6">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h1 className="text-4xl font-semibold">Apps</h1>
+              <h1 className="text-4xl font-semibold">Supply Depot</h1>
               <p className="text-gray-500 mt-1">
-                Manage the applications that are available in your Project N.O.M.A.D. instance. Nightly update checks will automatically detect when new versions of these apps are available.
+                Browse and install apps for your Project N.O.M.A.D. instance, organized by category. Nightly update checks automatically detect when new versions are available.
               </p>
             </div>
             <StyledButton
@@ -449,6 +449,18 @@ export default function SettingsPage(props: {
                       </div>
                     )
                   },
+                },
+                {
+                  accessor: 'category',
+                  title: 'Category',
+                  render: (record) =>
+                    record.category ? (
+                      <span className="inline-flex items-center rounded-full bg-desert-sand px-2.5 py-0.5 text-xs font-medium capitalize text-desert-stone-dark">
+                        {record.category}
+                      </span>
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    ),
                 },
                 {
                   accessor: 'ui_location',
