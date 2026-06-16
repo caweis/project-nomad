@@ -1,7 +1,10 @@
 # Phase S — NOMAD Supply Depot + Mesh Web Client Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans (or subagent-driven-development) to implement this task-by-task. Steps use checkbox (`- [ ]`) syntax.
-> **Status:** drafted + audited 2026-06-15. **No implementation until Chris signs off AND answers the mesh-client decision (below).**
+> **Status:** drafted + audited 2026-06-15. **Wave 1 BUILT 2026-06-16 (local, unpushed).**
+>
+> **WAVE 1 BUILD (local):** T1 schema (is_custom + category) `a4df355` · T4 Meshtastic Web `cfb5f03` · T6 MeshCore Web + HTTPS cert preinstall `07c8f26` · T2/T3 Supply Depot identity + Category column `621300e`. Verified here: full `tsc --noEmit`, backend lint clean. Mini-gated: `migration:run`, app installs (incl. the openssl cert gen), page render.
+> **Scope deviations (deliberate, see body):** ported ONLY the `is_custom`+`category` migration (deferred upstream's auto-update / user-modified / custom-url / custom-library-sources migrations to land WITH their features — no dead schema). Delivered the Supply Depot as the renamed + categorized existing catalog page rather than a new top-level card page (un-render-testable here) — **the top-level card page, per-app docs, custom-container apps, auto-update, and the Wave-2 curated batch are deferred follow-ups (GitHub issues).**
 > Parent design: `2026-06-15-nomad-mesh.md`. Build patterns: `2026-06-15-nomad-mesh-research.md`.
 
 **Goal:** Forward-port upstream's Supply Depot data model + page from `v1.33.0-rc.1` onto our diverged macOS-arm64 fork, and ship a curated mesh **Web** client as the first Supply Depot app — without regressing our arch-aware update path, oMLX backend split, or pinned-image policy.
