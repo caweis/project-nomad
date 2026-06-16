@@ -6,4 +6,6 @@ export const SERVICE_NAMES = {
   FLATNOTES: 'nomad_flatnotes',
   KOLIBRI: 'nomad_kolibri',
   GROCY: 'nomad_grocy',
+  MESHTASTIC_WEB: 'nomad_meshtastic_web',
+  MESHCORE_WEB: 'nomad_meshcore_web',
 }

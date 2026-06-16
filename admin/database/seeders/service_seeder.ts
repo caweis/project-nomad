@@ -202,6 +202,31 @@ export default class ServiceSeeder extends BaseSeeder {
       is_dependency_service: false,
       depends_on: null,
     },
+    {
+      service_name: SERVICE_NAMES.MESHTASTIC_WEB,
+      friendly_name: 'Meshtastic Web',
+      powered_by: 'Meshtastic',
+      display_order: 5,
+      description: 'Browser-based client for managing Meshtastic mesh radio devices',
+      icon: 'IconWifi',
+      container_image: 'ghcr.io/meshtastic/web:v2.7.1',
+      source_repo: 'https://github.com/meshtastic/web',
+      container_command: null,
+      container_config: JSON.stringify({
+        HostConfig: {
+          RestartPolicy: { Name: 'unless-stopped' },
+          // meshtastic/web serves on 8080 inside the container, not 80.
+          PortBindings: { '8080/tcp': [{ HostPort: '8450' }] },
+        },
+        ExposedPorts: { '8080/tcp': {} },
+      }),
+      ui_location: '8450',
+      installed: false,
+      installation_status: 'idle',
+      is_dependency_service: false,
+      category: 'networking',
+      depends_on: null,
+    },
   ]
 
   async run() {
