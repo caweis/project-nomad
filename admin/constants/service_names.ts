@@ -8,4 +8,5 @@ export const SERVICE_NAMES = {
   GROCY: 'nomad_grocy',
   MESHTASTIC_WEB: 'nomad_meshtastic_web',
   MESHCORE_WEB: 'nomad_meshcore_web',
+  MESH: 'nomad_mesh',
 }

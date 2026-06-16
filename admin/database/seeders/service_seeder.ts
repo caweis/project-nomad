@@ -262,6 +262,36 @@ export default class ServiceSeeder extends BaseSeeder {
       category: 'networking',
       depends_on: null,
     },
+    {
+      service_name: SERVICE_NAMES.MESH,
+      friendly_name: 'Mesh Bridge',
+      powered_by: 'NOMAD',
+      display_order: 7,
+      description:
+        'Off-grid AI over a LoRa mesh radio: text a question, get an answer back on the radio. Needs a Meshtastic or MeshCore radio (P0 runs against a mock until the radio adapters land).',
+      icon: 'IconRadio',
+      container_image: 'ghcr.io/caweis/project-nomad-mesh:0.1.0',
+      source_repo: 'https://github.com/caweis/project-nomad',
+      container_command: null,
+      container_config: JSON.stringify({
+        // Reaches the onboard AI over the internal Docker network, same path the
+        // admin uses. ExtraHosts maps host.docker.internal so the container can
+        // call the host AI (Ollama :11434 / oMLX :11436) without LAN exposure.
+        Env: ['NOMAD_OLLAMA_URL=http://host.docker.internal:11434'],
+        HostConfig: {
+          RestartPolicy: { Name: 'unless-stopped' },
+          ExtraHosts: ['host.docker.internal:host-gateway'],
+          PortBindings: { '8600/tcp': [{ HostPort: '8600' }] },
+        },
+        ExposedPorts: { '8600/tcp': {} },
+      }),
+      ui_location: '8600',
+      installed: false,
+      installation_status: 'idle',
+      is_dependency_service: false,
+      category: 'networking',
+      depends_on: null,
+    },
   ]
 
   async run() {
