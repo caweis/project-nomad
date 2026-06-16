@@ -11,6 +11,7 @@ import ChatsController from '#controllers/chats_controller'
 import DocsController from '#controllers/docs_controller'
 import DownloadsController from '#controllers/downloads_controller'
 import EasySetupController from '#controllers/easy_setup_controller'
+import GrocyController from '#controllers/grocy_controller'
 import HomeController from '#controllers/home_controller'
 import InventoryController from '#controllers/inventory_controller'
 import MapsController from '#controllers/maps_controller'
@@ -177,8 +178,11 @@ router
     router.get('/zim/remote-explorer', [SettingsController, 'zimRemote'])
     router.get('/benchmark', [SettingsController, 'benchmark'])
     router.get('/support', [SettingsController, 'support'])
+    router.get('/grocy', [GrocyController, 'settings'])
   })
   .prefix('/settings')
+
+router.post('/api/grocy/test-connection', [GrocyController, 'testConnection'])
 
 router
   .group(() => {

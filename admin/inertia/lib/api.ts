@@ -665,6 +665,19 @@ class API {
       return response.data
     })()
   }
+
+  async testGrocyConnection() {
+    return catchInternal(async () => {
+      const response = await this.client.post<{
+        ok: boolean
+        covered?: number
+        total?: number
+        totalKcal?: number
+        error?: string
+      }>('/grocy/test-connection')
+      return response.data
+    })()
+  }
 }
 
 export default new API()
