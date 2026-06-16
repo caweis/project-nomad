@@ -25,7 +25,7 @@
 
 **Create:**
 - `admin/app/services/grocy_client.ts` — server-side REST client (auth header, the 4 GETs, typed responses, timeout). Reads config from KV.
-- `admin/app/services/grocy_food_energy.ts` — **pure** `computeFoodEnergy(products, stock)` → `{ totalKcal, coveredProducts, totalProducts }`. No framework deps (testable standalone).
+- `admin/util/grocy_food_energy.ts` — **pure** `computeFoodEnergy(products, stock)` → `{ totalKcal, covered, total }`. No framework deps (testable standalone). ✅ DONE (`0bc9675`) — lives in `util/` alongside `util/readiness.ts`, not `app/services`.
 - `admin/constants/grocy.ts` — KV keys (`grocy.baseUrl`, `grocy.apiKey`, `grocy.enabled`), default internal URL (`http://nomad_grocy:80`).
 - `admin/tests/standalone/grocy_food_energy.standalone.ts` — pure test of the kcal + coverage math (mocked Grocy JSON).
 
@@ -38,10 +38,10 @@
 
 ---
 
-## Task 1: Pure food-energy computation (kcal + coverage)
-**Files:** create `grocy_food_energy.ts` + `grocy_food_energy.standalone.ts`.
-- [ ] Failing test: given mock products (`[{id, calories, qu_id_stock}]`) + stock (`[{product_id, amount}]`), `computeFoodEnergy` returns `totalKcal = Σ(calories × amount)` over products WITH `calories > 0`, plus `covered`/`total` counts. Assert: products without calories contribute 0 and lower coverage; uses non-aggregated `amount` (no parent/child double-count).
-- [ ] Run → FAIL. Implement the pure function (no imports beyond types). Run → PASS. Commit.
+## Task 1: Pure food-energy computation (kcal + coverage) — ✅ DONE (`0bc9675`)
+**Files:** `admin/util/grocy_food_energy.ts` + `admin/tests/standalone/grocy_food_energy.standalone.ts`.
+- [x] Failing test: mock products (`[{id, calories}]`) + stock (`[{product_id, amount}]`); `computeFoodEnergy` returns `totalKcal = Σ(calories × amount)` over products WITH calorie data, plus `covered`/`total`. Products without calories contribute 0 and lower coverage; non-aggregated `amount`; unmatched stock rows skipped.
+- [x] Red → green: 5/5 standalone checks pass, typecheck + lint clean.
 
 ## Task 2: GrocyClient (server-side REST)
 **Files:** create `grocy_client.ts`, `grocy.ts`; modify `kv_store.ts`.
