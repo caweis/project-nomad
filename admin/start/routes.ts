@@ -242,7 +242,10 @@ router
 // admin reads back via the status endpoint.
 router
   .group(() => {
-    router.post('/:cmd', [HostCommandsController, 'dispatch'])
+    // Dispatch writes a host-command marker that a privileged LaunchAgent executes —
+    // gate it to local-network callers (same posture as the Workshop upload route).
+    // The read-only status GET stays ungated to match the fork's existing posture.
+    router.post('/:cmd', [HostCommandsController, 'dispatch']).use(middleware.localNetworkOnly())
     router.get('/:cmd', [HostCommandsController, 'status'])
   })
   .prefix('/api/host-commands')
@@ -278,13 +281,27 @@ router
     router.get('/info', [SystemController, 'getSystemInfo'])
     router.get('/candidate-drive', [SystemController, 'getCandidateDrive'])
     router.get('/internet-status', [SystemController, 'getInternetStatus'])
+    // Mutating service routes drive container install / start-stop / reinstall / update
+    // through the mounted Docker socket (DooD) — a host-takeover blast radius. Gate every
+    // one to local-network callers, matching the Workshop upload precedent. Read-only GETs
+    // (getServices, getAvailableVersions) stay ungated to match the fork's existing posture.
     router.get('/services', [SystemController, 'getServices'])
-    router.post('/services/affect', [SystemController, 'affectService'])
-    router.post('/services/install', [SystemController, 'installService'])
-    router.post('/services/force-reinstall', [SystemController, 'forceReinstallService'])
-    router.post('/services/check-updates', [SystemController, 'checkServiceUpdates'])
+    router
+      .post('/services/affect', [SystemController, 'affectService'])
+      .use(middleware.localNetworkOnly())
+    router
+      .post('/services/install', [SystemController, 'installService'])
+      .use(middleware.localNetworkOnly())
+    router
+      .post('/services/force-reinstall', [SystemController, 'forceReinstallService'])
+      .use(middleware.localNetworkOnly())
+    router
+      .post('/services/check-updates', [SystemController, 'checkServiceUpdates'])
+      .use(middleware.localNetworkOnly())
     router.get('/services/:name/available-versions', [SystemController, 'getAvailableVersions'])
-    router.post('/services/update', [SystemController, 'updateService'])
+    router
+      .post('/services/update', [SystemController, 'updateService'])
+      .use(middleware.localNetworkOnly())
     router.post('/subscribe-release-notes', [SystemController, 'subscribeToReleaseNotes'])
     router.get('/latest-version', [SystemController, 'checkLatestVersion'])
     router.post('/update', [SystemController, 'requestSystemUpdate'])
