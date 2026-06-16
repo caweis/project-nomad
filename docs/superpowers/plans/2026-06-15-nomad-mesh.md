@@ -159,11 +159,32 @@ API and an AI client, with a **mock mesh adapter** so the whole loop is testable
 - Apps tile via `service_seeder.ts` + `service_names.ts`.
 - CI: extend the multi-arch image workflow to build the mesh image; tests in CI.
 
-### Phase 1 — Meshtastic adapter + responder
-- `MeshtasticAdapter` over `TCPInterface`, PyPubSub receive, reconnect handling.
-- The full safety model (gating, DM-first, per-node/global rate limits, loop prevention, disclaimer).
-- The async outbound queue + airtime pacing.
-- Integration test against a Meshtastic TCP endpoint (a stub server or `meshtasticd` virtual node).
+### Phase 1 — Meshtastic adapter + responder — DONE (2026-06-16)
+- `MeshtasticAdapter` over `TCPInterface`, PyPubSub receive on `meshtastic.receive.text`. **Done.**
+  Lazy import of `meshtastic` inside `connect()`; learns our `!hexid` from `getMyNodeInfo()`; holds a
+  strong ref to its bound subscriber (PyPubSub keeps only a weak one). Receive path maps packet →
+  `IncomingMessage` and calls only the registered handler, never the AI.
+- The safety model (gating, DM-first, rate limits, loop prevention, disclaimer) — **done in P0**, exercised
+  end-to-end against the real adapter in the P1 integration test.
+- Airtime pacing (`AirtimePacer`): waits for each part's delivery ACK or times out without hanging; NAK and
+  timeout both fall through. Channel/broadcast replies use a fixed fallback delay. **Done.**
+- Integration test: real `MeshtasticAdapter` over a high-fidelity `FakeTCPInterface` (modeled on the
+  installed meshtastic 2.7.9 source — TCPInterface signature, receive topics, ROUTING_APP ack shape) wired
+  to the real `Responder` + queue + single worker, exactly as `app.py` wires it. **Done.**
+- `pin meshtastic==2.7.9` (installs from PyPI wheels on Python 3.14 arm64). Adapter selected by config
+  (`MESH_ADAPTER`, default `mock`). **Done.**
+
+**Deferred (hardware-gated, filed as GitHub issues):** a durable per-message retry queue and a reconnect
+watchdog with backoff. Both need a real radio to validate, so they wait for the P2 serial-to-TCP bridge.
+
+### P3 / P4 partials landed alongside P1 (2026-06-16)
+- **P3 scaffold:** `MeshCoreAdapter` is a guarded scaffold — constructing it raises `NotImplementedError`
+  unless `MESH_ENABLE_MESHCORE=1`, because `meshcore-py` is Beta (receive broke in #81). Capability flags
+  (`pubkey_prefix`, conservative 130-byte cap, ack-by-expected-ack) and the async usage contract are
+  encoded; the loop itself is P3's remaining work. `meshcore==2.3.7` stays a comment in `requirements.txt`.
+- **P4 endpoints:** `GET /status` (adapter/model/ai_url/connected + recent-message ring) and `GET /messages`
+  (bounded deque of inbound+outbound). `/send` stays the single outbound path through the adapter's pacing —
+  no second unmetered send route. The console UI is still P4's remaining work.
 
 ### Phase 2 — Host-side serial→TCP bridge (real USB radio)
 - A launchd LaunchAgent in the `nomad` CLI (new LABEL/PLIST/SCRIPT, mirroring oMLX/Ollama/host-command-bridge)

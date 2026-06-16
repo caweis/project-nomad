@@ -6,5 +6,5 @@ httpx==0.28.1
 # Radio protocol libraries arrive with their adapters (P1 / P3). Pinned exactly
 # because meshcore-py is Beta and a point release has broken message-receive
 # before — every bump rides an integration test.
-#   meshtastic==<pinned in P1>
-#   meshcore==2.3.7   # P3
+meshtastic==2.7.9
+#   meshcore==2.3.7   # P3 — scaffold only, NOT installed (Beta; receive broke in #81)

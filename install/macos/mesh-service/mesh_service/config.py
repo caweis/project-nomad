@@ -23,6 +23,9 @@ class Config:
     our_node_id: str | None
     request_timeout_s: float
     max_answer_chars: int
+    adapter_kind: str
+    meshtastic_host: str
+    meshtastic_port: int
 
 
 def _int(name: str, default: int) -> int:
@@ -51,4 +54,8 @@ def load_config() -> Config:
         our_node_id=os.environ.get("MESH_OUR_NODE_ID") or None,
         request_timeout_s=_float("MESH_AI_TIMEOUT_S", 30.0),
         max_answer_chars=_int("MESH_MAX_ANSWER_CHARS", 600),
+        # 'mock' (default — no radio, no radio lib) or 'meshtastic' (real adapter).
+        adapter_kind=os.environ.get("MESH_ADAPTER", "mock"),
+        meshtastic_host=os.environ.get("MESH_RADIO_HOST", "host.docker.internal"),
+        meshtastic_port=_int("MESH_RADIO_PORT", 4403),
     )
