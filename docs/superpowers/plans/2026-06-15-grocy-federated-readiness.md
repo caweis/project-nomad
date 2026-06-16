@@ -3,6 +3,8 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:executing-plans. TDD, commit per task.
 > **Status:** designed + grounded in audited investigation 2026-06-15. Honest-v1 approved by Chris. Review before building.
 > Memory: `grocy-preparedness-architecture`. Grocy container shipped in `071ea41` (`nomad_grocy`, port 8400).
+>
+> **BUILD COMPLETE 2026-06-15 (local, unpushed):** T1 pure food-energy `0bc9675` · T2 GrocyClient + KV `7351757` · T3 ReadinessService seam + DTO `79ef772` · T4 food-card UI `dc41d7e` · T5 settings + test endpoint `fb90ba8`. Verified here: 7/7 standalone checks, full `tsc --noEmit`, backend lint clean. Mini-gated (no Docker/MySQL in this dev env): live Grocy fetch, settings-page render, install. Deploy = bump root package.json (0.2.737 → next) + push (admin/** rides the image build).
 
 **Goal:** Our Supply Readiness ("days of supply") reads food/calorie stock from the Grocy container's REST API and folds it into the unified picture across food + water + power, degrading gracefully when Grocy is absent — without fabricating a food-supply number we can't stand behind.
 
