@@ -78,6 +78,17 @@ export const KV_STORE_SCHEMA = {
   // null fallback — the key simply doesn't exist before the first download.
   // Cleared after a full ingest succeeds (when the on-disk parts are deleted).
   'drugReference.downloadState': 'string',
+  // Grocy federated readiness — connection to the Grocy food container, read by
+  // GrocyClient server-side ONLY (never serialized to the browser). `grocy.enabled`
+  // gates the integration; `grocy.baseUrl` is the Grocy REST base (the operator
+  // sets and tests it — Grocy's container host port differs from its internal
+  // port, so the URL is configured, not guessed); `grocy.apiKey` is a key the user
+  // mints in Grocy's UI (Grocy has no API to mint one). When any is unset the
+  // integration is off and food readiness falls back to in-app inventory rows.
+  // See docs/superpowers/plans/2026-06-15-grocy-federated-readiness.md.
+  'grocy.enabled': 'boolean',
+  'grocy.baseUrl': 'string',
+  'grocy.apiKey': 'string',
 } as const
 
 type KVTagToType<T extends string> = T extends 'boolean' ? boolean : string
