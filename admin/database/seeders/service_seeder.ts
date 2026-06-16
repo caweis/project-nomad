@@ -18,12 +18,14 @@ export default class ServiceSeeder extends BaseSeeder {
     | 'id'
     | 'available_update_version'
     | 'update_checked_at'
+    | 'is_custom'
   >[] = [
     {
       service_name: SERVICE_NAMES.KIWIX,
       friendly_name: 'Information Library',
       powered_by: 'Kiwix',
       display_order: 1,
+      category: 'education',
       description:
         'Offline access to Wikipedia, medical references, how-to guides, and encyclopedias',
       icon: 'IconBooks',
@@ -49,6 +51,7 @@ export default class ServiceSeeder extends BaseSeeder {
       friendly_name: 'Qdrant Vector Database',
       powered_by: null,
       display_order: 100, // Dependency service, not shown directly
+      category: null,
       description: 'Vector database for storing and searching embeddings',
       icon: 'IconRobot',
       container_image: 'qdrant/qdrant:v1.16',
@@ -76,6 +79,7 @@ export default class ServiceSeeder extends BaseSeeder {
       friendly_name: 'AI Assistant',
       powered_by: 'Ollama',
       display_order: 3,
+      category: 'ai',
       description: 'Local AI chat that runs entirely on your hardware - no internet required',
       icon: 'IconWand',
       container_image: 'ollama/ollama:0.15.2',
@@ -100,6 +104,7 @@ export default class ServiceSeeder extends BaseSeeder {
       friendly_name: 'Data Tools',
       powered_by: 'CyberChef',
       display_order: 11,
+      category: 'utility',
       description: 'Swiss Army knife for data encoding, encryption, and analysis',
       icon: 'IconChefHat',
       container_image: 'ghcr.io/gchq/cyberchef:10.19.4',
@@ -123,6 +128,7 @@ export default class ServiceSeeder extends BaseSeeder {
       friendly_name: 'Notes',
       powered_by: 'FlatNotes',
       display_order: 10,
+      category: 'productivity',
       description: 'Simple note-taking app with local storage',
       icon: 'IconNotes',
       container_image: 'dullage/flatnotes:v5.5.4',
@@ -148,6 +154,7 @@ export default class ServiceSeeder extends BaseSeeder {
       friendly_name: 'Education Platform',
       powered_by: 'Kolibri',
       display_order: 2,
+      category: 'education',
       description: 'Interactive learning platform with video courses and exercises',
       icon: 'IconSchool',
       container_image: 'treehouses/kolibri:0.12.8',
@@ -172,6 +179,7 @@ export default class ServiceSeeder extends BaseSeeder {
       friendly_name: 'Grocy',
       powered_by: 'Grocy',
       display_order: 4,
+      category: 'productivity',
       description: 'Food and pantry tracker for stock levels, expiry dates, and shopping lists',
       icon: 'IconCarrot',
       container_image: 'lscr.io/linuxserver/grocy:07.03.26',

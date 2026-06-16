@@ -65,6 +65,18 @@ export default class Service extends BaseModel {
   @column()
   declare source_repo: string | null
 
+  // Supply Depot: filter category (e.g. 'education', 'networking', 'productivity', 'ai').
+  @column()
+  declare category: string | null
+
+  // Supply Depot: true for user-added "bring your own" containers; false for curated apps.
+  @column({
+    serialize(value) {
+      return Boolean(value)
+    },
+  })
+  declare is_custom: boolean
+
   @column()
   declare available_update_version: string | null
 
