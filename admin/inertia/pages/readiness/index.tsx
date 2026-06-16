@@ -631,6 +631,9 @@ function SupplyReadinessTab({ dashboard }: { dashboard: ReadinessDashboard }) {
             readiness={r}
             system={measurementSystem}
             petReadout={petReadout[r.resource]}
+            foodSource={r.resource === 'food' ? dashboard.foodSource : undefined}
+            grocyCoverage={r.resource === 'food' ? dashboard.grocyCoverage : undefined}
+            grocyConfigured={r.resource === 'food' ? dashboard.grocyConfigured : undefined}
           />
         ))}
       </div>
@@ -946,10 +949,16 @@ function ResourceCard({
   readiness,
   system,
   petReadout,
+  foodSource,
+  grocyCoverage,
+  grocyConfigured,
 }: {
   readiness: ResourceReadiness
   system: MeasurementSystem
   petReadout?: PetReadout
+  foodSource?: 'grocy' | 'inventory'
+  grocyCoverage?: { covered: number; total: number }
+  grocyConfigured?: boolean
 }) {
   const meta = RESOURCE_META[readiness.resource]
   const pill = STATUS_PILL[readiness.status]
@@ -1026,6 +1035,14 @@ function ResourceCard({
                 style={{ width: `${pct}%` }}
               />
             </div>
+
+            {readiness.resource === 'food' && grocyConfigured && (
+              <p className="mt-3 text-xs text-desert-stone">
+                {foodSource === 'grocy' && grocyCoverage
+                  ? `From Grocy · ${grocyCoverage.covered} of ${grocyCoverage.total} items have calorie data`
+                  : 'Showing local inventory (Grocy unreachable)'}
+              </p>
+            )}
 
             <dl className="mt-4 flex-1 space-y-2 border-t border-desert-stone-lighter/40 pt-3 text-sm">
               <div className="flex items-baseline justify-between">

@@ -93,6 +93,8 @@ export interface ReadinessDashboard {
   expiryWarnings: ReadinessExpiryWarning[]
   targetHorizonDays: number
   measurementSystem: 'us' | 'metric'
+  /** Whether the Grocy integration is enabled + configured (drives the food-card note). */
+  grocyConfigured: boolean
   /** Where the food "have" came from: the Grocy container or in-app inventory. */
   foodSource: FoodSource
   /** Present when food is Grocy-sourced: in-stock products with calorie data. */

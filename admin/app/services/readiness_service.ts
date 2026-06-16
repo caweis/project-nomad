@@ -77,7 +77,8 @@ export class ReadinessService {
     // alone so an outage never blocks water/power readiness.
     let grocyFood: FoodEnergy | null = null
     const grocyClient = new GrocyClient()
-    if (await grocyClient.isConfigured()) {
+    const grocyConfigured = await grocyClient.isConfigured()
+    if (grocyConfigured) {
       try {
         grocyFood = await grocyClient.totalFoodEnergy()
       } catch {
@@ -128,6 +129,7 @@ export class ReadinessService {
       measurementSystem: await this.measurementSystem(),
       foodSource: food.foodSource,
       grocyCoverage: food.grocyCoverage,
+      grocyConfigured,
     }
   }
 
