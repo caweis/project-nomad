@@ -12,7 +12,12 @@ export default class ServiceSeeder extends BaseSeeder {
   )
   private static DEFAULT_SERVICES: Omit<
     ModelAttributes<Service>,
-    'created_at' | 'updated_at' | 'metadata' | 'id' | 'available_update_version' | 'update_checked_at'
+    | 'created_at'
+    | 'updated_at'
+    | 'metadata'
+    | 'id'
+    | 'available_update_version'
+    | 'update_checked_at'
   >[] = [
     {
       service_name: SERVICE_NAMES.KIWIX,
@@ -157,6 +162,33 @@ export default class ServiceSeeder extends BaseSeeder {
         ExposedPorts: { '8080/tcp': {} },
       }),
       ui_location: '8300',
+      installed: false,
+      installation_status: 'idle',
+      is_dependency_service: false,
+      depends_on: null,
+    },
+    {
+      service_name: SERVICE_NAMES.GROCY,
+      friendly_name: 'Grocy',
+      powered_by: 'Grocy',
+      display_order: 4,
+      description: 'Food and pantry tracker for stock levels, expiry dates, and shopping lists',
+      icon: 'IconCarrot',
+      container_image: 'lscr.io/linuxserver/grocy:07.03.26',
+      source_repo: 'https://github.com/grocy/grocy',
+      container_command: null,
+      container_config: JSON.stringify({
+        // LinuxServer image: nginx + php-fpm serving the Grocy UI on container :80.
+        // PUID/PGID/TZ are the LSIO conventions; data persists in /config.
+        Env: ['PUID=1000', 'PGID=1000', 'TZ=Etc/UTC'],
+        HostConfig: {
+          RestartPolicy: { Name: 'unless-stopped' },
+          Binds: [`${ServiceSeeder.NOMAD_STORAGE_ABS_PATH}/grocy:/config`],
+          PortBindings: { '80/tcp': [{ HostPort: '8400' }] },
+        },
+        ExposedPorts: { '80/tcp': {} },
+      }),
+      ui_location: '8400',
       installed: false,
       installation_status: 'idle',
       is_dependency_service: false,
