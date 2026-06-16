@@ -4,6 +4,7 @@ import { IconArrowLeft, IconAlertTriangle, IconFirstAidKit } from '@tabler/icons
 import type { DrugLabelDetail } from '../../../types/drug_reference'
 import type { ConditionSummary } from '../../../types/conditions'
 import { PRODUCT_TYPES } from '../../../types/drug_reference'
+import LabelBlocks from '../../components/drug-reference/LabelBlocks'
 
 interface PageProps {
   label: DrugLabelDetail
@@ -106,7 +107,7 @@ export default function DrugReferenceShow({ label, situations = [] }: PageProps)
                 Boxed Warning
               </h2>
             </div>
-            <p className="text-sm text-red-800 whitespace-pre-wrap">{label.boxed_warning}</p>
+            <LabelBlocks text={label.boxed_warning} tone="danger" />
           </section>
         )}
 
@@ -209,7 +210,7 @@ function LabelSection({
   return (
     <section className="mb-6">
       <h2 className="text-base font-bold mb-2 border-b border-gray-200 pb-1">{title}</h2>
-      <p className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">{body}</p>
+      <LabelBlocks text={body} />
       {footnote && (
         <p className="mt-2 text-xs text-gray-500 italic">{footnote}</p>
       )}

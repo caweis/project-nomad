@@ -1,13 +1,14 @@
 /**
- * Parse the flattened FDA `drug_interactions` label text into ordered blocks for
- * readable rendering. The split is purely structural: every word of the original
- * text is preserved in order — only the numbered-section and bullet markers move
- * into block metadata. No FDA wording is altered, summarized, or dropped. The
+ * Parse a flattened FDA label section (drug interactions, dosage, warnings,
+ * contraindications, indications, ...) into ordered blocks for readable
+ * rendering. The split is purely structural: every word of the original text is
+ * preserved in order — only the numbered-subsection and bullet markers move into
+ * block metadata. No FDA wording is altered, summarized, or dropped. The
  * content-fidelity invariant is enforced by the unit tests.
  */
 
-/** One renderable block of parsed drug-interaction text. */
-export interface InteractionBlock {
+/** One renderable block of parsed FDA label text. */
+export interface LabelBlock {
   /** Subsection label like "7.1", or null for intro/header text. */
   label: string | null
   /** Verbatim text (subsection label stripped from the front), or null for a bullet block. */
@@ -16,18 +17,42 @@ export interface InteractionBlock {
   bullets: string[] | null
 }
 
-const HEADER_RE = /^\s*(\d{1,2})\s+DRUG\s+INTERACTIONS\b/i
+/** Backward-compatible alias — the interaction comparison view's original name. */
+export type InteractionBlock = LabelBlock
 
-export function parseInteractions(raw: string | null | undefined): InteractionBlock[] {
+// A section's own leading header: a number then an ALL-CAPS section name, e.g.
+// "7 DRUG INTERACTIONS", "2 DOSAGE AND ADMINISTRATION". Anchoring subsection
+// detection to THIS section's number means inline cross-refs like "(12.3)" or
+// "( 7.1 )" are never mistaken for a subsection heading.
+const HEADER_RE = /^\s*(\d{1,2})\s+[A-Z][A-Z][A-Z &,/()'.’-]*/
+// "<major>.<n> <Capital><lowercase>" subsection number, for the no-header fallback.
+const SUBSECTION_RE = /\b(\d{1,2})\.\d{1,2}\s+[A-Z][a-z]/g
+
+/** This section's major number — from its leading header, else the dominant subsection major. */
+function detectMajor(text: string): string | null {
+  const header = text.match(HEADER_RE)
+  if (header) return header[1]
+  const counts = new Map<string, number>()
+  for (const m of text.matchAll(SUBSECTION_RE)) {
+    counts.set(m[1], (counts.get(m[1]) ?? 0) + 1)
+  }
+  let best: string | null = null
+  let bestN = 0
+  for (const [major, n] of counts) {
+    if (n > bestN) {
+      best = major
+      bestN = n
+    }
+  }
+  return best
+}
+
+export function parseLabelSection(raw: string | null | undefined): LabelBlock[] {
   if (!raw) return []
   const text = raw.trim()
   if (!text) return []
 
-  // Anchor subsection detection to this label's interaction section number
-  // (e.g. "7" from "7 DRUG INTERACTIONS") so inline cross-references such as
-  // "(12.3)" or "( 7.1 )" are never mistaken for a subsection heading.
-  const headerMatch = text.match(HEADER_RE)
-  const major = headerMatch ? headerMatch[1] : null
+  const major = detectMajor(text)
 
   let pieces: string[]
   let labelRe: RegExp | null = null
@@ -43,7 +68,7 @@ export function parseInteractions(raw: string | null | undefined): InteractionBl
     pieces = [text]
   }
 
-  const blocks: InteractionBlock[] = []
+  const blocks: LabelBlock[] = []
   for (const rawPiece of pieces) {
     const piece = rawPiece.trim()
     if (!piece) continue
@@ -61,7 +86,10 @@ export function parseInteractions(raw: string | null | undefined): InteractionBl
     if (body.includes('•')) {
       const parts = body.split('•')
       const lead = parts[0].trim()
-      const items = parts.slice(1).map((s) => s.trim()).filter(Boolean)
+      const items = parts
+        .slice(1)
+        .map((s) => s.trim())
+        .filter(Boolean)
       if (lead) {
         blocks.push({ label, text: lead, bullets: null })
         if (items.length) blocks.push({ label: null, text: null, bullets: items })
@@ -76,7 +104,13 @@ export function parseInteractions(raw: string | null | undefined): InteractionBl
   return blocks
 }
 
-/** True when a text block is just the "N DRUG INTERACTIONS" section header. */
-export function isSectionHeader(text: string | null): boolean {
-  return !!text && /^\s*\d{1,2}\s+DRUG\s+INTERACTIONS\s*$/i.test(text)
+/** Backward-compatible alias for the interaction comparison view. */
+export const parseInteractions = parseLabelSection
+
+/** True when a text block is just a "N SECTION NAME" FDA section header. */
+export function isLabelSectionHeader(text: string | null): boolean {
+  return !!text && /^\s*\d{1,2}\s+[A-Z][A-Z][A-Z &,/()'.’-]*$/.test(text)
 }
+
+/** Backward-compatible alias. */
+export const isSectionHeader = isLabelSectionHeader
