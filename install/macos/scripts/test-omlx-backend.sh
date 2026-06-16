@@ -73,8 +73,8 @@ done
 
 echo "== model-set size reflects the actual selection (lean vs full) =="
 load
-# medium lean = llama3.1:8b(4.9) + qwen2.5-coder:14b(9.0) + qwen3:14b(9.3) + nomic-embed-text(0.3) = 23.5 → 24
-check "medium lean size sum"   "$(_models_size_gb "$(resolve_lean_models medium)")" "24"
+# medium lean = llama3.1:8b(4.9) + qwen2.5-coder:14b(9.0) + qwen3:30b-a3b(17) + nomic-embed-text(0.3) = 31.2 → 31
+check "medium lean size sum"   "$(_models_size_gb "$(resolve_lean_models medium)")" "31"
 check "unknown model skipped"  "$(_models_size_gb 'llama3.1:8b bogus-model')"       "5"
 check "empty set is 0 GB"      "$(_models_size_gb '')"                                "0"
 # lean must never claim a larger download than the full tier it subsets
