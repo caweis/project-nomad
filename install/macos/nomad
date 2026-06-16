@@ -48,6 +48,8 @@
 #                                            # (refused if still wedged).
 #   bash nomad fix-kiwix                     # manual trigger of kiwix self-heal
 #                                            # (LaunchAgent runs same logic every 60s)
+#   bash nomad mesh-bridge restart           # restart the USB Meshtastic radio
+#                                            # serial->TCP bridge (socat on :4403)
 #   bash nomad install-field-desk [--port N] [--foreground] [--force]
 #                                            # SysAdminDoc Field Desk alongside
 #                                            # admin (default :8081, shares
@@ -319,6 +321,18 @@ PROXY_PLIST="$HOME/Library/LaunchAgents/${PROXY_LABEL}.plist"
 EMBED_LABEL="com.projectnomad.ollama-embed"
 EMBED_PLIST="$HOME/Library/LaunchAgents/${EMBED_LABEL}.plist"
 
+# Mesh serial->TCP bridge: a socat dumb pipe between a USB-attached Meshtastic
+# radio (/dev/tty.{usbserial,usbmodem}*) and a TCP-LISTEN socket on :4403, so
+# the containerised mesh stack and any LAN client can reach a radio the host
+# owns. socat is deliberate — a hand-rolled asyncio serial shim re-introduces
+# the device-stall bugs socat already solved.
+MESH_BRIDGE_LABEL='com.projectnomad.mesh-serial-bridge'
+MESH_BRIDGE_PLIST="$HOME/Library/LaunchAgents/${MESH_BRIDGE_LABEL}.plist"
+MESH_BRIDGE_SCRIPT="$SECRETS_DIR/mesh-serial-bridge.sh"
+# Device glob + TCP port the bridge binds. 4403 = Meshtastic default TCP port.
+MESH_BRIDGE_GLOB='/dev/tty.{usbserial,usbmodem}*'
+MESH_BRIDGE_PORT='4403'
+
 # Model tiers — auto-selected from RAM, override with --tier or --models.
 # All names are confirmed-existing on ollama.com/library as of 2026.
 # Note: Llama 3.2 only ships 1b/3b (text); the 8b size lives in Llama 3.1.
@@ -456,7 +470,8 @@ resolve_lean_models() {
 
 # Ports we rely on — system-check looks for collisions
 # 3000 = Open WebUI (browser chat UI, compose-managed)
-NOMAD_PORTS="8080 9999 3000 11434 11435 11436 8000"
+# 4403 = Meshtastic serial->TCP bridge (mesh-serial-bridge LaunchAgent)
+NOMAD_PORTS="8080 9999 3000 11434 11435 11436 8000 4403"
 
 # launchctl bootstrap stderr capture — mktemp (not a fixed /tmp path) to avoid
 # symlink/clobber + info-leak on multi-user macOS. Explicit /tmp/nomad-* template
@@ -3800,6 +3815,7 @@ run_cmd() {
     fix-kiwix)       "$NOMAD_BIN" fix-kiwix ;;
     adopt-drive)     "$NOMAD_BIN" adopt-drive ;;
     self-update)     "$NOMAD_BIN" self-update ;;
+    mesh-bridge-restart) "$NOMAD_BIN" mesh-bridge restart ;;
     *)               echo "DISALLOWED cmd: $cmd" >&2; return 126 ;;
   esac
 }
@@ -3881,6 +3897,135 @@ EOF
   else
     warn "couldn't bootstrap host-command bridge — admin UI buttons that call host commands will be no-ops"
   fi
+}
+
+# Meshtastic serial->TCP bridge LaunchAgent. Runs socat as a dumb pipe between
+# the first USB-attached radio (/dev/tty.{usbserial,usbmodem}*) and a
+# TCP-LISTEN socket on :4403, so the containerised mesh stack (and any LAN
+# client) can reach a radio the host owns. Mirrors step_install_host_command_bridge
+# exactly: a QUOTED heredoc (nothing expands at install time — the device glob
+# and port arrive as $1/$2 ProgramArguments), chmod on the script, chmod 644 on
+# the plist, _la_clean_bootout, a 3-attempt launchctl bootstrap, and an lsof
+# pre-check on the target port. socat is a deliberate dependency: a hand-rolled
+# asyncio serial shim re-introduces the device-stall bugs socat already solved.
+step_install_mesh_serial_bridge() {
+  section "Mesh serial->TCP bridge LaunchAgent (USB radio → :${MESH_BRIDGE_PORT})"
+
+  mkdir -p "$SECRETS_DIR" "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
+
+  # QUOTED heredoc — nothing expands at install time. The script auto-detects
+  # the first device matching the glob in $1 and pipes it to TCP-LISTEN on $2.
+  cat > "$MESH_BRIDGE_SCRIPT" <<'MESH_BRIDGE_EOF'
+#!/usr/bin/env bash
+# mesh-serial-bridge.sh — socat dumb pipe: USB Meshtastic radio <-> TCP-LISTEN.
+# $1 = device glob (e.g. /dev/tty.{usbserial,usbmodem}*)
+# $2 = TCP port to listen on (Meshtastic default: 4403)
+#
+# socat is deliberate: it already solves the device-stall / half-close bugs a
+# hand-rolled asyncio serial shim re-introduces. KeepAlive respawns this agent,
+# so when no radio is attached we log and exit 0 (clean), and launchd brings us
+# back the moment one appears.
+set -uo pipefail
+
+GLOB="$1"
+PORT="$2"
+LOG="$HOME/Library/Logs/nomad-mesh-serial-bridge.log"
+
+log() { /usr/bin/printf '[%s] %s\n' "$(/bin/date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG"; }
+
+# Auto-detect the first matching serial device. The glob is unquoted on purpose
+# so the shell expands it; nullglob means "no match" yields an empty list.
+shopt -s nullglob
+devices=( $GLOB )
+shopt -u nullglob
+
+if [[ ${#devices[@]} -eq 0 ]]; then
+  log "no serial radio present (glob: $GLOB) — exiting 0; KeepAlive will respawn"
+  exit 0
+fi
+
+DEVICE="${devices[0]}"
+log "bridging $DEVICE <-> TCP-LISTEN:$PORT"
+
+# socat: raw, no echo, 115200 8N1 on the serial side (Meshtastic firmware
+# default); TCP-LISTEN with reuseaddr+fork so the socket survives a client
+# reconnect and multiple clients can attach.
+exec socat \
+  "FILE:$DEVICE,raw,echo=0,b115200,cs8,parenb=0,cstopb=0" \
+  "TCP-LISTEN:$PORT,reuseaddr,fork"
+MESH_BRIDGE_EOF
+  chmod +x "$MESH_BRIDGE_SCRIPT"
+
+  # UNQUOTED heredoc — install-time constants expand into the plist.
+  cat > "$MESH_BRIDGE_PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>            <string>${MESH_BRIDGE_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>${MESH_BRIDGE_SCRIPT}</string>
+    <string>${MESH_BRIDGE_GLOB}</string>
+    <string>${MESH_BRIDGE_PORT}</string>
+  </array>
+  <key>RunAtLoad</key>        <true/>
+  <key>KeepAlive</key>
+  <dict><key>SuccessfulExit</key> <false/></dict>
+  <key>ThrottleInterval</key>  <integer>10</integer>
+  <key>StandardOutPath</key>  <string>${HOME}/Library/Logs/nomad-mesh-serial-bridge.out.log</string>
+  <key>StandardErrorPath</key><string>${HOME}/Library/Logs/nomad-mesh-serial-bridge.err.log</string>
+</dict>
+</plist>
+EOF
+  chmod 644 "$MESH_BRIDGE_PLIST"
+
+  # Port pre-check: if something else already owns :4403, the socat bind will
+  # fail and KeepAlive will crash-loop. Warn loudly rather than fight for it.
+  if lsof -nP -iTCP:"$MESH_BRIDGE_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+    local _owner; _owner="$(lsof -nP -iTCP:"$MESH_BRIDGE_PORT" -sTCP:LISTEN | awk 'NR==2{print $1}')"
+    warn "port $MESH_BRIDGE_PORT already in use by ${_owner:-another process} — mesh bridge may crash-loop until it's freed"
+  fi
+
+  _la_clean_bootout "$LA_TARGET" "$MESH_BRIDGE_LABEL"
+  local last_err=""
+  for attempt in 1 2 3; do
+    if launchctl bootstrap "$LA_TARGET" "$MESH_BRIDGE_PLIST" 2>"$NOMAD_BOOTSTRAP_LOG"; then
+      last_err=""; ok "mesh serial bridge bootstrapped (USB radio → :${MESH_BRIDGE_PORT})"; break
+    fi
+    last_err="$(cat "$NOMAD_BOOTSTRAP_LOG")"
+    warn "mesh bridge bootstrap attempt $attempt failed: $last_err"
+    _la_clean_bootout "$LA_TARGET" "$MESH_BRIDGE_LABEL"
+    sleep $((attempt * 3))
+  done
+  # A bootstrap EIO is a benign launchd race; KeepAlive brings the service up
+  # moments later. Never die here — the rest of the install must proceed.
+  [[ -n "$last_err" ]] && \
+    warn "mesh bridge bootstrap reported errors (launchd EIO race); it will respawn via KeepAlive — check ~/Library/Logs/nomad-mesh-serial-bridge.err.log"
+}
+
+# Restart the mesh serial bridge in place (bootout + re-bootstrap of the
+# already-installed plist). Used by the host-command bridge's mesh-bridge-restart
+# action; assumes step_install_mesh_serial_bridge has already written the plist.
+cmd_mesh_bridge() {
+  local sub="${1:-restart}"
+  case "$sub" in
+    restart)
+      if [[ ! -f "$MESH_BRIDGE_PLIST" ]]; then
+        warn "mesh bridge not installed yet — running a full install instead"
+        step_install_mesh_serial_bridge
+        return 0
+      fi
+      _la_clean_bootout "$LA_TARGET" "$MESH_BRIDGE_LABEL"
+      if launchctl bootstrap "$LA_TARGET" "$MESH_BRIDGE_PLIST" 2>/dev/null; then
+        ok "mesh serial bridge restarted (USB radio → :${MESH_BRIDGE_PORT})"
+      else
+        warn "mesh bridge re-bootstrap reported errors — KeepAlive will respawn it"
+      fi
+      ;;
+    *) die "unknown mesh-bridge subcommand: $sub (valid: restart)" ;;
+  esac
 }
 
 # Cross-Mac drive-detect LaunchAgent. Writes a self-contained drive-detect.sh
@@ -4334,6 +4479,7 @@ cmd_install() {
   step_install_bonjour_advertise   # advertise admin via mDNS so other devices find it in Safari Bonjour menu
   step_install_host_command_bridge # admin UI -> host nomad commands (Upgrade Ollama button etc.)
   step_install_drive_detect        # detect a plugged-in NOMAD library drive + offer to adopt it (cross-Mac portability)
+  step_install_mesh_serial_bridge  || true   # USB Meshtastic radio -> TCP :4403 (no-op when no radio attached)
   step_build_distro_help_zim       # build distribution help ZIM, drop into kiwix's library so it's browsable in the UI
 
   # Admin is now usable. Print the URL banner BEFORE the long model pull so the
@@ -4982,6 +5128,7 @@ _refresh_host_launch_agents() {
   step_install_bonjour_advertise    || warn "bonjour agent refresh hiccupped — continuing"
   step_install_host_command_bridge  || warn "host-command-bridge agent refresh hiccupped — continuing"
   step_install_drive_detect         || warn "drive-detect agent refresh hiccupped — continuing"
+  step_install_mesh_serial_bridge   || warn "mesh-serial-bridge agent refresh hiccupped — continuing"
 }
 
 _upgrade_admin_spawned_one() {
@@ -5326,7 +5473,7 @@ cmd_uninstall() {
 
   # 3. Bootout LaunchAgents + kill any orphan ollama
   for label in "$LA_LABEL" "$PATCHER_LABEL" "$KIWIX_SELF_HEAL_LABEL" "$BONJOUR_LABEL" "$HOST_BRIDGE_LABEL" \
-               "$DRIVE_DETECT_LABEL" "$OMLX_LABEL" "$PROXY_LABEL" "$EMBED_LABEL"; do
+               "$DRIVE_DETECT_LABEL" "$OMLX_LABEL" "$PROXY_LABEL" "$EMBED_LABEL" "$MESH_BRIDGE_LABEL"; do
     if launchctl print "$LA_TARGET/$label" >/dev/null 2>&1; then
       launchctl bootout "$LA_TARGET/$label" 2>/dev/null || true
       sleep 1
@@ -5336,11 +5483,12 @@ cmd_uninstall() {
   pkill -f 'omlx serve' 2>/dev/null || true            # oMLX-mode orphan (if plist was pre-removed)
   pkill -f 'uvicorn src.main:app' 2>/dev/null || true  # oMLX proxy orphan
   pkill -f 'dns-sd -R NOMAD Command Center' 2>/dev/null || true
+  pkill -f 'mesh-serial-bridge.sh' 2>/dev/null || true # mesh socat bridge orphan (if plist was pre-removed)
   for plist in "$LA_PLIST" "$PATCHER_PLIST" "$KIWIX_SELF_HEAL_PLIST" "$BONJOUR_PLIST" "$HOST_BRIDGE_PLIST" \
-               "$DRIVE_DETECT_PLIST" "$OMLX_PLIST" "$PROXY_PLIST" "$EMBED_PLIST"; do
+               "$DRIVE_DETECT_PLIST" "$OMLX_PLIST" "$PROXY_PLIST" "$EMBED_PLIST" "$MESH_BRIDGE_PLIST"; do
     [[ -f "$plist" ]] && rm -f "$plist" && ok "removed $plist"
   done
-  for script in "$PATCHER_SCRIPT" "$KIWIX_SELF_HEAL_SCRIPT" "$HOST_BRIDGE_SCRIPT" "$DRIVE_DETECT_SCRIPT"; do
+  for script in "$PATCHER_SCRIPT" "$KIWIX_SELF_HEAL_SCRIPT" "$HOST_BRIDGE_SCRIPT" "$DRIVE_DETECT_SCRIPT" "$MESH_BRIDGE_SCRIPT"; do
     [[ -f "$script" ]] && rm -f "$script"
   done
   # oMLX-stack generated artifacts: proxy venv + embed model cache
@@ -6976,6 +7124,7 @@ case "$CMD" in
   reset-ollama)    cmd_reset_ollama "${EXTRA_ARGS[@]}" ;;
   fix-kiwix)       cmd_fix_kiwix ;;
   adopt-drive)     cmd_adopt_drive ;;
+  mesh-bridge)     cmd_mesh_bridge "${EXTRA_ARGS[@]:-restart}" ;;
   reconcile)       cmd_reconcile ;;
   clean)           cmd_clean "${EXTRA_ARGS[@]}" ;;
   uninstall)       cmd_uninstall ;;

@@ -1,0 +1,51 @@
+.Dd 2026-06-16
+.Dt NOMAD-MESH-BRIDGE 1
+.Os
+.Sh NAME
+.Nm nomad-mesh-bridge
+.Nd manage the USB Meshtastic serial-to-TCP bridge
+.Sh SYNOPSIS
+.Nm nomad mesh-bridge
+.Cm restart
+.Sh DESCRIPTION
+.Nm nomad mesh-bridge
+manages the
+.Cm mesh-serial-bridge
+LaunchAgent.
+The bridge runs
+.Xr socat 1
+as a dumb pipe between the first USB-attached Meshtastic radio
+.Pq Pa /dev/tty.{usbserial,usbmodem}*
+and a
+.Cm TCP-LISTEN
+socket on port 4403, the Meshtastic default.
+The containerised mesh stack and any LAN client can then reach a radio
+the host owns.
+.Pp
+A full install already sets this up.
+When no radio is attached the agent logs and exits cleanly; launchd's
+.Cm KeepAlive
+respawns it, so it reconnects the moment a radio appears.
+.Sh COMMANDS
+.Bl -tag -width Ds
+.It Cm restart
+Boot out and re-bootstrap the bridge LaunchAgent in place.
+If the agent is not yet installed, a full install of the bridge runs instead.
+.El
+.Sh FILES
+.Bl -tag -width Ds
+.It Pa ~/Library/LaunchAgents/com.projectnomad.mesh-serial-bridge.plist
+The LaunchAgent definition.
+.It Pa ~/Library/Logs/nomad-mesh-serial-bridge.log
+Bridge activity log (device detection, bind target).
+.El
+.Sh EXAMPLES
+.Bl -tag -width Ds
+.It Ic nomad mesh-bridge restart
+Restart the serial-to-TCP bridge after plugging in a radio.
+.El
+.Sh SEE ALSO
+.Xr nomad 1 ,
+.Xr nomad-install 1 ,
+.Xr nomad-install-bridge 1 ,
+.Xr nomad-reinstall 1

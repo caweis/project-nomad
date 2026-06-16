@@ -17,6 +17,7 @@ export const HOST_COMMANDS = [
   'fix-kiwix',
   'adopt-drive',
   'self-update',
+  'mesh-bridge-restart',
 ] as const
 
 export type HostCommandName = (typeof HOST_COMMANDS)[number]
