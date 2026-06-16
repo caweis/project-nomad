@@ -62,3 +62,35 @@ export function computeFoodEnergy(products: GrocyProduct[], stock: GrocyStockRow
 
   return { totalKcal, covered, total }
 }
+
+export type FoodSource = 'grocy' | 'inventory'
+
+export interface FoodNumerator {
+  /** kcal to use as the food "have" in the days-of-supply calc. */
+  foodHave: number
+  /** Where the food number came from, for the UI. */
+  foodSource: FoodSource
+  /** Coverage when Grocy-sourced: how many in-stock products had calorie data. */
+  grocyCoverage?: { covered: number; total: number }
+}
+
+/**
+ * Pick the food numerator for days-of-supply. Grocy owns food: when it is
+ * reachable (a FoodEnergy result), use its kcal and report coverage — do NOT
+ * also add in-app food rows, which would double-count. When Grocy is absent
+ * (null: unconfigured, down, or errored), fall back to the in-app inventory food
+ * total so food readiness still renders alongside water and power.
+ */
+export function selectFoodNumerator(
+  grocy: FoodEnergy | null,
+  inventoryKcal: number
+): FoodNumerator {
+  if (grocy) {
+    return {
+      foodHave: grocy.totalKcal,
+      foodSource: 'grocy',
+      grocyCoverage: { covered: grocy.covered, total: grocy.total },
+    }
+  }
+  return { foodHave: inventoryKcal, foodSource: 'inventory' }
+}

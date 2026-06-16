@@ -1,4 +1,5 @@
 import type { ReadinessResource, ResourceReadiness } from '../util/readiness.js'
+import type { FoodSource } from '../util/grocy_food_energy.js'
 
 /**
  * Self-Reliance Suite — Phase 2 Readiness Calculator shared types.
@@ -92,4 +93,8 @@ export interface ReadinessDashboard {
   expiryWarnings: ReadinessExpiryWarning[]
   targetHorizonDays: number
   measurementSystem: 'us' | 'metric'
+  /** Where the food "have" came from: the Grocy container or in-app inventory. */
+  foodSource: FoodSource
+  /** Present when food is Grocy-sourced: in-stock products with calorie data. */
+  grocyCoverage?: { covered: number; total: number }
 }

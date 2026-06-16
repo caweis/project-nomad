@@ -9,6 +9,8 @@ import {
 } from '../../util/readiness.js'
 import { MEASUREMENT_SYSTEMS, type MeasurementSystem } from '../../types/inventory.js'
 import { PET_NEEDS, PET_TYPES } from '../data/pet_needs.js'
+import { GrocyClient } from '#services/grocy_client'
+import { selectFoodNumerator, type FoodEnergy } from '../../util/grocy_food_energy.js'
 import type {
   PetEntry,
   PetType,
@@ -69,6 +71,21 @@ export class ReadinessService {
     // installs don't lose their pet figures.
     const { water: petWaterPerDay, food: petFoodPerDay } = effectivePetTotals(config)
 
+    // Federated food: Grocy owns food when reachable. Pull total kcal on hand
+    // from the Grocy container; on any failure (unconfigured, down, timeout) fall
+    // back to the in-app inventory food total. The try/catch is scoped to Grocy
+    // alone so an outage never blocks water/power readiness.
+    let grocyFood: FoodEnergy | null = null
+    const grocyClient = new GrocyClient()
+    if (await grocyClient.isConfigured()) {
+      try {
+        grocyFood = await grocyClient.totalFoodEnergy()
+      } catch {
+        grocyFood = null
+      }
+    }
+    const food = selectFoodNumerator(grocyFood, foodSum.total_base)
+
     const resources: ResourceReadiness[] = [
       computeResourceReadiness(
         'water',
@@ -80,7 +97,7 @@ export class ReadinessService {
       ),
       computeResourceReadiness(
         'food',
-        foodSum.total_base,
+        food.foodHave,
         people,
         config.needs.food,
         petFoodPerDay,
@@ -91,7 +108,14 @@ export class ReadinessService {
       // power has no per-person standard, so the whole load lives in powerPerDay.
       // computeResourceReadiness zeros the pet term for 'power', so we pass the
       // load as perPersonNeed with people=1 to keep the flat-total semantics.
-      computeResourceReadiness('power', powerSum.total_base, 1, config.powerPerDay, 0, config.targetHorizonDays),
+      computeResourceReadiness(
+        'power',
+        powerSum.total_base,
+        1,
+        config.powerPerDay,
+        0,
+        config.targetHorizonDays
+      ),
     ]
 
     const expiryWarnings = await this.expiryWarnings(inventory, config.targetHorizonDays)
@@ -102,6 +126,8 @@ export class ReadinessService {
       expiryWarnings,
       targetHorizonDays: config.targetHorizonDays,
       measurementSystem: await this.measurementSystem(),
+      foodSource: food.foodSource,
+      grocyCoverage: food.grocyCoverage,
     }
   }
 

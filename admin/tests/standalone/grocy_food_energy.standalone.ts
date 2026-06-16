@@ -15,6 +15,7 @@
 import assert from 'node:assert/strict'
 import {
   computeFoodEnergy,
+  selectFoodNumerator,
   type GrocyProduct,
   type GrocyStockRow,
 } from '../../util/grocy_food_energy.ts'
@@ -80,6 +81,20 @@ check('empty stock yields zeros', () => {
   assert.equal(e.totalKcal, 0)
   assert.equal(e.covered, 0)
   assert.equal(e.total, 0)
+})
+
+check('selectFoodNumerator: Grocy present uses its kcal + coverage, ignores inventory', () => {
+  const n = selectFoodNumerator({ totalKcal: 5000, covered: 3, total: 8 }, 9999)
+  assert.equal(n.foodHave, 5000)
+  assert.equal(n.foodSource, 'grocy')
+  assert.deepEqual(n.grocyCoverage, { covered: 3, total: 8 })
+})
+
+check('selectFoodNumerator: Grocy absent falls back to inventory, no coverage', () => {
+  const n = selectFoodNumerator(null, 4200)
+  assert.equal(n.foodHave, 4200)
+  assert.equal(n.foodSource, 'inventory')
+  assert.equal(n.grocyCoverage, undefined)
 })
 
 console.log(`\n${passed} checks passed`)
