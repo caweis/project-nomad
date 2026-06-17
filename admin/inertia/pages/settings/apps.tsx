@@ -20,6 +20,7 @@ import { IconArrowUp, IconCheck, IconDownload } from '@tabler/icons-react'
 import UpdateServiceModal from '~/components/UpdateServiceModal'
 import HostCommandButton from '~/components/HostCommandButton'
 import { SERVICE_NAMES } from '../../../constants/service_names'
+import CustomAppModal, { CustomAppInitial } from '~/components/CustomAppModal'
 
 function extractTag(containerImage: string): string {
   if (!containerImage) return ''
@@ -235,6 +236,145 @@ export default function SettingsPage(props: {
     )
   }
 
+  // ── Custom apps (Supply Depot "bring your own" containers) ──────────────────
+
+  function openCustomAppModal(mode: 'create' | 'edit', initial: CustomAppInitial | null = null) {
+    openModal(
+      <CustomAppModal
+        open={true}
+        mode={mode}
+        initial={initial}
+        onClose={closeAllModals}
+        showError={showError}
+        onCreated={(serviceName) => {
+          closeAllModals()
+          showSuccess(
+            mode === 'edit'
+              ? `Saving ${serviceName}…`
+              : `Installing ${serviceName}…`
+          )
+          // The install/recreate runs server-side; reload to pick up the new/updated row.
+          setTimeout(() => window.location.reload(), 1500)
+        }}
+      />,
+      'custom-app-modal'
+    )
+  }
+
+  async function handleEditCustomApp(record: ServiceSlim) {
+    try {
+      setLoading(true)
+      const res = await api.getCustomApp(record.service_name)
+      if (!res?.success || !res.app) {
+        throw new Error('Could not load this app for editing.')
+      }
+      openCustomAppModal('edit', res.app)
+    } catch (error) {
+      console.error(`Error loading custom app ${record.service_name}:`, error)
+      showError(`Failed to load app: ${error.message || 'Unknown error'}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleDeleteCustomApp(record: ServiceSlim) {
+    try {
+      setLoading(true)
+      const res = await api.deleteCustomApp(record.service_name)
+      if (!res?.success) {
+        throw new Error(res?.message || 'Delete failed')
+      }
+      closeAllModals()
+      showSuccess(`Deleted ${record.friendly_name || record.service_name}.`)
+      setTimeout(() => window.location.reload(), 1000)
+    } catch (error) {
+      console.error(`Error deleting custom app ${record.service_name}:`, error)
+      showError(`Failed to delete app: ${error.message || 'Unknown error'}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function confirmDeleteCustomApp(record: ServiceSlim) {
+    openModal(
+      <StyledModal
+        title="Delete Custom App?"
+        onConfirm={() => handleDeleteCustomApp(record)}
+        onCancel={closeAllModals}
+        open={true}
+        confirmText="Delete"
+        confirmVariant="danger"
+        cancelText="Cancel"
+      >
+        <p className="text-gray-700">
+          Are you sure you want to delete {record.friendly_name || record.service_name}? This stops
+          and removes its container. Bind-mounted data on disk is left in place.
+        </p>
+      </StyledModal>,
+      `${record.service_name}-delete-modal`
+    )
+  }
+
+  async function handlePullLatest(record: ServiceSlim) {
+    try {
+      setLoading(true)
+      const res = await api.updateCustomAppImage(record.service_name)
+      if (!res?.success) {
+        throw new Error(res?.message || 'Update failed')
+      }
+      showSuccess(`Pulling the latest image for ${record.friendly_name || record.service_name}…`)
+      router.reload({ only: ['system'] })
+    } catch (error) {
+      console.error(`Error pulling latest for ${record.service_name}:`, error)
+      showError(`Failed to update app: ${error.message || 'Unknown error'}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleToggleAutoUpdate(record: ServiceSlim, enabled: boolean) {
+    try {
+      const res = await api.setServiceAutoUpdate(record.service_name, enabled)
+      if (!res?.success) {
+        throw new Error(res?.message || 'Could not update preference')
+      }
+      showSuccess(
+        `Auto-update ${enabled ? 'enabled' : 'disabled'} for ${record.friendly_name || record.service_name}.`
+      )
+      router.reload({ only: ['system'] })
+    } catch (error) {
+      console.error(`Error toggling auto-update for ${record.service_name}:`, error)
+      showError(`Failed to update preference: ${error.message || 'Unknown error'}`)
+    }
+  }
+
+  async function handleViewLogs(record: ServiceSlim) {
+    try {
+      setLoading(true)
+      const res = await api.getServiceLogs(record.service_name)
+      const logs = res?.success ? res.logs : 'No logs available.'
+      openModal(
+        <StyledModal
+          title={`Logs — ${record.friendly_name || record.service_name}`}
+          open={true}
+          onCancel={closeAllModals}
+          cancelText="Close"
+          large
+        >
+          <pre className="max-h-[60vh] overflow-auto rounded-md bg-gray-900 p-4 text-left text-xs text-gray-100 whitespace-pre-wrap">
+            {logs || 'No logs available.'}
+          </pre>
+        </StyledModal>,
+        `${record.service_name}-logs-modal`
+      )
+    } catch (error) {
+      console.error(`Error fetching logs for ${record.service_name}:`, error)
+      showError(`Failed to fetch logs: ${error.message || 'Unknown error'}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const AppActions = ({ record }: { record: ServiceSlim }) => {
     const ForceReinstallButton = () => (
       <StyledButton
@@ -334,12 +474,14 @@ export default function SettingsPage(props: {
         <StyledButton
           icon={'IconExternalLink'}
           onClick={() => {
-            window.open(getServiceLink(record.ui_location || 'unknown'), '_blank')
+            // custom_url (a reverse-proxy / local-DNS override) wins over the default port link.
+            window.open(getServiceLink(record.custom_url || record.ui_location || 'unknown'), '_blank')
           }}
         >
           Open
         </StyledButton>
-        {record.available_update_version && (
+        {/* Curated-app version updates (registry tag bump). Custom apps update via "Pull latest" below. */}
+        {!record.is_custom && record.available_update_version && (
           <StyledButton
             icon="IconArrowUp"
             variant="primary"
@@ -348,6 +490,51 @@ export default function SettingsPage(props: {
           >
             Update
           </StyledButton>
+        )}
+        {record.is_custom && (
+          <>
+            <StyledButton
+              icon="IconPencil"
+              variant="action"
+              onClick={() => handleEditCustomApp(record)}
+              disabled={loading}
+            >
+              Edit
+            </StyledButton>
+            <StyledButton
+              icon="IconArrowUp"
+              variant="action"
+              onClick={() => handlePullLatest(record)}
+              disabled={loading || !isOnline}
+            >
+              Pull latest
+            </StyledButton>
+            <StyledButton
+              icon="IconFileText"
+              variant="action"
+              onClick={() => handleViewLogs(record)}
+              disabled={loading}
+            >
+              Logs
+            </StyledButton>
+            <StyledButton
+              icon="IconTrash"
+              variant="danger"
+              onClick={() => confirmDeleteCustomApp(record)}
+              disabled={loading}
+            >
+              Delete
+            </StyledButton>
+            <label className="flex items-center gap-1.5 cursor-pointer select-none text-xs text-gray-600">
+              <input
+                type="checkbox"
+                checked={!!record.auto_update_enabled}
+                onChange={(e) => handleToggleAutoUpdate(record, e.target.checked)}
+                className="accent-desert-orange h-4 w-4 rounded"
+              />
+              Auto-update
+            </label>
+          </>
         )}
         {record.status && record.status !== 'unknown' && (
           <>
@@ -423,14 +610,23 @@ export default function SettingsPage(props: {
                 Browse and install apps for your Project N.O.M.A.D. instance, organized by category. Nightly update checks automatically detect when new versions are available.
               </p>
             </div>
-            <StyledButton
-              icon="IconRefreshAlert"
-              onClick={handleCheckUpdates}
-              disabled={checkingUpdates || !isOnline}
-              loading={checkingUpdates}
-            >
-              Check for Updates
-            </StyledButton>
+            <div className="flex items-center gap-2">
+              <StyledButton
+                icon="IconPlus"
+                variant="primary"
+                onClick={() => openCustomAppModal('create')}
+              >
+                Add Custom App
+              </StyledButton>
+              <StyledButton
+                icon="IconRefreshAlert"
+                onClick={handleCheckUpdates}
+                disabled={checkingUpdates || !isOnline}
+                loading={checkingUpdates}
+              >
+                Check for Updates
+              </StyledButton>
+            </div>
           </div>
           {loading && <LoadingSpinner fullscreen />}
           {!loading && (
@@ -467,12 +663,12 @@ export default function SettingsPage(props: {
                   title: 'Location',
                   render: (record) => (
                     <a
-                      href={getServiceLink(record.ui_location || 'unknown')}
+                      href={getServiceLink(record.custom_url || record.ui_location || 'unknown')}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-desert-green hover:underline font-semibold"
                     >
-                      {record.ui_location}
+                      {record.custom_url || record.ui_location}
                     </a>
                   ),
                 },
