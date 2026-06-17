@@ -31,9 +31,23 @@ export default class SettingsController {
         });
     }
 
-    async apps({ inertia }: HttpContext) {
+    // Shared prop assembly for the two Supply Depot surfaces — the canonical
+    // table page (settings/apps) and the additive card page (settings/supply-depot).
+    // Both render the SAME service catalog with the SAME per-app actions, so they
+    // MUST be fed identical props; factoring this here means a change to the
+    // service list, the native-Ollama gate, or the backend-aware AI-version probe
+    // reaches both pages and they can't drift. The comments below document why
+    // each prop exists (the frontend depends on all three).
+    private async buildSupplyDepotProps() {
         const services = await this.systemService.getServices({ installedOnly: false });
         const isNativeOllama = DockerService.isNativeOllama();
+        // Which backend the host CLI selected ('omlx' | 'ollama'). Both set
+        // OLLAMA_HOST (so isNativeOllama is true for both), so the pages need this
+        // to tell them apart on the "AI Assistant" card: on 'omlx' chat runs on
+        // Apple MLX and Ollama is only the embeddings sidecar, so an Ollama
+        // "Update" must NOT be offered (it wouldn't touch the chat engine); on
+        // 'ollama' the host-side Ollama upgrade IS the chat-engine update.
+        // Defaults to 'ollama'.
         const aiBackend = env.get('NOMAD_AI_BACKEND') ?? 'ollama';
         // The "AI Assistant" Version cell can't use the seeder's container-image
         // tag (ollama/ollama:0.15.2): on 'omlx' chat runs on Apple MLX (wrong
@@ -47,27 +61,31 @@ export default class SettingsController {
         const aiAssistantVersion = (isNativeOllama && aiBackend === 'ollama')
             ? (await this.ollamaService.getNativeServerVersion()) ?? undefined
             : undefined;
-        return inertia.render('settings/apps', {
-            system: {
-                services
-            },
+        return {
+            system: { services },
             // Frontend uses this to gate ALL row actions for nomad_ollama
             // (Start / Stop / Restart / Force Reinstall / Update). Each one
             // routes through DockerService.affectService or updateService,
             // both of which refuse with a "manage via CLI" error on native
             // Ollama. Hiding the buttons skips the dead-end UX entirely.
             isNativeOllama,
-            // Which backend the host CLI selected ('omlx' | 'ollama'). Both set
-            // OLLAMA_HOST (so isNativeOllama is true for both), so the page needs
-            // this to tell them apart on the "AI Assistant" card: on 'omlx' chat
-            // runs on Apple MLX and Ollama is only the embeddings sidecar, so an
-            // Ollama "Update" must NOT be offered (it wouldn't touch the chat
-            // engine); on 'ollama' the host-side Ollama upgrade IS the chat-engine
-            // update. Defaults to 'ollama'.
             aiBackend,
             // Real native-daemon version for the host-Ollama backend (see above).
             aiAssistantVersion,
-        });
+        };
+    }
+
+    async apps({ inertia }: HttpContext) {
+        return inertia.render('settings/apps', await this.buildSupplyDepotProps());
+    }
+
+    // Additive card view of the same Supply Depot catalog. Registered at the
+    // TOP-LEVEL /supply-depot route (see start/routes.ts), not under /settings —
+    // the canonical table page (settings/apps) stays the source of truth until a
+    // human verifies this card view renders on the host. Identical props to the
+    // table page via the shared helper above, so the two can't drift.
+    async supplyDepot({ inertia }: HttpContext) {
+        return inertia.render('settings/supply-depot', await this.buildSupplyDepotProps());
     }
     
     async legal({ inertia }: HttpContext) {

@@ -182,6 +182,12 @@ router
   })
   .prefix('/settings')
 
+// Supply Depot — additive card view of the app catalog (issue #31). Top-level
+// route, NOT under /settings: the canonical table page stays at /settings/apps
+// until a human verifies this card view renders on the host. Same controller,
+// same props as settings/apps (SettingsController.buildSupplyDepotProps).
+router.get('/supply-depot', [SettingsController, 'supplyDepot'])
+
 router.post('/api/grocy/test-connection', [GrocyController, 'testConnection'])
 
 router
