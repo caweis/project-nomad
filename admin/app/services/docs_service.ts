@@ -24,6 +24,11 @@ export class DocsService {
     'mac-workshop': 14,
     'mac-updates': 15,
     'mac-drive-portability': 16,
+    // Supply Depot per-app docs — slotted after the MAC-EDITION pages. The
+    // card page (settings/supply-depot.tsx) deep-links here via
+    // constants/supply_depot_docs.ts. prettify('supply-depot-apps') already
+    // yields "Supply Depot Apps", so no TITLE_OVERRIDES entry is needed.
+    'supply-depot-apps': 17,
   }
 
   async getDocs() {
