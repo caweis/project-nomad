@@ -3,6 +3,7 @@ import { BaseSeeder } from '@adonisjs/lucid/seeders'
 import { ModelAttributes } from '@adonisjs/lucid/types/model'
 import env from '#start/env'
 import { SERVICE_NAMES } from '../../constants/service_names.js'
+import { shouldReseedCuratedRow } from './reseed_sync.js'
 
 export default class ServiceSeeder extends BaseSeeder {
   // Use environment variable with fallback to production default
@@ -19,6 +20,15 @@ export default class ServiceSeeder extends BaseSeeder {
     | 'available_update_version'
     | 'update_checked_at'
     | 'is_custom'
+    // Supply Depot columns seeded by their DB defaults / never set at seed time. Excluded so
+    // curated seed records don't have to carry them; the reseed-sync below reads is_user_modified
+    // off the live row, and custom_url / auto_update_* are user-controlled, never catalog-driven.
+    | 'is_user_modified'
+    | 'custom_url'
+    | 'auto_update_enabled'
+    | 'available_update_first_seen_at'
+    | 'auto_update_consecutive_failures'
+    | 'auto_update_disabled_reason'
   >[] = [
     {
       service_name: SERVICE_NAMES.KIWIX,
@@ -295,13 +305,37 @@ export default class ServiceSeeder extends BaseSeeder {
   ]
 
   async run() {
-    const existingServices = await Service.query().select('service_name')
-    const existingServiceNames = new Set(existingServices.map((service) => service.service_name))
+    const existingServices = await Service.query().select([
+      'service_name',
+      'is_custom',
+      'is_user_modified',
+    ])
+    const existingServiceMap = new Map(existingServices.map((s) => [s.service_name, s]))
 
     const newServices = ServiceSeeder.DEFAULT_SERVICES.filter(
-      (service) => !existingServiceNames.has(service.service_name)
+      (service) => !existingServiceMap.has(service.service_name)
     )
 
-    await Service.createMany([...newServices])
+    if (newServices.length > 0) {
+      await Service.createMany([...newServices])
+    }
+
+    // Keep curated services in sync with the catalog. Custom services are user-defined and must
+    // never be overwritten. User-modified curated services (a user edited their config) are
+    // likewise left alone so the edit survives reboots. ui_location is synced too so a catalog
+    // change to an app's link/scheme/port (e.g. Vaultwarden moving to https:8480, or a corrected
+    // internal port) reaches existing non-modified installs on update, not just fresh ones.
+    for (const service of ServiceSeeder.DEFAULT_SERVICES) {
+      const existing = existingServiceMap.get(service.service_name)
+      if (shouldReseedCuratedRow(existing)) {
+        await Service.query().where('service_name', service.service_name).update({
+          container_config: service.container_config,
+          container_command: service.container_command ?? null,
+          metadata: (service as any).metadata ?? null,
+          category: service.category,
+          ui_location: service.ui_location,
+        })
+      }
+    }
   }
 }
