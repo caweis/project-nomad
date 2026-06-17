@@ -302,6 +302,37 @@ router
     router
       .post('/services/update', [SystemController, 'updateService'])
       .use(middleware.localNetworkOnly())
+
+    // ── Supply Depot: custom-app routes ──────────────────────────────────────
+    // Read-only preflight / inspection follow the fork's GET posture (ungated). The
+    // mutating routes (create / update / pull-latest / delete / custom-url / auto-update)
+    // drive container lifecycle through the Docker socket, so each carries the
+    // localNetworkOnly gate — the same posture as install / affect / update above.
+    router.get('/services/preflight', [SystemController, 'preflightCheck'])
+    router.get('/services/suggest-port', [SystemController, 'suggestCustomPort'])
+    router.post('/services/preflight-custom', [SystemController, 'preflightCustomApp'])
+    router
+      .post('/services/custom', [SystemController, 'createCustomApp'])
+      .use(middleware.localNetworkOnly())
+    router
+      .put('/services/custom', [SystemController, 'updateCustomApp'])
+      .use(middleware.localNetworkOnly())
+    router
+      .post('/services/custom/update', [SystemController, 'updateCustomApp_pullLatest'])
+      .use(middleware.localNetworkOnly())
+    router
+      .delete('/services/custom', [SystemController, 'deleteCustomApp'])
+      .use(middleware.localNetworkOnly())
+    router.get('/services/custom/:name', [SystemController, 'getCustomApp'])
+    router
+      .put('/services/custom-url', [SystemController, 'setServiceCustomUrl'])
+      .use(middleware.localNetworkOnly())
+    router
+      .post('/services/auto-update', [SystemController, 'setServiceAutoUpdate'])
+      .use(middleware.localNetworkOnly())
+    router.get('/services/:name/logs', [SystemController, 'getServiceLogs'])
+    router.get('/services/:name/stats', [SystemController, 'getServiceStats'])
+
     router.post('/subscribe-release-notes', [SystemController, 'subscribeToReleaseNotes'])
     router.get('/latest-version', [SystemController, 'checkLatestVersion'])
     router.post('/update', [SystemController, 'requestSystemUpdate'])
