@@ -15,6 +15,7 @@ import env from '#start/env'
 import KVStore from '#models/kv_store'
 import { KV_STORE_SCHEMA, KVStoreKey } from '../../types/kv_store.js'
 import { isNewerVersion } from '../utils/version.js'
+import { CUSTOM_PORT_START, nextFreeCustomPort } from '#services/custom_app_ports'
 
 
 // Marker the host's drive-detect agent writes when a non-active, full-library
@@ -199,7 +200,10 @@ export class SystemService {
         'display_order',
         'container_image',
         'available_update_version',
-        'category'
+        'category',
+        'is_custom',
+        'custom_url',
+        'auto_update_enabled'
       )
       .where('is_dependency_service', false)
     if (installedOnly) {
@@ -232,6 +236,9 @@ export class SystemService {
         container_image: service.container_image,
         available_update_version: service.available_update_version,
         category: service.category,
+        is_custom: service.is_custom,
+        custom_url: service.custom_url,
+        auto_update_enabled: service.auto_update_enabled,
       })
     }
 
@@ -738,6 +745,82 @@ export class SystemService {
           })),
         }
       })
+  }
+
+  /**
+   * Check whether the host has enough free memory and disk to comfortably run an app.
+   * Returns an array of human-readable warning strings; an empty array means no concerns.
+   * These are advisory only — the caller decides whether to block or warn.
+   */
+  async checkResourceWarnings(minMemoryMB: number, minDiskMB: number): Promise<string[]> {
+    const warnings: string[] = []
+
+    try {
+      const mem = await si.mem()
+      const availableMB = Math.floor(mem.available / 1024 / 1024)
+      if (availableMB < minMemoryMB) {
+        warnings.push(
+          `Low memory: ${availableMB} MB available, this app recommends at least ${minMemoryMB} MB free.`
+        )
+      }
+    } catch (err: any) {
+      logger.warn(`[SystemService] checkResourceWarnings mem check failed: ${err.message}`)
+    }
+
+    try {
+      const storagePath = env.get('NOMAD_STORAGE_PATH', '/opt/project-nomad/storage')
+      const fsSizes = await si.fsSize()
+      // Find the filesystem whose mount point is the longest prefix of storagePath
+      const fs = fsSizes
+        .filter((f) => storagePath.startsWith(f.mount))
+        .sort((a, b) => b.mount.length - a.mount.length)[0]
+
+      if (fs) {
+        const availableDiskMB = Math.floor((fs.size - fs.used) / 1024 / 1024)
+        if (availableDiskMB < minDiskMB) {
+          warnings.push(
+            `Low disk space: ${availableDiskMB} MB available on ${fs.mount}, this app recommends at least ${minDiskMB} MB free.`
+          )
+        }
+      }
+    } catch (err: any) {
+      logger.warn(`[SystemService] checkResourceWarnings disk check failed: ${err.message}`)
+    }
+
+    return warnings
+  }
+
+  /**
+   * Return the next suggested host port for a custom app in the 8600+ range.
+   * Looks at existing custom service records and all Docker container port bindings.
+   */
+  async getNextSuggestedCustomPort(): Promise<number> {
+    const occupied = new Set<number>()
+
+    try {
+      // Ports used by existing custom services in the DB
+      const customServices = await Service.query().where('is_custom', true)
+      for (const svc of customServices) {
+        const config = svc.container_config ? JSON.parse(svc.container_config) : null
+        const bindings = config?.HostConfig?.PortBindings ?? {}
+        for (const binding of Object.values(bindings) as any[]) {
+          const port = parseInt(binding?.[0]?.HostPort, 10)
+          if (!isNaN(port)) occupied.add(port)
+        }
+      }
+
+      // Ports used by any running Docker container in the 8600+ range
+      const containers = await this.dockerService.docker.listContainers({ all: true })
+      for (const c of containers) {
+        for (const p of c.Ports) {
+          if (p.PublicPort && p.PublicPort >= CUSTOM_PORT_START) occupied.add(p.PublicPort)
+        }
+      }
+    } catch (err: any) {
+      logger.warn(`[SystemService] getNextSuggestedCustomPort probe failed: ${err.message}`)
+    }
+
+    return nextFreeCustomPort(occupied)
   }
 
 }

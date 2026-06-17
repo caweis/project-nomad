@@ -15,4 +15,7 @@ export type ServiceSlim = Pick<
   | 'container_image'
   | 'available_update_version'
   | 'category'
+  | 'is_custom'
+  | 'custom_url'
+  | 'auto_update_enabled'
 > & { status?: string }
