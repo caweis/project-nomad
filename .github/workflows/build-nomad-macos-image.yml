@@ -5,9 +5,17 @@ name: Build macOS-distribution admin image
 # (linux/amd64,linux/arm64) so the same image works on Rosetta-backed
 # Docker Desktop and arm64-native OrbStack/colima.
 #
+# Each architecture is built on its OWN native runner — amd64 on ubuntu-latest,
+# arm64 on ubuntu-24.04-arm (GitHub-hosted arm64, free for public repos) — and
+# pushed by digest. A final merge job stitches the two digests into one
+# multi-arch manifest list carrying the real tags. This replaces the old
+# single-runner QEMU emulation of arm64, where an uncached base-layer rebuild
+# (native module compiles + the Vite bundle, all emulated) took ~an hour and
+# could degenerate into a stall.
+#
 # Triggers:
-#   - push to main when admin/, the root
-#     Dockerfile, or this workflow change → image tagged :edge.
+#   - push to main when admin/, the root Dockerfile, package.json, or this
+#     workflow change → image tagged :edge.
 #   - tag push matching v* → image tagged :vX.Y.Z and :latest.
 #   - workflow_dispatch → manual build, optional :latest promotion.
 
@@ -35,34 +43,25 @@ on:
         type: boolean
         default: false
 
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/project-nomad-macos-arm64
+
 jobs:
-  build:
-    name: Build and push admin image
+  # ── Stage 1: compute the tags + version label once, shared by build + merge ─
+  meta:
+    name: Compute tags and version
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
+    outputs:
+      tags: ${{ steps.tags.outputs.tags }}
+      version: ${{ steps.tags.outputs.version }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Compute image tags
         id: tags
         run: |
-          IMAGE="ghcr.io/${{ github.repository_owner }}/project-nomad-macos-arm64"
+          IMAGE="${{ env.IMAGE }}"
           TAGS=""
 
           # Always include a short-SHA tag for traceability
@@ -74,12 +73,11 @@ jobs:
             TAGS="${TAGS},${IMAGE}:edge"
           fi
 
-          # Release tag pushes → :vX.Y.Z and :latest
-          # Docker image tags only allow [a-zA-Z0-9_.-], but SemVer 2.0 lets
-          # us use `+` for build metadata (e.g. v0.1.0-macos+2026.05.11).
-          # The git tag stays as-authored; we substitute `+` → `.` for the
-          # Docker tag so buildx accepts it. Result is still distinguishable
-          # (v0.1.0-macos.2026.05.11) and round-trippable for humans.
+          # Release tag pushes → :vX.Y.Z and :latest.
+          # Docker image tags only allow [a-zA-Z0-9_.-], but SemVer 2.0 lets us
+          # use `+` for build metadata (e.g. v0.1.0-macos+2026.05.11). The git
+          # tag stays as-authored; we substitute `+` → `.` for the Docker tag so
+          # buildx accepts it (v0.1.0-macos.2026.05.11), still round-trippable.
           if [[ "${{ github.event_name }}" == "push" && "${{ github.ref_type }}" == "tag" ]]; then
             TAG_NAME="${GITHUB_REF#refs/tags/}"
             DOCKER_TAG="${TAG_NAME//+/.}"
@@ -87,9 +85,7 @@ jobs:
             TAGS="${TAGS},${IMAGE}:latest"
           fi
 
-          # workflow_dispatch with explicit version
-          # Same `+` → `.` substitution as the tag-push path, so a manual
-          # build with version="0.1.0-macos+2026.05.11" doesn't fail buildx.
+          # workflow_dispatch with explicit version (same `+` → `.` substitution)
           if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ inputs.version }}" ]]; then
             INPUT_VERSION="${{ inputs.version }}"
             DOCKER_VERSION="${INPUT_VERSION//+/.}"
@@ -108,7 +104,7 @@ jobs:
           # push to main, github.ref_name is just "main" — useless as a version,
           # and it's what made `nomad upgrade` / `nomad build-check` show a build
           # rev with no version. Read the real version from the root package.json
-          # (e.g. 0.2.718-macos). A tag push or explicit workflow_dispatch version
+          # (e.g. 0.2.739-macos). A tag push or explicit workflow_dispatch version
           # still takes precedence.
           PKG_VERSION="$(jq -r '.version // ""' package.json 2>/dev/null)"
           if [[ "${{ github.event_name }}" == "push" && "${{ github.ref_type }}" == "tag" ]]; then
@@ -127,17 +123,110 @@ jobs:
           echo "Resolved tags:"
           echo "${TAGS}" | tr ',' '\n' | sed 's/^/  - /'
 
-      - name: Build and push
+  # ── Stage 2: build each arch on its OWN native runner, push by digest ───────
+  build:
+    name: Build ${{ matrix.platform }}
+    needs: meta
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            arch: amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push by digest
+        id: build
         uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile
-          push: true
-          platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.tags.outputs.tags }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Single platform, built NATIVELY on this matrix runner — no QEMU.
+          platforms: ${{ matrix.platform }}
+          # Per-arch cache scope so the two legs don't clobber each other's cache.
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
           build-args: |
-            VERSION=${{ steps.tags.outputs.version || inputs.version || github.ref_name }}
+            VERSION=${{ needs.meta.outputs.version }}
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
             VCS_REF=${{ github.sha }}
+          # Push the single-arch image by DIGEST only (no tags here); the merge
+          # job assembles the tagged multi-arch manifest from both digests.
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+
+      - name: Export digest
+        run: |
+          mkdir -p "${{ runner.temp }}/digests"
+          digest="${{ steps.build.outputs.digest }}"
+          touch "${{ runner.temp }}/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # ── Stage 3: merge the per-arch digests into one tagged multi-arch manifest ─
+  merge:
+    name: Merge manifest and push tags
+    needs: [meta, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digest-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create multi-arch manifest list with all tags
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          # `-t <tag>` flags from meta's comma-separated tag list, and the
+          # `IMAGE@sha256:<digest>` source refs from each downloaded digest file
+          # (named by its digest, sans the sha256: prefix).
+          tag_flags=$(echo "${{ needs.meta.outputs.tags }}" | tr ',' '\n' | sed 's/^/--tag /' | tr '\n' ' ')
+          sources=$(printf '${{ env.IMAGE }}@sha256:%s ' *)
+          echo "Tags: ${{ needs.meta.outputs.tags }}"
+          echo "Source digests: $(ls)"
+          docker buildx imagetools create $tag_flags $sources
+
+      - name: Inspect the published image
+        run: |
+          FIRST_TAG=$(echo "${{ needs.meta.outputs.tags }}" | cut -d',' -f1)
+          docker buildx imagetools inspect "$FIRST_TAG"
