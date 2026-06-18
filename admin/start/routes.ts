@@ -19,6 +19,7 @@ import OllamaController from '#controllers/ollama_controller'
 import ReadinessController from '#controllers/readiness_controller'
 import ScenarioPlanController from '#controllers/scenario_plan_controller'
 import HostCommandsController from '#controllers/host_commands_controller'
+import MeshController from '#controllers/mesh_controller'
 import RagController from '#controllers/rag_controller'
 import SettingsController from '#controllers/settings_controller'
 import SystemController from '#controllers/system_controller'
@@ -269,6 +270,20 @@ router
   .prefix('/api/chat/sessions')
 
 router.get('/api/chat/suggestions', [ChatsController, 'suggestions'])
+
+// Mesh Bridge admin console (P4). The page GET is gated by the controller
+// (404 when the Mesh service isn't installed, like /chat). The read APIs
+// (status, messages) follow the fork's GET posture — ungated. POST /api/mesh/send
+// keys a RADIO TRANSMISSION, so it carries localNetworkOnly() — the same posture
+// as the mutating #32 custom-app routes and the Workshop upload precedent.
+router.get('/mesh', [MeshController, 'inertia'])
+router
+  .group(() => {
+    router.get('/status', [MeshController, 'status'])
+    router.get('/messages', [MeshController, 'messages'])
+    router.post('/send', [MeshController, 'send']).use(middleware.localNetworkOnly())
+  })
+  .prefix('/api/mesh')
 
 router
   .group(() => {
