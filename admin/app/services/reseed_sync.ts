@@ -7,9 +7,12 @@
  *   - custom apps      (is_custom)        — user-defined "bring your own" containers.
  *   - user-modified    (is_user_modified) — a curated app the user edited (e.g. changed a port).
  *
- * Kept in its own Adonis-free module so the decision is single-sourced (the seeder and
- * its standalone test both import it) and exercisable under `node --experimental-strip-types`
- * (the seeder itself pulls in `#start/env`, which can't boot without the Adonis runtime).
+ * LIVES IN app/services (NOT database/seeders): `node ace db:seed` loads every file
+ * under database/seeders as a Seeder and requires a default export, so a plain helper
+ * placed there crashes the whole seed run ("Missing default export"). Kept Adonis-free
+ * so the seeder and its standalone test single-source the decision and it runs under
+ * `node --experimental-strip-types` (the seeder itself pulls in #start/env, which can't
+ * boot without the Adonis runtime).
  */
 
 /** The two flags the reseed decision reads off an existing row. */

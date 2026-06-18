@@ -3,7 +3,7 @@ import { BaseSeeder } from '@adonisjs/lucid/seeders'
 import { ModelAttributes } from '@adonisjs/lucid/types/model'
 import env from '#start/env'
 import { SERVICE_NAMES } from '../../constants/service_names.js'
-import { shouldReseedCuratedRow } from './reseed_sync.js'
+import { shouldReseedCuratedRow } from '#services/reseed_sync'
 
 export default class ServiceSeeder extends BaseSeeder {
   // Use environment variable with fallback to production default

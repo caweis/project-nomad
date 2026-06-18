@@ -19,7 +19,7 @@
  */
 import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
-import { shouldReseedCuratedRow } from '../../database/seeders/reseed_sync.ts'
+import { shouldReseedCuratedRow } from '../../app/services/reseed_sync.ts'
 
 let passed = 0
 function check(name: string, fn: () => void) {
