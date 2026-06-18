@@ -1,6 +1,7 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import KVStore from '#models/kv_store'
 import { InventoryService } from '#services/inventory_service'
+import { GrocyClient } from '#services/grocy_client'
 import {
   createInventoryItemValidator,
   resourceMappingValid,
@@ -42,6 +43,7 @@ export default class InventoryController {
       enums: this.enumsForUi(),
       measurement_system: await this.measurementSystem(),
       locations: await new InventoryService().distinctLocations(),
+      grocy_configured: await this.grocyConfigured(),
     })
   }
 
@@ -84,6 +86,7 @@ export default class InventoryController {
       enums: this.enumsForUi(),
       measurement_system: await this.measurementSystem(),
       locations: await service.distinctLocations(),
+      grocy_configured: await this.grocyConfigured(),
     })
   }
 
@@ -165,6 +168,19 @@ export default class InventoryController {
     return (MEASUREMENT_SYSTEMS as readonly string[]).includes(raw ?? '')
       ? (raw as MeasurementSystem)
       : 'us'
+  }
+
+  /**
+   * Whether Grocy is the configured canonical food source. Read defensively — a KV
+   * hiccup degrades to "not configured" (the advisory note just hides) rather than a
+   * 500 on the form. Mirrors the read ReadinessService already does.
+   */
+  private async grocyConfigured(): Promise<boolean> {
+    try {
+      return await new GrocyClient().isConfigured()
+    } catch {
+      return false
+    }
   }
 
   private enumsForUi() {

@@ -29,6 +29,8 @@ interface PageProps {
   measurement_system: MeasurementSystem
   /** Distinct existing locations, alphabetized — suggestions for the combobox. */
   locations: string[]
+  /** Whether Grocy is the configured canonical food source (drives the advisory note). */
+  grocy_configured?: boolean
 }
 
 /**
@@ -451,6 +453,12 @@ export default function InventoryShow(props: PageProps) {
                 />
               </FormGroup>
             </div>
+            {props.grocy_configured && form.resource_type === 'food' && (
+              <p className="mt-3 text-xs text-desert-stone">
+                Grocy is the source of truth for food. The food contribution here feeds the
+                readiness calculator only as a fallback for when Grocy is unreachable.
+              </p>
+            )}
           </SectionCard>
 
           <div className="flex items-center gap-3">
