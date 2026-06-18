@@ -178,7 +178,19 @@ export default class QueueWork extends BaseCommand {
     lockDuration: number
     maxStalledCount: number
   } {
-    if (queueName === DownloadDrugDataJob.queue || queueName === IngestDrugDataJob.queue) {
+    // Heavy, long-running, continuation-chained workloads get a longer lock and a
+    // higher stalled tolerance so a single transient lock-renewal miss retries the
+    // batch instead of killing the whole chain. EmbedFileJob is the same shape as the
+    // drug ingest — it embeds a ZIM library in resumable batches at concurrency 1 and
+    // is CPU/memory-heavy, so a slow batch can't renew the lock mid-await. On the
+    // default maxStalledCount:1 a single stalled batch failed the chain with "job
+    // stalled more than allowable limit" (observed on a Gutenberg ZIM embed), so it
+    // gets the same treatment as the drug queues that #604 already fixed.
+    if (
+      queueName === DownloadDrugDataJob.queue ||
+      queueName === IngestDrugDataJob.queue ||
+      queueName === EmbedFileJob.queue
+    ) {
       return { lockDuration: 1_800_000, maxStalledCount: 3 }
     }
     return { lockDuration: 600_000, maxStalledCount: 1 }

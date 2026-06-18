@@ -670,6 +670,17 @@ export class RagService {
     onProgress?: (percent: number) => Promise<void>
   ): Promise<ProcessAndEmbedFileResponse> {
     try {
+      // Partial downloads stage as `<name>.zim.tmp` until the atomic rename to
+      // `.zim` on completion (utils/downloads.ts). If one is ever scanned or
+      // enqueued mid-download, skip it as a benign no-op — failing it as
+      // "Unsupported file type" leaves a scary failure record that retries on every
+      // sync. Return before any processing or deletion so the in-progress download
+      // is left untouched; the completed `.zim` is picked up on the next pass.
+      if (filepath.endsWith('.tmp')) {
+        logger.debug(`[RAG] Skipping partial download (not yet complete): ${filepath}`)
+        return { success: true, message: 'Skipped partial download (still in progress).' }
+      }
+
       const fileType = determineFileType(filepath)
       logger.debug(`[RAG] Processing file: ${filepath} (detected type: ${fileType})`)
 
