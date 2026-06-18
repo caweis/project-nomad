@@ -32,3 +32,25 @@ export function followPullProgress(modem: FollowProgressModem, stream: unknown):
     })
   })
 }
+
+/**
+ * Normalize an image reference for `docker.pull`. dockerode's pull runs
+ * `parseRepositoryTag`, which splits on the FIRST '@' and leaves any `:tag`
+ * glued to the repository — so a digest-pinned ref like `repo:1.36.0@sha256:...`
+ * pulls as `fromImage=repo:1.36.0&tag=sha256:...`, a malformed (both tagged AND
+ * digested) reference the engine rejects. When a digest is present, pull by
+ * digest only: strip the human `:tag` so the ref is `repo@sha256:...`. Tag-only
+ * refs (no digest) and a registry `host:port` prefix are left untouched.
+ */
+export function pullableImageRef(image: string): string {
+  const at = image.indexOf('@')
+  if (at === -1) return image // tag-only or bare ref — pulls fine as-is
+  const name = image.slice(0, at)
+  const digest = image.slice(at) // includes the leading '@'
+  // A `:tag` is a colon AFTER the last '/'. A registry `host:port` colon comes
+  // BEFORE the last '/' and must be kept.
+  const lastColon = name.lastIndexOf(':')
+  const lastSlash = name.lastIndexOf('/')
+  const repo = lastColon > lastSlash ? name.slice(0, lastColon) : name
+  return repo + digest
+}

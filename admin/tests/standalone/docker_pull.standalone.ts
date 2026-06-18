@@ -11,7 +11,11 @@
  * Ported from upstream commit fe78df5's pullImage helper.
  */
 import assert from 'node:assert/strict'
-import { followPullProgress, type FollowProgressModem } from '../../app/services/docker_pull.ts'
+import {
+  followPullProgress,
+  pullableImageRef,
+  type FollowProgressModem,
+} from '../../app/services/docker_pull.ts'
 
 let passed = 0
 async function check(name: string, fn: () => Promise<void>) {
@@ -60,6 +64,29 @@ await (async () => {
     const result = await followPullProgress(stubModem(null), {})
     assert.equal(result, undefined)
   })
+
+  // ── pullableImageRef: digest-pin normalization (the Wave-2 pull-format fix) ───
+  // dockerode's pull splits on the first '@' and leaves the tag glued to the
+  // repository, breaking a `repo:tag@sha256:...` ref. The helper strips the tag
+  // when a digest is present so the pull is by digest only.
+  const refCases: Array<[string, string]> = [
+    ['vaultwarden/server:1.36.0@sha256:abc', 'vaultwarden/server@sha256:abc'],
+    ['stirlingtools/stirling-pdf:2.12.0@sha256:abc', 'stirlingtools/stirling-pdf@sha256:abc'],
+    ['ghcr.io/corentinth/it-tools:2024.10.22-7ca5933@sha256:abc', 'ghcr.io/corentinth/it-tools@sha256:abc'],
+    ['excalidraw/excalidraw:latest@sha256:abc', 'excalidraw/excalidraw@sha256:abc'],
+    ['lscr.io/linuxserver/calibre-web:0.6.26-ls387@sha256:abc', 'lscr.io/linuxserver/calibre-web@sha256:abc'],
+    ['vaultwarden/server@sha256:abc', 'vaultwarden/server@sha256:abc'], // already digest-only
+    ['qdrant/qdrant:v1.16', 'qdrant/qdrant:v1.16'], // tag-only, no digest
+    ['ghcr.io/meshtastic/web:v2.7.1', 'ghcr.io/meshtastic/web:v2.7.1'], // registry + tag, no digest
+    ['redis', 'redis'], // bare name
+    ['registry.local:5000/app@sha256:abc', 'registry.local:5000/app@sha256:abc'], // host:port kept (no tag)
+    ['registry.local:5000/app:1.2.3@sha256:abc', 'registry.local:5000/app@sha256:abc'], // strip tag, keep port
+  ]
+  for (const [input, expected] of refCases) {
+    await check(`pullableImageRef ${input} -> ${expected}`, async () => {
+      assert.equal(pullableImageRef(input), expected)
+    })
+  }
 
   console.log(`\n${passed} checks passed`)
 })()

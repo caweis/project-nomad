@@ -16,7 +16,7 @@ import env from '#start/env'
 import os from 'node:os'
 import { humanizeDockerError } from './docker_errors.js'
 import { rewriteStorageBinds } from './storage_binds.js'
-import { followPullProgress } from './docker_pull.js'
+import { followPullProgress, pullableImageRef } from './docker_pull.js'
 
 @inject()
 export class DockerService {
@@ -272,35 +272,49 @@ export class DockerService {
       }
     }
 
-    // Mark installation as in progress
+    // Mark installation as in progress. activeInstallations is a process-wide
+    // static guard, so it MUST be released on any failure below or the service
+    // wedges permanently as "in progress" until a process restart.
     DockerService.activeInstallations.add(serviceName)
     service.installation_status = 'installing'
-    await service.save()
+    try {
+      await service.save()
 
-    // Check if a service wasn't marked as installed but has an existing container
-    // This can happen if the service was created but not properly installed
-    // or if the container was removed manually without updating the service status.
-    // if (await this._checkIfServiceContainerExists(serviceName)) {
-    //   const removeResult = await this._removeServiceContainer(serviceName);
-    //   if (!removeResult.success) {
-    //     return {
-    //       success: false,
-    //       message: `Failed to remove existing container for service ${serviceName}: ${removeResult.message}`,
-    //     };
-    //   }
-    // }
+      // Check if a service wasn't marked as installed but has an existing container
+      // This can happen if the service was created but not properly installed
+      // or if the container was removed manually without updating the service status.
+      // if (await this._checkIfServiceContainerExists(serviceName)) {
+      //   const removeResult = await this._removeServiceContainer(serviceName);
+      //   if (!removeResult.success) {
+      //     return {
+      //       success: false,
+      //       message: `Failed to remove existing container for service ${serviceName}: ${removeResult.message}`,
+      //     };
+      //   }
+      // }
 
-    const containerConfig = this._parseContainerConfig(service.container_config)
+      const containerConfig = this._parseContainerConfig(service.container_config)
 
-    // Execute installation asynchronously and handle cleanup
-    this._createContainer(service, containerConfig).catch(async (error) => {
-      logger.error(`Installation failed for ${serviceName}: ${error.message}`)
+      // Execute installation asynchronously and handle cleanup
+      this._createContainer(service, containerConfig).catch(async (error) => {
+        logger.error(`Installation failed for ${serviceName}: ${error.message}`)
+        await this._cleanupFailedInstallation(serviceName)
+      })
+
+      return {
+        success: true,
+        message: `Service ${serviceName} installation initiated successfully. You can receive updates via server-sent events.`,
+      }
+    } catch (error: any) {
+      // service.save() or the container-config parse threw before _createContainer
+      // launched — release the guard + reset status, mirroring forceReinstall, so
+      // the install can be retried.
+      logger.error(`Preflight failed for ${serviceName}: ${error.message}`)
       await this._cleanupFailedInstallation(serviceName)
-    })
-
-    return {
-      success: true,
-      message: `Service ${serviceName} installation initiated successfully. You can receive updates via server-sent events.`,
+      return {
+        success: false,
+        message: `Failed to start installation for ${serviceName}: ${error.message}`,
+      }
     }
   }
 
@@ -1400,7 +1414,9 @@ export class DockerService {
    * Public so BenchmarkService can route its sysbench pull through it too.
    */
   async pullImage(imageName: string): Promise<void> {
-    const pullStream = await this.docker.pull(imageName)
+    // Normalize a digest-pinned ref (repo:tag@sha256:...) to digest-only so
+    // dockerode's pull parses it correctly (see pullableImageRef).
+    const pullStream = await this.docker.pull(pullableImageRef(imageName))
     await followPullProgress(this.docker.modem, pullStream)
   }
 
