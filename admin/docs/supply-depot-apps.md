@@ -136,3 +136,63 @@ Off-grid AI over a LoRa mesh radio. Text a question into the mesh and the bridge
 **Your data:** The bridge holds no library of its own. It passes messages to the AI Assistant and relays answers, so the AI's models and your chat settings are what drive it.
 
 **Works offline:** Fully offline by design. The point is to answer questions for people with no connection at all, using only your NOMAD and the mesh.
+
+## Password Vault {% #password-vault %}
+
+A self-hosted password manager that keeps your logins, secure notes, and other secrets on your NOMAD instead of someone else's cloud. It speaks the Bitwarden protocol, so the regular Bitwarden apps and browser extensions connect to it.
+
+**Powered by:** Vaultwarden · **Source:** [github.com/dani-garcia/vaultwarden](https://github.com/dani-garcia/vaultwarden)
+
+**How it works:** Point a Bitwarden client at your NOMAD's address and it stores and syncs your vault locally. This build serves over plain HTTP on the local network. Passkeys and other WebAuthn logins need an HTTPS address, which is a planned follow-up; password and note storage work today.
+
+**Your data:** The vault lives in the `vaultwarden` folder on your data drive. Back that folder up and you've backed up every credential.
+
+**Works offline:** Fully offline. Your vault never leaves your NOMAD unless you set up syncing yourself.
+
+## PDF Tools {% #pdf-tools %}
+
+A toolbox for working with PDFs: merge several into one, split one apart, rotate or reorder pages, convert to and from images and other formats, compress, and more. Everything runs on your NOMAD, so a document you're working on never gets uploaded anywhere.
+
+**Powered by:** Stirling-PDF · **Source:** [github.com/Stirling-Tools/Stirling-PDF](https://github.com/Stirling-Tools/Stirling-PDF)
+
+**How it works:** Open the app, drop in a PDF, pick an operation, and download the result. The work happens in the container on your NOMAD.
+
+**Your data:** Settings and any custom assets live in the `stirling-pdf` folder on your data drive. The PDFs you process are not kept after you download them.
+
+**Works offline:** Fully offline. No file ever leaves your NOMAD.
+
+## IT Tools {% #it-tools %}
+
+A grab-bag of small utilities that developers and tinkerers reach for: encoders and decoders, hash and UUID generators, formatters, color and date converters, and dozens more. Each one runs in the browser.
+
+**Powered by:** IT-Tools · **Source:** [github.com/CorentinTh/it-tools](https://github.com/CorentinTh/it-tools)
+
+**How it works:** Open the app and pick a tool from the list. The tools run client-side in your browser, served from your NOMAD.
+
+**Your data:** Nothing is stored. There's no NOMAD folder to manage for this app.
+
+**Works offline:** Fully offline. The whole toolset is served from your NOMAD.
+
+## Whiteboard {% #whiteboard %}
+
+A virtual whiteboard for quick diagrams, sketches, and plans, with a hand-drawn look. Good for mapping out an idea, a layout, or a plan when you want something more freeform than text.
+
+**Powered by:** Excalidraw · **Source:** [github.com/excalidraw/excalidraw](https://github.com/excalidraw/excalidraw)
+
+**How it works:** Open the app and draw. Export a drawing as an image or a file when you want to keep it.
+
+**Your data:** Drawings live in your browser's local storage, not on the NOMAD. Export anything you want to keep so it isn't lost if you clear your browser.
+
+**Works offline:** Fully offline. The app is served from your NOMAD and runs entirely in your browser.
+
+## eBook Library {% #ebook-library %}
+
+A reader and browser for your ebook collection. Point it at a folder of books and it gives you a searchable library with covers and metadata, readable in the browser, with an OPDS feed for ereader apps.
+
+**Powered by:** Calibre-Web · **Source:** [github.com/janeczku/calibre-web](https://github.com/janeczku/calibre-web)
+
+**How it works:** Put your books in the `calibre-web/books` folder on your data drive, then browse and read them from the app. It reads an existing Calibre library if you have one.
+
+**Your data:** The app's database lives in the `calibre-web` folder and your books in `calibre-web/books`, both on your data drive.
+
+**Works offline:** Fully offline. Your library is served from your NOMAD.

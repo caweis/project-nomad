@@ -34,6 +34,11 @@ export const SUPPLY_DEPOT_DOCS: Record<string, SupplyDepotDocEntry> = {
   [SERVICE_NAMES.MESHTASTIC_WEB]: { slug: SUPPLY_DEPOT_DOC_PAGE, anchor: 'meshtastic-web' },
   [SERVICE_NAMES.MESHCORE_WEB]: { slug: SUPPLY_DEPOT_DOC_PAGE, anchor: 'meshcore-web' },
   [SERVICE_NAMES.MESH]: { slug: SUPPLY_DEPOT_DOC_PAGE, anchor: 'mesh-bridge' },
+  [SERVICE_NAMES.VAULTWARDEN]: { slug: SUPPLY_DEPOT_DOC_PAGE, anchor: 'password-vault' },
+  [SERVICE_NAMES.STIRLING_PDF]: { slug: SUPPLY_DEPOT_DOC_PAGE, anchor: 'pdf-tools' },
+  [SERVICE_NAMES.IT_TOOLS]: { slug: SUPPLY_DEPOT_DOC_PAGE, anchor: 'it-tools' },
+  [SERVICE_NAMES.EXCALIDRAW]: { slug: SUPPLY_DEPOT_DOC_PAGE, anchor: 'whiteboard' },
+  [SERVICE_NAMES.CALIBRE_WEB]: { slug: SUPPLY_DEPOT_DOC_PAGE, anchor: 'ebook-library' },
 }
 
 // Returns the in-app docs link for a service, or null if it has no documentation

@@ -302,6 +302,154 @@ export default class ServiceSeeder extends BaseSeeder {
       category: 'networking',
       depends_on: null,
     },
+    {
+      service_name: SERVICE_NAMES.VAULTWARDEN,
+      friendly_name: 'Password Vault',
+      powered_by: 'Vaultwarden',
+      display_order: 8,
+      category: 'security',
+      description:
+        'Self-hosted password manager (Bitwarden-compatible) for storing logins, notes, and secrets offline',
+      icon: 'IconLock',
+      // Index-digest pinned (resolves arm64 on the mini, amd64 on Intel Macs).
+      container_image:
+        'vaultwarden/server:1.36.0@sha256:d626d04934cd1192ad8ced1adb975099fca78cec33ab467d2d3c923cde7f3b0c',
+      source_repo: 'https://github.com/dani-garcia/vaultwarden',
+      container_command: null,
+      container_config: JSON.stringify({
+        // Serves the vault over HTTP on container :80. Shipped HTTP-only on the LAN for v1;
+        // passkeys/WebAuthn need an HTTPS secure context, tracked as a follow-up (self-signed
+        // TLS via the MeshCore Web cert pattern).
+        HostConfig: {
+          RestartPolicy: { Name: 'unless-stopped' },
+          Binds: [`${ServiceSeeder.NOMAD_STORAGE_ABS_PATH}/vaultwarden:/data`],
+          PortBindings: { '80/tcp': [{ HostPort: '8700' }] },
+        },
+        ExposedPorts: { '80/tcp': {} },
+      }),
+      ui_location: '8700',
+      installed: false,
+      installation_status: 'idle',
+      is_dependency_service: false,
+      depends_on: null,
+    },
+    {
+      service_name: SERVICE_NAMES.STIRLING_PDF,
+      friendly_name: 'PDF Tools',
+      powered_by: 'Stirling-PDF',
+      display_order: 9,
+      category: 'productivity',
+      description:
+        'Local toolkit for merging, splitting, converting, and editing PDFs with no cloud upload',
+      icon: 'IconFileTypePdf',
+      container_image:
+        'stirlingtools/stirling-pdf:2.12.0@sha256:2bb9b67f3edbca7ecc80f6e851a02cd04a10d5ea1d69b3e80b1e1f615e97b7a2',
+      source_repo: 'https://github.com/Stirling-Tools/Stirling-PDF',
+      container_command: null,
+      container_config: JSON.stringify({
+        // Serves on container :8080; /configs persists app settings and custom assets.
+        HostConfig: {
+          RestartPolicy: { Name: 'unless-stopped' },
+          Binds: [`${ServiceSeeder.NOMAD_STORAGE_ABS_PATH}/stirling-pdf:/configs`],
+          PortBindings: { '8080/tcp': [{ HostPort: '8701' }] },
+        },
+        ExposedPorts: { '8080/tcp': {} },
+      }),
+      ui_location: '8701',
+      installed: false,
+      installation_status: 'idle',
+      is_dependency_service: false,
+      depends_on: null,
+    },
+    {
+      service_name: SERVICE_NAMES.IT_TOOLS,
+      friendly_name: 'IT Tools',
+      powered_by: 'IT-Tools',
+      display_order: 10,
+      category: 'utility',
+      description:
+        'A collection of developer and sysadmin utilities (encoders, converters, generators) that run entirely in the browser',
+      icon: 'IconTools',
+      container_image:
+        'ghcr.io/corentinth/it-tools:2024.10.22-7ca5933@sha256:8b8128748339583ca951af03dfe02a9a4d7363f61a216226fc28030731a5a61f',
+      source_repo: 'https://github.com/CorentinTh/it-tools',
+      container_command: null,
+      container_config: JSON.stringify({
+        // nginx serving a static client on container :80; stateless, no volume needed.
+        HostConfig: {
+          RestartPolicy: { Name: 'unless-stopped' },
+          PortBindings: { '80/tcp': [{ HostPort: '8702' }] },
+        },
+        ExposedPorts: { '80/tcp': {} },
+      }),
+      ui_location: '8702',
+      installed: false,
+      installation_status: 'idle',
+      is_dependency_service: false,
+      depends_on: null,
+    },
+    {
+      service_name: SERVICE_NAMES.EXCALIDRAW,
+      friendly_name: 'Whiteboard',
+      powered_by: 'Excalidraw',
+      display_order: 11,
+      category: 'productivity',
+      description:
+        'Virtual hand-drawn-style whiteboard for diagrams and sketches; drawings stay in the browser',
+      icon: 'IconPencil',
+      // Excalidraw publishes a multi-arch manifest only on the moving `latest` tag (its
+      // sha-<commit> tags are amd64-only), so it is pinned by its immutable index digest.
+      container_image:
+        'excalidraw/excalidraw:latest@sha256:f7ee194addd607bf831d2af0f0a34463dd4225e426cf35199ef0b12a803398e9',
+      source_repo: 'https://github.com/excalidraw/excalidraw',
+      container_command: null,
+      container_config: JSON.stringify({
+        // nginx serving the static app on container :80; local-storage based, no volume needed.
+        HostConfig: {
+          RestartPolicy: { Name: 'unless-stopped' },
+          PortBindings: { '80/tcp': [{ HostPort: '8703' }] },
+        },
+        ExposedPorts: { '80/tcp': {} },
+      }),
+      ui_location: '8703',
+      installed: false,
+      installation_status: 'idle',
+      is_dependency_service: false,
+      depends_on: null,
+    },
+    {
+      service_name: SERVICE_NAMES.CALIBRE_WEB,
+      friendly_name: 'eBook Library',
+      powered_by: 'Calibre-Web',
+      display_order: 12,
+      category: 'productivity',
+      description:
+        'Browse and read your ebook collection in the browser, with metadata, search, and OPDS feeds',
+      icon: 'IconBook',
+      container_image:
+        'lscr.io/linuxserver/calibre-web:0.6.26-ls387@sha256:58e1c0abdfcd22341d87402dc56577eae1f4a18344bdc0c02dfbd97c47dff4a6',
+      source_repo: 'https://github.com/janeczku/calibre-web',
+      container_command: null,
+      container_config: JSON.stringify({
+        // LinuxServer image serving Calibre-Web on container :8083. PUID/PGID/TZ are the LSIO
+        // conventions; /config holds the app DB, /books is the library Calibre-Web reads.
+        Env: ['PUID=1000', 'PGID=1000', 'TZ=Etc/UTC'],
+        HostConfig: {
+          RestartPolicy: { Name: 'unless-stopped' },
+          Binds: [
+            `${ServiceSeeder.NOMAD_STORAGE_ABS_PATH}/calibre-web:/config`,
+            `${ServiceSeeder.NOMAD_STORAGE_ABS_PATH}/calibre-web/books:/books`,
+          ],
+          PortBindings: { '8083/tcp': [{ HostPort: '8704' }] },
+        },
+        ExposedPorts: { '8083/tcp': {} },
+      }),
+      ui_location: '8704',
+      installed: false,
+      installation_status: 'idle',
+      is_dependency_service: false,
+      depends_on: null,
+    },
   ]
 
   async run() {

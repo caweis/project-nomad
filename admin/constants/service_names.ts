@@ -9,4 +9,9 @@ export const SERVICE_NAMES = {
   MESHTASTIC_WEB: 'nomad_meshtastic_web',
   MESHCORE_WEB: 'nomad_meshcore_web',
   MESH: 'nomad_mesh',
+  VAULTWARDEN: 'nomad_vaultwarden',
+  STIRLING_PDF: 'nomad_stirling_pdf',
+  IT_TOOLS: 'nomad_it_tools',
+  EXCALIDRAW: 'nomad_excalidraw',
+  CALIBRE_WEB: 'nomad_calibre_web',
 }
