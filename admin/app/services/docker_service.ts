@@ -13,12 +13,23 @@ import { mkdir, access, chmod, writeFile } from 'node:fs/promises'
 import KVStore from '#models/kv_store'
 import { BROADCAST_CHANNELS } from '../../constants/broadcast.js'
 import env from '#start/env'
+import os from 'node:os'
+import { humanizeDockerError } from './docker_errors.js'
+import { rewriteStorageBinds } from './storage_binds.js'
+import { followPullProgress } from './docker_pull.js'
 
 @inject()
 export class DockerService {
   public docker: Docker
   private activeInstallations: Set<string> = new Set()
   public static NOMAD_NETWORK = 'project-nomad_default'
+  public static ADMIN_CONTAINER_NAME = 'nomad_admin'
+
+  // Resolved once: the host filesystem path backing the admin's /app/storage
+  // mount. Child-service binds are rewritten to live under this so relocating
+  // the admin storage volume relocates every child app too (#938). null = not
+  // yet resolved.
+  private _hostStorageRoot: string | null = null
 
   constructor() {
     // Support both Linux (production) and Windows (development with Docker Desktop)
@@ -425,12 +436,96 @@ export class DockerService {
    * @param serviceName
    * @returns
    */
+  /**
+   * Resolve the host filesystem path that backs the admin container's storage
+   * directory (`/app/storage`). Child services are created via the Docker
+   * socket, so their bind mounts need the path on the *host*, not inside the
+   * admin container. Deriving it from the admin's own mount means whatever host
+   * path the admin storage volume is mapped to in compose, child apps follow it
+   * automatically (#938).
+   *
+   * On the macOS fork the seeded prefix is NOMAD_STORAGE_PATH, which the
+   * installer substitutes to the user's actual install dir
+   * (NOMAD_DIR_PLACEHOLDER/storage), so the fallback/default below only applies
+   * when the env var is genuinely absent. Falls back to NOMAD_STORAGE_PATH / the
+   * default if the admin container or its storage mount can't be inspected.
+   */
+  private async _resolveHostStorageRoot(): Promise<string> {
+    if (this._hostStorageRoot) return this._hostStorageRoot
+    const fallback = env.get('NOMAD_STORAGE_PATH', '/opt/project-nomad/storage')
+    try {
+      const adminStorageDest = join(process.cwd(), '/storage') // e.g. /app/storage
+      const containers = await this.docker.listContainers({ all: true })
+      // Prefer the well-known admin container name; fall back to matching this
+      // process's own container by hostname (Docker defaults it to the short id).
+      let adminInfo = containers.find((c) =>
+        c.Names.includes(`/${DockerService.ADMIN_CONTAINER_NAME}`)
+      )
+      if (!adminInfo) {
+        const hn = os.hostname()
+        adminInfo = containers.find((c) => c.Id.startsWith(hn))
+      }
+      if (!adminInfo) return (this._hostStorageRoot = fallback)
+
+      const inspected = await this.docker.getContainer(adminInfo.Id).inspect()
+      const mount = (inspected.Mounts ?? []).find(
+        (m: any) => m.Type === 'bind' && m.Destination === adminStorageDest
+      )
+      if (mount?.Source) {
+        logger.info(`[DockerService] Resolved host storage root from admin mount: ${mount.Source}`)
+        return (this._hostStorageRoot = mount.Source)
+      }
+      return (this._hostStorageRoot = fallback)
+    } catch (err: any) {
+      logger.warn(
+        `[DockerService] Could not resolve host storage root, using fallback ${fallback}: ${err.message}`
+      )
+      return fallback
+    }
+  }
+
+  /**
+   * Rewrite the host side of a service's storage bind mounts so they point at
+   * the resolved host storage root. The seeded binds use the default/env prefix;
+   * if the admin storage actually lives elsewhere on the host, swap that prefix
+   * so the child container mounts the same physical location (#938). No-op when
+   * the resolved root matches the seeded prefix (the common case). Delegates the
+   * pure prefix-swap to `rewriteStorageBinds` so it can be tested standalone.
+   */
+  private async _applyHostStorageRoot(containerConfig: any): Promise<void> {
+    const binds: string[] | undefined = containerConfig?.HostConfig?.Binds
+    if (!binds?.length) return
+    const seededRoot = env.get('NOMAD_STORAGE_PATH', '/opt/project-nomad/storage')
+    const root = await this._resolveHostStorageRoot()
+    if (root === seededRoot) return
+    containerConfig.HostConfig.Binds = rewriteStorageBinds(binds, root, seededRoot)
+  }
+
+  /**
+   * Translate low-level dockerode errors into something a non-technical user can
+   * act on. Currently handles host port conflicts — the most common install
+   * failure, where a service can't bind its port because something on the host
+   * already holds it (classic case: a native Ollama install owns 11434). Returns
+   * the original message unchanged for anything we don't recognize. (#934)
+   *
+   * Delegates to the pure `humanizeDockerError` mapper so the mapping is unit-
+   * tested standalone; this wrapper just supplies the fork's Ollama service name.
+   */
+  private _humanizeDockerError(error: any, serviceName: string): string {
+    const raw: string = error?.message ?? String(error)
+    return humanizeDockerError(raw, serviceName, SERVICE_NAMES.OLLAMA)
+  }
+
   async _createContainer(
     service: Service & { dependencies?: Service[] },
     containerConfig: any
   ): Promise<void> {
     try {
       this._broadcast(service.service_name, 'initializing', '')
+
+      // Point storage binds at wherever the admin's storage volume actually
+      // lives on the host (covers dependency installs too — they recurse here).
+      await this._applyHostStorageRoot(containerConfig)
 
       let dependencies = []
       if (service.depends_on) {
@@ -477,13 +572,12 @@ export class DockerService {
         )
       } else {
         // Start pulling the Docker image and wait for it to complete
-        const pullStream = await this.docker.pull(service.container_image)
         this._broadcast(
           service.service_name,
           'pulling',
           `Pulling Docker image ${service.container_image}...`
         )
-        await new Promise((res) => this.docker.modem.followProgress(pullStream, res))
+        await this.pullImage(service.container_image)
       }
 
       if (service.service_name === SERVICE_NAMES.KIWIX) {
@@ -672,14 +766,15 @@ export class DockerService {
         `Service ${service.service_name} installation completed successfully.`
       )
     } catch (error) {
+      const friendly = this._humanizeDockerError(error, service.service_name)
       this._broadcast(
         service.service_name,
         'error',
-        `Error installing service ${service.service_name}: ${error.message}`
+        `Error installing service ${service.service_name}: ${friendly}`
       )
       // Mark install as failed and cleanup
       await this._cleanupFailedInstallation(service.service_name)
-      throw new Error(`Failed to install service ${service.service_name}: ${error.message}`)
+      throw new Error(`Failed to install service ${service.service_name}: ${friendly}`)
     }
   }
 
@@ -1067,8 +1162,7 @@ export class DockerService {
 
       // Step 1: Pull new image
       this._broadcast(serviceName, 'update-pulling', `Pulling image ${newImage}...`)
-      const pullStream = await this.docker.pull(newImage)
-      await new Promise((res) => this.docker.modem.followProgress(pullStream, res))
+      await this.pullImage(newImage)
 
       // Step 2: Find and stop existing container
       this._broadcast(serviceName, 'update-stopping', `Stopping current container...`)
@@ -1091,7 +1185,35 @@ export class DockerService {
 
       // Step 3: Rename old container as safety net
       const oldName = `${serviceName}_old`
+
+      // Clear any stale rollback container left behind by a previously failed update.
+      // Otherwise the rename below collides with the existing `<name>_old` and throws,
+      // which wedges every subsequent retry on the same error.
+      const staleOld = (await this.docker.listContainers({ all: true })).find((c) =>
+        c.Names.includes(`/${oldName}`)
+      )
+      if (staleOld) {
+        try {
+          await this.docker.getContainer(staleOld.Id).remove({ force: true })
+        } catch {
+          // Best effort — if it can't be removed the rename below will surface the error.
+        }
+      }
+
       await oldContainer.rename({ name: oldName })
+
+      // Restore the previous container after a failed update: rename the renamed-aside
+      // old container back into place and start it, so a failure anywhere between here
+      // and the health check never leaves the service down.
+      const rollbackToOld = async () => {
+        const containers = await this.docker.listContainers({ all: true })
+        const oldRef = containers.find((c) => c.Names.includes(`/${oldName}`))
+        if (oldRef) {
+          const rollbackContainer = this.docker.getContainer(oldRef.Id)
+          await rollbackContainer.rename({ name: serviceName }).catch(() => {})
+          await rollbackContainer.start().catch(() => {})
+        }
+      }
 
       // Step 4: Create new container with inspected config + new image
       this._broadcast(serviceName, 'update-creating', `Creating updated container...`)
@@ -1134,16 +1256,35 @@ export class DockerService {
       } catch (createError) {
         // Rollback: rename old container back
         this._broadcast(serviceName, 'update-rollback', `Failed to create new container: ${createError.message}. Rolling back...`)
-        const rollbackContainer = this.docker.getContainer((await this.docker.listContainers({ all: true })).find((c) => c.Names.includes(`/${oldName}`))!.Id)
-        await rollbackContainer.rename({ name: serviceName })
-        await rollbackContainer.start()
+        await rollbackToOld()
         this.activeInstallations.delete(serviceName)
         return { success: false, message: `Failed to create updated container: ${createError.message}` }
       }
 
-      // Step 5: Start new container
+      // Step 5: Start new container. If the start itself throws (bad device/GPU config,
+      // a host port already bound, image incompatibility), roll back to the previous
+      // container instead of leaving the service stopped with no replacement running.
       this._broadcast(serviceName, 'update-starting', `Starting updated container...`)
-      await newContainer.start()
+      try {
+        await newContainer.start()
+      } catch (startError: any) {
+        this._broadcast(
+          serviceName,
+          'update-rollback',
+          `Updated container failed to start: ${startError.message}. Rolling back to previous version...`
+        )
+        try {
+          await newContainer.remove({ force: true })
+        } catch {
+          // Best effort — leave the half-created container for manual cleanup if needed.
+        }
+        await rollbackToOld()
+        this.activeInstallations.delete(serviceName)
+        return {
+          success: false,
+          message: `Update failed: new container did not start (${startError.message}). Rolled back to previous version.`,
+        }
+      }
 
       // Step 6: Health check — verify container stays running for 5 seconds
       await new Promise((resolve) => setTimeout(resolve, 5000))
@@ -1189,14 +1330,7 @@ export class DockerService {
           // Best effort cleanup
         }
 
-        // Restore old container
-        const oldContainers = await this.docker.listContainers({ all: true })
-        const oldRef = oldContainers.find((c) => c.Names.includes(`/${oldName}`))
-        if (oldRef) {
-          const rollbackContainer = this.docker.getContainer(oldRef.Id)
-          await rollbackContainer.rename({ name: serviceName })
-          await rollbackContainer.start()
-        }
+        await rollbackToOld()
 
         this.activeInstallations.delete(serviceName)
         return {
@@ -1248,15 +1382,21 @@ export class DockerService {
   // ── Custom-app container management (Supply Depot) ────────────────────────────
 
   /**
-   * Pull a Docker image and wait for the pull to complete.
+   * Pull a Docker image and resolve only when the pull genuinely completes.
    *
-   * Adapted from upstream's `pullImage`: the fork pulls inline elsewhere
-   * (`this.docker.pull` + `followProgress`) rather than through a shared helper, so this
-   * wraps that exact pattern to give the custom-app recreate flow a single clean call site.
+   * dockerode's `followProgress(stream, onFinished)` reports failures via the
+   * first argument of onFinished. Every call site used to pass the Promise's
+   * `resolve` directly as that callback, so a failed pull (dropped/metered
+   * connection, bad manifest, registry error, disk full mid-pull) resolved as
+   * if it had succeeded — and the code then tried to create/start a container
+   * from a missing or partial image, surfacing a confusing downstream error.
+   * Rejecting on that error here lets callers fail fast with the real cause (#790).
+   *
+   * Public so BenchmarkService can route its sysbench pull through it too.
    */
-  private async pullImage(imageName: string): Promise<void> {
+  async pullImage(imageName: string): Promise<void> {
     const pullStream = await this.docker.pull(imageName)
-    await new Promise((res) => this.docker.modem.followProgress(pullStream, res))
+    await followPullProgress(this.docker.modem, pullStream)
   }
 
   /**
@@ -1478,6 +1618,9 @@ export class DockerService {
     if (!service) return { success: false, message: `Service ${serviceName} not found` }
 
     const containerConfig = this._parseContainerConfig(service.container_config)
+    // Recreate goes through the Docker socket with host binds, so point any
+    // storage binds at the admin's real host storage root, same as install (#938).
+    await this._applyHostStorageRoot(containerConfig)
     const oldInfo = await this._findContainerByName(serviceName)
     const oldName = `${serviceName}_old`
 
