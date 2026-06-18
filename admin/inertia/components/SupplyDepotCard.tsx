@@ -87,8 +87,9 @@ export default function SupplyDepotCard({
   function renderActions() {
     const ForceReinstallButton = () => (
       <StyledButton
-        icon="IconDownload"
-        variant="action"
+        icon="IconAlertTriangle"
+        variant="danger-outline"
+        className="ml-auto"
         onClick={() => handlers.onForceReinstall(record)}
         disabled={isInstalling}
       >
@@ -160,11 +161,13 @@ export default function SupplyDepotCard({
         >
           Open
         </StyledButton>
-        {/* Curated-app version updates (registry tag bump). Custom apps update via "Pull latest". */}
-        {!record.is_custom && record.available_update_version && (
+        {/* Curated-app version updates (registry tag bump). Custom apps update via "Pull latest".
+            `!!` guard: available_update_version arrives as the number 0 when up to date, and a bare
+            `&& 0` would render a literal "0" next to the buttons. */}
+        {!record.is_custom && !!record.available_update_version && (
           <StyledButton
             icon="IconArrowUp"
-            variant="primary"
+            variant="action"
             onClick={() => handlers.onUpdate(record)}
             disabled={isInstalling || !isOnline}
           >
@@ -175,7 +178,7 @@ export default function SupplyDepotCard({
           <>
             <StyledButton
               icon="IconPencil"
-              variant="action"
+              variant="neutral"
               onClick={() => handlers.onEditCustom(record)}
               disabled={loading}
             >
@@ -183,7 +186,7 @@ export default function SupplyDepotCard({
             </StyledButton>
             <StyledButton
               icon="IconArrowUp"
-              variant="action"
+              variant="neutral"
               onClick={() => handlers.onPullLatest(record)}
               disabled={loading || !isOnline}
             >
@@ -191,7 +194,7 @@ export default function SupplyDepotCard({
             </StyledButton>
             <StyledButton
               icon="IconFileText"
-              variant="action"
+              variant="neutral"
               onClick={() => handlers.onViewLogs(record)}
               disabled={loading}
             >
@@ -199,7 +202,7 @@ export default function SupplyDepotCard({
             </StyledButton>
             <StyledButton
               icon="IconTrash"
-              variant="danger"
+              variant="danger-outline"
               onClick={() => handlers.onDeleteCustom(record)}
               disabled={loading}
             >
@@ -220,7 +223,7 @@ export default function SupplyDepotCard({
           <>
             <StyledButton
               icon={record.status === 'running' ? 'IconPlayerStop' : 'IconPlayerPlay'}
-              variant={record.status === 'running' ? 'action' : undefined}
+              variant="neutral"
               onClick={() =>
                 handlers.onAffect(record, record.status === 'running' ? 'stop' : 'start')
               }
@@ -231,7 +234,7 @@ export default function SupplyDepotCard({
             {record.status === 'running' && (
               <StyledButton
                 icon="IconRefresh"
-                variant="action"
+                variant="neutral"
                 onClick={() => handlers.onAffect(record, 'restart')}
                 disabled={isInstalling}
               >

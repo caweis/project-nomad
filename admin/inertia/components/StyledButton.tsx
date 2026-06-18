@@ -7,7 +7,16 @@ export interface StyledButtonProps extends React.HTMLAttributes<HTMLButtonElemen
   children: React.ReactNode
   icon?: DynamicIconName
   disabled?: boolean
-  variant?: 'primary' | 'secondary' | 'danger' | 'action' | 'success' | 'ghost' | 'outline'
+  variant?:
+    | 'primary'
+    | 'secondary'
+    | 'danger'
+    | 'danger-outline'
+    | 'action'
+    | 'success'
+    | 'ghost'
+    | 'outline'
+    | 'neutral'
   size?: 'sm' | 'md' | 'lg'
   loading?: boolean
   fullWidth?: boolean
@@ -119,6 +128,33 @@ const StyledButton: React.FC<StyledButtonProps> = ({
           'hover:bg-desert-green hover:text-desert-white hover:border-desert-green-dark',
           'active:bg-desert-green-dark active:border-desert-green-darker',
           'disabled:border-desert-green-lighter disabled:text-desert-stone-light',
+          baseTransition,
+          baseHover
+        )
+
+      // Low-emphasis neutral outline for secondary / lifecycle actions (Stop,
+      // Restart, Edit, Logs) — quiet stone tones so they don't compete with the
+      // green primary (Open) or the orange accent (Update).
+      case 'neutral':
+        return clsx(
+          'bg-transparent border-2 border-desert-stone-light text-desert-stone-dark',
+          'hover:bg-desert-stone hover:text-desert-white hover:border-desert-stone',
+          'active:bg-desert-stone-dark active:border-desert-stone-dark',
+          'disabled:border-desert-stone-lighter disabled:text-desert-stone-light',
+          baseTransition,
+          baseHover
+        )
+
+      // Outlined destructive: red by color so it reads as dangerous, but not a
+      // solid fill that would dominate every row. For rare, data-losing actions
+      // (Force Reinstall wipes all data; Delete removes a custom app). Fills
+      // solid red on hover, right before the confirm modal.
+      case 'danger-outline':
+        return clsx(
+          'bg-transparent border-2 border-desert-red-light text-desert-red',
+          'hover:bg-desert-red hover:text-desert-white hover:border-desert-red-dark',
+          'active:bg-desert-red-dark active:border-desert-red-dark',
+          'disabled:border-desert-red-lighter disabled:text-desert-stone-light',
           baseTransition,
           baseHover
         )

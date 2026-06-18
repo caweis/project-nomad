@@ -378,8 +378,9 @@ export default function SettingsPage(props: {
   const AppActions = ({ record }: { record: ServiceSlim }) => {
     const ForceReinstallButton = () => (
       <StyledButton
-        icon="IconDownload"
-        variant="action"
+        icon="IconAlertTriangle"
+        variant="danger-outline"
+        className="ml-auto"
         onClick={() => {
           openModal(
             <StyledModal
@@ -480,11 +481,13 @@ export default function SettingsPage(props: {
         >
           Open
         </StyledButton>
-        {/* Curated-app version updates (registry tag bump). Custom apps update via "Pull latest" below. */}
-        {!record.is_custom && record.available_update_version && (
+        {/* Curated-app version updates (registry tag bump). Custom apps update via "Pull latest" below.
+            `!!` guard: available_update_version arrives as the number 0 when up to date, and a bare
+            `&& 0` would render a literal "0" next to the buttons. */}
+        {!record.is_custom && !!record.available_update_version && (
           <StyledButton
             icon="IconArrowUp"
-            variant="primary"
+            variant="action"
             onClick={() => handleUpdateService(record)}
             disabled={isInstalling || !isOnline}
           >
@@ -495,7 +498,7 @@ export default function SettingsPage(props: {
           <>
             <StyledButton
               icon="IconPencil"
-              variant="action"
+              variant="neutral"
               onClick={() => handleEditCustomApp(record)}
               disabled={loading}
             >
@@ -503,7 +506,7 @@ export default function SettingsPage(props: {
             </StyledButton>
             <StyledButton
               icon="IconArrowUp"
-              variant="action"
+              variant="neutral"
               onClick={() => handlePullLatest(record)}
               disabled={loading || !isOnline}
             >
@@ -511,7 +514,7 @@ export default function SettingsPage(props: {
             </StyledButton>
             <StyledButton
               icon="IconFileText"
-              variant="action"
+              variant="neutral"
               onClick={() => handleViewLogs(record)}
               disabled={loading}
             >
@@ -519,7 +522,7 @@ export default function SettingsPage(props: {
             </StyledButton>
             <StyledButton
               icon="IconTrash"
-              variant="danger"
+              variant="danger-outline"
               onClick={() => confirmDeleteCustomApp(record)}
               disabled={loading}
             >
@@ -540,7 +543,7 @@ export default function SettingsPage(props: {
           <>
             <StyledButton
               icon={record.status === 'running' ? 'IconPlayerStop' : 'IconPlayerPlay'}
-              variant={record.status === 'running' ? 'action' : undefined}
+              variant="neutral"
               onClick={() => {
                 openModal(
                   <StyledModal
@@ -568,7 +571,7 @@ export default function SettingsPage(props: {
             {record.status === 'running' && (
               <StyledButton
                 icon="IconRefresh"
-                variant="action"
+                variant="neutral"
                 onClick={() => {
                   openModal(
                     <StyledModal
