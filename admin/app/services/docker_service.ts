@@ -21,7 +21,12 @@ import { followPullProgress } from './docker_pull.js'
 @inject()
 export class DockerService {
   public docker: Docker
-  private activeInstallations: Set<string> = new Set()
+  // Shared across ALL instances (static), because the controller is resolved
+  // per-request and jobs construct `new DockerService()` per call — a per-instance
+  // guard never sees a concurrent operation started by another request, which let
+  // two simultaneous Update clicks race on the same container (Docker 304/400, #931).
+  // A process-wide set makes the in-progress guard actually mutually exclusive.
+  private static activeInstallations: Set<string> = new Set()
   public static NOMAD_NETWORK = 'project-nomad_default'
   public static ADMIN_CONTAINER_NAME = 'nomad_admin'
 
@@ -260,7 +265,7 @@ export class DockerService {
     }
 
     // Double-check with in-memory tracking (race condition protection)
-    if (this.activeInstallations.has(serviceName)) {
+    if (DockerService.activeInstallations.has(serviceName)) {
       return {
         success: false,
         message: `Service ${serviceName} installation is already in progress`,
@@ -268,7 +273,7 @@ export class DockerService {
     }
 
     // Mark installation as in progress
-    this.activeInstallations.add(serviceName)
+    DockerService.activeInstallations.add(serviceName)
     service.installation_status = 'installing'
     await service.save()
 
@@ -315,7 +320,7 @@ export class DockerService {
       }
 
       // Check if installation is already in progress
-      if (this.activeInstallations.has(serviceName)) {
+      if (DockerService.activeInstallations.has(serviceName)) {
         return {
           success: false,
           message: `Service ${serviceName} installation is already in progress`,
@@ -323,7 +328,7 @@ export class DockerService {
       }
 
       // Mark as installing to prevent concurrent operations
-      this.activeInstallations.add(serviceName)
+      DockerService.activeInstallations.add(serviceName)
       service.installation_status = 'installing'
       await service.save()
 
@@ -623,7 +628,7 @@ export class DockerService {
         service.installed = true
         service.installation_status = 'idle'
         await service.save()
-        this.activeInstallations.delete(service.service_name)
+        DockerService.activeInstallations.delete(service.service_name)
 
         // Trigger Nomad docs discovery
         logger.info('[DockerService] Native Ollama configured. Triggering Nomad docs discovery...')
@@ -742,7 +747,7 @@ export class DockerService {
       await service.save()
 
       // Remove from active installs tracking
-      this.activeInstallations.delete(service.service_name)
+      DockerService.activeInstallations.delete(service.service_name)
 
       // If Ollama was just installed, trigger Nomad docs discovery and embedding
       if (service.service_name === SERVICE_NAMES.OLLAMA) {
@@ -967,7 +972,7 @@ export class DockerService {
         service.installation_status = 'error'
         await service.save()
       }
-      this.activeInstallations.delete(serviceName)
+      DockerService.activeInstallations.delete(serviceName)
 
       // Ensure any partially created container is removed
       await this._removeServiceContainer(serviceName)
@@ -1147,11 +1152,11 @@ export class DockerService {
       if (!service.installed) {
         return { success: false, message: `Service ${serviceName} is not installed` }
       }
-      if (this.activeInstallations.has(serviceName)) {
+      if (DockerService.activeInstallations.has(serviceName)) {
         return { success: false, message: `Service ${serviceName} already has an operation in progress` }
       }
 
-      this.activeInstallations.add(serviceName)
+      DockerService.activeInstallations.add(serviceName)
 
       // Compute new image string
       const currentImage = service.container_image
@@ -1170,7 +1175,7 @@ export class DockerService {
       const existingContainer = containers.find((c) => c.Names.includes(`/${serviceName}`))
 
       if (!existingContainer) {
-        this.activeInstallations.delete(serviceName)
+        DockerService.activeInstallations.delete(serviceName)
         return { success: false, message: `Container for ${serviceName} not found` }
       }
 
@@ -1257,7 +1262,7 @@ export class DockerService {
         // Rollback: rename old container back
         this._broadcast(serviceName, 'update-rollback', `Failed to create new container: ${createError.message}. Rolling back...`)
         await rollbackToOld()
-        this.activeInstallations.delete(serviceName)
+        DockerService.activeInstallations.delete(serviceName)
         return { success: false, message: `Failed to create updated container: ${createError.message}` }
       }
 
@@ -1279,7 +1284,7 @@ export class DockerService {
           // Best effort — leave the half-created container for manual cleanup if needed.
         }
         await rollbackToOld()
-        this.activeInstallations.delete(serviceName)
+        DockerService.activeInstallations.delete(serviceName)
         return {
           success: false,
           message: `Update failed: new container did not start (${startError.message}). Rolled back to previous version.`,
@@ -1308,7 +1313,7 @@ export class DockerService {
         service.available_update_version = null
         await service.save()
 
-        this.activeInstallations.delete(serviceName)
+        DockerService.activeInstallations.delete(serviceName)
         this._broadcast(
           serviceName,
           'update-complete',
@@ -1332,14 +1337,14 @@ export class DockerService {
 
         await rollbackToOld()
 
-        this.activeInstallations.delete(serviceName)
+        DockerService.activeInstallations.delete(serviceName)
         return {
           success: false,
           message: `Update failed: new container did not stay running. Rolled back to previous version.`,
         }
       }
     } catch (error) {
-      this.activeInstallations.delete(serviceName)
+      DockerService.activeInstallations.delete(serviceName)
       this._broadcast(
         serviceName,
         'update-rollback',
