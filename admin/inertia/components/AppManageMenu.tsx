@@ -1,45 +1,45 @@
 import { useEffect, useRef, useState } from 'react'
-import {
-  IconDots,
-  IconChevronDown,
-  IconPencil,
-  IconArrowUp,
-  IconFileText,
-  IconTrash,
-} from '@tabler/icons-react'
 import StyledButton from '~/components/StyledButton'
+import DynamicIcon, { DynamicIconName } from '~/components/DynamicIcon'
 
-// Shared "Manage" dropdown for a custom Supply Depot app. Collapses the
-// custom-app-only cluster (Edit / Pull latest / Logs / Auto-update toggle /
-// Delete) that used to live as a row of inline buttons into a single neutral
-// menu button. Used by BOTH surfaces:
-//   - settings/apps.tsx (table rows) — callbacks open the same inline modals.
-//   - components/SupplyDepotCard.tsx (cards) — callbacks call handlers.* props.
-// Behaviour is identical to the old inline buttons; this is purely a visual /
-// grouping reorganisation. Each menu item fires the SAME action and respects
-// the same loading / online guards the inline buttons did.
+// One row in the overflow menu. `action` runs a callback and closes the menu;
+// `toggle` is a labelled checkbox row that stays open so the flip is visible;
+// `divider` separates the lifecycle/maintenance items from the destructive zone.
+export type AppMenuItem =
+  | {
+      kind: 'action'
+      icon: DynamicIconName
+      label: string
+      onClick: () => void
+      disabled?: boolean
+      // Renders the row in red (Delete, Wipe & reinstall) so the data-losing
+      // actions read as dangerous and sit apart from the benign ones.
+      danger?: boolean
+    }
+  | {
+      kind: 'toggle'
+      label: string
+      checked: boolean
+      onChange: (next: boolean) => void
+      disabled?: boolean
+    }
+  | { kind: 'divider' }
+
 export interface AppManageMenuProps {
-  onEdit: () => void
-  onPullLatest: () => void
-  onViewLogs: () => void
-  onDelete: () => void
-  autoUpdateEnabled: boolean
-  onToggleAutoUpdate: (enabled: boolean) => void
-  // Mirrors the inline buttons' disabled conditions.
-  loading: boolean
-  isOnline: boolean
+  items: AppMenuItem[]
+  // Disables the trigger while an install/operation is in flight.
+  disabled?: boolean
 }
 
-export default function AppManageMenu({
-  onEdit,
-  onPullLatest,
-  onViewLogs,
-  onDelete,
-  autoUpdateEnabled,
-  onToggleAutoUpdate,
-  loading,
-  isOnline,
-}: AppManageMenuProps) {
+// The single "⋯" overflow menu every Supply Depot row uses. A table row's
+// actions column is too narrow to hold Open + Update + Stop/Start + Restart +
+// the custom-app cluster + Wipe & reinstall on one line, so they wrap into a
+// ragged three-high stack. Collapsing everything past Open (and a conditional
+// Update) into this menu keeps each row on a single line. Used by BOTH surfaces
+// — settings/apps.tsx (items open inline modals) and SupplyDepotCard.tsx (items
+// call handlers.* props) — with identical behaviour; this is purely where the
+// actions live, not what they do.
+export default function AppManageMenu({ items, disabled }: AppManageMenuProps) {
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -64,13 +64,9 @@ export default function AppManageMenu({
     }
   }, [open])
 
-  // Run an action then close the menu, mirroring native menu dismissal.
-  function runAndClose(action: () => void) {
-    return () => {
-      setOpen(false)
-      action()
-    }
-  }
+  // Nothing to collapse (e.g. an installed app with unknown status and no custom
+  // cluster) → render no trigger at all rather than an empty menu.
+  if (items.length === 0) return null
 
   const itemBase =
     'flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50'
@@ -78,74 +74,64 @@ export default function AppManageMenu({
   return (
     <div ref={containerRef} className="relative inline-flex">
       <StyledButton
-        icon="IconDots"
         variant="neutral"
         onClick={() => setOpen((v) => !v)}
-        disabled={loading}
+        disabled={disabled}
         aria-haspopup="menu"
         aria-expanded={open}
+        aria-label="More actions"
       >
-        Manage
-        <IconChevronDown className="ml-1.5 h-4 w-4" />
+        <DynamicIcon icon="IconDots" className="h-4 w-4" />
       </StyledButton>
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-full z-50 mt-1 w-48 overflow-hidden rounded-md border border-desert-tan-lighter bg-white py-1 shadow-lg"
+          className="absolute right-0 top-full z-50 mt-1 w-52 overflow-hidden rounded-md border border-desert-tan-lighter bg-white py-1 shadow-lg"
         >
-          <button
-            type="button"
-            role="menuitem"
-            className={`${itemBase} text-desert-stone-dark hover:bg-desert-sand`}
-            onClick={runAndClose(onEdit)}
-            disabled={loading}
-          >
-            <IconPencil className="h-4 w-4 shrink-0" />
-            Edit
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className={`${itemBase} text-desert-stone-dark hover:bg-desert-sand`}
-            onClick={runAndClose(onPullLatest)}
-            disabled={loading || !isOnline}
-          >
-            <IconArrowUp className="h-4 w-4 shrink-0" />
-            Pull latest
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className={`${itemBase} text-desert-stone-dark hover:bg-desert-sand`}
-            onClick={runAndClose(onViewLogs)}
-            disabled={loading}
-          >
-            <IconFileText className="h-4 w-4 shrink-0" />
-            Logs
-          </button>
-          {/* Auto-update lives in the menu as a labelled toggle row. Same
-              onChange wiring as the old inline checkbox; clicking it does NOT
-              close the menu so the user can see the state flip. */}
-          <label className="flex cursor-pointer select-none items-center justify-between gap-2 px-3 py-2 text-sm text-desert-stone-dark hover:bg-desert-sand">
-            Auto-update
-            <input
-              type="checkbox"
-              checked={autoUpdateEnabled}
-              onChange={(e) => onToggleAutoUpdate(e.target.checked)}
-              className="accent-desert-orange h-4 w-4 rounded"
-            />
-          </label>
-          <div className="my-1 border-t border-desert-tan-lighter" aria-hidden />
-          <button
-            type="button"
-            role="menuitem"
-            className={`${itemBase} text-desert-red hover:bg-desert-red-light hover:text-desert-white`}
-            onClick={runAndClose(onDelete)}
-            disabled={loading}
-          >
-            <IconTrash className="h-4 w-4 shrink-0" />
-            Delete
-          </button>
+          {items.map((item, i) => {
+            if (item.kind === 'divider') {
+              return (
+                <div key={i} className="my-1 border-t border-desert-tan-lighter" aria-hidden />
+              )
+            }
+            if (item.kind === 'toggle') {
+              return (
+                <label
+                  key={i}
+                  className="flex cursor-pointer select-none items-center justify-between gap-2 px-3 py-2 text-sm text-desert-stone-dark hover:bg-desert-sand"
+                >
+                  {item.label}
+                  <input
+                    type="checkbox"
+                    checked={item.checked}
+                    onChange={(e) => item.onChange(e.target.checked)}
+                    disabled={item.disabled}
+                    className="accent-desert-orange h-4 w-4 rounded"
+                  />
+                </label>
+              )
+            }
+            return (
+              <button
+                key={i}
+                type="button"
+                role="menuitem"
+                className={`${itemBase} ${
+                  item.danger
+                    ? 'text-desert-red hover:bg-desert-red-light hover:text-desert-white'
+                    : 'text-desert-stone-dark hover:bg-desert-sand'
+                }`}
+                onClick={() => {
+                  setOpen(false)
+                  item.onClick()
+                }}
+                disabled={item.disabled}
+              >
+                <DynamicIcon icon={item.icon} className="h-4 w-4 shrink-0" />
+                {item.label}
+              </button>
+            )
+          })}
         </div>
       )}
     </div>

@@ -1,6 +1,6 @@
 import { IconArrowUp, IconCheck, IconExternalLink } from '@tabler/icons-react'
 import StyledButton from '~/components/StyledButton'
-import AppManageMenu from '~/components/AppManageMenu'
+import AppManageMenu, { AppMenuItem } from '~/components/AppManageMenu'
 import HostCommandButton from '~/components/HostCommandButton'
 import { ServiceSlim } from '../../types/services'
 import { getServiceLink } from '~/lib/navigation'
@@ -86,25 +86,94 @@ export default function SupplyDepotCard({
 
   // ── action footer (faithful port of apps.tsx AppActions) ────────────────────
   function renderActions() {
-    const ForceReinstallButton = () => (
-      <StyledButton
-        icon="IconAlertTriangle"
-        variant="danger-outline"
-        onClick={() => handlers.onForceReinstall(record)}
-        disabled={isInstalling}
-      >
-        Wipe &amp; reinstall
-      </StyledButton>
-    )
+    // Everything past Open (and a conditional Update) collapses into one "⋯"
+    // overflow menu so the card's action row stays compact: lifecycle (Stop/Start,
+    // Restart), then the custom-app cluster (Edit / Pull latest / Logs /
+    // Auto-update), then a divider and the destructive zone (Delete for custom
+    // apps, then Wipe & reinstall). Mirrors apps.tsx; the only difference is each
+    // item calls a handlers.* prop instead of opening an inline modal.
+    const buildInstalledMenu = (): AppMenuItem[] => {
+      const items: AppMenuItem[] = []
+      const statusKnown = !!record.status && record.status !== 'unknown'
 
-    // Right-aligned, divider-separated zone for the data-losing action, so the
-    // wipe sits in its own zone instead of a floating ml-auto button. Shared by
-    // the not-installed and installed branches.
-    const ForceReinstallZone = () => (
-      <div className="ml-auto flex items-center gap-2 pl-3 border-l border-desert-tan-lighter">
-        <ForceReinstallButton />
-      </div>
-    )
+      if (statusKnown) {
+        items.push({
+          kind: 'action',
+          icon: record.status === 'running' ? 'IconPlayerStop' : 'IconPlayerPlay',
+          label: record.status === 'running' ? 'Stop' : 'Start',
+          onClick: () => handlers.onAffect(record, record.status === 'running' ? 'stop' : 'start'),
+          disabled: isInstalling,
+        })
+        if (record.status === 'running') {
+          items.push({
+            kind: 'action',
+            icon: 'IconRefresh',
+            label: 'Restart',
+            onClick: () => handlers.onAffect(record, 'restart'),
+            disabled: isInstalling,
+          })
+        }
+      }
+
+      if (record.is_custom) {
+        items.push(
+          {
+            kind: 'action',
+            icon: 'IconPencil',
+            label: 'Edit',
+            onClick: () => handlers.onEditCustom(record),
+            disabled: loading,
+          },
+          {
+            kind: 'action',
+            icon: 'IconArrowUp',
+            label: 'Pull latest',
+            onClick: () => handlers.onPullLatest(record),
+            disabled: loading || !isOnline,
+          },
+          {
+            kind: 'action',
+            icon: 'IconFileText',
+            label: 'Logs',
+            onClick: () => handlers.onViewLogs(record),
+            disabled: loading,
+          },
+          {
+            kind: 'toggle',
+            label: 'Auto-update',
+            checked: !!record.auto_update_enabled,
+            onChange: (enabled) => handlers.onToggleAutoUpdate(record, enabled),
+          }
+        )
+      }
+
+      const destructive: AppMenuItem[] = []
+      if (record.is_custom) {
+        destructive.push({
+          kind: 'action',
+          icon: 'IconTrash',
+          label: 'Delete',
+          onClick: () => handlers.onDeleteCustom(record),
+          disabled: loading,
+          danger: true,
+        })
+      }
+      if (statusKnown) {
+        destructive.push({
+          kind: 'action',
+          icon: 'IconAlertTriangle',
+          label: 'Wipe & reinstall',
+          onClick: () => handlers.onForceReinstall(record),
+          disabled: isInstalling,
+          danger: true,
+        })
+      }
+      if (destructive.length) {
+        if (items.length) items.push({ kind: 'divider' })
+        items.push(...destructive)
+      }
+      return items
+    }
 
     // Native Ollama: every Docker-side action routes through DockerService which
     // refuses with a "manage via CLI" error. Replace with the Native (Metal)
@@ -141,7 +210,7 @@ export default function SupplyDepotCard({
 
     if (!record.installed) {
       return (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <StyledButton
             icon="IconDownload"
             variant="primary"
@@ -151,11 +220,24 @@ export default function SupplyDepotCard({
           >
             Install
           </StyledButton>
-          <ForceReinstallZone />
+          <AppManageMenu
+            items={[
+              {
+                kind: 'action',
+                icon: 'IconAlertTriangle',
+                label: 'Wipe & reinstall',
+                onClick: () => handlers.onForceReinstall(record),
+                disabled: isInstalling,
+                danger: true,
+              },
+            ]}
+            disabled={isInstalling}
+          />
         </div>
       )
     }
 
+    const menuItems = buildInstalledMenu()
     return (
       <div className="flex flex-wrap items-center gap-2">
         <StyledButton
@@ -170,9 +252,10 @@ export default function SupplyDepotCard({
         >
           Open
         </StyledButton>
-        {/* Curated-app version updates (registry tag bump). Custom apps update via "Pull latest".
-            `!!` guard: available_update_version arrives as the number 0 when up to date, and a bare
-            `&& 0` would render a literal "0" next to the buttons. */}
+        {/* Curated-app version updates stay inline while an update is waiting; custom
+            apps update via "Pull latest" in the menu. `!!` guard: available_update_version
+            arrives as the number 0 when up to date, and a bare `&& 0` would render a
+            literal "0" next to the buttons. */}
         {!record.is_custom && !!record.available_update_version && (
           <StyledButton
             icon="IconArrowUp"
@@ -183,55 +266,7 @@ export default function SupplyDepotCard({
             Update
           </StyledButton>
         )}
-        {/* Decorative divider between the headline actions (Open / Update) and
-            the lifecycle group (Stop/Start / Restart / Manage). Only shown when
-            there is a lifecycle group or a Manage menu to separate. */}
-        {((record.status && record.status !== 'unknown') || !!record.is_custom) && (
-          <span className="self-stretch w-px bg-desert-tan-lighter mx-1" aria-hidden />
-        )}
-        {record.status && record.status !== 'unknown' && (
-          <>
-            <StyledButton
-              icon={record.status === 'running' ? 'IconPlayerStop' : 'IconPlayerPlay'}
-              variant="neutral"
-              onClick={() =>
-                handlers.onAffect(record, record.status === 'running' ? 'stop' : 'start')
-              }
-              disabled={isInstalling}
-            >
-              {record.status === 'running' ? 'Stop' : 'Start'}
-            </StyledButton>
-            {record.status === 'running' && (
-              <StyledButton
-                icon="IconRefresh"
-                variant="neutral"
-                onClick={() => handlers.onAffect(record, 'restart')}
-                disabled={isInstalling}
-              >
-                Restart
-              </StyledButton>
-            )}
-          </>
-        )}
-        {/* Custom-app-only cluster (Edit / Pull latest / Logs / Auto-update /
-            Delete) collapsed into one neutral "Manage" menu. Each item calls the
-            SAME handler the old inline buttons did. */}
-        {!!record.is_custom && (
-          <AppManageMenu
-            onEdit={() => handlers.onEditCustom(record)}
-            onPullLatest={() => handlers.onPullLatest(record)}
-            onViewLogs={() => handlers.onViewLogs(record)}
-            onDelete={() => handlers.onDeleteCustom(record)}
-            autoUpdateEnabled={!!record.auto_update_enabled}
-            onToggleAutoUpdate={(enabled) => handlers.onToggleAutoUpdate(record, enabled)}
-            loading={loading}
-            isOnline={isOnline}
-          />
-        )}
-        {/* Wipe & reinstall keeps its existing visibility: in the installed
-            branch it appears only when the service status is known (was nested
-            in the status block, right-aligned via ml-auto). */}
-        {record.status && record.status !== 'unknown' && <ForceReinstallZone />}
+        {menuItems.length > 0 && <AppManageMenu items={menuItems} disabled={isInstalling} />}
       </div>
     )
   }

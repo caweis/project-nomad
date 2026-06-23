@@ -21,7 +21,7 @@ import UpdateServiceModal from '~/components/UpdateServiceModal'
 import HostCommandButton from '~/components/HostCommandButton'
 import { SERVICE_NAMES } from '../../../constants/service_names'
 import CustomAppModal, { CustomAppInitial } from '~/components/CustomAppModal'
-import AppManageMenu from '~/components/AppManageMenu'
+import AppManageMenu, { AppMenuItem } from '~/components/AppManageMenu'
 
 function extractTag(containerImage: string): string {
   if (!containerImage) return ''
@@ -377,44 +377,152 @@ export default function SettingsPage(props: {
   }
 
   const AppActions = ({ record }: { record: ServiceSlim }) => {
-    const ForceReinstallButton = () => (
-      <StyledButton
-        icon="IconAlertTriangle"
-        variant="danger-outline"
-        onClick={() => {
-          openModal(
-            <StyledModal
-              title={'Force Reinstall?'}
-              onConfirm={() => handleForceReinstall(record)}
-              onCancel={closeAllModals}
-              open={true}
-              confirmText={'Force Reinstall'}
-              cancelText="Cancel"
-            >
-              <p className="text-gray-700">
-                Are you sure you want to force reinstall {record.service_name}? This will{' '}
-                <strong>WIPE ALL DATA</strong> for this service and cannot be undone. You should
-                only do this if the service is malfunctioning and other troubleshooting steps have
-                failed.
-              </p>
-            </StyledModal>,
-            `${record.service_name}-force-reinstall-modal`
-          )
-        }}
-        disabled={isInstalling}
-      >
-        Wipe &amp; reinstall
-      </StyledButton>
-    )
+    // Opens the Stop/Start confirm modal for the service's current status.
+    const openAffectModal = () => {
+      const willStop = record.status === 'running'
+      openModal(
+        <StyledModal
+          title={`${willStop ? 'Stop' : 'Start'} Service?`}
+          onConfirm={() => handleAffectAction(record, willStop ? 'stop' : 'start')}
+          onCancel={closeAllModals}
+          open={true}
+          confirmText={willStop ? 'Stop' : 'Start'}
+          cancelText="Cancel"
+        >
+          <p className="text-gray-700">
+            Are you sure you want to {willStop ? 'stop' : 'start'} {record.service_name}?
+          </p>
+        </StyledModal>,
+        `${record.service_name}-affect-modal`
+      )
+    }
 
-    // Right-aligned, divider-separated zone for the data-losing action, so the
-    // wipe sits in its own zone instead of a floating ml-auto button. Shared by
-    // the not-installed and installed branches.
-    const ForceReinstallZone = () => (
-      <div className="ml-auto flex items-center gap-2 pl-3 border-l border-desert-tan-lighter">
-        <ForceReinstallButton />
-      </div>
-    )
+    const openRestartModal = () => {
+      openModal(
+        <StyledModal
+          title={'Restart Service?'}
+          onConfirm={() => handleAffectAction(record, 'restart')}
+          onCancel={closeAllModals}
+          open={true}
+          confirmText={'Restart'}
+          cancelText="Cancel"
+        >
+          <p className="text-gray-700">
+            Are you sure you want to restart {record.service_name}?
+          </p>
+        </StyledModal>,
+        `${record.service_name}-affect-modal`
+      )
+    }
+
+    const openForceReinstallModal = () => {
+      openModal(
+        <StyledModal
+          title={'Force Reinstall?'}
+          onConfirm={() => handleForceReinstall(record)}
+          onCancel={closeAllModals}
+          open={true}
+          confirmText={'Force Reinstall'}
+          cancelText="Cancel"
+        >
+          <p className="text-gray-700">
+            Are you sure you want to force reinstall {record.service_name}? This will{' '}
+            <strong>WIPE ALL DATA</strong> for this service and cannot be undone. You should only do
+            this if the service is malfunctioning and other troubleshooting steps have failed.
+          </p>
+        </StyledModal>,
+        `${record.service_name}-force-reinstall-modal`
+      )
+    }
+
+    // Everything past Open (and a conditional Update) collapses into one "⋯"
+    // overflow menu so a table row stays on a single line instead of wrapping
+    // into a ragged stack: lifecycle (Stop/Start, Restart), then the custom-app
+    // cluster (Edit / Pull latest / Logs / Auto-update), then a divider and the
+    // destructive zone (Delete for custom apps, then Wipe & reinstall). Wipe keeps
+    // its prior visibility (installed + known status) and sits last, isolated in red.
+    const buildInstalledMenu = (): AppMenuItem[] => {
+      const items: AppMenuItem[] = []
+      const statusKnown = !!record.status && record.status !== 'unknown'
+
+      if (statusKnown) {
+        items.push({
+          kind: 'action',
+          icon: record.status === 'running' ? 'IconPlayerStop' : 'IconPlayerPlay',
+          label: record.status === 'running' ? 'Stop' : 'Start',
+          onClick: openAffectModal,
+          disabled: isInstalling,
+        })
+        if (record.status === 'running') {
+          items.push({
+            kind: 'action',
+            icon: 'IconRefresh',
+            label: 'Restart',
+            onClick: openRestartModal,
+            disabled: isInstalling,
+          })
+        }
+      }
+
+      if (record.is_custom) {
+        items.push(
+          {
+            kind: 'action',
+            icon: 'IconPencil',
+            label: 'Edit',
+            onClick: () => handleEditCustomApp(record),
+            disabled: loading,
+          },
+          {
+            kind: 'action',
+            icon: 'IconArrowUp',
+            label: 'Pull latest',
+            onClick: () => handlePullLatest(record),
+            disabled: loading || !isOnline,
+          },
+          {
+            kind: 'action',
+            icon: 'IconFileText',
+            label: 'Logs',
+            onClick: () => handleViewLogs(record),
+            disabled: loading,
+          },
+          {
+            kind: 'toggle',
+            label: 'Auto-update',
+            checked: !!record.auto_update_enabled,
+            onChange: (enabled) => handleToggleAutoUpdate(record, enabled),
+          }
+        )
+      }
+
+      const destructive: AppMenuItem[] = []
+      if (record.is_custom) {
+        destructive.push({
+          kind: 'action',
+          icon: 'IconTrash',
+          label: 'Delete',
+          onClick: () => confirmDeleteCustomApp(record),
+          disabled: loading,
+          danger: true,
+        })
+      }
+      if (statusKnown) {
+        destructive.push({
+          kind: 'action',
+          icon: 'IconAlertTriangle',
+          label: 'Wipe & reinstall',
+          onClick: openForceReinstallModal,
+          disabled: isInstalling,
+          danger: true,
+        })
+      }
+      if (destructive.length) {
+        if (items.length) items.push({ kind: 'divider' })
+        items.push(...destructive)
+      }
+      return items
+    }
 
     if (!record) return null
 
@@ -464,7 +572,7 @@ export default function SettingsPage(props: {
 
     if (!record.installed) {
       return (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <StyledButton
             icon={'IconDownload'}
             variant="primary"
@@ -474,11 +582,24 @@ export default function SettingsPage(props: {
           >
             Install
           </StyledButton>
-          <ForceReinstallZone />
+          <AppManageMenu
+            items={[
+              {
+                kind: 'action',
+                icon: 'IconAlertTriangle',
+                label: 'Wipe & reinstall',
+                onClick: openForceReinstallModal,
+                disabled: isInstalling,
+                danger: true,
+              },
+            ]}
+            disabled={isInstalling}
+          />
         </div>
       )
     }
 
+    const menuItems = buildInstalledMenu()
     return (
       <div className="flex flex-wrap items-center gap-2">
         <StyledButton
@@ -490,10 +611,11 @@ export default function SettingsPage(props: {
         >
           Open
         </StyledButton>
-        {/* Curated-app version updates (registry tag bump). Custom apps update via "Pull latest" below.
-            available_update_version arrives as the number 0 when up to date. A `&& 0 &&` chain would
-            render a literal "0" next to the buttons, so this is a ternary that can only yield the
-            button or null — never a stray value. */}
+        {/* Curated-app version updates (registry tag bump) stay inline so a waiting
+            update is visible at a glance; custom apps update via "Pull latest" in the
+            menu. available_update_version arrives as the number 0 when up to date, so
+            this is a ternary that can only yield the button or null — a `&& 0 &&` chain
+            would render a literal "0". */}
         {!record.is_custom && record.available_update_version ? (
           <StyledButton
             icon="IconArrowUp"
@@ -504,88 +626,7 @@ export default function SettingsPage(props: {
             Update
           </StyledButton>
         ) : null}
-        {/* Decorative divider between the headline actions (Open / Update) and
-            the lifecycle group (Stop/Start / Restart / Manage). Only shown when
-            there is a lifecycle group or a Manage menu to separate. */}
-        {((record.status && record.status !== 'unknown') || !!record.is_custom) && (
-          <span className="self-stretch w-px bg-desert-tan-lighter mx-1" aria-hidden />
-        )}
-        {record.status && record.status !== 'unknown' && (
-          <>
-            <StyledButton
-              icon={record.status === 'running' ? 'IconPlayerStop' : 'IconPlayerPlay'}
-              variant="neutral"
-              onClick={() => {
-                openModal(
-                  <StyledModal
-                    title={`${record.status === 'running' ? 'Stop' : 'Start'} Service?`}
-                    onConfirm={() =>
-                      handleAffectAction(record, record.status === 'running' ? 'stop' : 'start')
-                    }
-                    onCancel={closeAllModals}
-                    open={true}
-                    confirmText={record.status === 'running' ? 'Stop' : 'Start'}
-                    cancelText="Cancel"
-                  >
-                    <p className="text-gray-700">
-                      Are you sure you want to {record.status === 'running' ? 'stop' : 'start'}{' '}
-                      {record.service_name}?
-                    </p>
-                  </StyledModal>,
-                  `${record.service_name}-affect-modal`
-                )
-              }}
-              disabled={isInstalling}
-            >
-              {record.status === 'running' ? 'Stop' : 'Start'}
-            </StyledButton>
-            {record.status === 'running' && (
-              <StyledButton
-                icon="IconRefresh"
-                variant="neutral"
-                onClick={() => {
-                  openModal(
-                    <StyledModal
-                      title={'Restart Service?'}
-                      onConfirm={() => handleAffectAction(record, 'restart')}
-                      onCancel={closeAllModals}
-                      open={true}
-                      confirmText={'Restart'}
-                      cancelText="Cancel"
-                    >
-                      <p className="text-gray-700">
-                        Are you sure you want to restart {record.service_name}?
-                      </p>
-                    </StyledModal>,
-                    `${record.service_name}-affect-modal`
-                  )
-                }}
-                disabled={isInstalling}
-              >
-                Restart
-              </StyledButton>
-            )}
-          </>
-        )}
-        {/* Custom-app-only cluster (Edit / Pull latest / Logs / Auto-update /
-            Delete) collapsed into one neutral "Manage" menu. Each item fires the
-            SAME modal/handler the old inline buttons did. */}
-        {!!record.is_custom && (
-          <AppManageMenu
-            onEdit={() => handleEditCustomApp(record)}
-            onPullLatest={() => handlePullLatest(record)}
-            onViewLogs={() => handleViewLogs(record)}
-            onDelete={() => confirmDeleteCustomApp(record)}
-            autoUpdateEnabled={!!record.auto_update_enabled}
-            onToggleAutoUpdate={(enabled) => handleToggleAutoUpdate(record, enabled)}
-            loading={loading}
-            isOnline={isOnline}
-          />
-        )}
-        {/* Wipe & reinstall keeps its existing visibility: in the installed
-            branch it appears only when the service status is known (was nested
-            in the status block, right-aligned via ml-auto). */}
-        {record.status && record.status !== 'unknown' && <ForceReinstallZone />}
+        {menuItems.length > 0 && <AppManageMenu items={menuItems} disabled={isInstalling} />}
       </div>
     )
   }
