@@ -482,9 +482,10 @@ export default function SettingsPage(props: {
           Open
         </StyledButton>
         {/* Curated-app version updates (registry tag bump). Custom apps update via "Pull latest" below.
-            `!!` guard: available_update_version arrives as the number 0 when up to date, and a bare
-            `&& 0` would render a literal "0" next to the buttons. */}
-        {!record.is_custom && !!record.available_update_version && (
+            available_update_version arrives as the number 0 when up to date. A `&& 0 &&` chain would
+            render a literal "0" next to the buttons, so this is a ternary that can only yield the
+            button or null — never a stray value. */}
+        {!record.is_custom && record.available_update_version ? (
           <StyledButton
             icon="IconArrowUp"
             variant="action"
@@ -493,7 +494,7 @@ export default function SettingsPage(props: {
           >
             Update
           </StyledButton>
-        )}
+        ) : null}
         {record.is_custom && (
           <>
             <StyledButton
