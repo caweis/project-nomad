@@ -476,13 +476,17 @@ export default class ServiceSeeder extends BaseSeeder {
 
     // Keep curated services in sync with the catalog. Custom services are user-defined and must
     // never be overwritten. User-modified curated services (a user edited their config) are
-    // likewise left alone so the edit survives reboots. ui_location is synced too so a catalog
-    // change to an app's link/scheme/port (e.g. Vaultwarden moving to https:8480, or a corrected
-    // internal port) reaches existing non-modified installs on update, not just fresh ones.
+    // likewise left alone so the edit survives reboots. container_image and ui_location are
+    // synced too so a catalog change to an app's image, link, scheme, or port (e.g. a corrected
+    // image tag like grocy's, Vaultwarden moving to https:8480) reaches existing non-modified
+    // installs on update, not just fresh ones. The version-refresh step runs right after the seed
+    // and re-bumps container_image to the newest tag, so resetting it to the seeded value here is
+    // the floor, not the final value.
     for (const service of ServiceSeeder.DEFAULT_SERVICES) {
       const existing = existingServiceMap.get(service.service_name)
       if (shouldReseedCuratedRow(existing)) {
         await Service.query().where('service_name', service.service_name).update({
+          container_image: service.container_image,
           container_config: service.container_config,
           container_command: service.container_command ?? null,
           metadata: (service as any).metadata ?? null,
