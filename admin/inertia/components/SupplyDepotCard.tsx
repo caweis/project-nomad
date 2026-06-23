@@ -1,5 +1,6 @@
 import { IconArrowUp, IconCheck, IconExternalLink } from '@tabler/icons-react'
 import StyledButton from '~/components/StyledButton'
+import AppManageMenu from '~/components/AppManageMenu'
 import HostCommandButton from '~/components/HostCommandButton'
 import { ServiceSlim } from '../../types/services'
 import { getServiceLink } from '~/lib/navigation'
@@ -89,12 +90,20 @@ export default function SupplyDepotCard({
       <StyledButton
         icon="IconAlertTriangle"
         variant="danger-outline"
-        className="ml-auto"
         onClick={() => handlers.onForceReinstall(record)}
         disabled={isInstalling}
       >
-        Force Reinstall
+        Wipe &amp; reinstall
       </StyledButton>
+    )
+
+    // Right-aligned, divider-separated zone for the data-losing action, so the
+    // wipe sits in its own zone instead of a floating ml-auto button. Shared by
+    // the not-installed and installed branches.
+    const ForceReinstallZone = () => (
+      <div className="ml-auto flex items-center gap-2 pl-3 border-l border-desert-tan-lighter">
+        <ForceReinstallButton />
+      </div>
     )
 
     // Native Ollama: every Docker-side action routes through DockerService which
@@ -142,13 +151,13 @@ export default function SupplyDepotCard({
           >
             Install
           </StyledButton>
-          <ForceReinstallButton />
+          <ForceReinstallZone />
         </div>
       )
     }
 
     return (
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <StyledButton
           icon="IconExternalLink"
           onClick={() => {
@@ -174,50 +183,11 @@ export default function SupplyDepotCard({
             Update
           </StyledButton>
         )}
-        {!!record.is_custom && (
-          <>
-            <StyledButton
-              icon="IconPencil"
-              variant="neutral"
-              onClick={() => handlers.onEditCustom(record)}
-              disabled={loading}
-            >
-              Edit
-            </StyledButton>
-            <StyledButton
-              icon="IconArrowUp"
-              variant="neutral"
-              onClick={() => handlers.onPullLatest(record)}
-              disabled={loading || !isOnline}
-            >
-              Pull latest
-            </StyledButton>
-            <StyledButton
-              icon="IconFileText"
-              variant="neutral"
-              onClick={() => handlers.onViewLogs(record)}
-              disabled={loading}
-            >
-              Logs
-            </StyledButton>
-            <StyledButton
-              icon="IconTrash"
-              variant="danger-outline"
-              onClick={() => handlers.onDeleteCustom(record)}
-              disabled={loading}
-            >
-              Delete
-            </StyledButton>
-            <label className="flex items-center gap-1.5 cursor-pointer select-none text-xs text-gray-600">
-              <input
-                type="checkbox"
-                checked={!!record.auto_update_enabled}
-                onChange={(e) => handlers.onToggleAutoUpdate(record, e.target.checked)}
-                className="accent-desert-orange h-4 w-4 rounded"
-              />
-              Auto-update
-            </label>
-          </>
+        {/* Decorative divider between the headline actions (Open / Update) and
+            the lifecycle group (Stop/Start / Restart / Manage). Only shown when
+            there is a lifecycle group or a Manage menu to separate. */}
+        {((record.status && record.status !== 'unknown') || !!record.is_custom) && (
+          <span className="self-stretch w-px bg-desert-tan-lighter mx-1" aria-hidden />
         )}
         {record.status && record.status !== 'unknown' && (
           <>
@@ -241,9 +211,27 @@ export default function SupplyDepotCard({
                 Restart
               </StyledButton>
             )}
-            <ForceReinstallButton />
           </>
         )}
+        {/* Custom-app-only cluster (Edit / Pull latest / Logs / Auto-update /
+            Delete) collapsed into one neutral "Manage" menu. Each item calls the
+            SAME handler the old inline buttons did. */}
+        {!!record.is_custom && (
+          <AppManageMenu
+            onEdit={() => handlers.onEditCustom(record)}
+            onPullLatest={() => handlers.onPullLatest(record)}
+            onViewLogs={() => handlers.onViewLogs(record)}
+            onDelete={() => handlers.onDeleteCustom(record)}
+            autoUpdateEnabled={!!record.auto_update_enabled}
+            onToggleAutoUpdate={(enabled) => handlers.onToggleAutoUpdate(record, enabled)}
+            loading={loading}
+            isOnline={isOnline}
+          />
+        )}
+        {/* Wipe & reinstall keeps its existing visibility: in the installed
+            branch it appears only when the service status is known (was nested
+            in the status block, right-aligned via ml-auto). */}
+        {record.status && record.status !== 'unknown' && <ForceReinstallZone />}
       </div>
     )
   }
