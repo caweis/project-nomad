@@ -11,8 +11,17 @@ import TierSelectionModal from '~/components/TierSelectionModal'
 import WikipediaSelector from '~/components/WikipediaSelector'
 import LoadingSpinner from '~/components/LoadingSpinner'
 import Alert from '~/components/Alert'
-import { IconCheck, IconChevronDown, IconChevronUp, IconCpu, IconBooks } from '@tabler/icons-react'
+import {
+  IconCheck,
+  IconChevronDown,
+  IconChevronUp,
+  IconCpu,
+  IconBooks,
+  IconVaccineBottle,
+} from '@tabler/icons-react'
 import StorageProjectionBar from '~/components/StorageProjectionBar'
+import IngestStatus from '~/components/drug-reference/IngestStatus'
+import type { DrugIngestStatus } from '../../../types/drug_reference'
 import { useNotifications } from '~/context/NotificationContext'
 import useInternetStatus from '~/hooks/useInternetStatus'
 import { useSystemInfo } from '~/hooks/useSystemInfo'
@@ -114,6 +123,7 @@ const WIKIPEDIA_STATE_KEY = 'wikipedia-state'
 export default function EasySetupWizard(props: {
   system: { services: ServiceSlim[] }
   aiBackend: 'ollama' | 'omlx'
+  drugReference: { rowCount: number; ingestStatus: DrugIngestStatus | null }
 }) {
   const { aiAssistantName } = usePage<{ aiAssistantName: string }>().props
   const CORE_CAPABILITIES = buildCoreCapabilities(aiAssistantName)
@@ -133,6 +143,11 @@ export default function EasySetupWizard(props: {
   // Wikipedia selection state
   const [selectedWikipedia, setSelectedWikipedia] = useState<string | null>(null)
 
+  // FDA Drug Reference is a content dataset, not a registered service, so it
+  // can't ride the Capability path (no service_name in SERVICE_NAMES). It gets
+  // its own bespoke boolean selection state instead.
+  const [selectDrugReference, setSelectDrugReference] = useState(false)
+
   const { addNotification } = useNotifications()
   const { isOnline } = useInternetStatus()
   const queryClient = useQueryClient()
@@ -143,7 +158,8 @@ export default function EasySetupWizard(props: {
     selectedMapCollections.length > 0 ||
     selectedTiers.size > 0 ||
     selectedAiModels.length > 0 ||
-    (selectedWikipedia !== null && selectedWikipedia !== 'none')
+    (selectedWikipedia !== null && selectedWikipedia !== 'none') ||
+    selectDrugReference
 
   const { data: mapCollections, isLoading: isLoadingMaps } = useQuery({
     queryKey: [CURATED_MAP_COLLECTIONS_KEY],
@@ -194,6 +210,17 @@ export default function EasySetupWizard(props: {
     queryFn: () => api.getWikipediaState(),
     refetchOnWindowFocus: false,
   })
+
+  // FDA Drug Reference card state, derived from the server-provided props.
+  // - installed: a non-empty drug_labels table (manage on the Drug Reference page)
+  // - in-progress: an active download/ingest phase
+  // The card is install-only — an already-ingested dataset shows "Installed" and
+  // is not re-offered.
+  const drugRowCount = props.drugReference.rowCount
+  const drugIngestPhase = props.drugReference.ingestStatus?.phase ?? 'idle'
+  const drugReferenceInstalled = drugRowCount > 0
+  const drugReferenceInProgress =
+    drugIngestPhase === 'downloading' || drugIngestPhase === 'ingesting'
 
   // All services for display purposes
   const allServices = props.system.services
@@ -317,12 +344,18 @@ export default function EasySetupWizard(props: {
       }
     }
 
+    // Add FDA Drug Reference (the ~1.7 GB compressed download figure)
+    if (selectDrugReference) {
+      totalBytes += 1.7 * 1024 * 1024 * 1024
+    }
+
     return totalBytes
   }, [
     selectedTiers,
     selectedMapCollections,
     selectedAiModels,
     selectedWikipedia,
+    selectDrugReference,
     categories,
     mapCollections,
     recommendedModels,
@@ -421,11 +454,18 @@ export default function EasySetupWizard(props: {
         categoryTierPromises.push(api.downloadCategoryTier(categorySlug, tier.slug))
       })
 
-      const downloadPromises = [
+      const downloadPromises: Promise<any>[] = [
         ...selectedMapCollections.map((slug) => api.downloadMapCollection(slug)),
         ...categoryTierPromises,
         ...selectedAiModels.map((modelName) => api.downloadModel(resolveDownloadTarget(modelName))),
       ]
+
+      // FDA Drug Reference — fire-and-forget like the other triggers (the POST
+      // just kicks off the background download/ingest job; it does not wait for
+      // the ~1.7 GB pull to finish).
+      if (selectDrugReference) {
+        downloadPromises.push(api.triggerDrugReferenceDownload())
+      }
 
       await Promise.all(downloadPromises)
 
@@ -822,6 +862,122 @@ export default function EasySetupWizard(props: {
     </div>
   )
 
+  // FDA Drug Reference card — bespoke, NOT a Capability (no registered service).
+  // Mirrors the capability-card chrome (border-2; desert-green border + check
+  // circle when selected) but carries its own boolean selection + install/
+  // in-progress states keyed off the server-provided drugReference props.
+  const renderDrugReferenceCard = () => {
+    const subtitle = 'Offline drug labels, interactions, conditions & remedies'
+
+    // Installed — muted, locked, not selectable.
+    if (drugReferenceInstalled) {
+      return (
+        <div className="p-6 rounded-lg border-2 border-desert-green bg-desert-green/20 cursor-default">
+          <div className="flex items-start justify-between">
+            <div className="flex items-start gap-4 flex-1">
+              <div className="w-12 h-12 rounded-full bg-white border border-gray-200 flex items-center justify-center shadow-sm flex-shrink-0">
+                <IconVaccineBottle className="w-6 h-6 text-desert-green" />
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-xl font-bold text-gray-700">FDA Drug Reference</h3>
+                  <span className="text-xs bg-desert-green text-white px-2 py-0.5 rounded-full">
+                    Installed
+                  </span>
+                </div>
+                <p className="text-sm mt-0.5 text-gray-500">{subtitle}</p>
+                <p className="text-sm mt-2 text-gray-600">
+                  {drugRowCount.toLocaleString()} labels installed — manage on the Drug Reference
+                  page.
+                </p>
+              </div>
+            </div>
+            <div className="ml-4 w-7 h-7 rounded-full border-2 border-desert-green bg-desert-green flex items-center justify-center flex-shrink-0">
+              <IconCheck size={20} className="text-white" />
+            </div>
+          </div>
+        </div>
+      )
+    }
+
+    // In-progress — show the live, self-polling status panel. Not selectable.
+    if (drugReferenceInProgress && props.drugReference.ingestStatus) {
+      return (
+        <div className="p-6 rounded-lg border-2 border-desert-tan-lighter bg-white">
+          <div className="flex items-start gap-4 mb-4">
+            <div className="w-12 h-12 rounded-full bg-white border border-gray-200 flex items-center justify-center shadow-sm flex-shrink-0">
+              <IconVaccineBottle className="w-6 h-6 text-gray-700" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-xl font-bold text-gray-900">FDA Drug Reference</h3>
+              <p className="text-sm mt-0.5 text-gray-500">{subtitle}</p>
+            </div>
+          </div>
+          <IngestStatus status={props.drugReference.ingestStatus} />
+        </div>
+      )
+    }
+
+    // Available — selectable, toggles the bespoke boolean state.
+    const selected = selectDrugReference
+    return (
+      <div
+        onClick={() => isOnline && setSelectDrugReference((prev) => !prev)}
+        className={classNames(
+          'p-6 rounded-lg border-2 transition-all',
+          selected
+            ? 'border-desert-green bg-desert-green shadow-md cursor-pointer'
+            : 'border-desert-tan-lighter bg-white hover:border-desert-green hover:shadow-sm cursor-pointer',
+          !isOnline && 'opacity-50 cursor-not-allowed'
+        )}
+      >
+        <div className="flex items-start justify-between">
+          <div className="flex items-start gap-4 flex-1">
+            <div className="w-12 h-12 rounded-full bg-white border border-gray-200 flex items-center justify-center shadow-sm flex-shrink-0">
+              <IconVaccineBottle className="w-6 h-6 text-gray-700" />
+            </div>
+            <div className="flex-1">
+              <h3
+                className={classNames(
+                  'text-xl font-bold',
+                  selected ? 'text-white' : 'text-gray-900'
+                )}
+              >
+                FDA Drug Reference
+              </h3>
+              <p
+                className={classNames(
+                  'text-sm mt-0.5',
+                  selected ? 'text-green-100' : 'text-gray-500'
+                )}
+              >
+                {subtitle}
+              </p>
+              <span
+                className={classNames(
+                  'inline-block mt-3 text-xs px-2.5 py-1 rounded-full',
+                  selected
+                    ? 'bg-white/20 text-white'
+                    : 'bg-desert-sand text-desert-stone-dark'
+                )}
+              >
+                ~1.7 GB download · ~8–10 GB indexed
+              </span>
+            </div>
+          </div>
+          <div
+            className={classNames(
+              'ml-4 w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all flex-shrink-0',
+              selected ? 'border-white bg-white' : 'border-desert-stone'
+            )}
+          >
+            {selected && <IconCheck size={20} className="text-desert-green" />}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   const renderStep3 = () => {
     // Check if AI or Information capabilities are selected OR already installed
     const isAiSelected = selectedServices.includes(SERVICE_NAMES.OLLAMA) ||
@@ -843,6 +999,12 @@ export default function EasySetupWizard(props: {
                   : 'Configure content for your selected capabilities.'}
           </p>
         </div>
+
+        {/* FDA Drug Reference — a bespoke, self-contained content download (NOT a
+            registered service, so it can't be a Capability card). Three states:
+            installed (locked badge), in-progress (live IngestStatus), or
+            available/selectable. */}
+        {renderDrugReferenceCard()}
 
         {/* AI Model Selection - Only show if AI capability is selected */}
         {isAiSelected && (
@@ -1072,7 +1234,8 @@ export default function EasySetupWizard(props: {
       selectedMapCollections.length > 0 ||
       selectedTiers.size > 0 ||
       selectedAiModels.length > 0 ||
-      (selectedWikipedia !== null && selectedWikipedia !== 'none')
+      (selectedWikipedia !== null && selectedWikipedia !== 'none') ||
+      selectDrugReference
 
     return (
       <div className="space-y-6">
@@ -1184,6 +1347,19 @@ export default function EasySetupWizard(props: {
                     </div>
                   ) : null
                 })()}
+              </div>
+            )}
+
+            {selectDrugReference && (
+              <div className="bg-white rounded-lg border-2 border-desert-stone-light p-6">
+                <h3 className="text-xl font-semibold text-gray-900 mb-4">FDA Drug Reference</h3>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <IconCheck size={20} className="text-desert-green mr-2" />
+                    <span className="text-gray-700">Offline FDA drug labels</span>
+                  </div>
+                  <span className="text-gray-500 text-sm">~1.7 GB</span>
+                </div>
               </div>
             )}
 

@@ -11,6 +11,7 @@ import { NomadOllamaModel, OllamaChatRequest } from '../../types/ollama'
 import { ChatResponse, ModelResponse } from 'ollama'
 import BenchmarkResult from '#models/benchmark_result'
 import { BenchmarkType, RunBenchmarkResponse, SubmitBenchmarkResponse, UpdateBuilderTagResponse } from '../../types/benchmark'
+import { DrugIngestStatus } from '../../types/drug_reference'
 
 class API {
   private client: AxiosInstance
@@ -83,6 +84,24 @@ class API {
   }> {
     return catchInternal(async () => {
       const response = await this.client.post('/zim/download-category-tier', { categorySlug, tierSlug })
+      return response.data
+    })()
+  }
+
+  async triggerDrugReferenceDownload(): Promise<{
+    success: boolean
+    created: boolean
+    message: string
+  }> {
+    return catchInternal(async () => {
+      const response = await this.client.post('/drug-reference/download')
+      return response.data
+    })()
+  }
+
+  async getDrugReferenceStatus(): Promise<DrugIngestStatus | undefined> {
+    return catchInternal(async () => {
+      const response = await this.client.get<DrugIngestStatus>('/drug-reference/status')
       return response.data
     })()
   }
