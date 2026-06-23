@@ -3264,6 +3264,13 @@ _query_latest_tag() {
   local repo="$1" current_tag="$2"
   local tags=""
 
+  # LinuxServer's lscr.io is a vanity alias; the identical images are mirrored to
+  # ghcr.io/linuxserver/* and reachable via the ghcr branch below (token +
+  # tags/list). Without this, an lscr.io repo falls through to the Docker Hub
+  # branch, which 404s — every lscr.io app (grocy, calibre-web) failed the
+  # version check this way.
+  repo="${repo/#lscr.io\//ghcr.io/}"
+
   if [[ "$repo" == ghcr.io/* ]]; then
     local repo_path="${repo#ghcr.io/}"
     local token
@@ -3297,7 +3304,11 @@ _query_latest_tag() {
   # Filter to pure semver MATCHING current major (X.Y.Z with optional `-N`).
   # Excludes floating tags like `latest`, `develop`, `v5`, `v5.5`. Sort
   # descending, take the highest. `sort -V` handles 3.8.10 > 3.8.9 correctly.
-  echo "$tags" | grep -E "^${prefix}${current_major}\.[0-9]+\.[0-9]+(-[0-9]+)?$" | sort -V -r | head -1
+  # Accept a trailing LinuxServer build suffix (-lsNNN) alongside a bare numeric
+  # suffix, so lscr.io images (vX.Y.Z-lsNNN) auto-bump too. Still excludes hash
+  # suffixes (-7ca5933) and floating tags. sort -V orders the version and the
+  # ls-build number correctly (v3.0.1-ls101 > v3.0.1-ls99).
+  echo "$tags" | grep -E "^${prefix}${current_major}\.[0-9]+\.[0-9]+(-(ls)?[0-9]+)?$" | sort -V -r | head -1
 }
 
 # Right after services are seeded with pinned versions, check each registry
@@ -3344,9 +3355,14 @@ step_refresh_service_versions() {
       continue
     fi
 
-    local repo tag
-    repo="${img%:*}"
-    tag="${img##*:}"
+    # Strip a pinned digest (repo:tag@sha256:<hex>) before splitting repo/tag.
+    # Otherwise the last ':' lands inside the digest, so repo keeps the
+    # "...@sha256" tail and the registry query runs against a garbage repo —
+    # which is why every Wave-2 digest-pinned app failed this step. Cousin of
+    # the pull-path digest handling in admin's app/services/docker_pull.ts.
+    local repo tag img_ref="${img%%@*}"
+    repo="${img_ref%:*}"
+    tag="${img_ref##*:}"
 
     local latest
     if ! latest="$(_query_latest_tag "$repo" "$tag")"; then
