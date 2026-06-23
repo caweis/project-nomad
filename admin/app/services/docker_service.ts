@@ -786,6 +786,13 @@ export class DockerService {
       )
     } catch (error) {
       const friendly = this._humanizeDockerError(error, service.service_name)
+      // Log the RAW error (message + stack) at error level so it lands in the
+      // admin container logs (`nomad logs admin` / dozzle). The broadcast only
+      // reaches the browser; without this a failed pull leaves no server trace.
+      logger.error(
+        { err: error },
+        `[DockerService] Install failed for ${service.service_name} (image ${service.container_image}): ${friendly}`
+      )
       this._broadcast(
         service.service_name,
         'error',

@@ -22,6 +22,8 @@ export type InstallActivityFeedProps = {
       | 'update-starting'
       | 'update-complete'
       | 'update-rollback'
+      | 'error'
+      | 'failed'
     timestamp: string
     message: string
   }>
@@ -48,16 +50,34 @@ const InstallActivityFeed: React.FC<InstallActivityFeedProps> = ({ activity, cla
               <div className="relative flex size-6 flex-none items-center justify-center bg-transparent">
                 {activityItem.type === 'completed' || activityItem.type === 'update-complete' ? (
                   <IconCircleCheck aria-hidden="true" className="size-6 text-indigo-600" />
-                ) : activityItem.type === 'update-rollback' ? (
+                ) : activityItem.type === 'update-rollback' ||
+                  activityItem.type === 'error' ||
+                  activityItem.type === 'failed' ? (
                   <IconCircleX aria-hidden="true" className="size-6 text-red-500" />
                 ) : (
                   <div className="size-1.5 rounded-full bg-gray-100 ring-1 ring-gray-300" />
                 )}
               </div>
-              <p className="flex-auto py-0.5 text-xs/5 text-gray-500">
-                <span className="font-semibold text-gray-900">{activityItem.service_name}</span> -{' '}
-                {activityItem.type.charAt(0).toUpperCase() + activityItem.type.slice(1)}
-              </p>
+              <div className="flex-auto py-0.5">
+                <p className="text-xs/5 text-gray-500">
+                  <span className="font-semibold text-gray-900">{activityItem.service_name}</span> -{' '}
+                  {activityItem.type.charAt(0).toUpperCase() + activityItem.type.slice(1)}
+                </p>
+                {/* Surface the broadcast message — for a failed install this is the real
+                    reason (e.g. "manifest unknown"), which the type label alone hides. */}
+                {activityItem.message && activityItem.message !== 'No message provided' && (
+                  <p
+                    className={classNames(
+                      'mt-0.5 text-xs/5 break-words',
+                      activityItem.type === 'error' || activityItem.type === 'failed'
+                        ? 'text-red-600'
+                        : 'text-gray-400'
+                    )}
+                  >
+                    {activityItem.message}
+                  </p>
+                )}
+              </div>
               <time
                 dateTime={activityItem.timestamp}
                 className="flex-none py-0.5 text-xs/5 text-gray-500"

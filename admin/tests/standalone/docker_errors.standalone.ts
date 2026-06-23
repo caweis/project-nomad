@@ -56,8 +56,25 @@ check('generic "bind: address already in use" conflict names the port, no Ollama
   assert.doesNotMatch(out, /Ollama/)
 })
 
+// ── image/tag not found in the registry (pull 404) ───────────────────────────
+check('humanizes a manifest-unknown pull 404', () => {
+  const raw =
+    '(HTTP code 404) unexpected - manifest for ghcr.io/linuxserver/grocy:07.03.26 not found: manifest unknown'
+  const out = humanizeDockerError(raw, 'nomad_grocy', OLLAMA)
+  assert.match(out, /Couldn't pull the image/)
+  assert.notEqual(out, raw)
+})
+
+check('humanizes pull-access-denied / repository-does-not-exist', () => {
+  const raw = "pull access denied for foo/bar, repository does not exist or may require 'docker login'"
+  const out = humanizeDockerError(raw, 'nomad_x', OLLAMA)
+  assert.match(out, /Couldn't pull the image/)
+})
+
 // ── passthrough for anything unrecognized ─────────────────────────────────────
 check('passes an unrecognized error through unchanged', () => {
+  // "No such image" is a LOCAL docker error (not a registry 404), so it must
+  // stay a passthrough and NOT match the pull-404 branch.
   const raw = 'No such image: project-nomad/whatever:latest'
   const out = humanizeDockerError(raw, 'nomad_kiwix', OLLAMA)
   assert.equal(out, raw)

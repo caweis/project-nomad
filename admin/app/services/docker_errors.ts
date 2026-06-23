@@ -41,5 +41,18 @@ export function humanizeDockerError(
     }
     return `Couldn't start because ${portText} is already in use on this machine. Stop whatever is using ${portText} on the host, then try again.`
   }
+
+  // Image/tag not found in the registry. dockerode surfaces this as e.g.
+  //   "(HTTP code 404) ... manifest unknown"
+  //   "manifest for <ref> not found: manifest unknown"
+  //   "pull access denied for <ref>, repository does not exist or may require 'docker login'"
+  if (
+    /manifest unknown|not found: manifest|manifest for .+ not found|pull access denied|repository does not exist/i.test(
+      raw
+    )
+  ) {
+    return `Couldn't pull the image from the registry — it returned "not found". The image tag is likely wrong, removed, or private. Check this service's container image reference, then try again.`
+  }
+
   return raw
 }
