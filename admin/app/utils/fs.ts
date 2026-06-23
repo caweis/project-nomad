@@ -11,6 +11,12 @@ export const ZIM_STORAGE_PATH = '/storage/zim'
 // DockerService._runPreinstallActions__MeshCoreWeb.
 export const MESHCORE_WEB_STORAGE_PATH = '/storage/meshcore-web'
 
+// Vaultwarden (HTTPS) preinstall writes a self-signed cert here. Unlike MeshCore,
+// Vaultwarden already bind-mounts this dir as /data, so ROCKET_TLS reads the cert
+// from /data/certs with no extra mount. See
+// DockerService._runPreinstallActions__Vaultwarden.
+export const VAULTWARDEN_STORAGE_PATH = '/storage/vaultwarden'
+
 export async function listDirectoryContents(path: string): Promise<FileEntry[]> {
   const entries = await readdir(path, { withFileTypes: true })
   const results: FileEntry[] = []

@@ -5,7 +5,7 @@ import { inject } from '@adonisjs/core'
 import transmit from '@adonisjs/transmit/services/main'
 import { doResumableDownloadWithRetry } from '../utils/downloads.js'
 import { join } from 'path'
-import { ZIM_STORAGE_PATH, MESHCORE_WEB_STORAGE_PATH } from '../utils/fs.js'
+import { ZIM_STORAGE_PATH, MESHCORE_WEB_STORAGE_PATH, VAULTWARDEN_STORAGE_PATH } from '../utils/fs.js'
 import { SERVICE_NAMES } from '../../constants/service_names.js'
 import { exec } from 'child_process'
 import { promisify } from 'util'
@@ -617,6 +617,15 @@ export class DockerService {
         )
       }
 
+      if (service.service_name === SERVICE_NAMES.VAULTWARDEN) {
+        await this._runPreinstallActions__Vaultwarden()
+        this._broadcast(
+          service.service_name,
+          'preinstall-complete',
+          `Pre-install actions for Password Vault completed successfully.`
+        )
+      }
+
       // Native Ollama: skip container creation entirely, just mark as installed
       if (service.service_name === SERVICE_NAMES.OLLAMA && DockerService.isNativeOllama()) {
         const nativeUrl = env.get('OLLAMA_HOST')!
@@ -981,6 +990,41 @@ export class DockerService {
         SERVICE_NAMES.MESHCORE_WEB,
         'preinstall-error',
         `Failed to prepare MeshCore Web HTTPS: ${error.message}`
+      )
+      throw new Error(`Pre-install action failed: ${error.message}`)
+    }
+  }
+
+  /**
+   * Vaultwarden's web vault uses WebAuthn / passkeys, which browsers only expose from a secure
+   * (HTTPS) context — so over plain HTTP on the LAN the vault loads but passkeys can't be used.
+   * Vaultwarden's Rocket server terminates TLS itself (no nginx sidecar like MeshCore needs), so we
+   * only mint a self-signed cert here; the seeder points ROCKET_TLS at it. The cert lives under the
+   * service's existing /data bind mount, so no extra bind is needed. Same one-time browser warning
+   * as other HTTPS-only apps; the cert is RSA (Rocket can't load an ECC key).
+   */
+  private async _runPreinstallActions__Vaultwarden(): Promise<void> {
+    const certDir = join(process.cwd(), VAULTWARDEN_STORAGE_PATH, 'certs')
+
+    this._broadcast(
+      SERVICE_NAMES.VAULTWARDEN,
+      'preinstall',
+      `Running pre-install actions for Password Vault...`
+    )
+
+    try {
+      await this._ensureSelfSignedCert(certDir, 'Project NOMAD Vaultwarden')
+
+      this._broadcast(
+        SERVICE_NAMES.VAULTWARDEN,
+        'preinstall',
+        `Password Vault HTTPS certificate is ready.`
+      )
+    } catch (error) {
+      this._broadcast(
+        SERVICE_NAMES.VAULTWARDEN,
+        'preinstall-error',
+        `Failed to prepare Password Vault HTTPS: ${error.message}`
       )
       throw new Error(`Pre-install action failed: ${error.message}`)
     }

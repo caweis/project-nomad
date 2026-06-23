@@ -323,9 +323,13 @@ export default class ServiceSeeder extends BaseSeeder {
       source_repo: 'https://github.com/dani-garcia/vaultwarden',
       container_command: null,
       container_config: JSON.stringify({
-        // Serves the vault over HTTP on container :80. Shipped HTTP-only on the LAN for v1;
-        // passkeys/WebAuthn need an HTTPS secure context, tracked as a follow-up (self-signed
-        // TLS via the MeshCore Web cert pattern).
+        // Serves the vault over HTTPS on container :80 — Rocket (Vaultwarden's web server) terminates
+        // TLS itself, no nginx sidecar like MeshCore needs. WebAuthn/passkeys need a secure context,
+        // so _runPreinstallActions__Vaultwarden mints a self-signed RSA cert into
+        // storage/vaultwarden/certs, which is the same dir bound in as /data — ROCKET_TLS reads it
+        // from /data/certs with no extra mount. The https: prefix on ui_location builds an https://
+        // Open link; expect a one-time browser warning for the self-signed cert.
+        Env: ['ROCKET_TLS={certs="/data/certs/cert.pem",key="/data/certs/key.pem"}'],
         HostConfig: {
           RestartPolicy: { Name: 'unless-stopped' },
           Binds: [`${ServiceSeeder.NOMAD_STORAGE_ABS_PATH}/vaultwarden:/data`],
@@ -333,7 +337,7 @@ export default class ServiceSeeder extends BaseSeeder {
         },
         ExposedPorts: { '80/tcp': {} },
       }),
-      ui_location: '8700',
+      ui_location: 'https:8700',
       installed: false,
       installation_status: 'idle',
       is_dependency_service: false,
@@ -478,7 +482,7 @@ export default class ServiceSeeder extends BaseSeeder {
     // never be overwritten. User-modified curated services (a user edited their config) are
     // likewise left alone so the edit survives reboots. container_image and ui_location are
     // synced too so a catalog change to an app's image, link, scheme, or port (e.g. a corrected
-    // image tag like grocy's, Vaultwarden moving to https:8480) reaches existing non-modified
+    // image tag like grocy's, Vaultwarden moving to https:8700) reaches existing non-modified
     // installs on update, not just fresh ones. The version-refresh step runs right after the seed
     // and re-bumps container_image to the newest tag, so resetting it to the seeded value here is
     // the floor, not the final value.
