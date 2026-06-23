@@ -174,7 +174,7 @@ export default function SupplyDepotCard({
             Update
           </StyledButton>
         )}
-        {record.is_custom && (
+        {!!record.is_custom && (
           <>
             <StyledButton
               icon="IconPencil"

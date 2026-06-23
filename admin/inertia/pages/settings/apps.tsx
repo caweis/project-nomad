@@ -495,7 +495,7 @@ export default function SettingsPage(props: {
             Update
           </StyledButton>
         ) : null}
-        {record.is_custom && (
+        {!!record.is_custom && (
           <>
             <StyledButton
               icon="IconPencil"

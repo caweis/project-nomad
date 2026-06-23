@@ -227,7 +227,11 @@ export class SystemService {
         friendly_name: service.friendly_name,
         description: service.description,
         icon: service.icon,
-        installed: service.installed,
+        // These columns are MySQL tinyints; Lucid returns them as 0/1, not
+        // true/false. Cast to real booleans so the Inertia payload matches the
+        // ServiceSlim type — otherwise `{record.is_custom && (...)}` in the UI
+        // renders a literal "0" for every non-custom app.
+        installed: Boolean(service.installed),
         installation_status: service.installation_status,
         status: status ? status.status : 'unknown',
         ui_location: service.ui_location || '',
@@ -236,9 +240,9 @@ export class SystemService {
         container_image: service.container_image,
         available_update_version: service.available_update_version,
         category: service.category,
-        is_custom: service.is_custom,
+        is_custom: Boolean(service.is_custom),
         custom_url: service.custom_url,
-        auto_update_enabled: service.auto_update_enabled,
+        auto_update_enabled: Boolean(service.auto_update_enabled),
       })
     }
 
