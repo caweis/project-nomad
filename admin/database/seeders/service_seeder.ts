@@ -117,7 +117,9 @@ export default class ServiceSeeder extends BaseSeeder {
       category: 'utility',
       description: 'Swiss Army knife for data encoding, encryption, and analysis',
       icon: 'IconChefHat',
-      container_image: 'ghcr.io/gchq/cyberchef:10.19.4',
+      // 10.19.4 was pruned from ghcr (404 on pull); pin the current release by digest.
+      container_image:
+        'ghcr.io/gchq/cyberchef:10.24.0@sha256:58d2bcefe3f32b066eafca07353aae31b961ca7765fe4bcb913aba6bb8b8dd81',
       source_repo: 'https://github.com/gchq/CyberChef',
       container_command: null,
       container_config: JSON.stringify({
@@ -192,7 +194,11 @@ export default class ServiceSeeder extends BaseSeeder {
       category: 'productivity',
       description: 'Food and pantry tracker for stock levels, expiry dates, and shopping lists',
       icon: 'IconCarrot',
-      container_image: 'lscr.io/linuxserver/grocy:07.03.26',
+      // ghcr.io (LinuxServer's official mirror) digest-pinned to the latest arm64
+      // build. The previous tag 07.03.26 did not exist on the registry, so the
+      // pull failed with "manifest unknown" the moment anyone hit Install.
+      container_image:
+        'ghcr.io/linuxserver/grocy:v3.0.1-ls101@sha256:c01e9fa0f1323490f17d0dd34d9341dc9627b4ffda04633738ed59febaea7c59',
       source_repo: 'https://github.com/grocy/grocy',
       container_command: null,
       container_config: JSON.stringify({
