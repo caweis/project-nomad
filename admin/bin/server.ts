@@ -44,6 +44,15 @@ new Ignitor(APP_ROOT, { importer: IMPORTER })
         // Catch and log any errors during reconciliation to prevent the server from crashing
         console.error('Error during collection manifest reconciliation:', error)
       }
+      try {
+        // One-time, idempotent HTTPS migration for an existing Vaultwarden install
+        // (recreates the container so ROCKET_TLS takes effect). No-op once migrated.
+        const { DockerService } = await import('#services/docker_service')
+        await new DockerService().reconcileVaultwardenTls()
+      } catch (error) {
+        // Never let the boot-time migration crash the server.
+        console.error('Error during Vaultwarden TLS reconciliation:', error)
+      }
     })
   })
   .httpServer()

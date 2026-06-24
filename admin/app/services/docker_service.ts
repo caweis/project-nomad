@@ -17,6 +17,7 @@ import os from 'node:os'
 import { humanizeDockerError } from './docker_errors.js'
 import { rewriteStorageBinds } from './storage_binds.js'
 import { followPullProgress, pullableImageRef } from './docker_pull.js'
+import { vaultwardenNeedsTlsMigration } from './vaultwarden_tls.js'
 
 @inject()
 export class DockerService {
@@ -445,6 +446,118 @@ export class DockerService {
         success: false,
         message: `Failed to force reinstall service ${serviceName}. Check server logs for details.`,
       }
+    }
+  }
+
+  /**
+   * One-time, idempotent migration of an existing Vaultwarden install to HTTPS,
+   * run at boot (bin/server.ts).
+   *
+   * Vaultwarden's HTTPS support (ROCKET_TLS + a self-signed cert) landed after
+   * some installs already existed. `nomad upgrade` reseeds the catalog row — so
+   * its container_config gains ROCKET_TLS and ui_location becomes https:8700 —
+   * but it does NOT recreate the already-running container. The row then says
+   * HTTPS while the live container still serves plain HTTP, so the Open link
+   * (now https) hits an HTTP server and fails. This recreates the container from
+   * the current catalog config so TLS actually takes effect.
+   *
+   * Safe by construction:
+   *  - Idempotent: a no-op unless Vaultwarden is installed, has a container, and
+   *    that container does NOT already carry ROCKET_TLS.
+   *  - Data-safe: the vault is a host bind mount (storage/vaultwarden:/data), not
+   *    a Docker volume, so it carries across the container swap untouched.
+   *  - Rollback-safe: the pre-TLS container is renamed aside and, if the new one
+   *    fails to come up, restored and restarted, so the vault is never left down.
+   *  - `_createContainer` mints the self-signed RSA cert (via the Vaultwarden
+   *    preinstall) before it starts the new container.
+   */
+  async reconcileVaultwardenTls(): Promise<void> {
+    const serviceName = SERVICE_NAMES.VAULTWARDEN
+
+    const service = await Service.query().where('service_name', serviceName).first()
+    if (!service || !service.installed) return
+
+    const containers = await this.docker.listContainers({ all: true })
+    const existing = containers.find((c) => c.Names.includes(`/${serviceName}`))
+    if (!existing) return
+
+    const inspect = await this.docker.getContainer(existing.Id).inspect()
+    const containerEnv = inspect.Config?.Env || []
+    if (
+      !vaultwardenNeedsTlsMigration({
+        installed: service.installed,
+        hasContainer: true,
+        containerEnv,
+      })
+    ) {
+      return
+    }
+
+    // Don't race a manual install/reinstall already in flight.
+    if (DockerService.activeInstallations.has(serviceName)) return
+    DockerService.activeInstallations.add(serviceName)
+
+    const oldName = `${serviceName}_pretls`
+    try {
+      logger.info(
+        `[DockerService] Migrating ${serviceName} to HTTPS — recreating the container so ROCKET_TLS takes effect.`
+      )
+
+      const oldContainer = this.docker.getContainer(existing.Id)
+      if (existing.State === 'running') {
+        await oldContainer.stop({ t: 15 }).catch(() => {})
+      }
+
+      // Clear any aside container left by a previously failed migration so the
+      // rename below can't collide.
+      const staleAside = (await this.docker.listContainers({ all: true })).find((c) =>
+        c.Names.includes(`/${oldName}`)
+      )
+      if (staleAside) {
+        await this.docker.getContainer(staleAside.Id).remove({ force: true }).catch(() => {})
+      }
+
+      // Keep the pre-TLS container aside as a rollback target.
+      await oldContainer.rename({ name: oldName })
+
+      try {
+        // Recreate from the current catalog config (now carries ROCKET_TLS). The
+        // /data bind mount is unchanged, so the vault DB carries over; the
+        // preinstall inside _createContainer mints the cert before the start.
+        await this._createContainer(service, this._parseContainerConfig(service.container_config))
+
+        // New container is up — drop the pre-TLS one.
+        await this.docker.getContainer(oldName).remove({ force: true }).catch(() => {})
+        logger.info(`[DockerService] ${serviceName} is now serving HTTPS.`)
+      } catch (createError: any) {
+        logger.error(
+          { err: createError },
+          `[DockerService] HTTPS migration for ${serviceName} failed — rolling back to the pre-TLS container.`
+        )
+        // Remove any half-created new container holding the real name, then
+        // restore the pre-TLS container and start it so the vault stays up.
+        const half = (await this.docker.listContainers({ all: true })).find((c) =>
+          c.Names.includes(`/${serviceName}`)
+        )
+        if (half) {
+          await this.docker.getContainer(half.Id).remove({ force: true }).catch(() => {})
+        }
+        const aside = (await this.docker.listContainers({ all: true })).find((c) =>
+          c.Names.includes(`/${oldName}`)
+        )
+        if (aside) {
+          const restore = this.docker.getContainer(aside.Id)
+          await restore.rename({ name: serviceName }).catch(() => {})
+          await restore.start().catch(() => {})
+        }
+      }
+    } catch (error: any) {
+      logger.error(
+        { err: error },
+        `[DockerService] reconcileVaultwardenTls failed for ${serviceName}`
+      )
+    } finally {
+      DockerService.activeInstallations.delete(serviceName)
     }
   }
 
