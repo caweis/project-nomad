@@ -5,6 +5,11 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 
 ## [Unreleased]
 
+## [0.2.743-macos] - 2026-06-25
+
+### Home
+- The Command Center app-card icons render at 32px with a heavier stroke instead of 48px at the default stroke, so they read as solid rather than thin against the cards. Mesh Bridge keeps its radio glyph.
+
 ## [0.2.742-macos] - 2026-06-24
 
 ### Home

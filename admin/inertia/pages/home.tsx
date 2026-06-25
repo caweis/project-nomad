@@ -18,6 +18,14 @@ import Alert from '~/components/Alert'
 import { SERVICE_NAMES } from '../../constants/service_names'
 import { groupIntoDecks } from '~/util/home_decks'
 
+// Deck card icon sizing. The glyphs sit centered in each card; the stock 48px
+// at the Tabler default stroke of 2 gives a ~4% stroke-to-size ratio that reads
+// spindly. 32px with a heavier 2.5 stroke (~8%) reads solid. Both the hardcoded
+// feature tiles and the DynamicIcon service tiles pull from these so the whole
+// grid stays uniform — retune in one place.
+const DECK_ICON_SIZE = 32
+const DECK_ICON_STROKE = 2.5
+
 // AI Assistant — Core Capability tile on the macOS distro (display_order: 3).
 //
 // Rendered only when the `nomad_ollama` services row has installed=true.
@@ -33,7 +41,7 @@ function buildAIAssistantItem(aiAssistantName: string): DashboardItem {
     to: '/chat',
     target: '',
     description: 'Local AI chat — runs on this Mac, no internet needed',
-    icon: <IconWand size={48} />,
+    icon: <IconWand size={DECK_ICON_SIZE} stroke={DECK_ICON_STROKE} />,
     installed: true,
     displayOrder: 3,
     poweredBy: 'Ollama',
@@ -47,7 +55,7 @@ const MAPS_ITEM: DashboardItem = {
   to: '/maps',
   target: '',
   description: 'View offline maps',
-  icon: <IconMapRoute size={48} />,
+  icon: <IconMapRoute size={DECK_ICON_SIZE} stroke={DECK_ICON_STROKE} />,
   installed: true,
   displayOrder: 4,
   poweredBy: null,
@@ -60,7 +68,7 @@ const WORKSHOP_ITEM: DashboardItem = {
   to: '/workshop',
   target: '',
   description: 'Offline maker library: 3D prints, CAD, PDFs, and reference images.',
-  icon: <IconBox size={48} />,
+  icon: <IconBox size={DECK_ICON_SIZE} stroke={DECK_ICON_STROKE} />,
   installed: true,
   displayOrder: 5,
   poweredBy: null,
@@ -77,7 +85,7 @@ const DRUG_REFERENCE_ITEM: DashboardItem = {
   to: '/drug-reference',
   target: '',
   description: 'Offline FDA drug labels: search by drug name or by situation',
-  icon: <IconPill size={48} />,
+  icon: <IconPill size={DECK_ICON_SIZE} stroke={DECK_ICON_STROKE} />,
   installed: true,
   displayOrder: 6,
   poweredBy: null,
@@ -96,7 +104,7 @@ const READINESS_ITEM: DashboardItem = {
   to: '/readiness',
   target: '',
   description: 'Days of water, food, and power on hand, plus scenario checklists',
-  icon: <IconShieldCheck size={48} />,
+  icon: <IconShieldCheck size={DECK_ICON_SIZE} stroke={DECK_ICON_STROKE} />,
   installed: true,
   displayOrder: 7,
   poweredBy: null,
@@ -153,9 +161,13 @@ export default function Home(props: {
           service.description ||
           `Access the ${service.friendly_name || service.service_name} application`,
         icon: service.icon ? (
-          <DynamicIcon icon={service.icon as DynamicIconName} className="!size-12" />
+          <DynamicIcon
+            icon={service.icon as DynamicIconName}
+            className="!size-8"
+            stroke={DECK_ICON_STROKE}
+          />
         ) : (
-          <IconWifiOff size={48} />
+          <IconWifiOff size={DECK_ICON_SIZE} stroke={DECK_ICON_STROKE} />
         ),
         installed: service.installed,
         displayOrder: service.display_order ?? 100,
