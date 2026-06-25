@@ -5,6 +5,11 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 
 ## [Unreleased]
 
+## [0.2.741-macos] - 2026-06-24
+
+### Home
+- The Command Center home is reorganized: pinned apps (the core band shown first on a fresh login) are grouped into scenario decks (Secure & AI, Communicate, Knowledge & maps, Health & supplies, Tools & workshop) instead of one flat grid. The home now uses the same left sidebar as the rest of the app, so navigation (Supply Depot, Documentation, Settings) moves to the rail; a "Browse all apps" button reaches everything else. The descriptive app cards are unchanged.
+
 ## [0.2.740-macos] - 2026-06-24
 
 ### Supply Depot
