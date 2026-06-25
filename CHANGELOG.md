@@ -5,6 +5,11 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 
 ## [Unreleased]
 
+## [0.2.742-macos] - 2026-06-24
+
+### Home
+- Apps on the Command Center home can be pinned or unpinned. The home still defaults to the core band (`display_order <= 8`), but a pin toggle on each card removes it from the home, and the Supply Depot overflow menu offers "Pin to home" for everything else. Choices persist per app in a `home.pins` setting.
+
 ## [0.2.741-macos] - 2026-06-24
 
 ### Home
