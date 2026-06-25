@@ -18,9 +18,12 @@ type SidebarItem = {
 interface StyledSidebarProps {
   title: string
   items: SidebarItem[]
+  // Hide the bottom "Back to Home" link. The home page sets this — the link
+  // would just point at itself there. Defaults to showing it (Settings, etc.).
+  hideBackToHome?: boolean
 }
 
-const StyledSidebar: React.FC<StyledSidebarProps> = ({ title, items }) => {
+const StyledSidebar: React.FC<StyledSidebarProps> = ({ title, items, hideBackToHome }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [debugModalOpen, setDebugModalOpen] = useState(false)
   const { appVersion } = usePage().props as unknown as UsePageProps
@@ -64,15 +67,17 @@ const StyledSidebar: React.FC<StyledSidebarProps> = ({ title, items }) => {
                 {items.map((item) => (
                   <ListItem key={item.name} {...item} current={currentPath === item.href} />
                 ))}
-                <li className="ml-2 mt-4">
-                  <a
-                    href="/home"
-                    className="flex flex-row items-center gap-x-3 text-desert-green text-sm font-semibold"
-                  >
-                    <IconArrowLeft aria-hidden="true" className="size-6 shrink-0" />
-                    Back to Home
-                  </a>
-                </li>
+                {!hideBackToHome && (
+                  <li className="ml-2 mt-4">
+                    <a
+                      href="/home"
+                      className="flex flex-row items-center gap-x-3 text-desert-green text-sm font-semibold"
+                    >
+                      <IconArrowLeft aria-hidden="true" className="size-6 shrink-0" />
+                      Back to Home
+                    </a>
+                  </li>
+                )}
               </ul>
             </li>
           </ul>

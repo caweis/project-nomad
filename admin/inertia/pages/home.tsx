@@ -195,6 +195,8 @@ export default function Home(props: {
   return (
     <HomeLayout>
       <Head title="Command Center" />
+      {/* xl:pl-72 clears the fixed w-72 sidebar, matching every settings page. */}
+      <div className="xl:pl-72 w-full">
       {updateInfo?.updateAvailable && (
         <div className="flex justify-center items-center p-4 w-full">
           <Alert
@@ -215,8 +217,9 @@ export default function Home(props: {
       )}
 
       <div className="p-4">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-3xl font-bold text-desert-green">Command Center</h1>
+        {/* The "Command Center" title lives in the sidebar header; the page just
+            carries the Browse-all action. */}
+        <div className="flex items-center justify-end mb-6">
           <a
             href="/settings/apps"
             className="inline-flex items-center gap-2 rounded border-desert-green border-2 bg-desert-green hover:bg-transparent hover:text-black text-white transition-colors px-4 py-2 font-semibold"
@@ -249,6 +252,7 @@ export default function Home(props: {
             </div>
           </section>
         ))}
+      </div>
       </div>
     </HomeLayout>
   )
