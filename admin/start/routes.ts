@@ -36,6 +36,11 @@ transmit.registerRoutes()
 
 router.get('/', [HomeController, 'index'])
 router.get('/home', [HomeController, 'home'])
+// Command Center home — per-app pin/unpin override (issue #44). Writes only the
+// `home.pins` KV row (no files, no container lifecycle), so it is ungated, the
+// same posture as the other KV-write route (PATCH /api/system/settings) and the
+// DB-only /api/inventory and /api/plans mutations.
+router.post('/api/home/pins', [HomeController, 'setPin'])
 router.on('/about').renderInertia('about')
 router.get('/chat', [ChatsController, 'inertia'])
 router.get('/maps', [MapsController, 'index'])

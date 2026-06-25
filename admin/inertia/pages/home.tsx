@@ -3,11 +3,12 @@ import {
   IconBox,
   IconMapRoute,
   IconPill,
+  IconPin,
   IconShieldCheck,
   IconWand,
   IconWifiOff,
 } from '@tabler/icons-react'
-import { Head, usePage } from '@inertiajs/react'
+import { Head, router, usePage } from '@inertiajs/react'
 import HomeLayout from '~/layouts/HomeLayout'
 import { getServiceLink } from '~/lib/navigation'
 import { ServiceSlim } from '../../types/services'
@@ -122,6 +123,10 @@ export default function Home(props: {
   system: {
     services: ServiceSlim[]
   }
+  // Per-app pin overrides (issue #44): deckKey -> explicit pinned state. An entry
+  // overrides the default display_order <= 8 rule. Default {} (server-supplied),
+  // which leaves the home identical to the pre-override behavior.
+  pins: Record<string, boolean>
 }) {
   const items: DashboardItem[] = []
   const updateInfo = useUpdateAvailable()
@@ -185,12 +190,27 @@ export default function Home(props: {
   // the former standalone Inventory tile is now its first tab)
   items.push(READINESS_ITEM)
 
-  // Group the pinned items (display_order <= 8) into ordered scenario decks,
-  // dropping unpinned utilities (they live behind "Browse all apps") and hiding
-  // empty decks. The flat grid + the SYSTEM_ITEMS nav tiles (Easy Setup / Install
-  // Apps / Docs / Settings) are gone: those destinations live in the sidebar rail
-  // and the "Browse all apps" button.
-  const decks = groupIntoDecks(items)
+  // Group the pinned items into ordered scenario decks, dropping unpinned
+  // utilities (they live behind "Browse all apps") and hiding empty decks. The
+  // flat grid + the SYSTEM_ITEMS nav tiles (Easy Setup / Install Apps / Docs /
+  // Settings) are gone: those destinations live in the sidebar rail and the
+  // "Browse all apps" button. props.pins layers the user's per-app overrides
+  // over the default display_order <= 8 rule (issue #44).
+  const decks = groupIntoDecks(items, props.pins)
+
+  // Unpin a card from the home. The card is an <a>, so the pin button must NOT
+  // navigate — preventDefault/stopPropagation, POST the override, then reload.
+  // The home only renders pinned items, so this is always an unpin: the card
+  // leaves on reload.
+  const unpinItem = (e: React.MouseEvent, deckKey: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    router.post(
+      '/api/home/pins',
+      { key: deckKey, pinned: false },
+      { preserveScroll: true, onSuccess: () => router.reload({ only: ['pins'] }) }
+    )
+  }
 
   return (
     <HomeLayout>
@@ -240,6 +260,18 @@ export default function Home(props: {
               {deckItems.map((item) => (
                 <a key={item.label} href={item.to} target={item.target}>
                   <div className="relative rounded border-desert-green border-2 bg-desert-green hover:bg-transparent hover:text-black text-white transition-colors shadow-sm h-48 flex flex-col items-center justify-center cursor-pointer text-center px-4">
+                    {/* Unpin toggle. A filled pin, top-right. preventDefault/
+                        stopPropagation in the handler keep this click off the
+                        card's <a> navigation. */}
+                    <button
+                      type="button"
+                      onClick={(e) => unpinItem(e, item.deckKey)}
+                      aria-label={`Unpin ${item.label} from home`}
+                      title="Unpin from home"
+                      className="absolute top-2 right-2 z-10 p-1 rounded text-white/80 hover:text-white hover:bg-black/20 transition-colors"
+                    >
+                      <IconPin size={20} fill="currentColor" />
+                    </button>
                     <div className="flex items-center justify-center mb-2">{item.icon}</div>
                     <h3 className="font-bold text-2xl">{item.label}</h3>
                     {item.poweredBy && (

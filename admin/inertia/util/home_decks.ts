@@ -89,11 +89,23 @@ export interface DeckGroupable {
 }
 
 /**
- * "Pinned" = in the core band the user sees first on login: display_order <= 8.
- * The utilities at 9–12 start unpinned (behind "Browse all apps").
+ * Per-app pin overrides: a map of deckKey -> explicit pinned state. An entry
+ * wins over the display_order rule (true force-pins, false force-unpins); a
+ * deckKey with no entry falls back to the rule. Persisted as the `home.pins`
+ * KV value (issue #44).
  */
-export function isPinned(item: DeckGroupable): boolean {
-  return item.displayOrder <= 8
+export type PinOverrides = Record<string, boolean>
+
+/**
+ * "Pinned" = in the core band the user sees first on login. The default rule is
+ * display_order <= 8 (the utilities at 9–12 start unpinned, behind "Browse all
+ * apps"). A user override for this item's deckKey takes precedence: an explicit
+ * `false` unpins a default-pinned app and an explicit `true` pins one past the
+ * band. Backward compatible — with no overrides (or no entry for this item) the
+ * old display_order rule applies unchanged.
+ */
+export function isPinned(item: DeckGroupable, overrides?: PinOverrides): boolean {
+  return overrides?.[item.deckKey] ?? item.displayOrder <= 8
 }
 
 export interface GroupedDeck<T extends DeckGroupable> {
@@ -104,11 +116,16 @@ export interface GroupedDeck<T extends DeckGroupable> {
 /**
  * Group pinned items into decks, in DECKS order, omitting decks with no pinned
  * items. Non-pinned items are dropped (they live behind "Browse all apps").
+ * `overrides` (the user's `home.pins`) is threaded to isPinned; absent, the
+ * legacy display_order <= 8 rule applies.
  */
-export function groupIntoDecks<T extends DeckGroupable>(items: T[]): GroupedDeck<T>[] {
+export function groupIntoDecks<T extends DeckGroupable>(
+  items: T[],
+  overrides?: PinOverrides
+): GroupedDeck<T>[] {
   const buckets = new Map<DeckKey, T[]>()
   for (const item of items) {
-    if (!isPinned(item)) continue
+    if (!isPinned(item, overrides)) continue
     const key = deckForKey(item.deckKey)
     const bucket = buckets.get(key)
     if (bucket) bucket.push(item)

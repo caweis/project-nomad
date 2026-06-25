@@ -61,8 +61,16 @@ export default class SettingsController {
         const aiAssistantVersion = (isNativeOllama && aiBackend === 'ollama')
             ? (await this.ollamaService.getNativeServerVersion()) ?? undefined
             : undefined;
+        // Per-app home pin overrides (issue #44): deckKey -> explicit pinned
+        // state. The Supply Depot menu reads this to show "Pin to home" vs
+        // "Unpin from home" per installed app and toggles it via the shared
+        // POST /api/home/pins endpoint. Default {} so apps with no override show
+        // their display_order-rule state. Keyed on service_name (the deckKey for
+        // service rows).
+        const pins = (await KVStore.getValue('home.pins')) ?? {};
         return {
             system: { services },
+            pins,
             // Frontend uses this to gate ALL row actions for nomad_ollama
             // (Start / Stop / Restart / Force Reinstall / Update). Each one
             // routes through DockerService.affectService or updateService,

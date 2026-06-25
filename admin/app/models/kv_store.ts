@@ -1,7 +1,17 @@
 import { DateTime } from 'luxon'
 import { BaseModel, column, SnakeCaseNamingStrategy } from '@adonisjs/lucid/orm'
-import { KV_STORE_SCHEMA, type KVStoreKey, type KVStoreValue } from '../../types/kv_store.js'
+import {
+  KV_STORE_SCHEMA,
+  KV_STORE_TYPED_VALUES,
+  type KVStoreKey,
+  type KVStoreValue,
+} from '../../types/kv_store.js'
 import { parseBoolean } from '../utils/misc.js'
+
+/** Keys whose stored string is a JSON document (object value type), not a scalar. */
+function isJsonValuedKey(key: KVStoreKey): boolean {
+  return key in KV_STORE_TYPED_VALUES
+}
 
 /**
  * Generic key-value store model for storing various settings
@@ -35,6 +45,15 @@ export default class KVStore extends BaseModel {
       return null
     }
     const raw = String(setting.value)
+    // JSON-valued keys (e.g. home.pins) deserialize the stored document; a
+    // corrupt blob falls back to null so callers apply their documented default.
+    if (isJsonValuedKey(key)) {
+      try {
+        return JSON.parse(raw) as KVStoreValue<K>
+      } catch {
+        return null
+      }
+    }
     return (KV_STORE_SCHEMA[key] === 'boolean' ? parseBoolean(raw) : raw) as KVStoreValue<K>
   }
 
@@ -42,7 +61,9 @@ export default class KVStore extends BaseModel {
    * Set a setting value by key (creates if not exists), automatically serializing to string.
    */
   static async setValue<K extends KVStoreKey>(key: K, value: KVStoreValue<K>): Promise<KVStore> {
-    const serialized = String(value)
+    // JSON-valued keys (e.g. home.pins) store the JSON document; String(value)
+    // would yield "[object Object]" for an object, so serialize explicitly.
+    const serialized = isJsonValuedKey(key) ? JSON.stringify(value) : String(value)
     const setting = await this.firstOrCreate({ key }, { key, value: serialized })
     if (setting.value !== serialized) {
       setting.value = serialized

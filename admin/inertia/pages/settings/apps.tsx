@@ -22,6 +22,7 @@ import HostCommandButton from '~/components/HostCommandButton'
 import { SERVICE_NAMES } from '../../../constants/service_names'
 import CustomAppModal, { CustomAppInitial } from '~/components/CustomAppModal'
 import AppManageMenu, { AppMenuItem } from '~/components/AppManageMenu'
+import { isPinned } from '~/util/home_decks'
 
 function extractTag(containerImage: string): string {
   if (!containerImage) return ''
@@ -49,6 +50,10 @@ export default function SettingsPage(props: {
   // controller supplies the live value here. Undefined on the 'omlx' backend
   // (the row shows "Apple MLX" instead) or when the daemon is unreachable.
   aiAssistantVersion?: string
+  // Per-app home pin overrides (issue #44): service_name -> explicit pinned
+  // state. The overflow menu reads this to show "Pin to home" vs "Unpin from
+  // home" per installed app and toggles it via POST /api/home/pins. Default {}.
+  pins: Record<string, boolean>
 }) {
   const { openModal, closeAllModals } = useModals()
   const { showError } = useErrorNotification()
@@ -376,6 +381,17 @@ export default function SettingsPage(props: {
     }
   }
 
+  // Pin/unpin a service to the Command Center home (issue #44). Keyed on
+  // service_name (the deckKey for service rows). POSTs the override through the
+  // shared endpoint, then reloads only the `pins` prop so the menu label flips.
+  function handleTogglePin(record: ServiceSlim, pinned: boolean) {
+    router.post(
+      '/api/home/pins',
+      { key: record.service_name, pinned },
+      { preserveScroll: true, onSuccess: () => router.reload({ only: ['pins'] }) }
+    )
+  }
+
   const AppActions = ({ record }: { record: ServiceSlim }) => {
     // Opens the Stop/Start confirm modal for the service's current status.
     const openAffectModal = () => {
@@ -463,6 +479,20 @@ export default function SettingsPage(props: {
           })
         }
       }
+
+      // Pin/unpin to the Command Center home (issue #44). Current state layers
+      // the user's override (props.pins) over the default display_order rule via
+      // the shared isPinned helper, keyed on service_name.
+      const pinned = isPinned(
+        { deckKey: record.service_name, displayOrder: record.display_order ?? 100 },
+        props.pins
+      )
+      items.push({
+        kind: 'action',
+        icon: 'IconPin',
+        label: pinned ? 'Unpin from home' : 'Pin to home',
+        onClick: () => handleTogglePin(record, !pinned),
+      })
 
       if (record.is_custom) {
         items.push(

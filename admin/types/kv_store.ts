@@ -89,9 +89,37 @@ export const KV_STORE_SCHEMA = {
   'grocy.enabled': 'boolean',
   'grocy.baseUrl': 'string',
   'grocy.apiKey': 'string',
+  // Command Center home — per-app pin overrides (issue #44). A JSON object keyed
+  // by each item's deckKey (a service's service_name, or a hardcoded feature key:
+  // ai-assistant / maps / workshop / drug-reference / preparedness) -> explicit
+  // pinned boolean. An entry overrides the default `display_order <= 8` rule;
+  // absent keys fall back to it. KV values are always strings, so this is stored
+  // as a JSON string and the home controller JSON.stringifies on write /
+  // JSON.parses on read with a `{}` fallback — the same JSON-in-KV pattern as
+  // `readiness.needs`. The tag is 'string' so getValue/setValue serialize it
+  // through a string at the storage boundary; the richer static value type
+  // (Record<string, boolean>) is pinned via KV_STORE_TYPED_VALUES below. Default
+  // {} (an empty/absent value leaves the home identical to today).
+  'home.pins': 'string',
 } as const
 
+/**
+ * Keys whose logical value type is richer than their storage tag. The schema
+ * tag (above) is 'string' so the model serializes through a string at the
+ * storage boundary; the entry here pins the static getValue/setValue type to
+ * the real shape. `home.pins` is the deckKey -> pinned override map (issue #44).
+ */
+export const KV_STORE_TYPED_VALUES = {
+  'home.pins': {} as Record<string, boolean>,
+} as const
+
+// The schema tag drives runtime (de)serialization: 'boolean' -> parseBoolean,
+// anything else -> raw string. Keys listed in KV_STORE_TYPED_VALUES carry a
+// richer static value type while still serializing through a string at the
+// storage boundary.
 type KVTagToType<T extends string> = T extends 'boolean' ? boolean : string
 
 export type KVStoreKey = keyof typeof KV_STORE_SCHEMA
-export type KVStoreValue<K extends KVStoreKey> = KVTagToType<(typeof KV_STORE_SCHEMA)[K]>
+export type KVStoreValue<K extends KVStoreKey> = K extends keyof typeof KV_STORE_TYPED_VALUES
+  ? (typeof KV_STORE_TYPED_VALUES)[K]
+  : KVTagToType<(typeof KV_STORE_SCHEMA)[K]>
