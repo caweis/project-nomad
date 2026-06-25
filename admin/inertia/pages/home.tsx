@@ -1,24 +1,21 @@
 import {
-  IconBolt,
+  IconApps,
   IconBox,
-  IconHelp,
   IconMapRoute,
   IconPill,
-  IconPlus,
-  IconSettings,
   IconShieldCheck,
   IconWand,
   IconWifiOff,
 } from '@tabler/icons-react'
 import { Head, usePage } from '@inertiajs/react'
-import AppLayout from '~/layouts/AppLayout'
+import HomeLayout from '~/layouts/HomeLayout'
 import { getServiceLink } from '~/lib/navigation'
 import { ServiceSlim } from '../../types/services'
 import DynamicIcon, { DynamicIconName } from '~/components/DynamicIcon'
 import { useUpdateAvailable } from '~/hooks/useUpdateAvailable'
-import { useSystemSetting } from '~/hooks/useSystemSetting'
 import Alert from '~/components/Alert'
 import { SERVICE_NAMES } from '../../constants/service_names'
+import { groupIntoDecks } from '~/util/home_decks'
 
 // AI Assistant — Core Capability tile on the macOS distro (display_order: 3).
 //
@@ -29,7 +26,7 @@ import { SERVICE_NAMES } from '../../constants/service_names'
 // install path. On a fresh install the row starts at installed=false and
 // the wizard flips it to true once Ollama is set up — at which point this
 // tile appears.
-function buildAIAssistantItem(aiAssistantName: string) {
+function buildAIAssistantItem(aiAssistantName: string): DashboardItem {
   return {
     label: aiAssistantName || 'AI Assistant',
     to: '/chat',
@@ -39,11 +36,12 @@ function buildAIAssistantItem(aiAssistantName: string) {
     installed: true,
     displayOrder: 3,
     poweredBy: 'Ollama',
+    deckKey: 'ai-assistant',
   }
 }
 
 // Maps is a Core Capability (display_order: 4)
-const MAPS_ITEM = {
+const MAPS_ITEM: DashboardItem = {
   label: 'Maps',
   to: '/maps',
   target: '',
@@ -52,10 +50,11 @@ const MAPS_ITEM = {
   installed: true,
   displayOrder: 4,
   poweredBy: null,
+  deckKey: 'maps',
 }
 
 // Workshop — offline maker library: STL, CAD, PDF, images (Core Capability)
-const WORKSHOP_ITEM = {
+const WORKSHOP_ITEM: DashboardItem = {
   label: 'Workshop',
   to: '/workshop',
   target: '',
@@ -64,6 +63,7 @@ const WORKSHOP_ITEM = {
   installed: true,
   displayOrder: 5,
   poweredBy: null,
+  deckKey: 'workshop',
 }
 
 // Drug Reference v1 — offline FDA drug-label search (Core Capability).
@@ -71,7 +71,7 @@ const WORKSHOP_ITEM = {
 // by drug name OR by situation (burn, fever, diarrhea) via the curated chips. The
 // former separate "When to use what" tile is folded in here — both tiles routed
 // to /drug-reference, so the second was pure duplication.
-const DRUG_REFERENCE_ITEM = {
+const DRUG_REFERENCE_ITEM: DashboardItem = {
   label: 'Drug Reference',
   to: '/drug-reference',
   target: '',
@@ -80,6 +80,7 @@ const DRUG_REFERENCE_ITEM = {
   installed: true,
   displayOrder: 6,
   poweredBy: null,
+  deckKey: 'drug-reference',
 }
 
 // Preparedness — Self-Reliance Suite Phases 1 + 2 + 3 (Core Capability). One
@@ -89,7 +90,7 @@ const DRUG_REFERENCE_ITEM = {
 // food, and power you have against your target horizon — stores no new stock),
 // and Scenario Plans (the editable, checkable per-scenario plans whose steps
 // cross-link to inventory items, STL files, and ZIM articles).
-const READINESS_ITEM = {
+const READINESS_ITEM: DashboardItem = {
   label: 'Preparedness',
   to: '/readiness',
   target: '',
@@ -98,52 +99,8 @@ const READINESS_ITEM = {
   installed: true,
   displayOrder: 7,
   poweredBy: null,
+  deckKey: 'preparedness',
 }
-
-// System items shown after all apps
-const SYSTEM_ITEMS = [
-  {
-    label: 'Easy Setup',
-    to: '/easy-setup',
-    target: '',
-    description:
-      'Not sure where to start? Use the setup wizard to quickly configure your N.O.M.A.D.!',
-    icon: <IconBolt size={48} />,
-    installed: true,
-    displayOrder: 50,
-    poweredBy: null,
-  },
-  {
-    label: 'Install Apps',
-    to: '/settings/apps',
-    target: '',
-    description: 'Not seeing your favorite app? Install it here!',
-    icon: <IconPlus size={48} />,
-    installed: true,
-    displayOrder: 51,
-    poweredBy: null,
-  },
-  {
-    label: 'Docs',
-    to: '/docs/home',
-    target: '',
-    description: 'Read Project N.O.M.A.D. manuals and guides',
-    icon: <IconHelp size={48} />,
-    installed: true,
-    displayOrder: 52,
-    poweredBy: null,
-  },
-  {
-    label: 'Settings',
-    to: '/settings/system',
-    target: '',
-    description: 'Configure your N.O.M.A.D. settings',
-    icon: <IconSettings size={48} />,
-    installed: true,
-    displayOrder: 53,
-    poweredBy: null,
-  },
-]
 
 interface DashboardItem {
   label: string
@@ -154,6 +111,11 @@ interface DashboardItem {
   installed: boolean
   displayOrder: number
   poweredBy: string | null
+  // Which scenario deck this item belongs to. Service rows use their
+  // service_name; the hardcoded feature tiles use their own feature keys
+  // (ai-assistant / maps / workshop / drug-reference / preparedness). Unknown
+  // keys fall to 'tools-workshop' via deckForKey.
+  deckKey: string
 }
 
 export default function Home(props: {
@@ -162,14 +124,8 @@ export default function Home(props: {
   }
 }) {
   const items: DashboardItem[] = []
-  const updateInfo = useUpdateAvailable();
+  const updateInfo = useUpdateAvailable()
   const { aiAssistantName } = usePage<{ aiAssistantName: string }>().props
-
-  // Check if user has visited Easy Setup
-  const { data: easySetupVisited } = useSystemSetting({
-    key: 'ui.hasVisitedEasySetup'
-  })
-  const shouldHighlightEasySetup = easySetupVisited?.value ? easySetupVisited?.value !== 'true' : false
 
   // Add installed services (non-dependency services only).
   //
@@ -177,10 +133,11 @@ export default function Home(props: {
   // below (with a custom label, icon, and description). Without this filter
   // an installed OLLAMA row would produce a duplicate tile.
   props.system.services
-    .filter((service) =>
-      service.installed &&
-      service.ui_location &&
-      service.service_name !== SERVICE_NAMES.OLLAMA
+    .filter(
+      (service) =>
+        service.installed &&
+        service.ui_location &&
+        service.service_name !== SERVICE_NAMES.OLLAMA
     )
     .forEach((service) => {
       items.push({
@@ -198,14 +155,14 @@ export default function Home(props: {
         installed: service.installed,
         displayOrder: service.display_order ?? 100,
         poweredBy: service.powered_by ?? null,
+        deckKey: service.service_name,
       })
     })
 
   // AI Assistant — Core Capability tile, gated on the nomad_ollama services
   // row being installed=true. See buildAIAssistantItem() for the rationale.
   const aiAssistantInstalled = props.system.services.some(
-    (service) =>
-      service.service_name === SERVICE_NAMES.OLLAMA && service.installed
+    (service) => service.service_name === SERVICE_NAMES.OLLAMA && service.installed
   )
   if (aiAssistantInstalled) {
     items.push(buildAIAssistantItem(aiAssistantName))
@@ -228,63 +185,71 @@ export default function Home(props: {
   // the former standalone Inventory tile is now its first tab)
   items.push(READINESS_ITEM)
 
-  // Add system items
-  items.push(...SYSTEM_ITEMS)
-
-  // Sort all items by display order
-  items.sort((a, b) => a.displayOrder - b.displayOrder)
+  // Group the pinned items (display_order <= 8) into ordered scenario decks,
+  // dropping unpinned utilities (they live behind "Browse all apps") and hiding
+  // empty decks. The flat grid + the SYSTEM_ITEMS nav tiles (Easy Setup / Install
+  // Apps / Docs / Settings) are gone: those destinations live in the sidebar rail
+  // and the "Browse all apps" button.
+  const decks = groupIntoDecks(items)
 
   return (
-    <AppLayout>
+    <HomeLayout>
       <Head title="Command Center" />
-      {
-        updateInfo?.updateAvailable && (
-          <div className='flex justify-center items-center p-4 w-full'>
-            <Alert
-              title="An update is available for Project N.O.M.A.D.!"
-              type="info-inverted"
-              variant="solid"
-              className="w-full"
-              buttonProps={{
-                variant: 'primary',
-                children: 'Go to Settings',
-                icon: 'IconSettings',
-                onClick: () => {
-                  window.location.href = '/settings/update'
-                },
-              }}
-            />
-          </div>
-        )
-      }
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
-        {items.map((item) => {
-          const isEasySetup = item.label === 'Easy Setup'
-          const shouldHighlight = isEasySetup && shouldHighlightEasySetup
+      {updateInfo?.updateAvailable && (
+        <div className="flex justify-center items-center p-4 w-full">
+          <Alert
+            title="An update is available for Project N.O.M.A.D.!"
+            type="info-inverted"
+            variant="solid"
+            className="w-full"
+            buttonProps={{
+              variant: 'primary',
+              children: 'Go to Settings',
+              icon: 'IconSettings',
+              onClick: () => {
+                window.location.href = '/settings/update'
+              },
+            }}
+          />
+        </div>
+      )}
 
-          return (
-            <a key={item.label} href={item.to} target={item.target}>
-              <div className="relative rounded border-desert-green border-2 bg-desert-green hover:bg-transparent hover:text-black text-white transition-colors shadow-sm h-48 flex flex-col items-center justify-center cursor-pointer text-center px-4">
-                {shouldHighlight && (
-                  <span className="absolute top-2 right-2 flex items-center justify-center">
-                    <span
-                      className="animate-ping absolute inline-flex w-16 h-6 rounded-full bg-desert-orange-light opacity-75"
-                      style={{ animationDuration: '1.5s' }}
-                    ></span>
-                    <span className="relative inline-flex items-center rounded-full px-2.5 py-1 bg-desert-orange-light text-xs font-semibold text-white shadow-sm">
-                      Start here!
-                    </span>
-                  </span>
-                )}
-                <div className="flex items-center justify-center mb-2">{item.icon}</div>
-                <h3 className="font-bold text-2xl">{item.label}</h3>
-                {item.poweredBy && <p className="text-sm opacity-80">Powered by {item.poweredBy}</p>}
-                <p className="xl:text-lg mt-2">{item.description}</p>
-              </div>
-            </a>
-          )
-        })}
+      <div className="p-4">
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-3xl font-bold text-desert-green">Command Center</h1>
+          <a
+            href="/settings/apps"
+            className="inline-flex items-center gap-2 rounded border-desert-green border-2 bg-desert-green hover:bg-transparent hover:text-black text-white transition-colors px-4 py-2 font-semibold"
+          >
+            <IconApps size={20} />
+            Browse all apps
+          </a>
+        </div>
+
+        {decks.map(({ deck, items: deckItems }) => (
+          <section key={deck.key} className="mb-8">
+            <div className="flex items-center gap-2 mb-3">
+              <DynamicIcon icon={deck.icon as DynamicIconName} className="!size-6 text-desert-green" />
+              <h2 className="text-xl font-semibold text-desert-green">{deck.label}</h2>
+            </div>
+            <hr className="border-none h-px bg-desert-tan-lighter mb-4" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {deckItems.map((item) => (
+                <a key={item.label} href={item.to} target={item.target}>
+                  <div className="relative rounded border-desert-green border-2 bg-desert-green hover:bg-transparent hover:text-black text-white transition-colors shadow-sm h-48 flex flex-col items-center justify-center cursor-pointer text-center px-4">
+                    <div className="flex items-center justify-center mb-2">{item.icon}</div>
+                    <h3 className="font-bold text-2xl">{item.label}</h3>
+                    {item.poweredBy && (
+                      <p className="text-sm opacity-80">Powered by {item.poweredBy}</p>
+                    )}
+                    <p className="xl:text-lg mt-2">{item.description}</p>
+                  </div>
+                </a>
+              ))}
+            </div>
+          </section>
+        ))}
       </div>
-    </AppLayout>
+    </HomeLayout>
   )
 }
