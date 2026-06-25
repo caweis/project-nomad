@@ -5,6 +5,18 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 
 ## [Unreleased]
 
+## [0.2.740-macos] - 2026-06-24
+
+### Supply Depot
+- Per-row app actions collapse into a single overflow menu: Open stays inline (and Update when one is waiting), while Stop/Start, Restart, the custom-app actions, and Wipe & reinstall move into a `⋯` menu, so a row no longer wraps into a stacked pile.
+- Vaultwarden is served over self-signed HTTPS so the LAN web vault gets the secure context passkeys need; an existing HTTP install migrates to HTTPS on the next boot.
+- Easy Setup offers the offline FDA drug reference as an optional download.
+- The drug-interaction comparison stays readable at the full five-drug comparison instead of crushing the columns into slivers.
+- MeshCore Web tiles open over the correct `https://host:port` scheme.
+- Real install failures surface in the UI and the admin logs instead of failing silently.
+- A reseed syncs an app's container image, so a catalog image-tag correction reaches existing installs; two image tags that did not exist on the registry were fixed.
+- Fixed a stray "0" that rendered next to the actions on non-custom installed rows.
+
 macOS distribution layer, landed 2026-05-30.
 
 ### Added
