@@ -20,10 +20,11 @@ import { groupIntoDecks } from '~/util/home_decks'
 
 // Deck card icon sizing. The glyphs sit centered in each card; the stock 48px
 // at the Tabler default stroke of 2 gives a ~4% stroke-to-size ratio that reads
-// spindly. 32px with a heavier 2.5 stroke (~8%) reads solid. Both the hardcoded
-// feature tiles and the DynamicIcon service tiles pull from these so the whole
-// grid stays uniform — retune in one place.
-const DECK_ICON_SIZE = 32
+// spindly, while 32px shrinks them out of balance with the titles. 40px at a
+// heavier 2.5 stroke sits between the two. Both the hardcoded feature tiles and
+// the DynamicIcon service tiles pull from these, so the grid stays uniform and
+// retunes in one place.
+const DECK_ICON_SIZE = 40
 const DECK_ICON_STROKE = 2.5
 
 // AI Assistant — Core Capability tile on the macOS distro (display_order: 3).
@@ -270,8 +271,13 @@ export default function Home(props: {
             <hr className="border-none h-px bg-desert-tan-lighter mb-4" />
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {deckItems.map((item) => (
-                <a key={item.label} href={item.to} target={item.target}>
-                  <div className="relative rounded border-desert-green border-2 bg-desert-green hover:bg-transparent hover:text-black text-white transition-colors shadow-sm h-48 flex flex-col items-center justify-center cursor-pointer text-center px-4">
+                <a key={item.label} href={item.to} target={item.target} className="flex flex-col">
+                  {/* min-h-48 + flex-1 lets the card grow to fit a long description
+                      instead of clipping (the fixed h-48 + justify-center pushed a
+                      taller card's icon past the top edge and its text past the
+                      bottom). Cards in a grid row stretch to the tallest, so they
+                      stay uniform. */}
+                  <div className="relative rounded border-desert-green border-2 bg-desert-green hover:bg-transparent hover:text-black text-white transition-colors shadow-sm min-h-48 flex-1 flex flex-col items-center justify-center cursor-pointer text-center px-4 py-4">
                     {/* Unpin toggle. A filled pin, top-right. preventDefault/
                         stopPropagation in the handler keep this click off the
                         card's <a> navigation. */}

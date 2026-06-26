@@ -284,7 +284,7 @@ export default class ServiceSeeder extends BaseSeeder {
       powered_by: 'NOMAD',
       display_order: 7,
       description:
-        'Off-grid AI over a LoRa mesh radio: text a question, get an answer back on the radio. Needs a Meshtastic or MeshCore radio (P0 runs against a mock until the radio adapters land).',
+        'Off-grid AI over a LoRa mesh radio: text a question, get an answer back on the radio. Needs a Meshtastic or MeshCore radio.',
       icon: 'IconRadio',
       container_image: 'ghcr.io/caweis/project-nomad-mesh:0.1.0',
       source_repo: 'https://github.com/caweis/project-nomad',
@@ -483,7 +483,9 @@ export default class ServiceSeeder extends BaseSeeder {
     // likewise left alone so the edit survives reboots. container_image and ui_location are
     // synced too so a catalog change to an app's image, link, scheme, or port (e.g. a corrected
     // image tag like grocy's, Vaultwarden moving to https:8700) reaches existing non-modified
-    // installs on update, not just fresh ones. The version-refresh step runs right after the seed
+    // installs on update, not just fresh ones. description is synced for the same reason: a copy
+    // fix (e.g. trimming Mesh Bridge's overlong card text) needs to reach the rows that are
+    // already installed, not just fresh ones. The version-refresh step runs right after the seed
     // and re-bumps container_image to the newest tag, so resetting it to the seeded value here is
     // the floor, not the final value.
     for (const service of ServiceSeeder.DEFAULT_SERVICES) {
@@ -496,6 +498,7 @@ export default class ServiceSeeder extends BaseSeeder {
           metadata: (service as any).metadata ?? null,
           category: service.category,
           ui_location: service.ui_location,
+          description: service.description,
         })
       }
     }

@@ -5,6 +5,13 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 
 ## [Unreleased]
 
+## [0.2.744-macos] - 2026-06-25
+
+### Home
+- Command Center app cards grow to fit their content instead of clipping. A long description no longer pushes the card icon past the top edge or cuts the text off at the bottom; cards in a row still share a height.
+- Card icons render at 40px, between the thin 48px original and the too-small 32px from the previous build.
+- Mesh Bridge's card description drops the internal build note. Curated card descriptions now refresh on update, so a copy fix reaches apps that are already installed.
+
 ## [0.2.743-macos] - 2026-06-25
 
 ### Home
