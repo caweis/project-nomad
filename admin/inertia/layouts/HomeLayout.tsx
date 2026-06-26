@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import {
   IconArrowBigUpLines,
+  IconBook,
   IconBuildingStore,
   IconCarrot,
   IconChartBar,
@@ -67,6 +68,7 @@ export default function HomeLayout({ children }: { children: React.ReactNode }) 
       current: false,
     },
     { name: 'System', href: '/settings/system', icon: IconSettings, current: false },
+    { name: 'Documentation', href: '/docs', icon: IconBook, current: false },
     { name: 'Support the Project', href: '/settings/support', icon: IconHeart, current: false },
     { name: 'Legal Notices', href: '/settings/legal', icon: IconGavel, current: false },
   ]

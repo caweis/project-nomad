@@ -20,6 +20,7 @@ import { IconArrowUp, IconCheck, IconDownload } from '@tabler/icons-react'
 import UpdateServiceModal from '~/components/UpdateServiceModal'
 import HostCommandButton from '~/components/HostCommandButton'
 import { SERVICE_NAMES } from '../../../constants/service_names'
+import { SERVICE_CREDENTIAL_NOTES } from '../../../constants/service_credential_notes'
 import CustomAppModal, { CustomAppInitial } from '~/components/CustomAppModal'
 import AppManageMenu, { AppMenuItem } from '~/components/AppManageMenu'
 import { isPinned } from '~/util/home_decks'
@@ -705,6 +706,11 @@ export default function SettingsPage(props: {
                       <div className="flex flex-col">
                         <p>{record.friendly_name || record.service_name}</p>
                         <p className="text-sm text-gray-500">{record.description}</p>
+                        {record.installed && SERVICE_CREDENTIAL_NOTES[record.service_name] && (
+                          <p className="text-xs text-desert-green-dark mt-1 font-medium">
+                            {SERVICE_CREDENTIAL_NOTES[record.service_name]}
+                          </p>
+                        )}
                       </div>
                     )
                   },

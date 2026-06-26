@@ -698,6 +698,17 @@ class API {
     })()
   }
 
+  async setGrocyEnabled(enabled: boolean) {
+    return catchInternal(async () => {
+      const response = await this.client.post<{
+        ok: boolean
+        enabled: boolean
+        error?: string
+      }>('/grocy/enable', { enabled })
+      return response.data
+    })()
+  }
+
   // ── Supply Depot: custom-app endpoints ──────────────────────────────────────
 
   async preflightCheck(service_name: string) {

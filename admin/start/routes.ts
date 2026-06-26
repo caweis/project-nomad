@@ -195,6 +195,7 @@ router
 router.get('/supply-depot', [SettingsController, 'supplyDepot'])
 
 router.post('/api/grocy/test-connection', [GrocyController, 'testConnection'])
+router.post('/api/grocy/enable', [GrocyController, 'setEnabled'])
 
 router
   .group(() => {

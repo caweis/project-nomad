@@ -5,6 +5,17 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 
 ## [Unreleased]
 
+## [0.2.746-macos] - 2026-06-26
+
+### Settings
+- Grocy food readiness is now a single on/off toggle. NOMAD installs and runs Grocy, so it provisions its own read access when you turn the integration on, instead of asking you to paste a Grocy base URL and API key. Turning it off leaves Grocy untouched.
+
+### Home
+- The sidebar gains a Documentation link, so the built-in help is reachable from the Command Center again. It had no link after the home was reorganized.
+
+### Supply Depot
+- An app that ships with a built-in default login now shows it on its row once installed. Grocy lists its `admin` / `admin` default with a note to change it, so a fresh install isn't stranded at Grocy's own login screen with no idea what the credentials are.
+
 ## [0.2.745-macos] - 2026-06-25
 
 ### Settings
