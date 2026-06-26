@@ -53,7 +53,10 @@ export default function GrocySettings({ grocy }: Props) {
   return (
     <SettingsLayout>
       <Head title="Grocy — Food Readiness" />
-      <div className="max-w-2xl space-y-6">
+      {/* xl:pl-72 clears the fixed w-72 sidebar — every settings page needs it
+          (this one was the lone holdout, so its content rendered under the rail). */}
+      <div className="xl:pl-72 w-full">
+        <main className="px-12 py-6 max-w-2xl space-y-6">
         <div>
           <StyledSectionHeader title="Grocy (food readiness)" />
           <p className="mt-2 text-sm text-desert-stone">
@@ -110,6 +113,7 @@ export default function GrocySettings({ grocy }: Props) {
           ) : (
             <Alert type="error" message={testResult.error} />
           ))}
+        </main>
       </div>
     </SettingsLayout>
   )

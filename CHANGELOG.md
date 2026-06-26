@@ -5,6 +5,11 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 
 ## [Unreleased]
 
+## [0.2.745-macos] - 2026-06-25
+
+### Settings
+- The Grocy (Food Readiness) settings page no longer renders under the sidebar. It was the only settings page missing the sidebar-clearance padding, so its content was clipped along the left edge. A guard test now checks that every settings page clears the sidebar, so the next one can't ship the same way.
+
 ## [0.2.744-macos] - 2026-06-25
 
 ### Home
