@@ -29,6 +29,7 @@ import InstalledResource from '#models/installed_resource'
 import { RunDownloadJob } from '#jobs/run_download_job'
 import { SERVICE_NAMES } from '../../constants/service_names.js'
 import { CollectionManifestService } from './collection_manifest_service.js'
+import { decideSupersededDeletion } from '../utils/superseded_resource.js'
 import type { CategoryWithStatus } from '../../types/collections.js'
 
 const ZIM_MIME_TYPES = ['application/x-zim', 'application/x-openzim', 'application/octet-stream']
@@ -348,6 +349,13 @@ export class ZimService {
       const stats = await getFileStatsIfExists(filepath)
 
       try {
+        // Capture the prior install for this resource_id before updateOrCreate
+        // repoints it, so we know the old file to clean up (#858).
+        const prior = await InstalledResource.query()
+          .where('resource_id', parsed.resource_id)
+          .where('resource_type', 'zim')
+          .first()
+
         const { DateTime } = await import('luxon')
         await InstalledResource.updateOrCreate(
           { resource_id: parsed.resource_id, resource_type: 'zim' },
@@ -360,6 +368,29 @@ export class ZimService {
           }
         )
         logger.info(`[ZimService] Created InstalledResource entry for: ${parsed.resource_id}`)
+
+        // Remove the superseded prior version's file if every safety rail passes.
+        // The InstalledResource row already points at the new file, so delete the
+        // old file directly — NOT via this.delete(), which deletes by resource_id
+        // and would drop the row updateOrCreate just repointed. Kiwix is refreshed
+        // by the KIWIX container restart that fires once no more ZIM downloads are
+        // pending (it rescans the storage dir on boot), so no library rebuild is
+        // needed after the delete (#858).
+        const decision = decideSupersededDeletion({
+          existing: prior ? { file_path: prior.file_path, version: prior.version } : null,
+          newFilePath: filepath,
+          newVersion: parsed.version,
+          newFileExists: !!stats,
+          storageBaseDir: join(process.cwd(), ZIM_STORAGE_PATH),
+        })
+        if (decision.delete && decision.path) {
+          try {
+            await deleteFileIfExists(decision.path)
+            logger.info(`[ZimService] Removed superseded ${parsed.resource_id} file: ${decision.path}`)
+          } catch (err) {
+            logger.warn(`[ZimService] Failed to remove superseded file ${decision.path}:`, err)
+          }
+        }
       } catch (error) {
         logger.error(`[ZimService] Failed to create InstalledResource for ${filename}:`, error)
       }

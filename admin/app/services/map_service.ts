@@ -21,6 +21,7 @@ import { assertNotPrivateUrl } from '#validators/common'
 import InstalledResource from '#models/installed_resource'
 import { CollectionManifestService } from './collection_manifest_service.js'
 import { pickNewestPerRegion, type MapRegionEntry } from '../utils/map_region_dedup.js'
+import { decideSupersededDeletion } from '../utils/superseded_resource.js'
 import type { CollectionWithStatus, MapsSpec } from '../../types/collections.js'
 
 const BASE_ASSETS_MIME_TYPES = [
@@ -165,10 +166,18 @@ export class MapService implements IMapService {
       const parsed = CollectionManifestService.parseMapFilename(filename)
       if (!parsed) continue
 
-      const filepath = join(process.cwd(), this.mapStoragePath, 'pmtiles', filename)
+      const pmtilesDir = join(process.cwd(), this.mapStoragePath, 'pmtiles')
+      const filepath = join(pmtilesDir, filename)
       const stats = await getFileStatsIfExists(filepath)
 
       try {
+        // Capture the prior install for this resource_id before updateOrCreate
+        // repoints it, so we know the old file to clean up (#858).
+        const prior = await InstalledResource.query()
+          .where('resource_id', parsed.resource_id)
+          .where('resource_type', 'map')
+          .first()
+
         const { DateTime } = await import('luxon')
         await InstalledResource.updateOrCreate(
           { resource_id: parsed.resource_id, resource_type: 'map' },
@@ -181,6 +190,24 @@ export class MapService implements IMapService {
           }
         )
         logger.info(`[MapService] Created InstalledResource entry for: ${parsed.resource_id}`)
+
+        // Remove the superseded prior version's file if every safety rail passes.
+        // Maps have no library index, so deleting the recorded old file is enough.
+        const decision = decideSupersededDeletion({
+          existing: prior ? { file_path: prior.file_path, version: prior.version } : null,
+          newFilePath: filepath,
+          newVersion: parsed.version,
+          newFileExists: !!stats,
+          storageBaseDir: pmtilesDir,
+        })
+        if (decision.delete && decision.path) {
+          try {
+            await deleteFileIfExists(decision.path)
+            logger.info(`[MapService] Removed superseded ${parsed.resource_id} file: ${decision.path}`)
+          } catch (err) {
+            logger.warn(`[MapService] Failed to remove superseded file ${decision.path}:`, err)
+          }
+        }
       } catch (error) {
         logger.error(`[MapService] Failed to create InstalledResource for ${filename}:`, error)
       }
