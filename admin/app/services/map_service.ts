@@ -20,6 +20,7 @@ import logger from '@adonisjs/core/services/logger'
 import { assertNotPrivateUrl } from '#validators/common'
 import InstalledResource from '#models/installed_resource'
 import { CollectionManifestService } from './collection_manifest_service.js'
+import { pickNewestPerRegion, type MapRegionEntry } from '../utils/map_region_dedup.js'
 import type { CollectionWithStatus, MapsSpec } from '../../types/collections.js'
 
 const BASE_ASSETS_MIME_TYPES = [
@@ -361,21 +362,39 @@ export class MapService implements IMapService {
     const sources: BaseStylesFile['sources'][] = []
     const baseUrl = this.getPublicFileBaseUrl(host, 'pmtiles')
 
-    for (const region of regions) {
-      if (region.type === 'file' && region.name.endsWith('.pmtiles')) {
-        // Strip .pmtiles and date suffix (e.g. "alaska_2025-12" -> "alaska") for stable source names
+    // Dedupe by region, keeping only the newest file per region. Both
+    // "washington.pmtiles" and "washington_2025-12.pmtiles" reduce to the region
+    // "washington"; emitting both produces duplicate source keys and duplicate
+    // layer ids (generateStylesFile derives the layer id from the source key),
+    // which MapLibre rejects — blanking the ENTIRE map. Old copies linger when a
+    // newer curated version installs (#634), so guard against it here too.
+    const entries: MapRegionEntry[] = regions
+      .filter((region) => region.type === 'file' && region.name.endsWith('.pmtiles'))
+      .map((region) => {
         const parsed = CollectionManifestService.parseMapFilename(region.name)
-        const regionName = parsed ? parsed.resource_id : region.name.replace('.pmtiles', '')
-        const source: BaseStylesFile['sources'] = {}
-        const sourceUrl = urlJoin(baseUrl, region.name)
-
-        source[regionName] = {
-          type: 'vector',
-          attribution: PMTILES_ATTRIBUTION,
-          url: `pmtiles://${sourceUrl}`,
+        return {
+          name: region.name,
+          regionName: parsed ? parsed.resource_id : region.name.replace('.pmtiles', ''),
+          version: parsed ? parsed.version : null,
         }
-        sources.push(source)
+      })
+
+    const deduped = pickNewestPerRegion(entries, (kept, dropped) => {
+      logger.warn(
+        `[MapService] Duplicate map region "${kept.regionName}": using "${kept.name}" over "${dropped.name}" (keeping newest)`
+      )
+    })
+
+    for (const entry of deduped) {
+      const source: BaseStylesFile['sources'] = {}
+      const sourceUrl = urlJoin(baseUrl, entry.name)
+
+      source[entry.regionName] = {
+        type: 'vector',
+        attribution: PMTILES_ATTRIBUTION,
+        url: `pmtiles://${sourceUrl}`,
       }
+      sources.push(source)
     }
 
     return sources
