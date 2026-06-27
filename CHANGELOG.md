@@ -5,6 +5,24 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 
 ## [Unreleased]
 
+## [0.2.747-macos] - 2026-06-27
+
+Ports a set of upstream v1.33 bug fixes to this fork.
+
+### Maps
+- A map no longer goes blank when an old and a new copy of the same region are both on disk. The duplicate files produced a style MapLibre rejects; the newest file per region is now the one used.
+
+### Knowledge base
+- Curated Wikipedia-themed ZIMs (such as the medicine tier) keep their entry across restarts. The reconcile step skipped every file beginning with `wikipedia_en_`, which wiped the medicine tier and quietly downgraded it. It now skips only the single general-Wikipedia file you selected.
+- When a curated map or ZIM updates, the previous version's file is removed from disk instead of being left behind. Only Wikipedia was cleaned up before, so other updates piled up old files.
+- AI answers make better use of retrieved context. Context blocks now show their source title instead of a raw relevance percentage, the prompt no longer pushes the model to hedge with phrases like "according to the information available," and a heading-keyword match helps surface the right passage.
+
+### Updates
+- The Ollama update check works again for images with more than 1000 tags. The registry returns a relative URL for the next page of tags, which broke the second-page fetch, so the check stopped early and the app looked pinned at its installed version.
+
+### AI chat
+- Chat suggestions no longer hang when a very large model is installed. They now use your selected chat model, or the smallest installed one, instead of always loading the largest.
+
 ## [0.2.746-macos] - 2026-06-26
 
 ### Settings
