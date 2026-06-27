@@ -5,6 +5,7 @@ import logger from '@adonisjs/core/services/logger'
 import { TokenChunker } from '@chonkiejs/core'
 import sharp from 'sharp'
 import { deleteFileIfExists, determineFileType, getFile, getFileStatsIfExists, listDirectoryContentsRecursive, ZIM_STORAGE_PATH } from '../utils/fs.js'
+import { computeHeadingBoost } from '../utils/rag_context.js'
 import { PDFParse } from 'pdf-parse'
 import { createWorker } from 'tesseract.js'
 import { fromBuffer } from 'pdf2pic'
@@ -955,6 +956,20 @@ export class RagService {
             )
             finalScore += directMatchBoost
           }
+        }
+
+        // Boost when query keywords appear in the chunk's section/article heading.
+        // ZIM content carries this structural metadata (already fetched), and a
+        // query term in a heading is a strong relevance signal that body-text
+        // matching alone misses. Conservative and score-scaled like the boosts
+        // above, so it only re-orders already-retrieved chunks.
+        const headingText = [result.full_title, result.section_title, result.article_title]
+          .filter(Boolean)
+          .join(' ')
+        const headingBoost = computeHeadingBoost(headingText, queryKeywords, result.score)
+        if (headingBoost > 0) {
+          logger.debug(`[RAG] Heading match boost: ${headingBoost.toFixed(3)}`)
+          finalScore += headingBoost
         }
 
         finalScore = Math.min(1.0, finalScore + keywordBoost)

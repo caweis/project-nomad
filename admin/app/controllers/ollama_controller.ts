@@ -6,6 +6,7 @@ import { chatSchema, getAvailableModelsSchema } from '#validators/ollama'
 import { inject } from '@adonisjs/core'
 import type { HttpContext } from '@adonisjs/core/http'
 import { RAG_CONTEXT_LIMITS, SYSTEM_PROMPTS } from '../../constants/ollama.js'
+import { buildContextLabel } from '../utils/rag_context.js'
 import logger from '@adonisjs/core/services/logger'
 import type { Message } from 'ollama'
 
@@ -87,8 +88,12 @@ export default class OllamaController {
             `[RAG] Injecting ${trimmedDocs.length}/${relevantDocs.length} results (model: ${reqData.model}, maxResults: ${maxResults}, maxTokens: ${maxTokens || 'unlimited'})`
           )
 
+          // Label each context block with its source title when available, never
+          // the raw relevance score — surfacing e.g. "42%" primes the model to
+          // distrust correct context (nomic cosine scores for genuinely-relevant
+          // passages sit ~0.4-0.6). The score is still logged above for debugging.
           const contextText = trimmedDocs
-            .map((doc, idx) => `[Context ${idx + 1}] (Relevance: ${(doc.score * 100).toFixed(1)}%)\n${doc.text}`)
+            .map((doc, idx) => `${buildContextLabel(idx, doc.metadata)}\n${doc.text}`)
             .join('\n\n')
 
           const systemMessage = {
