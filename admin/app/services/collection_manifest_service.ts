@@ -5,7 +5,9 @@ import { DateTime } from 'luxon'
 import { join } from 'path'
 import CollectionManifest from '#models/collection_manifest'
 import InstalledResource from '#models/installed_resource'
+import WikipediaSelection from '#models/wikipedia_selection'
 import { zimCategoriesSpecSchema, mapsSpecSchema, wikipediaSpecSchema } from '#validators/curated_collections'
+import { isManagedWikipediaFile } from '../utils/wikipedia_reconcile.js'
 import {
   ensureDirectoryExists,
   listDirectoryContents,
@@ -218,10 +220,17 @@ export class CollectionManifestService {
 
       const seenZimIds = new Set<string>()
 
+      // Only skip the single general-Wikipedia file tracked by WikipediaSelection,
+      // not every file starting with `wikipedia_en_`. Curated category tiers ship
+      // Wikipedia-themed ZIMs (e.g. wikipedia_en_medicine_maxi) that must reconcile
+      // normally — otherwise their InstalledResource row is wiped on every restart
+      // and the detected tier silently downgrades.
+      const wikipediaSelection = await WikipediaSelection.query().first()
+      const managedWikipediaFilename = wikipediaSelection?.filename ?? null
+
       for (const file of zimFiles) {
         console.log(`Processing ZIM file: ${file.name}`)
-        // Skip Wikipedia files (managed by WikipediaSelection model)
-        if (file.name.startsWith('wikipedia_en_')) continue
+        if (isManagedWikipediaFile(file.name, managedWikipediaFilename)) continue
 
         const parsed = CollectionManifestService.parseZimFilename(file.name)
         console.log(`Parsed ZIM filename:`, parsed)
