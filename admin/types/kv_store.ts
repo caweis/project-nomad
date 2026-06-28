@@ -101,6 +101,40 @@ export const KV_STORE_SCHEMA = {
   // (Record<string, boolean>) is pinned via KV_STORE_TYPED_VALUES below. Default
   // {} (an empty/absent value leaves the home identical to today).
   'home.pins': 'string',
+  // Opt-in automatic updates (Phase 0 shared scaffolding; OFF by default). KV is
+  // schemaless/string-typed, so HH:MM windows, integer hours, and byte caps are
+  // string-encoded and parsed defensively by each tier's service. The user-settable
+  // keys (master switches + window/cooloff/cap) are also listed in SETTINGS_KEYS;
+  // the *.lastResult / lastError / consecutiveFailures / autoDisabledReason /
+  // window-accounting keys are service-written state, not user-settable.
+  //
+  // Core admin self-update (apply via host bridge `nomad upgrade` on macOS).
+  'autoUpdate.enabled':              'boolean',
+  'autoUpdate.windowStart':          'string',
+  'autoUpdate.windowEnd':            'string',
+  'autoUpdate.cooloffHours':         'string',
+  'autoUpdate.lastAttemptAt':        'string',
+  'autoUpdate.lastError':            'string',
+  'autoUpdate.lastResult':           'string',
+  'autoUpdate.consecutiveFailures':  'string',
+  'autoUpdate.autoDisabledReason':   'string',
+  // Installed-app (sibling container) updates. Reuses the core autoUpdate.window*.
+  'appAutoUpdate.enabled':           'boolean',
+  'appAutoUpdate.lastAttemptAt':     'string',
+  'appAutoUpdate.lastResult':        'string',
+  // Content (ZIM/map) updates. Own window + a per-window byte cap.
+  'contentAutoUpdate.enabled':             'boolean',
+  'contentAutoUpdate.windowStart':         'string',
+  'contentAutoUpdate.windowEnd':           'string',
+  'contentAutoUpdate.cooloffHours':        'string',
+  'contentAutoUpdate.maxBytesPerWindow':   'string',
+  'contentAutoUpdate.lastAttemptAt':       'string',
+  'contentAutoUpdate.lastResult':          'string',
+  'contentAutoUpdate.lastError':           'string',
+  'contentAutoUpdate.consecutiveFailures': 'string',
+  'contentAutoUpdate.autoDisabledReason':  'string',
+  'contentAutoUpdate.windowBytesUsed':     'string',
+  'contentAutoUpdate.windowResetAt':       'string',
 } as const
 
 /**
