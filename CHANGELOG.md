@@ -5,6 +5,11 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 
 ## [Unreleased]
 
+## [0.2.748-macos] - 2026-06-28
+
+### Knowledge base
+- Downloading or updating general Wikipedia no longer deletes the curated topic tiers (medicine, simple, Wikivoyage, climate) you have installed. The cleanup that runs after a Wikipedia download matched every file beginning with `wikipedia_en_`, so finishing one corpus removed the others from disk. It now removes only older dated copies of the same corpus. Ports upstream's fix for issue #884.
+
 ## [0.2.747-macos] - 2026-06-27
 
 Ports a set of upstream v1.33 bug fixes to this fork.
