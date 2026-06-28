@@ -118,6 +118,9 @@ export const KV_STORE_SCHEMA = {
   'autoUpdate.lastResult':           'string',
   'autoUpdate.consecutiveFailures':  'string',
   'autoUpdate.autoDisabledReason':   'string',
+  // Core cool-off anchor: the latest version seen and when it was first seen.
+  'autoUpdate.firstSeenVersion':     'string',
+  'autoUpdate.firstSeenAt':          'string',
   // Installed-app (sibling container) updates. Reuses the core autoUpdate.window*.
   'appAutoUpdate.enabled':           'boolean',
   'appAutoUpdate.lastAttemptAt':     'string',

@@ -12,6 +12,7 @@ import { DownloadDrugDataJob } from '#jobs/download_drug_data_job'
 import { IngestDrugDataJob } from '#jobs/ingest_drug_data_job'
 import { ContentAutoUpdateJob } from '#jobs/content_auto_update_job'
 import { AppAutoUpdateJob } from '#jobs/app_auto_update_job'
+import { AutoUpdateJob } from '#jobs/auto_update_job'
 
 export default class QueueWork extends BaseCommand {
   static commandName = 'queue:work'
@@ -163,6 +164,7 @@ export default class QueueWork extends BaseCommand {
     await CheckServiceUpdatesJob.scheduleNightly()
     await ContentAutoUpdateJob.scheduleHourly()
     await AppAutoUpdateJob.scheduleHourly()
+    await AutoUpdateJob.scheduleHourly()
 
     // Graceful shutdown for all workers
     process.on('SIGTERM', async () => {
@@ -187,6 +189,7 @@ export default class QueueWork extends BaseCommand {
     handlers.set(IngestDrugDataJob.key, new IngestDrugDataJob())
     handlers.set(ContentAutoUpdateJob.key, new ContentAutoUpdateJob())
     handlers.set(AppAutoUpdateJob.key, new AppAutoUpdateJob())
+    handlers.set(AutoUpdateJob.key, new AutoUpdateJob())
 
     queues.set(RunDownloadJob.key, RunDownloadJob.queue)
     queues.set(DownloadModelJob.key, DownloadModelJob.queue)
@@ -198,6 +201,7 @@ export default class QueueWork extends BaseCommand {
     queues.set(IngestDrugDataJob.key, IngestDrugDataJob.queue)
     queues.set(ContentAutoUpdateJob.key, ContentAutoUpdateJob.queue)
     queues.set(AppAutoUpdateJob.key, AppAutoUpdateJob.queue)
+    queues.set(AutoUpdateJob.key, AutoUpdateJob.queue)
 
     return [handlers, queues]
   }
