@@ -51,7 +51,7 @@ export class RunDownloadJob {
               .first()
             const oldFilePath = oldEntry?.file_path ?? null
 
-            await InstalledResource.updateOrCreate(
+            const installed = await InstalledResource.updateOrCreate(
               { resource_id: resourceMetadata.resource_id, resource_type: filetype as 'zim' | 'map' },
               {
                 version: resourceMetadata.version,
@@ -73,6 +73,19 @@ export class RunDownloadJob {
                   `[RunDownloadJob] Failed to delete old file ${oldFilePath}:`,
                   deleteError
                 )
+              }
+            }
+
+            // Content auto-update: a successful auto-triggered download clears
+            // this resource's failure backoff (the worker records failures).
+            if (resourceMetadata.auto) {
+              try {
+                const { recordResourceUpdateSuccess } = await import(
+                  '../utils/content_auto_update_backoff.js'
+                )
+                await recordResourceUpdateSuccess(installed)
+              } catch (e: any) {
+                console.warn(`[RunDownloadJob] Failed to clear auto-update backoff:`, e)
               }
             }
           }

@@ -32,6 +32,9 @@ export type RunDownloadJobParams = Omit<
     resource_id: string
     version: string
     collection_ref: string | null
+    /** True when this download was triggered by content auto-update — drives the
+     * per-resource backoff success/failure recording in the job + worker. */
+    auto?: boolean
   }
 }
 

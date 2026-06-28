@@ -10,6 +10,7 @@ import { CheckUpdateJob } from '#jobs/check_update_job'
 import { CheckServiceUpdatesJob } from '#jobs/check_service_updates_job'
 import { DownloadDrugDataJob } from '#jobs/download_drug_data_job'
 import { IngestDrugDataJob } from '#jobs/ingest_drug_data_job'
+import { ContentAutoUpdateJob } from '#jobs/content_auto_update_job'
 
 export default class QueueWork extends BaseCommand {
   static commandName = 'queue:work'
@@ -119,6 +120,33 @@ export default class QueueWork extends BaseCommand {
             )
           }
         }
+
+        // Content auto-update: on a TERMINAL failure of an auto-triggered
+        // download (retries exhausted), record the per-resource backoff failure
+        // so a perpetually-failing update self-disables. Guard on the final
+        // attempt so mid-retry failures don't over-count.
+        if (
+          (job?.data?.filetype === 'zim' || job?.data?.filetype === 'map') &&
+          job?.data?.resourceMetadata?.auto === true &&
+          job.attemptsMade >= (job.opts?.attempts ?? 1)
+        ) {
+          try {
+            const InstalledResource = (await import('#models/installed_resource')).default
+            const { recordResourceUpdateFailure } = await import(
+              '../../app/utils/content_auto_update_backoff.js'
+            )
+            const meta = job.data.resourceMetadata
+            const resource = await InstalledResource.query()
+              .where('resource_id', meta.resource_id)
+              .where('resource_type', job.data.filetype)
+              .first()
+            if (resource) await recordResourceUpdateFailure(resource, err.message)
+          } catch (e: any) {
+            this.logger.error(
+              `[${queueName}] Failed to record content auto-update backoff: ${e.message}`
+            )
+          }
+        }
       })
 
       worker.on('completed', (job) => {
@@ -132,6 +160,7 @@ export default class QueueWork extends BaseCommand {
     // Schedule nightly update checks (idempotent, will persist over restarts)
     await CheckUpdateJob.scheduleNightly()
     await CheckServiceUpdatesJob.scheduleNightly()
+    await ContentAutoUpdateJob.scheduleHourly()
 
     // Graceful shutdown for all workers
     process.on('SIGTERM', async () => {
@@ -154,6 +183,7 @@ export default class QueueWork extends BaseCommand {
     handlers.set(CheckServiceUpdatesJob.key, new CheckServiceUpdatesJob())
     handlers.set(DownloadDrugDataJob.key, new DownloadDrugDataJob())
     handlers.set(IngestDrugDataJob.key, new IngestDrugDataJob())
+    handlers.set(ContentAutoUpdateJob.key, new ContentAutoUpdateJob())
 
     queues.set(RunDownloadJob.key, RunDownloadJob.queue)
     queues.set(DownloadModelJob.key, DownloadModelJob.queue)
@@ -163,6 +193,7 @@ export default class QueueWork extends BaseCommand {
     queues.set(CheckServiceUpdatesJob.key, CheckServiceUpdatesJob.queue)
     queues.set(DownloadDrugDataJob.key, DownloadDrugDataJob.queue)
     queues.set(IngestDrugDataJob.key, IngestDrugDataJob.queue)
+    queues.set(ContentAutoUpdateJob.key, ContentAutoUpdateJob.queue)
 
     return [handlers, queues]
   }

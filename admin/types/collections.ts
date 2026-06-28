@@ -86,6 +86,8 @@ export type ResourceUpdateInfo = {
   installed_version: string
   latest_version: string
   download_url: string
+  /** Download size of the newer version, when known — used for the auto-update byte cap. */
+  size_bytes?: number
 }
 
 export type ContentUpdateCheckResult = {

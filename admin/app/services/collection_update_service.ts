@@ -80,7 +80,8 @@ export class CollectionUpdateService {
   }
 
   async applyUpdate(
-    update: ResourceUpdateInfo
+    update: ResourceUpdateInfo,
+    options?: { auto?: boolean }
   ): Promise<{ success: boolean; jobId?: string; error?: string }> {
     // Check if a download is already in progress for this URL
     const existingJob = await RunDownloadJob.getByUrl(update.download_url)
@@ -109,6 +110,7 @@ export class CollectionUpdateService {
         resource_id: update.resource_id,
         version: update.latest_version,
         collection_ref: null,
+        auto: options?.auto ?? false,
       },
     })
 
