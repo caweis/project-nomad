@@ -5,6 +5,11 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 
 ## [Unreleased]
 
+## [0.2.749-macos] - 2026-06-28
+
+### Updates
+- Automatic updates, opt-in and off by default. Settings → Updates has three switches: the NOMAD admin itself, installed apps, and maps/knowledge-base content. When a switch is on, NOMAD checks during a nightly window (default 02:00–05:00), waits out a cool-off after a new version first appears, then applies it. A run that fails three times in a row turns itself off, and an offline server is left alone instead of counted as a failure. Installed apps update only the ones you opt into per app, and never across a major version; turn an app's auto-update on from its Supply Depot row. The admin update runs `nomad upgrade` on the host and restarts the admin to finish.
+
 ## [0.2.748-macos] - 2026-06-28
 
 ### Knowledge base
