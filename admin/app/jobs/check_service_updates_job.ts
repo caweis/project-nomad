@@ -39,6 +39,14 @@ export class CheckServiceUpdatesJob {
 
         const latestUpdate = updates.length > 0 ? updates[0].tag : null
 
+        // Stamp the cool-off anchor when a NEW version is first seen, clear it
+        // when no update is offered. App auto-update gates eligibility on this.
+        const previous = service.available_update_version
+        if (latestUpdate && latestUpdate !== previous) {
+          service.available_update_first_seen_at = DateTime.now()
+        } else if (!latestUpdate) {
+          service.available_update_first_seen_at = null
+        }
         service.available_update_version = latestUpdate
         service.update_checked_at = DateTime.now()
         await service.save()
