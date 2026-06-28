@@ -207,6 +207,62 @@ export class ContainerRegistryService {
   }
 
   /**
+   * Total download size (sum of layer sizes, in bytes) for an image tag on the
+   * host architecture, or null if it can't be determined. Used by the
+   * auto-update disk pre-flight. Ported from upstream v1.33.0.
+   */
+  async getImageDownloadSize(
+    parsed: ParsedImageReference,
+    tag: string,
+    hostArch: string
+  ): Promise<number | null> {
+    try {
+      const token = await this.getToken(parsed.registry, parsed.fullName)
+      const manifestAccept = [
+        'application/vnd.oci.image.index.v1+json',
+        'application/vnd.docker.distribution.manifest.list.v2+json',
+        'application/vnd.oci.image.manifest.v1+json',
+        'application/vnd.docker.distribution.manifest.v2+json',
+      ].join(', ')
+
+      const fetchManifest = async (ref: string) =>
+        this.fetchWithRetry(`https://${parsed.registry}/v2/${parsed.fullName}/manifests/${ref}`, {
+          headers: { Authorization: `Bearer ${token}`, Accept: manifestAccept },
+        })
+
+      const topRes = await fetchManifest(tag)
+      if (!topRes.ok) return null
+
+      let manifest = (await topRes.json()) as {
+        mediaType?: string
+        layers?: Array<{ size?: number }>
+        manifests?: Array<{ digest?: string; platform?: { architecture?: string } }>
+      }
+
+      // Multi-arch manifest list/index — resolve to the host-arch child manifest.
+      if (manifest.manifests?.length) {
+        const match =
+          manifest.manifests.find((m) => m.platform?.architecture === hostArch) ||
+          manifest.manifests[0]
+        if (!match?.digest) return null
+
+        const childRes = await fetchManifest(match.digest)
+        if (!childRes.ok) return null
+        manifest = (await childRes.json()) as { layers?: Array<{ size?: number }> }
+      }
+
+      if (!manifest.layers?.length) return null
+
+      return manifest.layers.reduce((total, layer) => total + (layer.size || 0), 0)
+    } catch (error) {
+      logger.warn(
+        `[ContainerRegistryService] Failed to get image size for ${parsed.fullName}:${tag}: ${error.message}`
+      )
+      return null
+    }
+  }
+
+  /**
    * Extract the source repository URL from an image's OCI labels.
    * Uses the standardized `org.opencontainers.image.source` label.
    * Result is cached per image (not per tag).
