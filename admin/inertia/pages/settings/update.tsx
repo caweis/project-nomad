@@ -224,6 +224,68 @@ function ContentUpdatesSection() {
   )
 }
 
+function AutomaticUpdatesSection() {
+  const { addNotification } = useNotifications()
+  const core = useSystemSetting({
+    key: 'autoUpdate.enabled',
+    initialData: { key: 'autoUpdate.enabled', value: false },
+  })
+  const apps = useSystemSetting({
+    key: 'appAutoUpdate.enabled',
+    initialData: { key: 'appAutoUpdate.enabled', value: false },
+  })
+  const content = useSystemSetting({
+    key: 'contentAutoUpdate.enabled',
+    initialData: { key: 'contentAutoUpdate.enabled', value: false },
+  })
+
+  const mutation = useMutation({
+    mutationFn: async ({ key, value }: { key: string; value: boolean }) => api.updateSetting(key, value),
+    onSuccess: (_data, variables) => {
+      addNotification({ message: 'Setting updated successfully.', type: 'success' })
+      if (variables.key === 'autoUpdate.enabled') core.refetch()
+      else if (variables.key === 'appAutoUpdate.enabled') apps.refetch()
+      else content.refetch()
+    },
+    onError: () => {
+      addNotification({ message: 'There was an error updating the setting. Please try again.', type: 'error' })
+    },
+  })
+
+  return (
+    <>
+      <StyledSectionHeader title="Automatic Updates" className="mt-8" />
+      <div className="bg-white rounded-lg border shadow-md overflow-hidden mt-6 p-6 space-y-6">
+        <Switch
+          checked={core.data?.value || false}
+          onChange={(v) => mutation.mutate({ key: 'autoUpdate.enabled', value: v })}
+          disabled={mutation.isPending}
+          label="Core app auto-update"
+          description="Automatically install a newer NOMAD admin version during the nightly window, once it has cleared a cool-off. The admin restarts to apply (2–5 minutes). Off by default."
+        />
+        <Switch
+          checked={apps.data?.value || false}
+          onChange={(v) => mutation.mutate({ key: 'appAutoUpdate.enabled', value: v })}
+          disabled={mutation.isPending}
+          label="Installed app auto-update"
+          description="Automatically update installed apps you have opted in (a per-app toggle on each app), within the same window. A major-version change is never auto-applied."
+        />
+        <Switch
+          checked={content.data?.value || false}
+          onChange={(v) => mutation.mutate({ key: 'contentAutoUpdate.enabled', value: v })}
+          disabled={mutation.isPending}
+          label="Content auto-update"
+          description="Automatically download newer versions of installed maps and knowledge-base (ZIM) content during the window."
+        />
+        <p className="text-sm text-desert-stone">
+          Updates run during a nightly window (default 02:00–05:00) after a cool-off, and pause
+          themselves after repeated failures. All three are off until you enable them.
+        </p>
+      </div>
+    </>
+  )
+}
+
 export default function SystemUpdatePage(props: {
   system: Props
   // True when admin is configured for native (Homebrew) Ollama, which on this
@@ -680,6 +742,7 @@ export default function SystemUpdatePage(props: {
               description="Receive release candidate (RC) versions before they are officially released. Note: RC versions may contain bugs and are not recommended for environments where stability and data integrity are critical."
             />
           </div>
+          <AutomaticUpdatesSection />
           <ContentUpdatesSection />
           <div className="bg-white rounded-lg border shadow-md overflow-hidden py-6 mt-12">
             <div className="flex flex-col md:flex-row justify-between items-center p-8 gap-y-8 md:gap-y-0 gap-x-8">

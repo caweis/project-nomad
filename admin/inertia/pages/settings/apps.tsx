@@ -517,15 +517,19 @@ export default function SettingsPage(props: {
             label: 'Logs',
             onClick: () => handleViewLogs(record),
             disabled: loading,
-          },
-          {
-            kind: 'toggle',
-            label: 'Auto-update',
-            checked: !!record.auto_update_enabled,
-            onChange: (enabled) => handleToggleAutoUpdate(record, enabled),
           }
         )
       }
+
+      // Auto-update opt-in applies to every installed app (curated + custom),
+      // gated by the global master switch. It used to be pushed only for custom
+      // apps, so curated apps could never opt in.
+      items.push({
+        kind: 'toggle',
+        label: 'Auto-update',
+        checked: !!record.auto_update_enabled,
+        onChange: (enabled) => handleToggleAutoUpdate(record, enabled),
+      })
 
       const destructive: AppMenuItem[] = []
       if (record.is_custom) {
