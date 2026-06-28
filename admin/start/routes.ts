@@ -169,6 +169,8 @@ router
     router.post('/check', [CollectionUpdatesController, 'checkForUpdates'])
     router.post('/apply', [CollectionUpdatesController, 'applyUpdate'])
     router.post('/apply-all', [CollectionUpdatesController, 'applyAllUpdates'])
+    router.get('/auto-status', [CollectionUpdatesController, 'autoStatus'])
+    router.post('/auto-run', [CollectionUpdatesController, 'runAutoNow'])
   })
   .prefix('/api/content-updates')
 
