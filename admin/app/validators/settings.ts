@@ -1,6 +1,11 @@
 import vine from "@vinejs/vine";
 import { SETTINGS_KEYS } from "../../constants/kv_store.js";
 
+// validateSettingValue lives in a self-contained util (no vine / no .js→.ts
+// imports) so it is loadable by the standalone strip-types harness; re-exported
+// here so callers keep importing value validation from #validators/settings.
+export { validateSettingValue } from "../utils/setting_value.js";
+
 // Validate the `key` query param on GET /api/settings — without this, the
 // endpoint reads whatever string the caller supplies into KVStore.getValue
 // and reflects it back, allowing arbitrary key probing. Ports upstream

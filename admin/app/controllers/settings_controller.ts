@@ -4,7 +4,7 @@ import { DockerService } from '#services/docker_service';
 import { MapService } from '#services/map_service';
 import { OllamaService } from '#services/ollama_service';
 import { SystemService } from '#services/system_service';
-import { getSettingSchema, updateSettingSchema } from '#validators/settings';
+import { getSettingSchema, updateSettingSchema, validateSettingValue } from '#validators/settings';
 import env from '#start/env';
 import { inject } from '@adonisjs/core';
 import type { HttpContext } from '@adonisjs/core/http'
@@ -195,6 +195,12 @@ export default class SettingsController {
 
     async updateSetting({ request, response }: HttpContext) {
         const reqData = await request.validateUsing(updateSettingSchema);
+        // Per-key value-format check (HH:MM windows, cool-off range, byte cap)
+        // beyond the generic key-enum validation — reject before persisting.
+        const valueError = validateSettingValue(reqData.key, reqData.value);
+        if (valueError) {
+            return response.status(422).send({ success: false, message: valueError });
+        }
         await this.systemService.updateSetting(reqData.key, reqData.value);
         return response.status(200).send({ success: true, message: 'Setting updated successfully' });
     }
