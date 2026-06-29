@@ -3,6 +3,7 @@ import StyledTable from '~/components/StyledTable'
 import SettingsLayout from '~/layouts/SettingsLayout'
 import { ServiceSlim } from '../../../types/services'
 import { getServiceLink } from '~/lib/navigation'
+import { extractTag } from '~/lib/imageTag'
 import StyledButton from '~/components/StyledButton'
 import { useModals } from '~/context/ModalContext'
 import StyledModal from '~/components/StyledModal'
@@ -25,11 +26,6 @@ import CustomAppModal, { CustomAppInitial } from '~/components/CustomAppModal'
 import AppManageMenu, { AppMenuItem } from '~/components/AppManageMenu'
 import { isPinned } from '~/util/home_decks'
 
-function extractTag(containerImage: string): string {
-  if (!containerImage) return ''
-  const parts = containerImage.split(':')
-  return parts.length > 1 ? parts[parts.length - 1] : 'latest'
-}
 
 export default function SettingsPage(props: {
   system: { services: ServiceSlim[] }
@@ -462,24 +458,10 @@ export default function SettingsPage(props: {
       const items: AppMenuItem[] = []
       const statusKnown = !!record.status && record.status !== 'unknown'
 
-      if (statusKnown) {
-        items.push({
-          kind: 'action',
-          icon: record.status === 'running' ? 'IconPlayerStop' : 'IconPlayerPlay',
-          label: record.status === 'running' ? 'Stop' : 'Start',
-          onClick: openAffectModal,
-          disabled: isInstalling,
-        })
-        if (record.status === 'running') {
-          items.push({
-            kind: 'action',
-            icon: 'IconRefresh',
-            label: 'Restart',
-            onClick: openRestartModal,
-            disabled: isInstalling,
-          })
-        }
-      }
+      // Lifecycle (Stop/Start, Restart) renders INLINE alongside Open/Update to
+      // match upstream's Actions cell; the menu holds the secondary actions
+      // upstream doesn't have (Pin, the custom-app cluster, Auto-update) plus the
+      // isolated destructive zone.
 
       // Pin/unpin to the Command Center home (issue #44). Current state layers
       // the user's override (props.pins) over the default display_order rule via
@@ -635,6 +617,7 @@ export default function SettingsPage(props: {
     }
 
     const menuItems = buildInstalledMenu()
+    const statusKnown = !!record.status && record.status !== 'unknown'
     return (
       <div className="flex flex-wrap items-center gap-2">
         <StyledButton
@@ -661,6 +644,26 @@ export default function SettingsPage(props: {
             Update
           </StyledButton>
         ) : null}
+        {statusKnown && (
+          <StyledButton
+            icon={record.status === 'running' ? 'IconPlayerStop' : 'IconPlayerPlay'}
+            variant="secondary"
+            onClick={openAffectModal}
+            disabled={isInstalling}
+          >
+            {record.status === 'running' ? 'Stop' : 'Start'}
+          </StyledButton>
+        )}
+        {statusKnown && record.status === 'running' && (
+          <StyledButton
+            icon="IconRefresh"
+            variant="action"
+            onClick={openRestartModal}
+            disabled={isInstalling}
+          >
+            Restart
+          </StyledButton>
+        )}
         {menuItems.length > 0 && <AppManageMenu items={menuItems} disabled={isInstalling} />}
       </div>
     )
@@ -675,7 +678,7 @@ export default function SettingsPage(props: {
             <div>
               <h1 className="text-4xl font-semibold">Supply Depot</h1>
               <p className="text-gray-500 mt-1">
-                Browse and install apps for your Project N.O.M.A.D. instance, organized by category. Nightly update checks automatically detect when new versions are available.
+                Browse and install apps for your Project N.O.M.A.D. instance. Nightly update checks automatically detect when new versions are available.
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -718,18 +721,6 @@ export default function SettingsPage(props: {
                       </div>
                     )
                   },
-                },
-                {
-                  accessor: 'category',
-                  title: 'Category',
-                  render: (record) =>
-                    record.category ? (
-                      <span className="inline-flex items-center rounded-full bg-desert-sand px-2.5 py-0.5 text-xs font-medium capitalize text-desert-stone-dark">
-                        {record.category}
-                      </span>
-                    ) : (
-                      <span className="text-gray-400">—</span>
-                    ),
                 },
                 {
                   accessor: 'ui_location',

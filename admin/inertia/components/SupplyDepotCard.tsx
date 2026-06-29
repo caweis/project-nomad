@@ -4,14 +4,10 @@ import AppManageMenu, { AppMenuItem } from '~/components/AppManageMenu'
 import HostCommandButton from '~/components/HostCommandButton'
 import { ServiceSlim } from '../../types/services'
 import { getServiceLink } from '~/lib/navigation'
+import { extractTag } from '~/lib/imageTag'
 import { SERVICE_NAMES } from '../../constants/service_names'
 import { getSupplyDepotDocLink } from '../../constants/supply_depot_docs'
 
-function extractTag(containerImage: string): string {
-  if (!containerImage) return ''
-  const parts = containerImage.split(':')
-  return parts.length > 1 ? parts[parts.length - 1] : 'latest'
-}
 
 // The handler surface the card needs from its parent page. These are the SAME
 // handlers settings/apps.tsx wires to its table-row buttons; the card page
