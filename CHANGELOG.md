@@ -5,6 +5,11 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 
 ## [Unreleased]
 
+## [0.2.750-macos] - 2026-06-28
+
+### Supply Depot
+- The Supply Depot table matches the upstream Apps layout again. The Version column no longer shows a raw 64-character image digest for digest-pinned apps; it shows the tag, or a short id when an image is pinned only by digest. The Category column is gone, which gives each app's description room to show in full instead of truncating mid-word. Stop/Start and Restart now sit inline next to Open and Update; Pin, the custom-app actions, and Wipe & reinstall stay in the row's overflow menu.
+
 ## [0.2.749-macos] - 2026-06-28
 
 ### Updates
