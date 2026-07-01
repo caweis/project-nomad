@@ -5,6 +5,9 @@ import { createReadStream } from 'fs'
 import { LSBlockDevice, NomadDiskInfoRaw } from '../../types/system.js'
 
 export const ZIM_STORAGE_PATH = '/storage/zim'
+// Kiwix library-mode manifest (host path, relative to process.cwd()). Kiwix
+// serves from this when run with --library --monitorLibrary. Ported from v1.33.0.
+export const KIWIX_LIBRARY_XML_PATH = '/storage/zim/kiwix-library.xml'
 
 // MeshCore Web (HTTPS) preinstall writes a self-signed cert + nginx-ssl.conf here;
 // the seeder bind-mounts both into the container. See
