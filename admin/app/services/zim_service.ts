@@ -13,6 +13,7 @@ import {
 import { findReplacedWikipediaFiles } from '../utils/zim_filename.js'
 import logger from '@adonisjs/core/services/logger'
 import { DockerService } from './docker_service.js'
+import { KiwixLibraryService } from './kiwix_library_service.js'
 import { inject } from '@adonisjs/core'
 import {
   deleteFileIfExists,
@@ -287,6 +288,15 @@ export class ZimService {
       }
     }
 
+    // Update the kiwix library XML so the newly downloaded ZIM(s) are served.
+    // In library mode --monitorLibrary hot-reloads this with no restart; a legacy
+    // (glob-mode) container still restarts below (which migrates it to library mode).
+    try {
+      await new KiwixLibraryService().rebuildFromDisk()
+    } catch (err) {
+      logger.error('[ZimService] Failed to rebuild kiwix library XML from disk:', err)
+    }
+
     if (restart) {
       // Check if there are any remaining ZIM download jobs before restarting
       const { QueueService } = await import('./queue_service.js')
@@ -324,8 +334,13 @@ export class ZimService {
 
       if (hasRemainingZimJobs) {
         logger.info('[ZimService] Skipping container restart - more ZIM downloads pending')
+      } else if (!(await this.dockerService.isKiwixOnLegacyConfig())) {
+        // Library mode: --monitorLibrary already picked up the rebuilt XML above,
+        // so no container restart is needed.
+        logger.info('[ZimService] Kiwix in library mode — library XML updated, no restart needed.')
       } else {
-        // Restart KIWIX container to pick up new ZIM file
+        // Legacy glob-mode container: restart to pick up the new ZIM. The restart
+        // intercept in DockerService migrates it to library mode in the process.
         logger.info('[ZimService] No more ZIM downloads pending - restarting KIWIX container')
         await this.dockerService
           .affectContainer(SERVICE_NAMES.KIWIX, 'restart')
