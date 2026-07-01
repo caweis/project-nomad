@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import MapsLayout from '~/layouts/MapsLayout'
 import { Head, Link } from '@inertiajs/react'
 import MapComponent from '~/components/maps/MapComponent'
@@ -9,6 +10,10 @@ import Alert from '~/components/Alert'
 export default function Maps(props: {
   maps: { baseAssetsExist: boolean; regionFiles: FileEntry[] }
 }) {
+  // Suppress the live coordinate overlay while the cursor is over a UI overlay.
+  const [isHoveringUI, setIsHoveringUI] = useState(false)
+  const [showMapCoordinates] = useState(true)
+
   const alertMessage = !props.maps.baseAssetsExist
     ? 'The base map assets have not been installed. Please download them first to enable map functionality.'
     : props.maps.regionFiles.length === 0
@@ -20,7 +25,11 @@ export default function Maps(props: {
       <Head title="Maps" />
       <div className="relative w-full h-screen overflow-hidden">
         {/* Nav and alerts are overlayed */}
-        <div className="absolute top-0 left-0 right-0 z-50 flex justify-between p-4 bg-gray-50 backdrop-blur-sm shadow-sm">
+        <div
+          className="absolute top-0 left-0 right-0 z-50 flex justify-between p-4 bg-gray-50 backdrop-blur-sm shadow-sm"
+          onMouseEnter={() => setIsHoveringUI(true)}
+          onMouseLeave={() => setIsHoveringUI(false)}
+        >
           <Link href="/home" className="flex items-center">
             <IconArrowLeft className="mr-2" size={24} />
             <p className="text-lg text-gray-600">Back to Home</p>
@@ -50,7 +59,7 @@ export default function Maps(props: {
           </div>
         )}
         <div className="absolute inset-0">
-          <MapComponent />
+          <MapComponent isHoveringUI={isHoveringUI} showCoordinatesEnabled={showMapCoordinates} />
         </div>
       </div>
     </MapsLayout>
