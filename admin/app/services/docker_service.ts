@@ -7,6 +7,8 @@ import { doResumableDownloadWithRetry } from '../utils/downloads.js'
 import { join } from 'path'
 import { ZIM_STORAGE_PATH, MESHCORE_WEB_STORAGE_PATH, VAULTWARDEN_STORAGE_PATH } from '../utils/fs.js'
 import { SERVICE_NAMES } from '../../constants/service_names.js'
+import { KiwixLibraryService } from './kiwix_library_service.js'
+import { KIWIX_LIBRARY_CMD } from '../../constants/kiwix.js'
 import { exec } from 'child_process'
 import { promisify } from 'util'
 import { mkdir, access, chmod, writeFile } from 'node:fs/promises'
@@ -89,6 +91,16 @@ export class DockerService {
       }
 
       if (action === 'restart') {
+        // Kiwix legacy→library migration intercept: restarting a still-glob-mode
+        // kiwix container migrates it to library mode (a non-destructive recreation)
+        // instead, so the switch happens the next time it restarts for any reason.
+        if (serviceName === SERVICE_NAMES.KIWIX && (await this.isKiwixOnLegacyConfig())) {
+          logger.info(
+            '[DockerService] Kiwix on legacy glob config — running migration instead of restart.'
+          )
+          await this.migrateKiwixToLibraryMode()
+          return { success: true, message: 'Kiwix migrated to library mode successfully.' }
+        }
         await dockerContainer.restart()
 
         return {
@@ -1899,6 +1911,107 @@ export class DockerService {
       logger.warn(`Error checking if image exists: ${error.message}`)
       // If run into an error, assume the image does not exist
       return false
+    }
+  }
+
+  // ── Kiwix library-mode migration (#622) — ported from upstream v1.33.0 ──────
+  async isKiwixOnLegacyConfig(): Promise<boolean> {
+    try {
+      const containers = await this.docker.listContainers({ all: true })
+      const info = containers.find((c) => c.Names.includes(`/${SERVICE_NAMES.KIWIX}`))
+      if (!info) return false
+
+      const inspected = await this.docker.getContainer(info.Id).inspect()
+      const cmd: string[] = inspected.Config?.Cmd ?? []
+      return cmd.some((arg) => arg.includes('*.zim'))
+    } catch (err: any) {
+      logger.warn(`[DockerService] Could not inspect kiwix container: ${err.message}`)
+      return false
+    }
+  }
+
+  /**
+   * Migrates the kiwix container from legacy glob mode (`*.zim`) to library mode
+   * (`--library /data/kiwix-library.xml --monitorLibrary`).
+   *
+   * Non-destructive recreation: ZIM files and volumes are preserved. The container
+   * is stopped, removed, and recreated with the library-mode command. Authoritative:
+   * it writes the correct command to the DB itself rather than trusting a prior migration.
+   */
+  async migrateKiwixToLibraryMode(): Promise<void> {
+    if (DockerService.activeInstallations.has(SERVICE_NAMES.KIWIX)) {
+      logger.warn('[DockerService] Kiwix migration already in progress, skipping duplicate call.')
+      return
+    }
+
+    DockerService.activeInstallations.add(SERVICE_NAMES.KIWIX)
+
+    try {
+      // Step 1: Build/update the XML from current disk state
+      this._broadcast(SERVICE_NAMES.KIWIX, 'migrating', 'Migrating kiwix to library mode...')
+      const kiwixLibraryService = new KiwixLibraryService()
+      await kiwixLibraryService.rebuildFromDisk()
+      this._broadcast(SERVICE_NAMES.KIWIX, 'migrating', 'Built kiwix library XML from existing ZIM files.')
+
+      // Step 2: Stop and remove old container (leave ZIM volumes intact)
+      const containers = await this.docker.listContainers({ all: true })
+      const containerInfo = containers.find((c) => c.Names.includes(`/${SERVICE_NAMES.KIWIX}`))
+      if (containerInfo) {
+        const oldContainer = this.docker.getContainer(containerInfo.Id)
+        if (containerInfo.State === 'running') {
+          await oldContainer.stop({ t: 10 }).catch((e: any) =>
+            logger.warn(`[DockerService] Kiwix stop warning during migration: ${e.message}`)
+          )
+        }
+        await oldContainer.remove({ force: true }).catch((e: any) =>
+          logger.warn(`[DockerService] Kiwix remove warning during migration: ${e.message}`)
+        )
+      }
+
+      // Step 3: Read the service record and authoritatively set the correct command.
+      const service = await Service.query().where('service_name', SERVICE_NAMES.KIWIX).first()
+      if (!service) {
+        throw new Error('Kiwix service record not found in DB during migration')
+      }
+
+      service.container_command = KIWIX_LIBRARY_CMD
+      service.installed = false
+      service.installation_status = 'installing'
+      await service.save()
+
+      const containerConfig = this._parseContainerConfig(service.container_config)
+      await this._applyHostStorageRoot(containerConfig)
+
+      // Step 4: Recreate the container directly (ZIM files already exist on disk)
+      this._broadcast(SERVICE_NAMES.KIWIX, 'migrating', 'Recreating kiwix container with library mode config...')
+      const newContainer = await this.docker.createContainer({
+        Image: service.container_image,
+        name: service.service_name,
+        HostConfig: containerConfig?.HostConfig ?? {},
+        ...(containerConfig?.ExposedPorts && { ExposedPorts: containerConfig.ExposedPorts }),
+        Cmd: KIWIX_LIBRARY_CMD.split(' '),
+        ...(process.env.NODE_ENV === 'production' && {
+          NetworkingConfig: {
+            EndpointsConfig: {
+              [DockerService.NOMAD_NETWORK]: {},
+            },
+          },
+        }),
+      })
+
+      await newContainer.start()
+
+      service.installed = true
+      service.installation_status = 'idle'
+      await service.save()
+      DockerService.activeInstallations.delete(SERVICE_NAMES.KIWIX)
+
+      this._broadcast(SERVICE_NAMES.KIWIX, 'migrated', 'Kiwix successfully migrated to library mode.')
+      logger.info('[DockerService] Kiwix migration to library mode complete.')
+    } catch (error: any) {
+      logger.error(`[DockerService] Kiwix migration failed: ${error.message}`)
+      await this._cleanupFailedInstallation(SERVICE_NAMES.KIWIX)
+      throw error
     }
   }
 }
