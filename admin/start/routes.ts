@@ -219,6 +219,11 @@ router
     router.post('/download-remote', [MapsController, 'downloadRemote'])
     router.post('/download-remote-preflight', [MapsController, 'downloadRemotePreflight'])
     router.post('/download-collection', [MapsController, 'downloadCollection'])
+    // Map markers (user-placed pins) — before the /:filename catch-all delete.
+    router.get('/markers', [MapsController, 'listMarkers'])
+    router.post('/markers', [MapsController, 'createMarker'])
+    router.patch('/markers/:id', [MapsController, 'updateMarker'])
+    router.delete('/markers/:id', [MapsController, 'deleteMarker'])
     router.delete('/:filename', [MapsController, 'delete'])
   })
   .prefix('/api/maps')
