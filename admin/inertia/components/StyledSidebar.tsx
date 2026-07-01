@@ -6,6 +6,7 @@ import { usePage } from '@inertiajs/react'
 import { UsePageProps } from '../../types/system'
 import { IconMenu2, IconX } from '@tabler/icons-react'
 import DebugInfoModal from './DebugInfoModal'
+import ThemeToggle from './ThemeToggle'
 
 type SidebarItem = {
   name: string
@@ -82,6 +83,9 @@ const StyledSidebar: React.FC<StyledSidebarProps> = ({ title, items, hideBackToH
             </li>
           </ul>
         </nav>
+        <div className="mb-3 flex justify-center">
+          <ThemeToggle />
+        </div>
         <div className="mb-4 text-center text-sm text-gray-600">
           <p>Project N.O.M.A.D. Command Center v{appVersion}</p>
           <button

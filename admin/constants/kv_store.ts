@@ -4,6 +4,7 @@ export const SETTINGS_KEYS: KVStoreKey[] = [
   'chat.suggestionsEnabled',
   'chat.lastModel',
   'ui.hasVisitedEasySetup',
+  'ui.theme',
   'system.earlyAccess',
   'ai.assistantCustomName',
   'inventory.measurementSystem',

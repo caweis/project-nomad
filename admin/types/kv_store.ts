@@ -7,6 +7,9 @@ export const KV_STORE_SCHEMA = {
   'system.latestVersion':       'string',
   'system.earlyAccess':         'boolean',
   'ui.hasVisitedEasySetup':     'boolean',
+  // Night Ops theme preference ('light' | 'dark'); synced cross-device from the
+  // ThemeToggle via api.updateSetting. The FOUC script reads localStorage, not this.
+  'ui.theme':                   'string',
   'ai.assistantCustomName':     'string',
   // Workshop / Offline STL Library — user has acknowledged the rights modal
   // on first visit ("Use at your own peril. You are responsible for ensuring

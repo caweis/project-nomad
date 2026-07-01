@@ -11,6 +11,19 @@
 
   <title inertia>Project N.O.M.A.D</title>
 
+  <script>
+    // Night Ops FOUC guard: apply the saved dark theme before React mounts so the
+    // page doesn't flash light first.
+    (function() {
+      try {
+        var theme = localStorage.getItem('nomad:theme');
+        if (theme === 'dark') {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      } catch(e) {}
+    })();
+  </script>
+
   @stack('dumper')
   @viteReactRefresh()
   @inertiaHead()
