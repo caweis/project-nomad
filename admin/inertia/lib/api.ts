@@ -433,6 +433,18 @@ class API {
     })()
   }
 
+  /** Embedding disk-cost estimate for a batch of files (RFC #883 §1). */
+  async estimateEmbeddingBatch(files: { filename: string; sizeBytes: number }[]) {
+    return catchInternal(async () => {
+      const response = await this.client.post<{
+        totalChunks: number
+        totalBytes: number
+        hasUnknown: boolean
+      }>('/rag/estimate-batch', { files })
+      return response.data
+    })()
+  }
+
   /** Per-file "Index" / re-embed action (RFC #883). 202 on queue; 409 while in-flight. */
   async embedRAGFile(source: string, force = false) {
     return catchInternal(async () => {

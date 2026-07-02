@@ -5,7 +5,9 @@ import type { HttpContext } from '@adonisjs/core/http'
 import app from '@adonisjs/core/services/app'
 import { randomBytes } from 'node:crypto'
 import { sanitizeFilename } from '../utils/fs.js'
-import { deleteFileSchema, embedFileSchema, getJobStatusSchema } from '#validators/rag'
+import { deleteFileSchema, embedFileSchema, estimateBatchSchema, getJobStatusSchema } from '#validators/rag'
+import KbRatioRegistry from '#models/kb_ratio_registry'
+import { basename } from 'node:path'
 import logger from '@adonisjs/core/services/logger'
 
 @inject()
@@ -89,6 +91,20 @@ export default class RagController {
       return response.status(status).json({ error: result.message, code: result.code })
     }
     return response.status(202).json({ message: result.message })
+  }
+
+  /** Embedding disk-cost estimate for a batch of files (RFC #883 §1). */
+  public async estimateBatch({ request, response }: HttpContext) {
+    const { files } = await request.validateUsing(estimateBatchSchema)
+    // The registry matches on basename prefixes; if a caller passes a full path
+    // (e.g. /app/storage/zim/wikipedia_en_simple_…), strip directories first so
+    // patterns like `wikipedia_en_simple_` still match.
+    const normalized = files.map((f) => ({
+      filename: basename(f.filename),
+      sizeBytes: f.sizeBytes,
+    }))
+    const result = await KbRatioRegistry.estimateBatch(normalized)
+    return response.status(200).json(result)
   }
 
   public async scanAndSync({ response }: HttpContext) {
