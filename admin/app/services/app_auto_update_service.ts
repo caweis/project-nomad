@@ -3,11 +3,16 @@ import logger from '@adonisjs/core/services/logger'
 import KVStore from '#models/kv_store'
 import Service from '#models/service'
 import { DockerService } from './docker_service.js'
+import { ContainerRegistryService } from './container_registry_service.js'
+import { SystemService } from './system_service.js'
 import { isWithinWindow } from '../utils/update_window.js'
 import { isCooloffElapsed } from '../utils/auto_update_cooloff.js'
 import { isAppAutoUpdateEligible } from '../utils/app_auto_update_eligibility.js'
 import { decideBackoff, MAX_CONSECUTIVE_FAILURES } from '../utils/auto_update_backoff.js'
 import { isNewerVersion, parseMajorVersion } from '../utils/version.js'
+import { resolveHostArch } from '../utils/host_arch.js'
+import { buildUpdatedImageRef } from '../utils/image_ref.js'
+import { checkImageDiskSpace } from '../utils/image_disk_preflight.js'
 
 const DEFAULT_WINDOW_START = '02:00'
 const DEFAULT_WINDOW_END = '05:00'
@@ -36,6 +41,8 @@ function currentTag(image: string): string {
  */
 export class AppAutoUpdateService {
   private dockerService = new DockerService()
+  private registryService = new ContainerRegistryService()
+  private systemService = new SystemService(this.dockerService)
 
   async run(now: DateTime = DateTime.now()): Promise<AppAutoUpdateRunResult> {
     const master = await KVStore.getValue('appAutoUpdate.enabled')
@@ -51,6 +58,12 @@ export class AppAutoUpdateService {
     const services = await Service.query()
       .where('installed', true)
       .where('auto_update_enabled', true)
+
+    // Resolved once (not per app) — the disk pre-flight needs it to size the
+    // correct platform manifest.
+    const hostArch = await resolveHostArch(this.dockerService, (m) =>
+      logger.warn(`[AppAutoUpdate] ${m}`)
+    )
 
     const applied: string[] = []
     for (const svc of services) {
@@ -71,6 +84,24 @@ export class AppAutoUpdateService {
         maxFailures: MAX_CONSECUTIVE_FAILURES,
       })
       if (!eligibility.eligible) continue
+
+      // Disk pre-flight: if there isn't room for the pull, skip this app WITHOUT
+      // counting a failure. Low disk is environmental and self-healing (like an
+      // offline box, which auto-update also leaves alone) — charging it to the
+      // 3-strike backoff would wrongly auto-disable the app's updates until the
+      // user re-enabled them once disk freed. It also spares Docker a doomed
+      // pull that can leave half-downloaded layers behind.
+      const diskBlocker = await checkImageDiskSpace({
+        image: buildUpdatedImageRef(svc.container_image, available!),
+        hostArch,
+        containerRegistryService: this.registryService,
+        systemService: this.systemService,
+        warn: (m) => logger.warn(m),
+      })
+      if (diskBlocker) {
+        logger.warn(`[AppAutoUpdate] ${svc.service_name} update skipped: ${diskBlocker.reason}`)
+        continue
+      }
 
       try {
         const result = await this.dockerService.updateContainer(svc.service_name, available!)
