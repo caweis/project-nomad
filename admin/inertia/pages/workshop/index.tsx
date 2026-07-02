@@ -146,10 +146,10 @@ export default function WorkshopIndex(props: PageProps) {
             <h1 className="text-3xl font-bold text-desert-green flex items-center gap-2">
               <IconBox size={32} /> Workshop
             </h1>
-            <p className="text-sm text-gray-600 mt-1">
+            <p className="text-sm text-text-secondary mt-1">
               Offline maker library — 3D prints, CAD files, PDFs, and reference images. Drop files
               below, or copy them into{' '}
-              <code className="bg-gray-100 px-1 rounded">storage/stl-library/&lt;category&gt;/</code>{' '}
+              <code className="bg-surface-secondary px-1 rounded">storage/stl-library/&lt;category&gt;/</code>{' '}
               on your data drive and run a scan.
             </p>
           </div>
@@ -159,7 +159,7 @@ export default function WorkshopIndex(props: PageProps) {
         </header>
 
         {scanResult && (
-          <div className="mb-4 rounded border border-desert-green bg-desert-green-light/10 px-3 py-2 text-sm text-gray-800">
+          <div className="mb-4 rounded border border-desert-green bg-desert-green-light/10 px-3 py-2 text-sm text-text-primary">
             {scanResult}
           </div>
         )}
@@ -276,16 +276,16 @@ function EmptyState({
 
   if (filtered) {
     return (
-      <div className="rounded-lg border border-gray-200 bg-white p-12 text-center text-gray-600">
-        <IconBox size={48} className="mx-auto text-gray-300 mb-3" />
+      <div className="rounded-lg border border-border-subtle bg-surface-primary p-12 text-center text-text-secondary">
+        <IconBox size={48} className="mx-auto text-text-muted mb-3" />
         <p className="font-medium mb-1">No files match these filters</p>
         <p className="text-sm">Try clearing one or more filters from the sidebar.</p>
       </div>
     )
   }
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-12 text-center text-gray-600">
-      <IconBox size={48} className="mx-auto text-gray-300 mb-3" />
+    <div className="rounded-lg border border-border-subtle bg-surface-primary p-12 text-center text-text-secondary">
+      <IconBox size={48} className="mx-auto text-text-muted mb-3" />
       <p className="font-medium mb-1">Library is empty</p>
       <p className="text-sm">
         {uploadPermitted ? (
@@ -293,7 +293,7 @@ function EmptyState({
         ) : (
           <>
             Drop STL, 3MF, CAD, PDF, or image files into{' '}
-            <code className="bg-gray-100 px-1 rounded">storage/stl-library/&lt;category&gt;/</code>{' '}
+            <code className="bg-surface-secondary px-1 rounded">storage/stl-library/&lt;category&gt;/</code>{' '}
             on your data drive, then click <strong>Rescan library</strong>.
           </>
         )}
@@ -327,7 +327,7 @@ function Pager({ pagination, filters }: { pagination: Pagination; filters: StlLi
       <button
         disabled={current === 1}
         onClick={() => goTo(current - 1)}
-        className="px-3 py-1 rounded border border-gray-300 text-sm disabled:opacity-40"
+        className="px-3 py-1 rounded border border-border-default text-sm disabled:opacity-40"
       >
         Previous
       </button>
@@ -335,7 +335,7 @@ function Pager({ pagination, filters }: { pagination: Pagination; filters: StlLi
       <div className="flex items-center gap-1">
         {tokens.map((tok, i) =>
           tok === '…' ? (
-            <span key={`gap-${i}`} className="px-2 text-sm text-gray-400 select-none">
+            <span key={`gap-${i}`} className="px-2 text-sm text-text-muted select-none">
               …
             </span>
           ) : (
@@ -347,7 +347,7 @@ function Pager({ pagination, filters }: { pagination: Pagination; filters: StlLi
                 'min-w-[2rem] px-2 py-1 rounded border text-sm',
                 tok === current
                   ? 'border-desert-green bg-desert-green text-white font-semibold'
-                  : 'border-gray-300 text-gray-700 hover:bg-gray-50',
+                  : 'border-border-default text-text-secondary hover:bg-surface-secondary',
               ].join(' ')}
             >
               {tok}
@@ -359,12 +359,12 @@ function Pager({ pagination, filters }: { pagination: Pagination; filters: StlLi
       <button
         disabled={current === last}
         onClick={() => goTo(current + 1)}
-        className="px-3 py-1 rounded border border-gray-300 text-sm disabled:opacity-40"
+        className="px-3 py-1 rounded border border-border-default text-sm disabled:opacity-40"
       >
         Next
       </button>
 
-      <span className="ml-2 text-sm text-gray-600">
+      <span className="ml-2 text-sm text-text-secondary">
         Page {current} of {last}
       </span>
     </nav>

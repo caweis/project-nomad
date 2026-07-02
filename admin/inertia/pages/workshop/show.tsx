@@ -192,7 +192,7 @@ export default function WorkshopShow(props: PageProps) {
       <WorkshopRightsModal open={rightsOpen} onAccept={() => setRightsOpen(false)} />
 
       <div className="p-4 md:p-6 max-w-5xl mx-auto">
-        <Link href="/workshop" className="inline-flex items-center gap-1 text-sm text-gray-600 mb-3 hover:text-desert-green">
+        <Link href="/workshop" className="inline-flex items-center gap-1 text-sm text-text-secondary mb-3 hover:text-desert-green">
           <IconArrowLeft size={16} /> Back to Workshop
         </Link>
 
@@ -209,7 +209,7 @@ export default function WorkshopShow(props: PageProps) {
 
         <div className="grid grid-cols-1 md:grid-cols-[280px_1fr] gap-6">
           <aside className="space-y-4">
-            <div className="aspect-square bg-white border border-gray-200 rounded-lg flex items-center justify-center overflow-hidden">
+            <div className="aspect-square bg-surface-primary border border-border-subtle rounded-lg flex items-center justify-center overflow-hidden">
               {props.file.thumbnail_path ? (
                 <img
                   src={`/api/workshop/files/${props.file.id}/thumbnail?v=${thumbVersion}`}
@@ -240,7 +240,7 @@ export default function WorkshopShow(props: PageProps) {
             {props.file.file_type === 'pdf' && props.has_pdf_text && (
               <PdfTextDisclosure fileId={props.file.id} />
             )}
-            <dl className="text-sm text-gray-700 bg-white border border-gray-200 rounded-lg p-3 space-y-1">
+            <dl className="text-sm text-text-secondary bg-surface-primary border border-border-subtle rounded-lg p-3 space-y-1">
               <Field label="Path" value={props.file.path} mono />
               <Field label="Size" value={`${sizeMb} MB`} />
               <Field label="Added" value={props.file.added_at.slice(0, 10)} />
@@ -297,7 +297,7 @@ export default function WorkshopShow(props: PageProps) {
                 value={form.name}
                 onChange={(e) => set('name', e.target.value)}
                 required
-                className="w-full rounded border border-gray-300 px-2 py-1.5"
+                className="w-full rounded border border-border-default px-2 py-1.5"
               />
             </FormGroup>
 
@@ -307,7 +307,7 @@ export default function WorkshopShow(props: PageProps) {
                   value={form.category}
                   onChange={(e) => set('category', e.target.value as StlCategory)}
                   required
-                  className="w-full rounded border border-gray-300 px-2 py-1.5"
+                  className="w-full rounded border border-border-default px-2 py-1.5"
                 >
                   {props.enums.categories.map((c) => (
                     <option key={c.value} value={c.value}>
@@ -324,7 +324,7 @@ export default function WorkshopShow(props: PageProps) {
                     <select
                       value={form.material}
                       onChange={(e) => set('material', e.target.value)}
-                      className="w-full rounded border border-gray-300 px-2 py-1.5"
+                      className="w-full rounded border border-border-default px-2 py-1.5"
                     >
                       <option value="">— select —</option>
                       {props.enums.materials.map((m) => (
@@ -341,7 +341,7 @@ export default function WorkshopShow(props: PageProps) {
                       min={0}
                       value={form.print_time_minutes}
                       onChange={(e) => set('print_time_minutes', e.target.value as never)}
-                      className="w-full rounded border border-gray-300 px-2 py-1.5"
+                      className="w-full rounded border border-border-default px-2 py-1.5"
                     />
                   </FormGroup>
 
@@ -352,7 +352,7 @@ export default function WorkshopShow(props: PageProps) {
                       max={100}
                       value={form.infill_pct}
                       onChange={(e) => set('infill_pct', e.target.value as never)}
-                      className="w-full rounded border border-gray-300 px-2 py-1.5"
+                      className="w-full rounded border border-border-default px-2 py-1.5"
                     />
                   </FormGroup>
 
@@ -360,7 +360,7 @@ export default function WorkshopShow(props: PageProps) {
                     <select
                       value={form.difficulty}
                       onChange={(e) => set('difficulty', e.target.value)}
-                      className="w-full rounded border border-gray-300 px-2 py-1.5 capitalize"
+                      className="w-full rounded border border-border-default px-2 py-1.5 capitalize"
                     >
                       <option value="">— select —</option>
                       {props.enums.difficulties.map((d) => (
@@ -379,7 +379,7 @@ export default function WorkshopShow(props: PageProps) {
                   value={form.license}
                   onChange={(e) => set('license', e.target.value)}
                   placeholder="CC0 / CC-BY-4.0 / my own work / etc."
-                  className="w-full rounded border border-gray-300 px-2 py-1.5"
+                  className="w-full rounded border border-border-default px-2 py-1.5"
                 />
               </FormGroup>
             </div>
@@ -390,7 +390,7 @@ export default function WorkshopShow(props: PageProps) {
                 value={form.tags}
                 onChange={(e) => set('tags', e.target.value)}
                 placeholder="finger-splint, pediatric, single-piece"
-                className="w-full rounded border border-gray-300 px-2 py-1.5"
+                className="w-full rounded border border-border-default px-2 py-1.5"
               />
             </FormGroup>
 
@@ -400,7 +400,7 @@ export default function WorkshopShow(props: PageProps) {
                 value={form.source_url}
                 onChange={(e) => set('source_url', e.target.value)}
                 placeholder="https://3dprint.nih.gov/discover/..."
-                className="w-full rounded border border-gray-300 px-2 py-1.5"
+                className="w-full rounded border border-border-default px-2 py-1.5"
               />
             </FormGroup>
 
@@ -409,14 +409,14 @@ export default function WorkshopShow(props: PageProps) {
                 value={form.description}
                 onChange={(e) => set('description', e.target.value)}
                 rows={4}
-                className="w-full rounded border border-gray-300 px-2 py-1.5"
+                className="w-full rounded border border-border-default px-2 py-1.5"
               />
             </FormGroup>
 
             {props.file.file_type === 'stl' ? (
-              <p className="text-xs text-gray-500">* required to leave the "Needs metadata" state.</p>
+              <p className="text-xs text-text-muted">* required to leave the "Needs metadata" state.</p>
             ) : (
-              <p className="text-xs text-gray-500">Name is the only required field for this file type.</p>
+              <p className="text-xs text-text-muted">Name is the only required field for this file type.</p>
             )}
 
             {/* StyledButton renders type="button", so it never triggers the
@@ -440,7 +440,7 @@ export default function WorkshopShow(props: PageProps) {
 
 /** Per-type icon shown in the detail page when there is no thumbnail. */
 function ShowFileTypeIcon({ fileType }: { fileType: WorkshopFileTypeEnum }) {
-  const cls = 'text-gray-300'
+  const cls = 'text-text-muted'
   switch (fileType) {
     case 'cad':
       return <IconCube size={96} className={cls} />
@@ -487,7 +487,7 @@ function ThumbnailUpload({
     <div
       className={[
         'rounded-lg border p-3 text-sm',
-        failed ? 'border-amber-300 bg-amber-50' : 'border-gray-200 bg-white',
+        failed ? 'border-amber-300 bg-amber-50' : 'border-border-subtle bg-surface-primary',
       ].join(' ')}
     >
       {failed && (
@@ -507,7 +507,7 @@ function ThumbnailUpload({
         type="button"
         onClick={onPick}
         disabled={uploading}
-        className="inline-flex w-full items-center justify-center gap-1.5 rounded border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+        className="inline-flex w-full items-center justify-center gap-1.5 rounded border border-border-default px-3 py-2 text-sm font-medium text-text-secondary hover:bg-surface-secondary disabled:opacity-50"
       >
         <IconPhotoUp size={16} /> {label}
       </button>
@@ -523,15 +523,15 @@ function ThumbnailUpload({
  */
 function PdfPageStrip({ fileId }: { fileId: number }) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-2">
-      <p className="mb-1.5 text-xs font-medium text-gray-500">Pages</p>
+    <div className="rounded-lg border border-border-subtle bg-surface-primary p-2">
+      <p className="mb-1.5 text-xs font-medium text-text-muted">Pages</p>
       <div className="flex gap-2 overflow-x-auto">
         {[1, 2, 3, 4].map((n) => (
           <img
             key={n}
             src={`/api/workshop/files/${fileId}/pdf-page/${n}`}
             alt={`Page ${n}`}
-            className="h-28 w-auto shrink-0 rounded border border-gray-100 bg-gray-50 object-contain"
+            className="h-28 w-auto shrink-0 rounded border border-border-subtle bg-surface-secondary object-contain"
             onError={(e) => {
               // Page doesn't exist — hide the image element entirely
               ;(e.currentTarget as HTMLImageElement).style.display = 'none'
@@ -573,17 +573,17 @@ function PdfTextDisclosure({ fileId }: { fileId: number }) {
 
   return (
     <details
-      className="rounded-lg border border-gray-200 bg-white text-sm"
+      className="rounded-lg border border-border-subtle bg-surface-primary text-sm"
       onToggle={onToggle}
     >
-      <summary className="cursor-pointer select-none px-3 py-2 font-medium text-gray-700 hover:bg-gray-50">
+      <summary className="cursor-pointer select-none px-3 py-2 font-medium text-text-secondary hover:bg-surface-secondary">
         Extracted text (for search)
       </summary>
-      <div className="border-t border-gray-100 px-3 py-2">
+      <div className="border-t border-border-subtle px-3 py-2">
         {loading ? (
-          <p className="text-xs text-gray-400">Loading…</p>
+          <p className="text-xs text-text-muted">Loading…</p>
         ) : (
-          <pre className="whitespace-pre-wrap text-xs text-gray-600 overflow-auto max-h-48">
+          <pre className="whitespace-pre-wrap text-xs text-text-secondary overflow-auto max-h-48">
             {text ?? ''}
           </pre>
         )}
@@ -595,7 +595,7 @@ function PdfTextDisclosure({ fileId }: { fileId: number }) {
 function Field({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="flex justify-between gap-2">
-      <dt className="text-gray-500">{label}</dt>
+      <dt className="text-text-muted">{label}</dt>
       <dd className={mono ? 'font-mono text-xs truncate max-w-[160px]' : 'truncate max-w-[160px]'} title={value}>
         {value}
       </dd>
@@ -606,7 +606,7 @@ function Field({ label, value, mono = false }: { label: string; value: string; m
 function FormGroup({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <label className="block text-sm font-medium text-text-secondary mb-1">{label}</label>
       {children}
     </div>
   )

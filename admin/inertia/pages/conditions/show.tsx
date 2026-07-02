@@ -47,7 +47,7 @@ export default function ConditionsShow({ condition, drugs, remedies, drugRowCoun
         <div className="mb-6">
           <h1 className="text-2xl font-bold">{label}</h1>
           {condition?.category && (
-            <p className="text-sm text-gray-500 mt-0.5">{condition.category}</p>
+            <p className="text-sm text-text-muted mt-0.5">{condition.category}</p>
           )}
         </div>
 
@@ -56,7 +56,7 @@ export default function ConditionsShow({ condition, drugs, remedies, drugRowCoun
 
         {/* Drug list / empty states */}
         {noData ? (
-          <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+          <div className="border-2 border-dashed border-border-default rounded-lg p-8 text-center">
             <p className="text-lg font-semibold mb-2">No drug data yet</p>
             <p className="mb-6 opacity-70">
               Download the offline FDA drug labels from Drug Reference to see matches for this
@@ -81,11 +81,11 @@ export default function ConditionsShow({ condition, drugs, remedies, drugRowCoun
           <>
             <div className="flex items-baseline justify-between mb-2">
               <h2 className="text-base font-semibold">Over-the-counter options</h2>
-              <span className="text-xs text-gray-500">
+              <span className="text-xs text-text-muted">
                 {drugs.length} result{drugs.length !== 1 ? 's' : ''}
               </span>
             </div>
-            <div className="divide-y divide-gray-200 border border-gray-200 rounded-lg overflow-hidden">
+            <div className="divide-y divide-border-subtle border border-border-subtle rounded-lg overflow-hidden">
               {drugs.map((d) => (
                 <DrugResultRow key={`${d.id}`} result={d} />
               ))}
@@ -127,7 +127,7 @@ export default function ConditionsShow({ condition, drugs, remedies, drugRowCoun
         )}
 
         {/* ── Source citation ───────────────────────────────────────────────── */}
-        <footer className="mt-8 pt-4 border-t border-gray-200 text-xs text-gray-500 space-y-1">
+        <footer className="mt-8 pt-4 border-t border-border-subtle text-xs text-text-muted space-y-1">
           <p>
             <strong>Source:</strong> U.S. Food &amp; Drug Administration drug labeling, via{' '}
             <strong>openFDA</strong> — public domain (CC0 1.0). NOMAD is not affiliated with or

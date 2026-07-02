@@ -118,7 +118,7 @@ export default function SettingsPage(props: {
         confirmVariant="primary"
         icon={<IconDownload className="h-12 w-12 text-desert-green" />}
       >
-        <p className="text-gray-700">
+        <p className="text-text-primary">
           Are you sure you want to install {service.friendly_name || service.service_name}? This
           will start the service and make it available in your Project N.O.M.A.D. instance. It may
           take some time to complete.
@@ -309,7 +309,7 @@ export default function SettingsPage(props: {
         confirmVariant="danger"
         cancelText="Cancel"
       >
-        <p className="text-gray-700">
+        <p className="text-text-primary">
           Are you sure you want to delete {record.friendly_name || record.service_name}? This stops
           and removes its container. Bind-mounted data on disk is left in place.
         </p>
@@ -402,7 +402,7 @@ export default function SettingsPage(props: {
           confirmText={willStop ? 'Stop' : 'Start'}
           cancelText="Cancel"
         >
-          <p className="text-gray-700">
+          <p className="text-text-primary">
             Are you sure you want to {willStop ? 'stop' : 'start'} {record.service_name}?
           </p>
         </StyledModal>,
@@ -420,7 +420,7 @@ export default function SettingsPage(props: {
           confirmText={'Restart'}
           cancelText="Cancel"
         >
-          <p className="text-gray-700">
+          <p className="text-text-primary">
             Are you sure you want to restart {record.service_name}?
           </p>
         </StyledModal>,
@@ -438,7 +438,7 @@ export default function SettingsPage(props: {
           confirmText={'Force Reinstall'}
           cancelText="Cancel"
         >
-          <p className="text-gray-700">
+          <p className="text-text-primary">
             Are you sure you want to force reinstall {record.service_name}? This will{' '}
             <strong>WIPE ALL DATA</strong> for this service and cannot be undone. You should only do
             this if the service is malfunctioning and other troubleshooting steps have failed.
@@ -677,7 +677,7 @@ export default function SettingsPage(props: {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h1 className="text-4xl font-semibold">Supply Depot</h1>
-              <p className="text-gray-500 mt-1">
+              <p className="text-text-muted mt-1">
                 Browse and install apps for your Project N.O.M.A.D. instance. Nightly update checks automatically detect when new versions are available.
               </p>
             </div>
@@ -712,7 +712,7 @@ export default function SettingsPage(props: {
                     return (
                       <div className="flex flex-col">
                         <p>{record.friendly_name || record.service_name}</p>
-                        <p className="text-sm text-gray-500">{record.description}</p>
+                        <p className="text-sm text-text-muted">{record.description}</p>
                         {record.installed && SERVICE_CREDENTIAL_NOTES[record.service_name] && (
                           <p className="text-xs text-desert-green-dark mt-1 font-medium">
                             {SERVICE_CREDENTIAL_NOTES[record.service_name]}
@@ -756,17 +756,17 @@ export default function SettingsPage(props: {
                     // server-side via aiAssistantVersion. See settings_controller.ts.
                     if (props.isNativeOllama && record.service_name === SERVICE_NAMES.OLLAMA) {
                       if (props.aiBackend === 'omlx') {
-                        return <span className="text-gray-600">Apple MLX</span>
+                        return <span className="text-text-secondary">Apple MLX</span>
                       }
                       return (
-                        <span className="text-gray-600">{props.aiAssistantVersion || '—'}</span>
+                        <span className="text-text-secondary">{props.aiAssistantVersion || '—'}</span>
                       )
                     }
                     const currentTag = extractTag(record.container_image)
                     if (record.available_update_version) {
                       return (
                         <div className="flex items-center gap-1.5">
-                          <span className="text-gray-500">{currentTag}</span>
+                          <span className="text-text-muted">{currentTag}</span>
                           <IconArrowUp className="h-4 w-4 text-desert-green" />
                           <span className="text-desert-green font-semibold">
                             {record.available_update_version}
@@ -774,7 +774,7 @@ export default function SettingsPage(props: {
                         </div>
                       )
                     }
-                    return <span className="text-gray-600">{currentTag}</span>
+                    return <span className="text-text-secondary">{currentTag}</span>
                   },
                 },
                 {

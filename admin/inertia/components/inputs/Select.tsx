@@ -26,10 +26,8 @@ export interface SelectProps<T = string> {
 }
 
 // Ported from crosstalk/feat/supply-depot-meshcore-web inertia/components/inputs/Select.tsx.
-// The upstream semantic design tokens (text-text-primary / bg-surface-primary / border-border-default)
-// don't exist in this fork's Tailwind theme, so the classes here are translated to match the fork's
-// existing Input.tsx vocabulary (gray-* + the desert palette's `primary` outline) — same look as the
-// other form inputs on this page.
+// Uses the Night Ops semantic tokens (text-text-primary / bg-surface-primary /
+// border-border-default), which now exist in app.css — same vocabulary as Input.tsx.
 const Select = <T,>({
   name,
   label,
@@ -52,19 +50,19 @@ const Select = <T,>({
     <div className={classNames(className)}>
       <label
         htmlFor={name}
-        className={classNames("block text-base/6 font-medium text-gray-700", labelClassName)}
+        className={classNames("block text-base/6 font-medium text-text-primary", labelClassName)}
       >
         {label}{required ? "*" : ""}
       </label>
-      {helpText && <p className="mt-1 text-sm text-gray-500">{helpText}</p>}
+      {helpText && <p className="mt-1 text-sm text-text-muted">{helpText}</p>}
       <div className={classNames("mt-1.5", containerClassName)}>
         <Listbox value={value} onChange={onChange} disabled={disabled}>
           <div className="relative">
             <ListboxButton
               id={name}
               className={classNames(
-                "flex items-center w-full rounded-md bg-white px-3 py-2 text-base border border-gray-400 focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-primary sm:text-sm/6 text-left",
-                selectedOption ? "text-gray-900" : "text-gray-400",
+                "flex items-center w-full rounded-md bg-surface-primary px-3 py-2 text-base border border-border-default focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-primary sm:text-sm/6 text-left",
+                selectedOption ? "text-text-primary" : "text-text-muted",
                 error ? "!border-red-500 focus:outline-red-500 !bg-red-100" : "",
                 disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer",
                 selectClassName
@@ -73,14 +71,14 @@ const Select = <T,>({
               <span className="flex-1 truncate">
                 {selectedOption ? selectedOption.label : (placeholder ?? label)}
               </span>
-              <IconChevronDown className="w-4 h-4 text-gray-400 ml-2 shrink-0 transition-transform duration-150 group-data-[open]:rotate-180 data-[open]:rotate-180 ui-open:rotate-180" />
+              <IconChevronDown className="w-4 h-4 text-text-muted ml-2 shrink-0 transition-transform duration-150 group-data-[open]:rotate-180 data-[open]:rotate-180 ui-open:rotate-180" />
             </ListboxButton>
 
             <ListboxOptions
               transition
               anchor="bottom start"
               className={classNames(
-                "z-50 w-[var(--button-width)] rounded-md bg-white border border-gray-400 shadow-lg max-h-60 overflow-auto",
+                "z-50 w-[var(--button-width)] rounded-md bg-surface-primary border border-border-default shadow-lg max-h-60 overflow-auto",
                 "transition duration-100 ease-out data-[closed]:opacity-0 data-[closed]:scale-95",
                 "mt-1 focus:outline-none"
               )}
@@ -91,10 +89,10 @@ const Select = <T,>({
                   value={option.value}
                   disabled={option.disabled}
                   className={classNames(
-                    "px-3 py-2 text-sm text-gray-900 select-none",
+                    "px-3 py-2 text-sm text-text-primary select-none",
                     option.disabled
                       ? "opacity-40 cursor-not-allowed"
-                      : "cursor-pointer data-[focus]:bg-gray-100 data-[selected]:font-medium data-[selected]:text-primary"
+                      : "cursor-pointer data-[focus]:bg-surface-secondary data-[selected]:font-medium data-[selected]:text-primary"
                   )}
                 >
                   {option.label}

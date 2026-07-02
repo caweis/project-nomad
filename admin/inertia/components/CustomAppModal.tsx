@@ -1,7 +1,7 @@
 // Ported from crosstalk/feat/supply-depot-meshcore-web inertia/components/CustomAppModal.tsx.
-// The only deviations from upstream-verbatim are three Tailwind theme tokens that don't exist in
-// this fork's `desert-*` palette (border-border-default → border-gray-400, bg-surface-secondary →
-// bg-gray-100, text-text-muted → text-gray-500), translated to match the fork's Input/Select look.
+// Upstream-verbatim: the Night Ops semantic tokens (border-border-default,
+// bg-surface-secondary, text-text-muted) this file uses now exist in app.css,
+// so the temporary gray-* translations from the original port are gone.
 import { useEffect, useState } from 'react'
 import StyledModal from './StyledModal'
 import StyledButton from './StyledButton'
@@ -344,7 +344,7 @@ export default function CustomAppModal({
               className="flex-1 min-w-0"
             />
             <div
-              className="flex-shrink-0 flex items-center justify-center h-[42px] w-[42px] rounded-md border border-gray-400 bg-gray-100"
+              className="flex-shrink-0 flex items-center justify-center h-[42px] w-[42px] rounded-md border border-border-default bg-surface-secondary"
               title="Icon preview"
             >
               <DynamicIcon icon={icon as DynamicIconName} className="h-6 w-6 text-desert-green" />
@@ -395,7 +395,7 @@ export default function CustomAppModal({
           </div>
           <p className="text-xs mt-2">Host ports should be in the 8600+ range. Custom apps get ports starting at {suggestedPort ?? 8600}.</p>
           {checkingPreflight && (
-            <p className="text-xs mt-1 italic text-gray-500">Checking port availability…</p>
+            <p className="text-xs mt-1 italic text-text-muted">Checking port availability…</p>
           )}
         </div>
 
@@ -530,7 +530,7 @@ export default function CustomAppModal({
                 onChange={(e) => setForceInstall(e.target.checked)}
                 className="accent-desert-orange h-4 w-4 rounded"
               />
-              <span className="text-gray-500 text-xs">I understand — install anyway</span>
+              <span className="text-text-muted text-xs">I understand — install anyway</span>
             </label>
           </div>
         )}

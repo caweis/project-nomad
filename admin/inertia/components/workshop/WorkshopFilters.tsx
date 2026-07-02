@@ -57,37 +57,37 @@ export default function WorkshopFilters({ filters, enums, total }: Props) {
     !!filters.search
 
   return (
-    <aside className="w-full md:w-64 shrink-0 p-4 bg-white border-r border-gray-200">
+    <aside className="w-full md:w-64 shrink-0 p-4 bg-surface-primary border-r border-border-subtle">
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Filters</h2>
+        <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wide">Filters</h2>
         {hasActiveFilters && (
           <button
             onClick={clearAll}
-            className="flex items-center gap-1 text-xs text-gray-500 hover:text-desert-green"
+            className="flex items-center gap-1 text-xs text-text-muted hover:text-desert-green"
           >
             <IconX size={14} /> Clear
           </button>
         )}
       </div>
 
-      <div className="text-xs text-gray-500 mb-4">
+      <div className="text-xs text-text-muted mb-4">
         {total.toLocaleString()} file{total === 1 ? '' : 's'} match
       </div>
 
       <form onSubmit={onSearchSubmit} className="mb-4">
-        <label className="block text-xs font-medium text-gray-600 mb-1">Search</label>
+        <label className="block text-xs font-medium text-text-secondary mb-1">Search</label>
         <div className="flex gap-1">
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="name, description, or PDF text"
-            className="flex-1 min-w-0 rounded border border-gray-300 px-2 py-1 text-sm"
+            className="flex-1 min-w-0 rounded border border-border-default px-2 py-1 text-sm"
           />
           <button
             type="submit"
             aria-label="Search"
-            className="rounded border border-gray-300 bg-gray-50 px-2 hover:bg-gray-100"
+            className="rounded border border-border-default bg-surface-secondary px-2 hover:bg-surface-secondary"
           >
             <IconSearch size={16} />
           </button>
@@ -102,7 +102,7 @@ export default function WorkshopFilters({ filters, enums, total }: Props) {
               file_type: (e.target.value || undefined) as WorkshopFileTypeEnum | undefined,
             })
           }
-          className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+          className="w-full rounded border border-border-default px-2 py-1 text-sm"
         >
           <option value="">All types</option>
           {enums.file_types.map((ft) => (
@@ -119,7 +119,7 @@ export default function WorkshopFilters({ filters, enums, total }: Props) {
           onChange={(e) =>
             updateFilter({ category: (e.target.value || undefined) as StlCategory | undefined })
           }
-          className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+          className="w-full rounded border border-border-default px-2 py-1 text-sm"
         >
           <option value="">All categories</option>
           {enums.categories.map((c) => (
@@ -136,7 +136,7 @@ export default function WorkshopFilters({ filters, enums, total }: Props) {
           onChange={(e) =>
             updateFilter({ material: (e.target.value || undefined) as StlMaterial | undefined })
           }
-          className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+          className="w-full rounded border border-border-default px-2 py-1 text-sm"
         >
           <option value="">Any material</option>
           {enums.materials.map((m) => (
@@ -153,7 +153,7 @@ export default function WorkshopFilters({ filters, enums, total }: Props) {
           onChange={(e) =>
             updateFilter({ difficulty: (e.target.value || undefined) as StlDifficulty | undefined })
           }
-          className="w-full rounded border border-gray-300 px-2 py-1 text-sm capitalize"
+          className="w-full rounded border border-border-default px-2 py-1 text-sm capitalize"
         >
           <option value="">Any difficulty</option>
           {enums.difficulties.map((d) => (
@@ -165,7 +165,7 @@ export default function WorkshopFilters({ filters, enums, total }: Props) {
       </FilterGroup>
 
       <FilterGroup label="Status">
-        <label className="flex items-center gap-2 text-sm text-gray-700">
+        <label className="flex items-center gap-2 text-sm text-text-secondary">
           <input
             type="checkbox"
             checked={filters.pending_metadata === true}
@@ -181,7 +181,7 @@ export default function WorkshopFilters({ filters, enums, total }: Props) {
 function FilterGroup({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="mb-4">
-      <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+      <label className="block text-xs font-medium text-text-secondary mb-1">{label}</label>
       {children}
     </div>
   )

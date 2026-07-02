@@ -30,7 +30,7 @@ const ActiveDownloads = ({ filetype, withHeader = false }: ActiveDownloadProps) 
                 <div className="flex items-center gap-2">
                   <IconAlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">
+                    <p className="text-sm font-medium text-text-primary truncate">
                       {extractFileName(download.filepath) || download.url}
                     </p>
                     <p className="text-xs text-red-600 mt-0.5">
@@ -54,7 +54,7 @@ const ActiveDownloads = ({ filetype, withHeader = false }: ActiveDownloadProps) 
             </div>
           ))
         ) : (
-          <p className="text-gray-500">No active downloads</p>
+          <p className="text-text-muted">No active downloads</p>
         )}
       </div>
     </>

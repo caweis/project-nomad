@@ -539,7 +539,7 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions,
                 value={query}
                 onChange={handleQueryChange}
                 placeholder="Search a drug or a situation — ibuprofen, heartburn, poison ivy…"
-                className="w-full rounded-lg border border-desert-stone-lighter bg-white py-2 pl-10 pr-4 text-sm text-desert-green-darker transition focus:border-desert-green focus:outline-none focus:ring-2 focus:ring-desert-green/20"
+                className="w-full rounded-lg border border-desert-stone-lighter bg-surface-primary py-2 pl-10 pr-4 text-sm text-desert-green-darker transition focus:border-desert-green focus:outline-none focus:ring-2 focus:ring-desert-green/20"
               />
             </div>
 
@@ -585,7 +585,7 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions,
                   <select
                     value={route ?? ''}
                     onChange={(e) => handleRouteChange(e.target.value || null)}
-                    className="rounded-lg border border-desert-stone-lighter bg-white px-2 py-1 text-xs text-desert-green-darker focus:border-desert-green focus:outline-none"
+                    className="rounded-lg border border-desert-stone-lighter bg-surface-primary px-2 py-1 text-xs text-desert-green-darker focus:border-desert-green focus:outline-none"
                     aria-label="Filter by administration route"
                   >
                     <option value="">Any route</option>
@@ -598,7 +598,7 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions,
                   <select
                     value={sort}
                     onChange={(e) => handleSortChange(e.target.value as 'relevance' | 'name')}
-                    className="rounded-lg border border-desert-stone-lighter bg-white px-2 py-1 text-xs text-desert-green-darker focus:border-desert-green focus:outline-none"
+                    className="rounded-lg border border-desert-stone-lighter bg-surface-primary px-2 py-1 text-xs text-desert-green-darker focus:border-desert-green focus:outline-none"
                     aria-label="Sort drug results"
                   >
                     <option value="relevance">Best match</option>
@@ -774,7 +774,7 @@ export default function DrugReferenceIndex({ ingestStatus, rowCount, conditions,
                             className={`rounded-full border px-3 py-1 text-sm transition-colors ${
                               active
                                 ? 'border-desert-olive bg-desert-olive text-white'
-                                : 'border-desert-stone-lighter bg-white text-desert-green-darker hover:border-desert-olive hover:bg-desert-olive/5'
+                                : 'border-desert-stone-lighter bg-surface-primary text-desert-green-darker hover:border-desert-olive hover:bg-desert-olive/5'
                             }`}
                           >
                             {c.label}
@@ -902,7 +902,7 @@ function FilterPill({
       className={`rounded-full border px-3 py-1 text-sm transition-colors ${
         active
           ? activeClass
-          : `border-desert-stone-lighter bg-white text-desert-green-darker ${hoverClass}`
+          : `border-desert-stone-lighter bg-surface-primary text-desert-green-darker ${hoverClass}`
       }`}
     >
       {children}

@@ -12,7 +12,7 @@ const FILE_TYPE_BADGE: Record<WorkshopFileTypeEnum, string> = {
 
 /** Per-type icon shown when there is no thumbnail (or thumbnail_failed). */
 function FileTypeIcon({ fileType, size }: { fileType: WorkshopFileTypeEnum; size: number }) {
-  const cls = `text-gray-300`
+  const cls = `text-text-muted`
   switch (fileType) {
     case 'cad':
       return <IconCube size={size} className={cls} aria-hidden="true" />
@@ -60,18 +60,18 @@ export default function StlCard({ file, selectable, selected, onToggleSelect }: 
     <Link
       href={`/workshop/${file.id}`}
       className={[
-        'group relative flex flex-col rounded-lg border bg-white overflow-hidden',
+        'group relative flex flex-col rounded-lg border bg-surface-primary overflow-hidden',
         'shadow-sm hover:shadow-md transition-shadow',
         selected
           ? 'border-desert-green ring-2 ring-desert-green'
           : file.metadata_pending
             ? 'border-amber-300 ring-1 ring-amber-200'
-            : 'border-gray-200',
+            : 'border-border-subtle',
       ].join(' ')}
     >
       {selectable && (
         <label
-          className="absolute top-2 left-2 z-20 flex items-center justify-center rounded bg-white/90 p-1 shadow-sm cursor-pointer"
+          className="absolute top-2 left-2 z-20 flex items-center justify-center rounded bg-surface-primary/90 p-1 shadow-sm cursor-pointer"
           onClick={(e) => {
             // Keep the click off the surrounding <Link> so toggling selection
             // never navigates to the detail page.
@@ -98,7 +98,7 @@ export default function StlCard({ file, selectable, selected, onToggleSelect }: 
         </div>
       )}
 
-      <div className="relative aspect-square bg-gray-50 flex items-center justify-center">
+      <div className="relative aspect-square bg-surface-secondary flex items-center justify-center">
         {file.thumbnail_path ? (
           <img
             src={`/api/workshop/files/${file.id}/thumbnail`}
@@ -112,12 +112,12 @@ export default function StlCard({ file, selectable, selected, onToggleSelect }: 
       </div>
 
       <div className="p-3 flex flex-col gap-1">
-        <div className="font-semibold text-sm text-gray-900 truncate" title={file.name}>
+        <div className="font-semibold text-sm text-text-primary truncate" title={file.name}>
           {file.name}
         </div>
-        <div className="flex items-center gap-2 text-xs text-gray-600 flex-wrap">
+        <div className="flex items-center gap-2 text-xs text-text-secondary flex-wrap">
           {/* File-type badge */}
-          <span className="inline-block rounded bg-gray-100 text-gray-600 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+          <span className="inline-block rounded bg-surface-secondary text-text-secondary px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
             {FILE_TYPE_BADGE[file.file_type]}
           </span>
           <span className="inline-block rounded-full bg-desert-green-light text-white px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide">
@@ -125,7 +125,7 @@ export default function StlCard({ file, selectable, selected, onToggleSelect }: 
           </span>
           {file.file_type === 'stl' && <span>{file.material ?? '—'}</span>}
         </div>
-        <div className="flex items-center justify-between text-[11px] text-gray-500 mt-1">
+        <div className="flex items-center justify-between text-[11px] text-text-muted mt-1">
           <span>{file.file_type === 'stl' ? printTimeLabel : ''}</span>
           <span>{sizeMb} MB</span>
         </div>

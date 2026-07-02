@@ -79,7 +79,7 @@ export default function ChatSidebar({
           'md:hidden fixed inset-y-0 left-0 w-72 z-40 transition-transform duration-200 ease-out',
           mobileOpen ? 'translate-x-0' : '-translate-x-full',
           // Shared layout
-          'bg-gray-50 border-r border-gray-200 flex flex-col h-full'
+          'bg-surface-secondary border-r border-border-subtle flex flex-col h-full'
         )}
       >
         <SidebarBody
@@ -96,7 +96,7 @@ export default function ChatSidebar({
         />
       </div>
       {/* Desktop inline sidebar — hidden below md, the original layout above md */}
-      <div className="hidden md:flex w-64 bg-gray-50 border-r border-gray-200 flex-col h-full">
+      <div className="hidden md:flex w-64 bg-surface-secondary border-r border-border-subtle flex-col h-full">
         <SidebarBody
           sessions={sessions}
           activeSessionId={activeSessionId}
@@ -151,7 +151,7 @@ function SidebarBody({
 }: SidebarBodyProps) {
   return (
     <>
-      <div className="p-4 border-b border-gray-200 h-[75px] flex items-center justify-center gap-2">
+      <div className="p-4 border-b border-border-subtle h-[75px] flex items-center justify-center gap-2">
         <StyledButton onClick={onNewChat} icon="IconPlus" variant="primary" fullWidth>
           New Chat
         </StyledButton>
@@ -159,17 +159,17 @@ function SidebarBody({
           <button
             type="button"
             onClick={onMobileClose}
-            className="p-2 rounded-lg hover:bg-gray-200 flex-shrink-0"
+            className="p-2 rounded-lg hover:bg-surface-secondary flex-shrink-0"
             aria-label="Close sidebar"
           >
-            <IconX className="h-5 w-5 text-gray-600" />
+            <IconX className="h-5 w-5 text-text-secondary" />
           </button>
         )}
       </div>
 
       <div className="flex-1 overflow-y-auto">
         {sessions.length === 0 ? (
-          <div className="p-4 text-center text-gray-500 text-sm">No previous chats</div>
+          <div className="p-4 text-center text-text-muted text-sm">No previous chats</div>
         ) : (
           <div className="p-2 space-y-1">
             {sessions.map((session) => (
@@ -180,14 +180,14 @@ function SidebarBody({
                   'w-full text-left px-3 py-2 rounded-lg transition-colors group',
                   activeSessionId === session.id
                     ? 'bg-desert-green text-white'
-                    : 'hover:bg-gray-200 text-gray-700'
+                    : 'hover:bg-surface-secondary text-text-primary'
                 )}
               >
                 <div className="flex items-start gap-2">
                   <IconMessage
                     className={classNames(
                       'h-5 w-5 mt-0.5 shrink-0',
-                      activeSessionId === session.id ? 'text-white' : 'text-gray-400'
+                      activeSessionId === session.id ? 'text-white' : 'text-text-muted'
                     )}
                   />
                   <div className="flex-1 min-w-0">
@@ -196,7 +196,7 @@ function SidebarBody({
                       <div
                         className={classNames(
                           'text-xs truncate mt-0.5',
-                          activeSessionId === session.id ? 'text-white/80' : 'text-gray-500'
+                          activeSessionId === session.id ? 'text-white/80' : 'text-text-muted'
                         )}
                       >
                         {session.lastMessage}

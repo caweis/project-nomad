@@ -110,7 +110,7 @@ export default function SupplyDepotPage(props: {
         confirmVariant="primary"
         icon={<IconDownload className="h-12 w-12 text-desert-green" />}
       >
-        <p className="text-gray-700">
+        <p className="text-text-secondary">
           Are you sure you want to install {service.friendly_name || service.service_name}? This
           will start the service and make it available in your Project N.O.M.A.D. instance. It may
           take some time to complete.
@@ -180,7 +180,7 @@ export default function SupplyDepotPage(props: {
         confirmText={confirmText}
         cancelText="Cancel"
       >
-        <p className="text-gray-700">
+        <p className="text-text-secondary">
           Are you sure you want to {action} {record.service_name}?
         </p>
       </StyledModal>,
@@ -220,7 +220,7 @@ export default function SupplyDepotPage(props: {
         confirmText={'Force Reinstall'}
         cancelText="Cancel"
       >
-        <p className="text-gray-700">
+        <p className="text-text-secondary">
           Are you sure you want to force reinstall {record.service_name}? This will{' '}
           <strong>WIPE ALL DATA</strong> for this service and cannot be undone. You should only do
           this if the service is malfunctioning and other troubleshooting steps have failed.
@@ -324,7 +324,7 @@ export default function SupplyDepotPage(props: {
         confirmVariant="danger"
         cancelText="Cancel"
       >
-        <p className="text-gray-700">
+        <p className="text-text-secondary">
           Are you sure you want to delete {record.friendly_name || record.service_name}? This stops
           and removes its container. Bind-mounted data on disk is left in place.
         </p>
@@ -413,7 +413,7 @@ export default function SupplyDepotPage(props: {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h1 className="text-4xl font-semibold">Supply Depot</h1>
-              <p className="text-gray-500 mt-1">
+              <p className="text-text-muted mt-1">
                 Browse and install apps for your Project N.O.M.A.D. instance, organized by category.
                 Nightly update checks automatically detect when new versions are available.
               </p>

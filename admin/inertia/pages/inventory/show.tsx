@@ -505,7 +505,7 @@ function round3(n: number): number {
  * input layering reads clearly against the beige (desert-sand) page.
  */
 const INPUT_CLASS =
-  'w-full rounded-lg border border-desert-stone-lighter bg-white px-3 py-2 text-sm text-desert-green-darker ' +
+  'w-full rounded-lg border border-desert-stone-lighter bg-surface-primary px-3 py-2 text-sm text-desert-green-darker ' +
   'placeholder:text-desert-stone-light transition focus:border-desert-green focus:outline-none focus:ring-2 focus:ring-desert-green/20'
 
 /**

@@ -39,9 +39,9 @@ export default function InventoryCard({ item, expiringWithinDays }: InventoryCar
     <Link
       href={`/inventory/${item.id}`}
       className={[
-        'group relative flex flex-col rounded-lg border bg-white overflow-hidden',
+        'group relative flex flex-col rounded-lg border bg-surface-primary overflow-hidden',
         'shadow-sm hover:shadow-md transition-shadow p-3 gap-2',
-        lowStock || expiringSoon ? 'border-amber-300 ring-1 ring-amber-200' : 'border-gray-200',
+        lowStock || expiringSoon ? 'border-amber-300 ring-1 ring-amber-200' : 'border-border-subtle',
       ].join(' ')}
     >
       <div className="flex items-start justify-between gap-2">
@@ -51,7 +51,7 @@ export default function InventoryCard({ item, expiringWithinDays }: InventoryCar
           ) : (
             <IconPackage size={20} className="shrink-0 text-desert-green" aria-hidden="true" />
           )}
-          <span className="font-semibold text-sm text-gray-900 truncate" title={item.name}>
+          <span className="font-semibold text-sm text-text-primary truncate" title={item.name}>
             {item.name}
           </span>
         </div>
@@ -65,7 +65,7 @@ export default function InventoryCard({ item, expiringWithinDays }: InventoryCar
         )}
       </div>
 
-      <div className="flex items-center gap-2 text-xs text-gray-600">
+      <div className="flex items-center gap-2 text-xs text-text-secondary">
         <span className="inline-block rounded-full bg-desert-green-light text-white px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide">
           {CATEGORY_LABELS[item.category]}
         </span>
@@ -75,14 +75,14 @@ export default function InventoryCard({ item, expiringWithinDays }: InventoryCar
             Gear
           </span>
         )}
-        <span className="font-medium text-gray-800">
+        <span className="font-medium text-text-primary">
           {formatQuantity(item.quantity)} {item.unit}
         </span>
       </div>
 
       {/* Condition — relevant for gear */}
       {isGear && item.condition && (
-        <div className="text-[11px] text-gray-500 capitalize">
+        <div className="text-[11px] text-text-muted capitalize">
           Condition: {item.condition}
         </div>
       )}
@@ -93,7 +93,7 @@ export default function InventoryCard({ item, expiringWithinDays }: InventoryCar
       )}
 
       {item.location && (
-        <div className="text-[11px] text-gray-500 truncate" title={item.location}>
+        <div className="text-[11px] text-text-muted truncate" title={item.location}>
           {item.location}
         </div>
       )}

@@ -108,7 +108,7 @@ function ContentUpdatesSection() {
     <div className="mt-8">
       <StyledSectionHeader title="Content Updates" />
 
-      <div className="bg-white rounded-lg border shadow-md overflow-hidden p-6">
+      <div className="bg-surface-primary rounded-lg border shadow-md overflow-hidden p-6">
         <div className="flex items-center justify-between">
           <p className="text-desert-stone-dark">
             Check if newer versions of your installed ZIM files and maps are available.
@@ -255,7 +255,7 @@ function AutomaticUpdatesSection() {
   return (
     <>
       <StyledSectionHeader title="Automatic Updates" className="mt-8" />
-      <div className="bg-white rounded-lg border shadow-md overflow-hidden mt-6 p-6 space-y-6">
+      <div className="bg-surface-primary rounded-lg border shadow-md overflow-hidden mt-6 p-6 space-y-6">
         <Switch
           checked={core.data?.value || false}
           onChange={(v) => mutation.mutate({ key: 'autoUpdate.enabled', value: v })}
@@ -514,20 +514,20 @@ export default function SystemUpdatePage(props: {
               updater only knows the ghcr.io/crosstalk-solutions/* pattern.
               Replace the entire update mechanism with a host-CLI hint. */}
           {props.isNativeOllama ? (
-            <div className="bg-white rounded-lg border-2 border-desert-green shadow-md overflow-hidden">
+            <div className="bg-surface-primary rounded-lg border-2 border-desert-green shadow-md overflow-hidden">
               <div className="p-8">
                 <h2 className="text-2xl font-bold text-desert-green mb-3">
                   Updates via host CLI on macOS
                 </h2>
                 <p className="text-desert-stone-dark mb-4">
                   On the macOS distribution, admin's container is updated from the host with the
-                  <code className="bg-gray-100 px-1.5 py-0.5 mx-1 rounded font-mono text-sm">nomad upgrade</code>
+                  <code className="bg-surface-secondary px-1.5 py-0.5 mx-1 rounded font-mono text-sm">nomad upgrade</code>
                   command. The in-admin self-update button doesn't apply here — it rewrites
                   compose.yaml image tags using a pattern that doesn't match our image
-                  (<code className="bg-gray-100 px-1.5 py-0.5 mx-1 rounded font-mono text-sm">ghcr.io/caweis/project-nomad-macos-arm64</code>).
+                  (<code className="bg-surface-secondary px-1.5 py-0.5 mx-1 rounded font-mono text-sm">ghcr.io/caweis/project-nomad-macos-arm64</code>).
                 </p>
-                <div className="bg-gray-50 border border-gray-200 rounded p-4 mb-4">
-                  <p className="text-sm font-semibold text-gray-700 mb-3">Run an update:</p>
+                <div className="bg-surface-secondary border border-border-subtle rounded p-4 mb-4">
+                  <p className="text-sm font-semibold text-text-secondary mb-3">Run an update:</p>
                   <div className="flex flex-wrap items-center gap-3 mb-3">
                     <HostCommandButton cmd="upgrade-admin" label="Update Command Center" />
                     <HostCommandButton
@@ -536,10 +536,10 @@ export default function SystemUpdatePage(props: {
                     />
                     <HostCommandButton cmd="upgrade-all" label="Update Everything" />
                   </div>
-                  <p className="text-xs text-gray-600">
-                    Each button dispatches the matching <code className="bg-gray-100 px-1 rounded font-mono">nomad upgrade</code> command on the host
+                  <p className="text-xs text-text-secondary">
+                    Each button dispatches the matching <code className="bg-surface-secondary px-1 rounded font-mono">nomad upgrade</code> command on the host
                     via the host-command-bridge LaunchAgent. From a Terminal on this Mac you can also run
-                    <code className="bg-gray-100 px-1.5 py-0.5 mx-1 rounded font-mono">nomad upgrade --check</code>
+                    <code className="bg-surface-secondary px-1.5 py-0.5 mx-1 rounded font-mono">nomad upgrade --check</code>
                     for a dry-run preview without applying changes.
                   </p>
                 </div>
@@ -558,14 +558,14 @@ export default function SystemUpdatePage(props: {
                 {versionInfo.updateAvailable && (
                   <p className="text-xs text-desert-stone text-center mt-3">
                     Note: latest-upstream check tracks Crosstalk's published version. Our caweis fork tags
-                    independently as <code className="bg-gray-100 px-1 rounded font-mono">:edge</code> and
-                    <code className="bg-gray-100 px-1 rounded font-mono ml-1">:sha-XXXXXXX</code>.
+                    independently as <code className="bg-surface-secondary px-1 rounded font-mono">:edge</code> and
+                    <code className="bg-surface-secondary px-1 rounded font-mono ml-1">:sha-XXXXXXX</code>.
                   </p>
                 )}
               </div>
             </div>
           ) : (
-          <div className="bg-white rounded-lg border shadow-md overflow-hidden">
+          <div className="bg-surface-primary rounded-lg border shadow-md overflow-hidden">
             <div className="p-8 text-center">
               <div className="flex justify-center mb-4">{getStatusIcon()}</div>
 
@@ -660,7 +660,7 @@ export default function SystemUpdatePage(props: {
                 </div>
               )}
             </div>
-            <div className="border-t bg-white p-6">
+            <div className="border-t bg-surface-primary p-6">
               <h3 className="text-lg font-semibold text-desert-green mb-4">
                 What happens during an update?
               </h3>
@@ -731,7 +731,7 @@ export default function SystemUpdatePage(props: {
             />
           </div>
           <StyledSectionHeader title="Early Access" className="mt-8" />
-          <div className="bg-white rounded-lg border shadow-md overflow-hidden mt-6 p-6">
+          <div className="bg-surface-primary rounded-lg border shadow-md overflow-hidden mt-6 p-6">
             <Switch
               checked={earlyAccessSetting.data?.value || false}
               onChange={(newVal) => {
@@ -744,7 +744,7 @@ export default function SystemUpdatePage(props: {
           </div>
           <AutomaticUpdatesSection />
           <ContentUpdatesSection />
-          <div className="bg-white rounded-lg border shadow-md overflow-hidden py-6 mt-12">
+          <div className="bg-surface-primary rounded-lg border shadow-md overflow-hidden py-6 mt-12">
             <div className="flex flex-col md:flex-row justify-between items-center p-8 gap-y-8 md:gap-y-0 gap-x-8">
               <div>
                 <h2 className="max-w-xl text-lg font-bold text-desert-green sm:text-xl lg:col-span-7">
@@ -784,7 +784,7 @@ export default function SystemUpdatePage(props: {
 
           {showLogs && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-              <div className="bg-white rounded-lg shadow-2xl max-w-4xl w-full max-h-[80vh] flex flex-col">
+              <div className="bg-surface-primary rounded-lg shadow-2xl max-w-4xl w-full max-h-[80vh] flex flex-col">
                 <div className="p-6 border-b border-desert-stone-light flex justify-between items-center">
                   <h3 className="text-xl font-bold text-desert-green">Update Logs</h3>
                   <button

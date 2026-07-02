@@ -50,7 +50,7 @@ export default function PlansShow(props: PageProps) {
       <div className="p-4 md:p-6 max-w-3xl mx-auto">
         <Link
           href="/readiness?tab=plans"
-          className="inline-flex items-center gap-1 text-sm text-gray-600 mb-3 hover:text-desert-green"
+          className="inline-flex items-center gap-1 text-sm text-text-secondary mb-3 hover:text-desert-green"
         >
           <IconArrowLeft size={16} /> Back to Scenario Plans
         </Link>
@@ -128,7 +128,7 @@ function PlanForm({ plan, enums }: { plan: ScenarioPlanDetail | null; enums: Enu
         <select
           value={form.scenario}
           onChange={(e) => set('scenario', e.target.value as Scenario)}
-          className="w-full rounded border border-gray-300 px-2 py-1.5"
+          className="w-full rounded border border-border-default px-2 py-1.5"
         >
           {enums.scenarios.map((s) => (
             <option key={s.value} value={s.value}>
@@ -144,7 +144,7 @@ function PlanForm({ plan, enums }: { plan: ScenarioPlanDetail | null; enums: Enu
           value={form.title}
           onChange={(e) => set('title', e.target.value)}
           required
-          className="w-full rounded border border-gray-300 px-2 py-1.5"
+          className="w-full rounded border border-border-default px-2 py-1.5"
         />
       </FormGroup>
 
@@ -153,7 +153,7 @@ function PlanForm({ plan, enums }: { plan: ScenarioPlanDetail | null; enums: Enu
           value={form.description}
           onChange={(e) => set('description', e.target.value)}
           rows={3}
-          className="w-full rounded border border-gray-300 px-2 py-1.5"
+          className="w-full rounded border border-border-default px-2 py-1.5"
         />
       </FormGroup>
 
@@ -168,7 +168,7 @@ function PlanForm({ plan, enums }: { plan: ScenarioPlanDetail | null; enums: Enu
         {isCreate ? 'Create plan' : 'Save plan'}
       </StyledButton>
 
-      <p className="text-xs text-gray-500">* required.</p>
+      <p className="text-xs text-text-muted">* required.</p>
     </form>
   )
 }
@@ -198,12 +198,12 @@ function PlanEditor({ plan, enums }: { plan: ScenarioPlanDetail; enums: Enums })
   return (
     <div className="space-y-6">
       {editingPlan ? (
-        <div className="rounded-lg border border-gray-200 bg-white p-4">
+        <div className="rounded-lg border border-border-subtle bg-surface-primary p-4">
           <PlanForm plan={plan} enums={enums} />
           <button
             type="button"
             onClick={() => setEditingPlan(false)}
-            className="mt-3 text-sm text-gray-500 hover:text-desert-green inline-flex items-center gap-1"
+            className="mt-3 text-sm text-text-muted hover:text-desert-green inline-flex items-center gap-1"
           >
             <IconX size={14} /> Done editing
           </button>
@@ -211,17 +211,17 @@ function PlanEditor({ plan, enums }: { plan: ScenarioPlanDetail; enums: Enums })
       ) : (
         <header className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">
+            <div className="text-xs font-semibold uppercase tracking-wide text-text-muted mb-1">
               {SCENARIO_LABELS[plan.scenario]}
             </div>
             <h1 className="text-2xl font-bold text-desert-green">{plan.title}</h1>
-            {plan.description && <p className="text-sm text-gray-600 mt-1">{plan.description}</p>}
+            {plan.description && <p className="text-sm text-text-secondary mt-1">{plan.description}</p>}
           </div>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => setEditingPlan(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded text-sm font-medium border border-gray-300 text-gray-700 hover:bg-gray-50"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded text-sm font-medium border border-border-default text-text-secondary hover:bg-surface-secondary"
             >
               <IconPencil size={16} /> Edit plan
             </button>
@@ -247,7 +247,7 @@ function PlanEditor({ plan, enums }: { plan: ScenarioPlanDetail; enums: Enums })
 function StepList({ plan }: { plan: ScenarioPlanDetail }) {
   if (plan.steps.length === 0) {
     return (
-      <div className="rounded-lg border border-gray-200 bg-white p-6 text-center text-sm text-gray-500">
+      <div className="rounded-lg border border-border-subtle bg-surface-primary p-6 text-center text-sm text-text-muted">
         No steps yet. Add the first step below.
       </div>
     )
@@ -311,7 +311,7 @@ function StepRow({ planId, step }: { planId: number; step: ScenarioPlanStepDto }
 
   if (editing) {
     return (
-      <li className="rounded-lg border border-gray-300 bg-white p-3">
+      <li className="rounded-lg border border-border-default bg-surface-primary p-3">
         <StepForm
           planId={planId}
           step={step}
@@ -326,7 +326,7 @@ function StepRow({ planId, step }: { planId: number; step: ScenarioPlanStepDto }
   }
 
   return (
-    <li className="rounded-lg border border-gray-200 bg-white p-3 flex items-start gap-3">
+    <li className="rounded-lg border border-border-subtle bg-surface-primary p-3 flex items-start gap-3">
       <input
         type="checkbox"
         checked={step.checked}
@@ -336,7 +336,7 @@ function StepRow({ planId, step }: { planId: number; step: ScenarioPlanStepDto }
         aria-label={step.checked ? 'Mark step not done' : 'Mark step done'}
       />
       <div className="min-w-0 flex-1">
-        <p className={['text-sm', step.checked ? 'text-gray-400 line-through' : 'text-gray-900'].join(' ')}>
+        <p className={['text-sm', step.checked ? 'text-text-muted line-through' : 'text-text-primary'].join(' ')}>
           {step.text}
         </p>
         {link.kind !== 'none' && link.href && (
@@ -359,7 +359,7 @@ function StepRow({ planId, step }: { planId: number; step: ScenarioPlanStepDto }
         <button
           type="button"
           onClick={() => setEditing(true)}
-          className="p-1 text-gray-400 hover:text-desert-green"
+          className="p-1 text-text-muted hover:text-desert-green"
           aria-label="Edit step"
         >
           <IconPencil size={16} />
@@ -368,7 +368,7 @@ function StepRow({ planId, step }: { planId: number; step: ScenarioPlanStepDto }
           type="button"
           onClick={onDelete}
           disabled={busy}
-          className="p-1 text-gray-400 hover:text-red-600 disabled:opacity-50"
+          className="p-1 text-text-muted hover:text-red-600 disabled:opacity-50"
           aria-label="Delete step"
         >
           <IconTrash size={16} />
@@ -383,7 +383,7 @@ function StepRow({ planId, step }: { planId: number; step: ScenarioPlanStepDto }
  */
 function AddStepForm({ planId }: { planId: number }) {
   return (
-    <div className="rounded-lg border border-dashed border-gray-300 bg-white p-3">
+    <div className="rounded-lg border border-dashed border-border-default bg-surface-primary p-3">
       <StepForm
         planId={planId}
         step={null}
@@ -503,16 +503,16 @@ function StepForm({
         placeholder={isCreate ? 'Add a step…' : 'Step text'}
         rows={2}
         required
-        className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+        className="w-full rounded border border-border-default px-2 py-1.5 text-sm"
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Link (optional)</label>
+          <label className="block text-xs font-medium text-text-secondary mb-1">Link (optional)</label>
           <select
             value={form.linkKind}
             onChange={(e) => set('linkKind', e.target.value as StepLinkKind)}
-            className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+            className="w-full rounded border border-border-default px-2 py-1 text-sm"
           >
             <option value="none">— no link —</option>
             <option value="inventory">Inventory item (id)</option>
@@ -563,7 +563,7 @@ function StepForm({
           <button
             type="button"
             onClick={onCancel}
-            className="text-sm text-gray-500 hover:text-desert-green"
+            className="text-sm text-text-muted hover:text-desert-green"
           >
             Cancel
           </button>
@@ -586,13 +586,13 @@ function LinkInput({
 }) {
   return (
     <div>
-      <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+      <label className="block text-xs font-medium text-text-secondary mb-1">{label}</label>
       <input
         type={type}
         min={type === 'number' ? 1 : undefined}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+        className="w-full rounded border border-border-default px-2 py-1 text-sm"
       />
     </div>
   )
@@ -618,7 +618,7 @@ function Banner({ message }: { message: { kind: 'ok' | 'err'; text: string } }) 
 function FormGroup({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <label className="block text-sm font-medium text-text-secondary mb-1">{label}</label>
       {children}
     </div>
   )

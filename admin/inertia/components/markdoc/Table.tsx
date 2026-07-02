@@ -13,7 +13,7 @@ export function TableHead({ children }: { children: React.ReactNode }) {
 }
 
 export function TableBody({ children }: { children: React.ReactNode }) {
-  return <tbody className="divide-y divide-desert-tan-lighter/50 bg-white">{children}</tbody>
+  return <tbody className="divide-y divide-desert-tan-lighter/50 bg-surface-primary">{children}</tbody>
 }
 
 export function TableRow({ children }: { children: React.ReactNode }) {

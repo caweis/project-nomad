@@ -63,21 +63,21 @@ export default function SupplyDepotCard({
     if (!record.installed) return null
     if (isNativeOllama && record.service_name === SERVICE_NAMES.OLLAMA) {
       if (aiBackend === 'omlx') {
-        return <span className="text-gray-600">Apple MLX</span>
+        return <span className="text-text-secondary">Apple MLX</span>
       }
-      return <span className="text-gray-600">{aiAssistantVersion || '—'}</span>
+      return <span className="text-text-secondary">{aiAssistantVersion || '—'}</span>
     }
     const currentTag = extractTag(record.container_image)
     if (record.available_update_version) {
       return (
         <div className="flex items-center gap-1.5">
-          <span className="text-gray-500">{currentTag}</span>
+          <span className="text-text-muted">{currentTag}</span>
           <IconArrowUp className="h-4 w-4 text-desert-green" />
           <span className="text-desert-green font-semibold">{record.available_update_version}</span>
         </div>
       )
     }
-    return <span className="text-gray-600">{currentTag}</span>
+    return <span className="text-text-secondary">{currentTag}</span>
   }
 
   // ── action footer (faithful port of apps.tsx AppActions) ────────────────────
@@ -268,7 +268,7 @@ export default function SupplyDepotCard({
   }
 
   return (
-    <div className="flex flex-col rounded-lg border border-desert-tan-lighter bg-white p-5 shadow-sm">
+    <div className="flex flex-col rounded-lg border border-desert-tan-lighter bg-surface-primary p-5 shadow-sm">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -280,7 +280,7 @@ export default function SupplyDepotCard({
             )}
           </div>
           {record.powered_by && (
-            <p className="text-xs text-gray-400">by {record.powered_by}</p>
+            <p className="text-xs text-text-muted">by {record.powered_by}</p>
           )}
         </div>
         {record.category && (
@@ -290,10 +290,10 @@ export default function SupplyDepotCard({
         )}
       </div>
 
-      <p className="mt-2 flex-1 text-sm text-gray-600">{record.description}</p>
+      <p className="mt-2 flex-1 text-sm text-text-secondary">{record.description}</p>
 
       <div className="mt-3 flex items-center justify-between gap-2 text-sm">
-        <div className="text-gray-500">{renderVersion()}</div>
+        <div className="text-text-muted">{renderVersion()}</div>
         {docLink && (
           <a
             href={docLink}

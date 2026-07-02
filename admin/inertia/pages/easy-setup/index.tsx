@@ -537,7 +537,7 @@ export default function EasySetupWizard(props: {
       <nav aria-label="Progress" className="px-6 pt-6">
         <ol
           role="list"
-          className="divide-y divide-gray-300 rounded-md md:flex md:divide-y-0 md:justify-between border border-desert-green"
+          className="divide-y divide-border-default rounded-md md:flex md:divide-y-0 md:justify-between border border-desert-green"
         >
           {steps.map((step, stepIdx) => (
             <li key={step.number} className="relative md:flex-1 md:flex md:justify-center">
@@ -547,7 +547,7 @@ export default function EasySetupWizard(props: {
                     <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-desert-green">
                       <IconCheck aria-hidden="true" className="size-6 text-white" />
                     </span>
-                    <span className="ml-4 text-lg font-medium text-gray-900">{step.label}</span>
+                    <span className="ml-4 text-lg font-medium text-text-primary">{step.label}</span>
                   </span>
                 </div>
               ) : currentStep === step.number ? (
@@ -563,10 +563,10 @@ export default function EasySetupWizard(props: {
               ) : (
                 <div className="group flex items-center md:justify-center">
                   <span className="flex items-center px-6 py-2 text-sm font-medium">
-                    <span className="flex size-10 shrink-0 items-center justify-center rounded-full border-2 border-gray-300">
-                      <span className="text-gray-500">{step.number}</span>
+                    <span className="flex size-10 shrink-0 items-center justify-center rounded-full border-2 border-border-default">
+                      <span className="text-text-muted">{step.number}</span>
                     </span>
-                    <span className="ml-4 text-lg font-medium text-gray-500">{step.label}</span>
+                    <span className="ml-4 text-lg font-medium text-text-muted">{step.label}</span>
                   </span>
                 </div>
               )}
@@ -582,7 +582,7 @@ export default function EasySetupWizard(props: {
                       fill="none"
                       viewBox="0 0 22 80"
                       preserveAspectRatio="none"
-                      className={`size-full ${currentStep > step.number ? 'text-desert-green' : 'text-gray-300'}`}
+                      className={`size-full ${currentStep > step.number ? 'text-desert-green' : 'text-text-muted'}`}
                     >
                       <path
                         d="M0 -2L20 40L0 82"
@@ -658,7 +658,7 @@ export default function EasySetupWizard(props: {
             ? 'border-desert-green bg-desert-green/20 cursor-default'
             : selected
               ? 'border-desert-green bg-desert-green shadow-md cursor-pointer'
-              : 'border-desert-stone-light bg-white hover:border-desert-green hover:shadow-sm cursor-pointer'
+              : 'border-desert-stone-light bg-surface-primary hover:border-desert-green hover:shadow-sm cursor-pointer'
         )}
       >
         <div className="flex items-start justify-between">
@@ -667,7 +667,7 @@ export default function EasySetupWizard(props: {
               <h3
                 className={classNames(
                   'text-xl font-bold',
-                  installed ? 'text-gray-700' : selected ? 'text-white' : 'text-gray-900'
+                  installed ? 'text-text-primary' : selected ? 'text-white' : 'text-text-primary'
                 )}
               >
                 {capability.name}
@@ -681,7 +681,7 @@ export default function EasySetupWizard(props: {
             <p
               className={classNames(
                 'text-sm mt-0.5',
-                installed ? 'text-gray-500' : selected ? 'text-green-100' : 'text-gray-500'
+                installed ? 'text-text-muted' : selected ? 'text-green-100' : 'text-text-muted'
               )}
             >
               Powered by {capability.technicalName}
@@ -689,7 +689,7 @@ export default function EasySetupWizard(props: {
             <p
               className={classNames(
                 'text-sm mt-3',
-                installed ? 'text-gray-600' : selected ? 'text-white' : 'text-gray-600'
+                installed ? 'text-text-secondary' : selected ? 'text-white' : 'text-text-secondary'
               )}
             >
               {capability.description}
@@ -698,7 +698,7 @@ export default function EasySetupWizard(props: {
               <ul
                 className={classNames(
                   'mt-3 space-y-1',
-                  installed ? 'text-gray-600' : selected ? 'text-white' : 'text-gray-600'
+                  installed ? 'text-text-secondary' : selected ? 'text-white' : 'text-text-secondary'
                 )}
               >
                 {capability.features.map((feature, idx) => (
@@ -754,15 +754,15 @@ export default function EasySetupWizard(props: {
     return (
       <div className="space-y-8">
         <div className="text-center mb-6">
-          <h2 className="text-3xl font-bold text-gray-900 mb-2">What do you want NOMAD to do?</h2>
-          <p className="text-gray-600">
+          <h2 className="text-3xl font-bold text-text-primary mb-2">What do you want NOMAD to do?</h2>
+          <p className="text-text-secondary">
             Select the capabilities you need. You can always add more later.
           </p>
         </div>
 
         {allInstalled ? (
           <div className="text-center py-12">
-            <p className="text-gray-600 text-lg">
+            <p className="text-text-secondary text-lg">
               All available capabilities are already installed!
             </p>
             <StyledButton
@@ -778,7 +778,7 @@ export default function EasySetupWizard(props: {
             {/* Core Capabilities */}
             {existingCoreCapabilities.length > 0 && (
               <div>
-                <h3 className="text-lg font-semibold text-gray-700 mb-4">Core Capabilities</h3>
+                <h3 className="text-lg font-semibold text-text-primary mb-4">Core Capabilities</h3>
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                   {existingCoreCapabilities.map((capability) =>
                     renderCapabilityCard(capability, true)
@@ -794,11 +794,11 @@ export default function EasySetupWizard(props: {
                   onClick={() => setShowAdditionalTools(!showAdditionalTools)}
                   className="flex items-center justify-between w-full text-left"
                 >
-                  <h3 className="text-md font-medium text-gray-500">Additional Tools</h3>
+                  <h3 className="text-md font-medium text-text-muted">Additional Tools</h3>
                   {showAdditionalTools ? (
-                    <IconChevronUp size={20} className="text-gray-400" />
+                    <IconChevronUp size={20} className="text-text-muted" />
                   ) : (
-                    <IconChevronDown size={20} className="text-gray-400" />
+                    <IconChevronDown size={20} className="text-text-muted" />
                   )}
                 </button>
                 {showAdditionalTools && (
@@ -819,8 +819,8 @@ export default function EasySetupWizard(props: {
   const renderStep2 = () => (
     <div className="space-y-6">
       <div className="text-center mb-6">
-        <h2 className="text-3xl font-bold text-gray-900 mb-2">Choose Map Regions</h2>
-        <p className="text-gray-600">
+        <h2 className="text-3xl font-bold text-text-primary mb-2">Choose Map Regions</h2>
+        <p className="text-text-secondary">
           Select map region collections to download for offline use. You can always download more
           regions later.
         </p>
@@ -856,7 +856,7 @@ export default function EasySetupWizard(props: {
         </div>
       ) : (
         <div className="text-center py-12">
-          <p className="text-gray-600 text-lg">No map collections available at this time.</p>
+          <p className="text-text-secondary text-lg">No map collections available at this time.</p>
         </div>
       )}
     </div>
@@ -875,18 +875,18 @@ export default function EasySetupWizard(props: {
         <div className="p-6 rounded-lg border-2 border-desert-green bg-desert-green/20 cursor-default">
           <div className="flex items-start justify-between">
             <div className="flex items-start gap-4 flex-1">
-              <div className="w-12 h-12 rounded-full bg-white border border-gray-200 flex items-center justify-center shadow-sm flex-shrink-0">
+              <div className="w-12 h-12 rounded-full bg-surface-primary border border-border-subtle flex items-center justify-center shadow-sm flex-shrink-0">
                 <IconVaccineBottle className="w-6 h-6 text-desert-green" />
               </div>
               <div className="flex-1">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-xl font-bold text-gray-700">FDA Drug Reference</h3>
+                  <h3 className="text-xl font-bold text-text-primary">FDA Drug Reference</h3>
                   <span className="text-xs bg-desert-green text-white px-2 py-0.5 rounded-full">
                     Installed
                   </span>
                 </div>
-                <p className="text-sm mt-0.5 text-gray-500">{subtitle}</p>
-                <p className="text-sm mt-2 text-gray-600">
+                <p className="text-sm mt-0.5 text-text-muted">{subtitle}</p>
+                <p className="text-sm mt-2 text-text-secondary">
                   {drugRowCount.toLocaleString()} labels installed — manage on the Drug Reference
                   page.
                 </p>
@@ -903,14 +903,14 @@ export default function EasySetupWizard(props: {
     // In-progress — show the live, self-polling status panel. Not selectable.
     if (drugReferenceInProgress && props.drugReference.ingestStatus) {
       return (
-        <div className="p-6 rounded-lg border-2 border-desert-tan-lighter bg-white">
+        <div className="p-6 rounded-lg border-2 border-desert-tan-lighter bg-surface-primary">
           <div className="flex items-start gap-4 mb-4">
-            <div className="w-12 h-12 rounded-full bg-white border border-gray-200 flex items-center justify-center shadow-sm flex-shrink-0">
-              <IconVaccineBottle className="w-6 h-6 text-gray-700" />
+            <div className="w-12 h-12 rounded-full bg-surface-primary border border-border-subtle flex items-center justify-center shadow-sm flex-shrink-0">
+              <IconVaccineBottle className="w-6 h-6 text-text-primary" />
             </div>
             <div className="flex-1">
-              <h3 className="text-xl font-bold text-gray-900">FDA Drug Reference</h3>
-              <p className="text-sm mt-0.5 text-gray-500">{subtitle}</p>
+              <h3 className="text-xl font-bold text-text-primary">FDA Drug Reference</h3>
+              <p className="text-sm mt-0.5 text-text-muted">{subtitle}</p>
             </div>
           </div>
           <IngestStatus status={props.drugReference.ingestStatus} />
@@ -927,20 +927,20 @@ export default function EasySetupWizard(props: {
           'p-6 rounded-lg border-2 transition-all',
           selected
             ? 'border-desert-green bg-desert-green shadow-md cursor-pointer'
-            : 'border-desert-tan-lighter bg-white hover:border-desert-green hover:shadow-sm cursor-pointer',
+            : 'border-desert-tan-lighter bg-surface-primary hover:border-desert-green hover:shadow-sm cursor-pointer',
           !isOnline && 'opacity-50 cursor-not-allowed'
         )}
       >
         <div className="flex items-start justify-between">
           <div className="flex items-start gap-4 flex-1">
-            <div className="w-12 h-12 rounded-full bg-white border border-gray-200 flex items-center justify-center shadow-sm flex-shrink-0">
-              <IconVaccineBottle className="w-6 h-6 text-gray-700" />
+            <div className="w-12 h-12 rounded-full bg-surface-primary border border-border-subtle flex items-center justify-center shadow-sm flex-shrink-0">
+              <IconVaccineBottle className="w-6 h-6 text-text-primary" />
             </div>
             <div className="flex-1">
               <h3
                 className={classNames(
                   'text-xl font-bold',
-                  selected ? 'text-white' : 'text-gray-900'
+                  selected ? 'text-white' : 'text-text-primary'
                 )}
               >
                 FDA Drug Reference
@@ -948,7 +948,7 @@ export default function EasySetupWizard(props: {
               <p
                 className={classNames(
                   'text-sm mt-0.5',
-                  selected ? 'text-green-100' : 'text-gray-500'
+                  selected ? 'text-green-100' : 'text-text-muted'
                 )}
               >
                 {subtitle}
@@ -988,8 +988,8 @@ export default function EasySetupWizard(props: {
     return (
       <div className="space-y-6">
         <div className="text-center mb-6">
-          <h2 className="text-3xl font-bold text-gray-900 mb-2">Choose Content</h2>
-          <p className="text-gray-600">
+          <h2 className="text-3xl font-bold text-text-primary mb-2">Choose Content</h2>
+          <p className="text-text-secondary">
             {isAiSelected && isInformationSelected
               ? 'Select AI models and content categories for offline use.'
               : isAiSelected
@@ -1010,12 +1010,12 @@ export default function EasySetupWizard(props: {
         {isAiSelected && (
           <div className="mb-8">
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center shadow-sm">
-                <IconCpu className="w-6 h-6 text-gray-700" />
+              <div className="w-10 h-10 rounded-full bg-surface-primary border border-border-subtle flex items-center justify-center shadow-sm">
+                <IconCpu className="w-6 h-6 text-text-primary" />
               </div>
               <div>
-                <h3 className="text-xl font-semibold text-gray-900">AI Models</h3>
-                <p className="text-sm text-gray-500">Select models to download for offline AI</p>
+                <h3 className="text-xl font-semibold text-text-primary">AI Models</h3>
+                <p className="text-sm text-text-muted">Select models to download for offline AI</p>
               </div>
             </div>
 
@@ -1048,12 +1048,12 @@ export default function EasySetupWizard(props: {
                       className={classNames(
                         'p-4 rounded-lg border-2 transition-all',
                         installed
-                          ? 'border-desert-stone-light bg-gray-50 cursor-default'
+                          ? 'border-desert-stone-light bg-surface-secondary cursor-default'
                           : mlxUnavailable
-                            ? 'border-desert-stone-light bg-gray-50 cursor-not-allowed opacity-60'
+                            ? 'border-desert-stone-light bg-surface-secondary cursor-not-allowed opacity-60'
                             : isSelected
                               ? 'border-desert-green bg-desert-green shadow-md cursor-pointer'
-                              : 'border-desert-stone-light bg-white hover:border-desert-green hover:shadow-sm cursor-pointer',
+                              : 'border-desert-stone-light bg-surface-primary hover:border-desert-green hover:shadow-sm cursor-pointer',
                         !isOnline && !disabled && 'opacity-50 cursor-not-allowed'
                       )}
                     >
@@ -1064,10 +1064,10 @@ export default function EasySetupWizard(props: {
                               className={classNames(
                                 'text-lg font-semibold',
                                 installed
-                                  ? 'text-gray-700'
+                                  ? 'text-text-primary'
                                   : isSelected
                                     ? 'text-white'
-                                    : 'text-gray-900'
+                                    : 'text-text-primary'
                               )}
                             >
                               {model.name}
@@ -1087,7 +1087,7 @@ export default function EasySetupWizard(props: {
                           <p
                             className={classNames(
                               'text-sm mb-2',
-                              installed ? 'text-gray-600' : isSelected ? 'text-white' : 'text-gray-600'
+                              installed ? 'text-text-secondary' : isSelected ? 'text-white' : 'text-text-secondary'
                             )}
                           >
                             {model.description}
@@ -1097,10 +1097,10 @@ export default function EasySetupWizard(props: {
                               className={classNames(
                                 'text-xs',
                                 installed
-                                  ? 'text-gray-500'
+                                  ? 'text-text-muted'
                                   : isSelected
                                     ? 'text-green-100'
-                                    : 'text-gray-500'
+                                    : 'text-text-muted'
                               )}
                             >
                               Size: {model.tags[0].size}
@@ -1110,7 +1110,7 @@ export default function EasySetupWizard(props: {
                             <div
                               className={classNames(
                                 'text-xs mt-0.5',
-                                isSelected ? 'text-green-100' : 'text-gray-500'
+                                isSelected ? 'text-green-100' : 'text-text-muted'
                               )}
                             >
                               MLX build: {model.mlxPullName}
@@ -1133,8 +1133,8 @@ export default function EasySetupWizard(props: {
                 })}
               </div>
             ) : (
-              <div className="text-center py-8 bg-gray-50 rounded-lg">
-                <p className="text-gray-600">No recommended AI models available at this time.</p>
+              <div className="text-center py-8 bg-surface-secondary rounded-lg">
+                <p className="text-text-secondary">No recommended AI models available at this time.</p>
               </div>
             )}
           </div>
@@ -1144,7 +1144,7 @@ export default function EasySetupWizard(props: {
         {isInformationSelected && (
           <>
             {/* Divider between AI Models and Wikipedia */}
-            {isAiSelected && <hr className="my-8 border-gray-200" />}
+            {isAiSelected && <hr className="my-8 border-border-subtle" />}
 
             <div className="mb-8">
               {isLoadingWikipedia ? (
@@ -1168,15 +1168,15 @@ export default function EasySetupWizard(props: {
         {isInformationSelected && (
           <>
             {/* Divider between Wikipedia and Additional Content */}
-            <hr className="my-8 border-gray-200" />
+            <hr className="my-8 border-border-subtle" />
 
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center shadow-sm">
-                <IconBooks className="w-6 h-6 text-gray-700" />
+              <div className="w-10 h-10 rounded-full bg-surface-primary border border-border-subtle flex items-center justify-center shadow-sm">
+                <IconBooks className="w-6 h-6 text-text-primary" />
               </div>
               <div>
-                <h3 className="text-xl font-semibold text-gray-900">Additional Content</h3>
-                <p className="text-sm text-gray-500">Curated collections for offline reference</p>
+                <h3 className="text-xl font-semibold text-text-primary">Additional Content</h3>
+                <p className="text-sm text-text-muted">Curated collections for offline reference</p>
               </div>
             </div>
 
@@ -1218,7 +1218,7 @@ export default function EasySetupWizard(props: {
         {/* Show message if no capabilities requiring content are selected */}
         {!isAiSelected && !isInformationSelected && (
           <div className="text-center py-12">
-            <p className="text-gray-600 text-lg">
+            <p className="text-text-secondary text-lg">
               No content-based capabilities selected. You can skip this step or go back to select
               capabilities that require content.
             </p>
@@ -1240,8 +1240,8 @@ export default function EasySetupWizard(props: {
     return (
       <div className="space-y-6">
         <div className="text-center mb-6">
-          <h2 className="text-3xl font-bold text-gray-900 mb-2">Review Your Selections</h2>
-          <p className="text-gray-600">Review your choices before starting the setup process.</p>
+          <h2 className="text-3xl font-bold text-text-primary mb-2">Review Your Selections</h2>
+          <p className="text-text-secondary">Review your choices before starting the setup process.</p>
         </div>
 
         {!hasSelections ? (
@@ -1254,8 +1254,8 @@ export default function EasySetupWizard(props: {
         ) : (
           <div className="space-y-6">
             {selectedServices.length > 0 && (
-              <div className="bg-white rounded-lg border-2 border-desert-stone-light p-6">
-                <h3 className="text-xl font-semibold text-gray-900 mb-4">
+              <div className="bg-surface-primary rounded-lg border-2 border-desert-stone-light p-6">
+                <h3 className="text-xl font-semibold text-text-primary mb-4">
                   Capabilities to Install
                 </h3>
                 <ul className="space-y-2">
@@ -1264,9 +1264,9 @@ export default function EasySetupWizard(props: {
                     .map((capability) => (
                       <li key={capability.id} className="flex items-center">
                         <IconCheck size={20} className="text-desert-green mr-2" />
-                        <span className="text-gray-700">
+                        <span className="text-text-primary">
                           {capability.name}
-                          <span className="text-gray-400 text-sm ml-2">
+                          <span className="text-text-muted text-sm ml-2">
                             ({capability.technicalName})
                           </span>
                         </span>
@@ -1277,8 +1277,8 @@ export default function EasySetupWizard(props: {
             )}
 
             {selectedMapCollections.length > 0 && (
-              <div className="bg-white rounded-lg border-2 border-desert-stone-light p-6">
-                <h3 className="text-xl font-semibold text-gray-900 mb-4">
+              <div className="bg-surface-primary rounded-lg border-2 border-desert-stone-light p-6">
+                <h3 className="text-xl font-semibold text-text-primary mb-4">
                   Map Collections to Download ({selectedMapCollections.length})
                 </h3>
                 <ul className="space-y-2">
@@ -1287,7 +1287,7 @@ export default function EasySetupWizard(props: {
                     return (
                       <li key={slug} className="flex items-center">
                         <IconCheck size={20} className="text-desert-green mr-2" />
-                        <span className="text-gray-700">{collection?.name || slug}</span>
+                        <span className="text-text-primary">{collection?.name || slug}</span>
                       </li>
                     )
                   })}
@@ -1296,8 +1296,8 @@ export default function EasySetupWizard(props: {
             )}
 
             {selectedTiers.size > 0 && (
-              <div className="bg-white rounded-lg border-2 border-desert-stone-light p-6">
-                <h3 className="text-xl font-semibold text-gray-900 mb-4">
+              <div className="bg-surface-primary rounded-lg border-2 border-desert-stone-light p-6">
+                <h3 className="text-xl font-semibold text-text-primary mb-4">
                   Content Categories ({selectedTiers.size})
                 </h3>
                 {Array.from(selectedTiers.entries()).map(([categorySlug, tier]) => {
@@ -1308,16 +1308,16 @@ export default function EasySetupWizard(props: {
                     <div key={categorySlug} className="mb-4 last:mb-0">
                       <div className="flex items-center mb-2">
                         <IconCheck size={20} className="text-desert-green mr-2" />
-                        <span className="text-gray-900 font-medium">
+                        <span className="text-text-primary font-medium">
                           {category.name} - {tier.name}
                         </span>
-                        <span className="text-gray-500 text-sm ml-2">
+                        <span className="text-text-muted text-sm ml-2">
                           ({resources.length} files)
                         </span>
                       </div>
                       <ul className="ml-7 space-y-1">
                         {resources.map((resource, idx) => (
-                          <li key={idx} className="text-sm text-gray-600">
+                          <li key={idx} className="text-sm text-text-secondary">
                             {resource.title}
                           </li>
                         ))}
@@ -1329,17 +1329,17 @@ export default function EasySetupWizard(props: {
             )}
 
             {selectedWikipedia && selectedWikipedia !== 'none' && (
-              <div className="bg-white rounded-lg border-2 border-desert-stone-light p-6">
-                <h3 className="text-xl font-semibold text-gray-900 mb-4">Wikipedia</h3>
+              <div className="bg-surface-primary rounded-lg border-2 border-desert-stone-light p-6">
+                <h3 className="text-xl font-semibold text-text-primary mb-4">Wikipedia</h3>
                 {(() => {
                   const option = wikipediaState?.options.find((o) => o.id === selectedWikipedia)
                   return option ? (
                     <div className="flex items-center justify-between">
                       <div className="flex items-center">
                         <IconCheck size={20} className="text-desert-green mr-2" />
-                        <span className="text-gray-700">{option.name}</span>
+                        <span className="text-text-primary">{option.name}</span>
                       </div>
-                      <span className="text-gray-500 text-sm">
+                      <span className="text-text-muted text-sm">
                         {option.size_mb > 0
                           ? `${(option.size_mb / 1024).toFixed(1)} GB`
                           : 'No download'}
@@ -1351,21 +1351,21 @@ export default function EasySetupWizard(props: {
             )}
 
             {selectDrugReference && (
-              <div className="bg-white rounded-lg border-2 border-desert-stone-light p-6">
-                <h3 className="text-xl font-semibold text-gray-900 mb-4">FDA Drug Reference</h3>
+              <div className="bg-surface-primary rounded-lg border-2 border-desert-stone-light p-6">
+                <h3 className="text-xl font-semibold text-text-primary mb-4">FDA Drug Reference</h3>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center">
                     <IconCheck size={20} className="text-desert-green mr-2" />
-                    <span className="text-gray-700">Offline FDA drug labels</span>
+                    <span className="text-text-primary">Offline FDA drug labels</span>
                   </div>
-                  <span className="text-gray-500 text-sm">~1.7 GB</span>
+                  <span className="text-text-muted text-sm">~1.7 GB</span>
                 </div>
               </div>
             )}
 
             {selectedAiModels.length > 0 && (
-              <div className="bg-white rounded-lg border-2 border-desert-stone-light p-6">
-                <h3 className="text-xl font-semibold text-gray-900 mb-4">
+              <div className="bg-surface-primary rounded-lg border-2 border-desert-stone-light p-6">
+                <h3 className="text-xl font-semibold text-text-primary mb-4">
                   AI Models to Download ({selectedAiModels.length})
                 </h3>
                 <ul className="space-y-2">
@@ -1375,10 +1375,10 @@ export default function EasySetupWizard(props: {
                       <li key={modelName} className="flex items-center justify-between">
                         <div className="flex items-center">
                           <IconCheck size={20} className="text-desert-green mr-2" />
-                          <span className="text-gray-700">{modelName}</span>
+                          <span className="text-text-primary">{modelName}</span>
                         </div>
                         {model?.tags?.[0]?.size && (
-                          <span className="text-gray-500 text-sm">{model.tags[0].size}</span>
+                          <span className="text-text-muted text-sm">{model.tags[0].size}</span>
                         )}
                       </li>
                     )
@@ -1412,7 +1412,7 @@ export default function EasySetupWizard(props: {
         />
       )}
       <div className="max-w-7xl mx-auto px-4 py-8">
-        <div className="bg-white rounded-md shadow-md">
+        <div className="bg-surface-primary rounded-md shadow-md">
           {renderStepIndicator()}
           {storageInfo && (
             <div className="px-6 pt-4">
@@ -1442,7 +1442,7 @@ export default function EasySetupWizard(props: {
                   </StyledButton>
                 )}
 
-                <p className="text-sm text-gray-600">
+                <p className="text-sm text-text-secondary">
                   {(() => {
                     const count = [...CORE_CAPABILITIES, ...ADDITIONAL_TOOLS].filter((cap) =>
                       cap.services.some((s) => selectedServices.includes(s))

@@ -81,7 +81,7 @@ export default function WorkshopBatchBar({
   }
 
   return (
-    <div className="sticky top-0 z-30 mb-3 rounded-lg border border-desert-green bg-white shadow-md">
+    <div className="sticky top-0 z-30 mb-3 rounded-lg border border-desert-green bg-surface-primary shadow-md">
       <div className="flex flex-wrap items-center gap-3 px-3 py-2">
         <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-desert-green">
           <IconCheckbox size={18} />
@@ -91,7 +91,7 @@ export default function WorkshopBatchBar({
         <button
           type="button"
           onClick={onSelectAllOnPage}
-          className="text-xs text-gray-600 hover:text-desert-green underline-offset-2 hover:underline"
+          className="text-xs text-text-secondary hover:text-desert-green underline-offset-2 hover:underline"
         >
           {allOnPageSelected ? 'Deselect page' : `Select all on page (${pageCount})`}
         </button>
@@ -99,7 +99,7 @@ export default function WorkshopBatchBar({
         <button
           type="button"
           onClick={onClearSelection}
-          className="inline-flex items-center gap-1 text-xs text-gray-600 hover:text-desert-green"
+          className="inline-flex items-center gap-1 text-xs text-text-secondary hover:text-desert-green"
         >
           <IconX size={14} /> Clear selection
         </button>
@@ -115,7 +115,7 @@ export default function WorkshopBatchBar({
               e.currentTarget.selectedIndex = 0
               if (v) void run('update-metadata', { material: v as StlMaterial })
             }}
-            className="rounded border border-gray-300 px-2 py-1 text-sm disabled:opacity-50"
+            className="rounded border border-border-default px-2 py-1 text-sm disabled:opacity-50"
           >
             <option value="">Set material…</option>
             {enums.materials.map((m) => (
@@ -135,7 +135,7 @@ export default function WorkshopBatchBar({
               e.currentTarget.selectedIndex = 0
               if (v) void run('update-metadata', { difficulty: v as StlDifficulty })
             }}
-            className="rounded border border-gray-300 px-2 py-1 text-sm capitalize disabled:opacity-50"
+            className="rounded border border-border-default px-2 py-1 text-sm capitalize disabled:opacity-50"
           >
             <option value="">Set difficulty…</option>
             {enums.difficulties.map((d) => (
@@ -155,7 +155,7 @@ export default function WorkshopBatchBar({
               e.currentTarget.selectedIndex = 0
               if (v) void run('recategorize', { category: v as StlCategory })
             }}
-            className="rounded border border-gray-300 px-2 py-1 text-sm disabled:opacity-50"
+            className="rounded border border-border-default px-2 py-1 text-sm disabled:opacity-50"
           >
             <option value="">Move to category…</option>
             {enums.categories.map((c) => (

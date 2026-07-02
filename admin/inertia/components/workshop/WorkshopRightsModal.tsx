@@ -48,20 +48,20 @@ export default function WorkshopRightsModal({
     <Dialog open={open} onClose={() => { /* no-close-on-backdrop — explicit accept only */ }} className="relative z-50">
       <DialogBackdrop className="fixed inset-0 bg-black/50" />
       <div className="fixed inset-0 flex items-center justify-center p-4">
-        <DialogPanel className="max-w-md w-full rounded-lg bg-white p-6 shadow-xl">
+        <DialogPanel className="max-w-md w-full rounded-lg bg-surface-primary p-6 shadow-xl">
           <div className="flex items-start gap-3 mb-4">
             <IconAlertTriangle size={28} className="text-amber-500 shrink-0 mt-1" />
             <div>
-              <DialogTitle className="text-lg font-semibold text-gray-900">
+              <DialogTitle className="text-lg font-semibold text-text-primary">
                 Use at your own peril
               </DialogTitle>
-              <p className="text-sm text-gray-600 mt-1">
+              <p className="text-sm text-text-secondary mt-1">
                 Before you use Workshop, you need to acknowledge how this library is intended to work.
               </p>
             </div>
           </div>
 
-          <div className="space-y-3 text-sm text-gray-700 mb-5">
+          <div className="space-y-3 text-sm text-text-secondary mb-5">
             <p>
               <strong>You are responsible</strong> for ensuring you have the right to store every STL
               you put in this library. Some 3D-printable files are public-domain or

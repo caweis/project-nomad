@@ -111,7 +111,7 @@ export default function MeshIndex({ initialStatus }: PageProps) {
           <h1 className="text-3xl font-bold text-desert-green flex items-center gap-2">
             <IconAntenna size={32} /> Mesh Bridge
           </h1>
-          <p className="text-sm text-gray-600 mt-1">
+          <p className="text-sm text-text-secondary mt-1">
             Your node&apos;s link to the off-grid radio mesh — connection status, the recent message
             log, and a form to push an outbound alert over the air.
           </p>
@@ -364,7 +364,7 @@ function SendAlertForm({ onSent }: { onSent: () => void }) {
             value={to}
             onChange={(e) => setTo(e.target.value)}
             placeholder="node id or name"
-            className="block w-full rounded-lg border border-desert-stone-lighter bg-white px-3 py-2 text-sm text-desert-green-darker transition focus:border-desert-green focus:outline-none focus:ring-2 focus:ring-desert-green/20"
+            className="block w-full rounded-lg border border-desert-stone-lighter bg-surface-primary px-3 py-2 text-sm text-desert-green-darker transition focus:border-desert-green focus:outline-none focus:ring-2 focus:ring-desert-green/20"
           />
         </div>
 
@@ -382,7 +382,7 @@ function SendAlertForm({ onSent }: { onSent: () => void }) {
             onChange={(e) => setBody(e.target.value)}
             placeholder="Keep it short — the radio carries only a couple hundred characters."
             className={[
-              'block w-full resize-y rounded-lg border bg-white px-3 py-2 text-sm text-desert-green-darker transition focus:outline-none focus:ring-2',
+              'block w-full resize-y rounded-lg border bg-surface-primary px-3 py-2 text-sm text-desert-green-darker transition focus:outline-none focus:ring-2',
               overBudget
                 ? 'border-desert-red focus:border-desert-red focus:ring-desert-red/20'
                 : 'border-desert-stone-lighter focus:border-desert-green focus:ring-desert-green/20',

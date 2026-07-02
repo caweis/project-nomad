@@ -86,7 +86,7 @@ export default function AppManageMenu({ items, disabled }: AppManageMenuProps) {
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-full z-50 mt-1 w-52 overflow-hidden rounded-md border border-desert-tan-lighter bg-white py-1 shadow-lg"
+          className="absolute right-0 top-full z-50 mt-1 w-52 overflow-hidden rounded-md border border-desert-tan-lighter bg-surface-primary py-1 shadow-lg"
         >
           {items.map((item, i) => {
             if (item.kind === 'divider') {

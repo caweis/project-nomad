@@ -196,7 +196,7 @@ export default function Chat({
         cancelText="Cancel"
         confirmVariant="danger"
       >
-        <p className="text-gray-700">
+        <p className="text-text-primary">
           Are you sure you want to delete all chat sessions? This action cannot be undone and all
           conversations will be permanently deleted.
         </p>
@@ -382,7 +382,7 @@ export default function Chat({
   return (
     <div
       className={classNames(
-        'flex border border-gray-200 overflow-hidden shadow-sm w-full',
+        'flex border border-border-subtle overflow-hidden shadow-sm w-full',
         isInModal ? 'h-full rounded-lg' : 'h-screen'
       )}
     >
@@ -397,29 +397,29 @@ export default function Chat({
         onMobileClose={() => setMobileSidebarOpen(false)}
       />
       <div className="flex-1 flex flex-col min-h-0">
-        <div className="px-4 sm:px-6 py-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between h-[75px] flex-shrink-0 gap-2">
+        <div className="px-4 sm:px-6 py-3 border-b border-border-subtle bg-surface-secondary flex items-center justify-between h-[75px] flex-shrink-0 gap-2">
           <div className="flex items-center gap-2 min-w-0">
             {/* Hamburger toggle — visible only below the md breakpoint where
                 the sidebar is hidden by default. Tap to open the drawer. */}
             <button
               type="button"
               onClick={() => setMobileSidebarOpen(true)}
-              className="md:hidden p-2 -ml-2 rounded-lg hover:bg-gray-100 flex-shrink-0"
+              className="md:hidden p-2 -ml-2 rounded-lg hover:bg-surface-secondary flex-shrink-0"
               aria-label="Open chat history"
             >
-              <IconMenu2 className="h-6 w-6 text-gray-600" />
+              <IconMenu2 className="h-6 w-6 text-text-secondary" />
             </button>
-            <h2 className="text-base sm:text-lg font-semibold text-gray-800 truncate">
+            <h2 className="text-base sm:text-lg font-semibold text-text-primary truncate">
               {activeSession?.title || 'New Chat'}
             </h2>
           </div>
           <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0">
             <div className="flex items-center gap-2">
-              <label htmlFor="model-select" className="hidden sm:inline text-sm text-gray-600">
+              <label htmlFor="model-select" className="hidden sm:inline text-sm text-text-secondary">
                 Model:
               </label>
               {isLoadingModels ? (
-                <div className="text-sm text-gray-500">Loading...</div>
+                <div className="text-sm text-text-muted">Loading...</div>
               ) : installedModels.length === 0 ? (
                 <div className="text-sm text-red-600">No models</div>
               ) : (
@@ -427,7 +427,7 @@ export default function Chat({
                   id="model-select"
                   value={selectedModel}
                   onChange={(e) => setSelectedModel(e.target.value)}
-                  className="px-2 sm:px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-desert-green focus:border-transparent bg-white max-w-[150px] sm:max-w-none truncate"
+                  className="px-2 sm:px-3 py-1.5 border border-border-default rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-desert-green focus:border-transparent bg-surface-primary max-w-[150px] sm:max-w-none truncate"
                 >
                   {installedModels.map((model) => (
                     <option key={model.name} value={model.name}>
@@ -447,10 +447,10 @@ export default function Chat({
                     onClose()
                   }
                 }}
-                className="rounded-lg hover:bg-gray-100 transition-colors p-1"
+                className="rounded-lg hover:bg-surface-secondary transition-colors p-1"
                 aria-label="Close chat"
               >
-                <IconX className="h-6 w-6 text-gray-500" />
+                <IconX className="h-6 w-6 text-text-muted" />
               </button>
             )}
           </div>

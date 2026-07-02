@@ -251,7 +251,7 @@ export default function ReadinessIndex(props: PageProps) {
             <h1 className="text-3xl font-bold text-desert-green flex items-center gap-2">
               <IconShieldCheck size={32} /> Preparedness
             </h1>
-            <p className="text-sm text-gray-600 mt-1">
+            <p className="text-sm text-text-secondary mt-1">
               Your supplies, the days-of-supply they buy you against a target, and checkable plans
               for the situations you prepare for.
             </p>
@@ -299,7 +299,7 @@ function TabBar({
     { id: 'plans', label: 'Scenario Plans', icon: <IconListCheck size={18} /> },
   ]
   return (
-    <div className="border-b border-gray-200 mb-6">
+    <div className="border-b border-border-subtle mb-6">
       <nav className="-mb-px flex gap-6" aria-label="Preparedness tabs">
         {tabs.map((t) => {
           const isActive = t.id === active
@@ -313,7 +313,7 @@ function TabBar({
                 'inline-flex items-center gap-1.5 border-b-2 px-1 py-3 text-sm font-medium transition-colors',
                 isActive
                   ? 'border-desert-green text-desert-green'
-                  : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700',
+                  : 'border-transparent text-text-muted hover:border-border-default hover:text-text-secondary',
               ].join(' ')}
             >
               {t.icon}
@@ -352,7 +352,7 @@ function InventoryTab({
   return (
     <div>
       <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
-        <p className="text-sm text-gray-600">
+        <p className="text-sm text-text-secondary">
           Track your supplies, gear, and resources for self-reliance. Map water, food, and power
           items to feed the Supply Readiness calculator.
         </p>
@@ -401,8 +401,8 @@ function UnitsToggle({
   onChange: (system: MeasurementSystem) => void
 }) {
   return (
-    <div className="inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-white p-0.5 text-sm">
-      <IconScale size={16} className="ml-1.5 text-gray-400" aria-hidden="true" />
+    <div className="inline-flex items-center gap-1 rounded-lg border border-border-default bg-surface-primary p-0.5 text-sm">
+      <IconScale size={16} className="ml-1.5 text-text-muted" aria-hidden="true" />
       <ToggleButton active={system === 'us'} disabled={disabled} onClick={() => onChange('us')}>
         Imperial / US
       </ToggleButton>
@@ -436,7 +436,7 @@ function ToggleButton({
       aria-pressed={active}
       className={[
         'rounded px-2.5 py-1 font-medium transition-colors disabled:opacity-50',
-        active ? 'bg-desert-green text-white' : 'text-gray-600 hover:bg-gray-100',
+        active ? 'bg-desert-green text-white' : 'text-text-secondary hover:bg-surface-secondary',
       ].join(' ')}
     >
       {children}
@@ -454,7 +454,7 @@ function InventoryEmptyState({ filters }: { filters: InventoryListFilters }) {
 
   if (filtered) {
     return (
-      <div className="rounded-lg border border-gray-200 bg-white p-12 text-center text-gray-600">
+      <div className="rounded-lg border border-border-subtle bg-surface-primary p-12 text-center text-text-secondary">
         <IconClipboardList size={48} className="mx-auto text-gray-300 mb-3" />
         <p className="font-medium mb-1">No items match these filters</p>
         <p className="text-sm">Try clearing one or more filters from the sidebar.</p>
@@ -462,7 +462,7 @@ function InventoryEmptyState({ filters }: { filters: InventoryListFilters }) {
     )
   }
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-12 text-center text-gray-600">
+    <div className="rounded-lg border border-border-subtle bg-surface-primary p-12 text-center text-text-secondary">
       <IconClipboardList size={48} className="mx-auto text-gray-300 mb-3" />
       <p className="font-medium mb-1">Inventory is empty</p>
       <p className="text-sm">
@@ -498,7 +498,7 @@ function Pager({
       <button
         disabled={current === 1}
         onClick={() => goTo(current - 1)}
-        className="px-3 py-1 rounded border border-gray-300 text-sm disabled:opacity-40"
+        className="px-3 py-1 rounded border border-border-default text-sm disabled:opacity-40"
       >
         Previous
       </button>
@@ -506,7 +506,7 @@ function Pager({
       <div className="flex items-center gap-1">
         {tokens.map((tok, i) =>
           tok === '…' ? (
-            <span key={`gap-${i}`} className="px-2 text-sm text-gray-400 select-none">
+            <span key={`gap-${i}`} className="px-2 text-sm text-text-muted select-none">
               …
             </span>
           ) : (
@@ -518,7 +518,7 @@ function Pager({
                 'min-w-[2rem] px-2 py-1 rounded border text-sm',
                 tok === current
                   ? 'border-desert-green bg-desert-green text-white font-semibold'
-                  : 'border-gray-300 text-gray-700 hover:bg-gray-50',
+                  : 'border-border-default text-text-secondary hover:bg-surface-secondary',
               ].join(' ')}
             >
               {tok}
@@ -530,12 +530,12 @@ function Pager({
       <button
         disabled={current === last}
         onClick={() => goTo(current + 1)}
-        className="px-3 py-1 rounded border border-gray-300 text-sm disabled:opacity-40"
+        className="px-3 py-1 rounded border border-border-default text-sm disabled:opacity-40"
       >
         Next
       </button>
 
-      <span className="ml-2 text-sm text-gray-600">
+      <span className="ml-2 text-sm text-text-secondary">
         Page {current} of {last}
       </span>
     </nav>
@@ -619,7 +619,7 @@ function SupplyReadinessTab({ dashboard }: { dashboard: ReadinessDashboard }) {
 
   return (
     <>
-      <p className="text-sm text-gray-600 mb-4">
+      <p className="text-sm text-text-secondary mb-4">
         How many days of water, food, and power you have on hand against a {horizon}-day
         target, computed from your Inventory. Every figure cites its source.
       </p>
@@ -648,7 +648,7 @@ function SupplyReadinessTab({ dashboard }: { dashboard: ReadinessDashboard }) {
         <button
           type="button"
           onClick={() => setSourcesOpen(true)}
-          className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-desert-green hover:underline"
+          className="inline-flex items-center gap-1.5 text-sm text-text-muted hover:text-desert-green hover:underline"
         >
           <IconInfoCircle size={16} />
           Sources &amp; methodology
@@ -766,9 +766,9 @@ function SourcesModal({ open, onClose }: { open: boolean; onClose: () => void })
     <Dialog open={open} onClose={onClose} className="relative z-50">
       <DialogBackdrop className="fixed inset-0 bg-black/50" />
       <div className="fixed inset-0 flex items-start justify-center overflow-y-auto p-4 sm:p-8">
-        <DialogPanel className="my-8 max-w-2xl w-full rounded-lg bg-white p-6 shadow-xl">
+        <DialogPanel className="my-8 max-w-2xl w-full rounded-lg bg-surface-primary p-6 shadow-xl">
           <div className="flex items-start justify-between gap-3 mb-1">
-            <DialogTitle className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <DialogTitle className="text-lg font-semibold text-text-primary flex items-center gap-2">
               <IconInfoCircle size={22} className="text-desert-green shrink-0" />
               Why these numbers? — Sources
             </DialogTitle>
@@ -776,13 +776,13 @@ function SourcesModal({ open, onClose }: { open: boolean; onClose: () => void })
               type="button"
               onClick={onClose}
               aria-label="Close"
-              className="shrink-0 rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+              className="shrink-0 rounded p-1 text-text-muted hover:bg-surface-secondary hover:text-text-secondary"
             >
               <IconX size={18} />
             </button>
           </div>
 
-          <p className="text-sm text-gray-500 mb-5">
+          <p className="text-sm text-text-muted mb-5">
             Every default in this calculator is grounded in an authoritative source — none are
             guessed. Adjust any figure to your household in the form above.
           </p>
@@ -790,11 +790,11 @@ function SourcesModal({ open, onClose }: { open: boolean; onClose: () => void })
           <div className="space-y-5">
             {SOURCE_ENTRIES.map((entry) => (
               <section key={entry.title}>
-                <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2">
                   <span className="text-desert-green">{entry.icon}</span>
                   {entry.title}
                 </h3>
-                <p className="mt-1 text-sm text-gray-600">{entry.body}</p>
+                <p className="mt-1 text-sm text-text-secondary">{entry.body}</p>
                 {entry.links.length > 0 && (
                   <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
                     {entry.links.map((link) => (
@@ -853,7 +853,7 @@ function ScenarioPlansTab({ plans }: { plans: ScenarioPlanSlim[] }) {
   return (
     <div>
       <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
-        <p className="text-sm text-gray-600">
+        <p className="text-sm text-text-secondary">
           Editable, checkable plans for the situations you prepare for. Each step can link to an
           inventory item, a printable file, or an offline article.
         </p>
@@ -870,7 +870,7 @@ function ScenarioPlansTab({ plans }: { plans: ScenarioPlanSlim[] }) {
         <div className="space-y-8">
           {grouped.map((group) => (
             <section key={group.scenario}>
-              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+              <h2 className="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">
                 {SCENARIO_LABELS[group.scenario]}
               </h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -891,10 +891,10 @@ function PlanCard({ plan }: { plan: ScenarioPlanSlim }) {
   return (
     <Link
       href={`/plans/${plan.id}`}
-      className="group flex flex-col rounded-lg border border-gray-200 bg-white p-4 shadow-sm hover:shadow-md transition-shadow gap-2"
+      className="group flex flex-col rounded-lg border border-border-subtle bg-surface-primary p-4 shadow-sm hover:shadow-md transition-shadow gap-2"
     >
       <div className="flex items-start justify-between gap-2">
-        <span className="font-semibold text-gray-900" title={plan.title}>
+        <span className="font-semibold text-text-primary" title={plan.title}>
           {plan.title}
         </span>
         <span
@@ -908,11 +908,11 @@ function PlanCard({ plan }: { plan: ScenarioPlanSlim }) {
       </div>
 
       {plan.description && (
-        <p className="text-sm text-gray-600 line-clamp-2">{plan.description}</p>
+        <p className="text-sm text-text-secondary line-clamp-2">{plan.description}</p>
       )}
 
-      <div className="mt-auto flex items-center gap-1.5 text-xs text-gray-500">
-        <IconChecks size={14} className={done ? 'text-emerald-600' : 'text-gray-400'} />
+      <div className="mt-auto flex items-center gap-1.5 text-xs text-text-muted">
+        <IconChecks size={14} className={done ? 'text-emerald-600' : 'text-text-muted'} />
         {plan.checked_steps} / {plan.total_steps} step{plan.total_steps === 1 ? '' : 's'} done
       </div>
     </Link>
@@ -921,7 +921,7 @@ function PlanCard({ plan }: { plan: ScenarioPlanSlim }) {
 
 function PlansEmptyState() {
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-12 text-center text-gray-600">
+    <div className="rounded-lg border border-border-subtle bg-surface-primary p-12 text-center text-text-secondary">
       <IconListCheck size={48} className="mx-auto text-gray-300 mb-3" />
       <p className="font-medium mb-1">No scenario plans yet</p>
       <p className="text-sm">
@@ -1414,7 +1414,7 @@ function NumberField({
         max={max}
         step={step}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-auto block w-full rounded-lg border border-desert-stone-lighter bg-white px-3 py-2 text-sm text-desert-green-darker transition focus:border-desert-green focus:outline-none focus:ring-2 focus:ring-desert-green/20"
+        className="mt-auto block w-full rounded-lg border border-desert-stone-lighter bg-surface-primary px-3 py-2 text-sm text-desert-green-darker transition focus:border-desert-green focus:outline-none focus:ring-2 focus:ring-desert-green/20"
       />
     </div>
   )
@@ -1462,7 +1462,7 @@ function PetsField({
   }
 
   const petInput =
-    'block rounded-lg border border-desert-stone-lighter bg-white px-3 py-1.5 text-sm text-desert-green-darker transition focus:border-desert-green focus:outline-none focus:ring-2 focus:ring-desert-green/20'
+    'block rounded-lg border border-desert-stone-lighter bg-surface-primary px-3 py-1.5 text-sm text-desert-green-darker transition focus:border-desert-green focus:outline-none focus:ring-2 focus:ring-desert-green/20'
   const petLabel = 'mb-1 text-[11px] font-semibold uppercase tracking-wide text-desert-stone'
 
   return (
@@ -1480,7 +1480,7 @@ function PetsField({
         {rows.map((row, i) => (
           <div
             key={i}
-            className="flex flex-wrap items-end gap-3 rounded-lg border border-desert-stone-lighter/50 bg-white px-3 py-2.5"
+            className="flex flex-wrap items-end gap-3 rounded-lg border border-desert-stone-lighter/50 bg-surface-primary px-3 py-2.5"
           >
             <div className="flex flex-col">
               <label className={petLabel}>Count</label>

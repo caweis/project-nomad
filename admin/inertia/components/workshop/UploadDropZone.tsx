@@ -213,7 +213,7 @@ export default function UploadDropZone({ categories, onComplete }: Props) {
   return (
     <section className="mb-6">
       <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-2">
-        <label htmlFor="upload-category" className="text-sm font-medium text-gray-700">
+        <label htmlFor="upload-category" className="text-sm font-medium text-text-secondary">
           Save uploads to category:
         </label>
         <select
@@ -221,7 +221,7 @@ export default function UploadDropZone({ categories, onComplete }: Props) {
           value={category}
           onChange={(e) => handleCategoryChange(e.target.value as StlCategory)}
           disabled={isUploading}
-          className="rounded border border-gray-300 bg-white px-2 py-1 text-sm focus:border-desert-green focus:outline-none focus:ring-1 focus:ring-desert-green disabled:opacity-50"
+          className="rounded border border-border-default bg-surface-primary px-2 py-1 text-sm focus:border-desert-green focus:outline-none focus:ring-1 focus:ring-desert-green disabled:opacity-50"
         >
           {categories.map((c) => (
             <option key={c.value} value={c.value}>
@@ -252,7 +252,7 @@ export default function UploadDropZone({ categories, onComplete }: Props) {
           'transition-colors duration-150',
           isDragOver
             ? 'border-desert-green bg-desert-green-light/20'
-            : 'border-gray-300 bg-gray-50 hover:border-desert-green hover:bg-desert-green-light/10',
+            : 'border-border-default bg-surface-secondary hover:border-desert-green hover:bg-desert-green-light/10',
         ].join(' ')}
       >
         <input
@@ -264,12 +264,12 @@ export default function UploadDropZone({ categories, onComplete }: Props) {
           className="hidden"
         />
         <IconUpload size={36} className="mx-auto text-desert-green mb-2" aria-hidden="true" />
-        <p className="font-medium text-gray-800 mb-1">
+        <p className="font-medium text-text-primary mb-1">
           Drag files here, or click to select
         </p>
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-text-muted">
           STL · 3MF · CAD (STEP/DXF/DWG/F3D/SCAD) · PDF · images · up to 200 MB · saved to{' '}
-          <code className="bg-white px-1 rounded border border-gray-200">
+          <code className="bg-surface-primary px-1 rounded border border-border-subtle">
             storage/stl-library/{category}/
           </code>
         </p>
@@ -278,20 +278,20 @@ export default function UploadDropZone({ categories, onComplete }: Props) {
       {queue.length > 0 && (
         <div className="mt-3 space-y-1">
           <div className="flex items-center justify-between">
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-text-muted">
               {queue.filter((q) => q.state === 'success').length} of {queue.length} uploaded
             </p>
             {!isUploading && queue.some((q) => q.state !== 'pending' && q.state !== 'uploading') && (
               <button
                 type="button"
                 onClick={clearCompleted}
-                className="text-xs text-gray-500 hover:text-gray-800 underline"
+                className="text-xs text-text-muted hover:text-text-primary underline"
               >
                 Clear finished
               </button>
             )}
           </div>
-          <ul className="rounded border border-gray-200 bg-white divide-y divide-gray-100">
+          <ul className="rounded border border-border-subtle bg-surface-primary divide-y divide-border-subtle">
             {queue.map((item) => (
               <QueueRow key={item.id} item={item} onDismiss={() => dismissItem(item.id)} />
             ))}
@@ -309,13 +309,13 @@ function QueueRow({ item, onDismiss }: { item: QueueItem; onDismiss: () => void 
       <StatusIcon state={item.state} />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="truncate font-medium text-gray-800" title={item.file.name}>
+          <span className="truncate font-medium text-text-primary" title={item.file.name}>
             {item.savedAs ?? item.file.name}
           </span>
-          <span className="text-xs text-gray-400 shrink-0">{sizeMb} MB</span>
+          <span className="text-xs text-text-muted shrink-0">{sizeMb} MB</span>
         </div>
         {item.state === 'uploading' && (
-          <div className="h-1.5 mt-1 bg-gray-200 rounded overflow-hidden">
+          <div className="h-1.5 mt-1 bg-border-subtle rounded overflow-hidden">
             <div
               className="h-full bg-desert-green transition-[width] duration-150"
               style={{ width: `${Math.round(item.progress ?? 0)}%` }}
@@ -326,7 +326,7 @@ function QueueRow({ item, onDismiss }: { item: QueueItem; onDismiss: () => void 
           <p className="text-xs text-desert-red mt-0.5">{item.reason}</p>
         )}
         {item.state === 'success' && item.savedAs && item.savedAs !== item.file.name && (
-          <p className="text-xs text-gray-500 mt-0.5">Saved as {item.savedAs}</p>
+          <p className="text-xs text-text-muted mt-0.5">Saved as {item.savedAs}</p>
         )}
       </div>
       {(item.state === 'rejected' || item.state === 'error' || item.state === 'success') && (
@@ -334,7 +334,7 @@ function QueueRow({ item, onDismiss }: { item: QueueItem; onDismiss: () => void 
           type="button"
           onClick={onDismiss}
           aria-label="Dismiss"
-          className="text-gray-400 hover:text-gray-700 shrink-0"
+          className="text-text-muted hover:text-text-primary shrink-0"
         >
           <IconX size={16} />
         </button>
@@ -349,5 +349,5 @@ function StatusIcon({ state }: { state: QueueItem['state'] }) {
     return <IconAlertCircle size={18} className="text-desert-red shrink-0" />
   if (state === 'uploading')
     return <IconFileUpload size={18} className="text-desert-green shrink-0 animate-pulse" />
-  return <IconFileUpload size={18} className="text-gray-400 shrink-0" />
+  return <IconFileUpload size={18} className="text-text-muted shrink-0" />
 }
