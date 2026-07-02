@@ -6,6 +6,7 @@ import Service from '#models/service'
 import logger from '@adonisjs/core/services/logger'
 import transmit from '@adonisjs/transmit/services/main'
 import { BROADCAST_CHANNELS } from '../../constants/broadcast.js'
+import { resolveHostArch } from '../utils/host_arch.js'
 import { DateTime } from 'luxon'
 
 export class CheckServiceUpdatesJob {
@@ -24,7 +25,9 @@ export class CheckServiceUpdatesJob {
     const registryService = new ContainerRegistryService()
 
     // Determine host architecture
-    const hostArch = await this.getHostArch(dockerService)
+    const hostArch = await resolveHostArch(dockerService, (m) =>
+      logger.warn(`[CheckServiceUpdatesJob] ${m}`)
+    )
 
     const installedServices = await Service.query().where('installed', true)
     let updatesFound = 0
@@ -77,29 +80,6 @@ export class CheckServiceUpdatesJob {
     })
 
     return { updatesFound }
-  }
-
-  private async getHostArch(dockerService: DockerService): Promise<string> {
-    try {
-      const info = await dockerService.docker.info()
-      const arch = info.Architecture || ''
-
-      // Map Docker architecture names to OCI names
-      const archMap: Record<string, string> = {
-        x86_64: 'amd64',
-        aarch64: 'arm64',
-        armv7l: 'arm',
-        amd64: 'amd64',
-        arm64: 'arm64',
-      }
-
-      return archMap[arch] || arch.toLowerCase()
-    } catch (error) {
-      logger.warn(
-        `[CheckServiceUpdatesJob] Could not detect host architecture: ${error.message}. Defaulting to amd64.`
-      )
-      return 'amd64'
-    }
   }
 
   static async scheduleNightly() {

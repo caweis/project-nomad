@@ -6,6 +6,7 @@ import { CheckServiceUpdatesJob } from '#jobs/check_service_updates_job'
 import { affectServiceValidator, checkLatestVersionValidator, customAppValidator, deleteCustomAppValidator, installServiceValidator, normalizeCustomUrl, preflightCustomValidator, preflightValidator, serviceLogsValidator, setServiceAutoUpdateValidator, setServiceCustomUrlValidator, subscribeToReleaseNotesValidator, updateCustomAppValidator, updateServiceValidator } from '#validators/system';
 import Service from '#models/service'
 import { DEFAULT_CPUS, DEFAULT_MEMORY_MB, evaluateCustomApp } from '#services/custom_app_guard'
+import { resolveHostArch } from '../utils/host_arch.js'
 import { inject } from '@adonisjs/core'
 import type { HttpContext } from '@adonisjs/core/http'
 import logger from '@adonisjs/core/services/logger'
@@ -143,7 +144,7 @@ export default class SystemController {
         }
 
         try {
-            const hostArch = await this.getHostArch()
+            const hostArch = await resolveHostArch(this.dockerService)
             const updates = await this.containerRegistryService.getAvailableUpdates(
                 service.container_image,
                 hostArch,
@@ -167,23 +168,6 @@ export default class SystemController {
             response.send({ success: true, message: result.message })
         } else {
             response.status(400).send({ error: result.message })
-        }
-    }
-
-    private async getHostArch(): Promise<string> {
-        try {
-            const info = await this.dockerService.docker.info()
-            const arch = info.Architecture || ''
-            const archMap: Record<string, string> = {
-                x86_64: 'amd64',
-                aarch64: 'arm64',
-                armv7l: 'arm',
-                amd64: 'amd64',
-                arm64: 'arm64',
-            }
-            return archMap[arch] || arch.toLowerCase()
-        } catch {
-            return 'amd64'
         }
     }
 
