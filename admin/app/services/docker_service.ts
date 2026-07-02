@@ -4,6 +4,7 @@ import logger from '@adonisjs/core/services/logger'
 import { inject } from '@adonisjs/core'
 import transmit from '@adonisjs/transmit/services/main'
 import { doResumableDownloadWithRetry } from '../utils/downloads.js'
+import { buildUpdatedImageRef } from '../utils/image_ref.js'
 import { join } from 'path'
 import { ZIM_STORAGE_PATH, MESHCORE_WEB_STORAGE_PATH, VAULTWARDEN_STORAGE_PATH } from '../utils/fs.js'
 import { SERVICE_NAMES } from '../../constants/service_names.js'
@@ -1348,12 +1349,9 @@ export class DockerService {
 
       DockerService.activeInstallations.add(serviceName)
 
-      // Compute new image string
-      const currentImage = service.container_image
-      const imageBase = currentImage.includes(':')
-        ? currentImage.substring(0, currentImage.lastIndexOf(':'))
-        : currentImage
-      const newImage = `${imageBase}:${targetVersion}`
+      // Compute new image string (shared with the auto-update disk pre-flight,
+      // so both size/pull the identical ref).
+      const newImage = buildUpdatedImageRef(service.container_image, targetVersion)
 
       // Step 1: Pull new image
       this._broadcast(serviceName, 'update-pulling', `Pulling image ${newImage}...`)
