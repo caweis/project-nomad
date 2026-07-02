@@ -19,6 +19,9 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 ### Appearance
 - Night Ops: a dark mode. The toggle sits at the bottom of the sidebar (moon to switch in, sun to switch back) and turns the desert palette into a warm charcoal. The choice is remembered per browser and follows you across pages without a flash of the light theme.
 
+### Updates
+- An installed app's automatic update now checks free disk before it pulls. If there isn't room for the new image, NOMAD skips that app for the night and logs the reason, rather than starting a pull that fails partway and counts toward the app's three-failure auto-disable. Space usually frees up on its own, so the update retries on a later night.
+
 ## [0.2.750-macos] - 2026-06-28
 
 ### Supply Depot
