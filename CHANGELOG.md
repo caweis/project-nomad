@@ -12,7 +12,8 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 
 ### Knowledge base
 - Kiwix now serves content in library mode. Adding or removing a ZIM updates a managed library file that Kiwix reloads on its own, so new content appears without restarting the container, and one corrupt file no longer takes down every other ZIM. A missing or damaged library file is rebuilt automatically on startup, and existing installs migrate on their next boot or restart.
-- The knowledge-base scan tracks each file's ingest state instead of guessing from search-index contents. Files that finished indexing, failed, or were left mid-ingest are told apart, so a sync no longer re-embeds settled files, and the chunk count recorded for a large ZIM is the true total rather than the last batch's. Groundwork for a Manual indexing mode is in place; the default behavior is unchanged.
+- The knowledge-base scan tracks each file's ingest state instead of guessing from search-index contents. Files that finished indexing, failed, or were left mid-ingest are told apart, so a sync no longer re-embeds settled files, and the chunk count recorded for a large ZIM is the true total rather than the last batch's.
+- The Knowledge Base panel shows each stored file's status (Indexed, Pending, Failed, Stalled, Browse only) with its chunk count, and failed files get a Retry button. A new "Index new files" setting chooses between Always (auto-index on scan, the default and prior behavior) and Manual, where new files wait as Pending until you click Index on the ones you want embedded.
 
 ### Appearance
 - Night Ops: a dark mode. The toggle sits at the bottom of the sidebar (moon to switch in, sun to switch back) and turns the desert palette into a warm charcoal. The choice is remembered per browser and follows you across pages without a flash of the light theme.
