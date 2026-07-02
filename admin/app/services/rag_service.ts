@@ -6,6 +6,8 @@ import { TokenChunker } from '@chonkiejs/core'
 import sharp from 'sharp'
 import { deleteFileIfExists, determineFileType, getFile, getFileStatsIfExists, listDirectoryContentsRecursive, ZIM_STORAGE_PATH } from '../utils/fs.js'
 import { computeHeadingBoost } from '../utils/rag_context.js'
+import { decideScanAction, type IngestPolicy } from '../utils/kb_ingest_decision.js'
+import KbIngestState from '#models/kb_ingest_state'
 import { PDFParse } from 'pdf-parse'
 import { createWorker } from 'tesseract.js'
 import { fromBuffer } from 'pdf2pic'
@@ -1102,6 +1104,11 @@ export class RagService {
         logger.warn(`[RAG] File was removed from knowledge base but doesn't live in Nomad's uploads directory, so it can't be safely removed. Skipping deletion of physical file...`)
       }
 
+      // Drop the ingest state row last so the file disappears entirely. Without
+      // this, the next scanAndSyncStorage would see `indexed + no chunks` for a
+      // path that no longer exists in storage and try to re-embed nothing.
+      await KbIngestState.remove(source)
+
       return { success: true, message: 'File removed from knowledge base.' }
     } catch (error) {
       logger.error('[RAG] Error deleting file from knowledge base:', error)
@@ -1239,15 +1246,79 @@ export class RagService {
 
       logger.info(`[RAG] Found ${sourcesInQdrant.size} unique sources in Qdrant`)
 
-      // Find files that are in storage, not already in Qdrant, and have an embeddable
-      // type. Non-embeddable files (e.g. Kiwix's generated kiwix-library.xml under
+      // Per-file ingest state machine (RFC #883). The state row is the
+      // authoritative answer; Qdrant chunk presence corroborates. Replaces the
+      // old binary `!sourcesInQdrant.has(filePath)` check, which couldn't tell
+      // a fully-indexed file from a stalled mid-batch ingestion and couldn't
+      // honor a "browse only" choice.
+      const stateRows = await KbIngestState.query().select('file_path', 'state')
+      const stateByPath = new Map(stateRows.map((row) => [row.file_path, row]))
+
+      // Non-embeddable files (e.g. Kiwix's generated kiwix-library.xml under
       // /storage/zim) would otherwise be dispatched to EmbedFileJob, fail with
       // "Unsupported file type", and retry on every sync, flooding the logs.
-      const filesToEmbed = filesInStorage.filter(
-        (filePath) => !sourcesInQdrant.has(filePath) && determineFileType(filePath) !== 'unknown'
+      const embeddableFiles = filesInStorage.filter(
+        (filePath) => determineFileType(filePath) !== 'unknown'
       )
 
-      logger.info(`[RAG] Found ${filesToEmbed.length} files that need embedding`)
+      // Global ingest policy. Unset is treated as 'Always' so existing installs
+      // keep their behavior until the user opts into Manual from the KB panel.
+      const policyRaw = await KVStore.getValue('rag.defaultIngestPolicy')
+      const policy: IngestPolicy = policyRaw === 'Manual' ? 'Manual' : 'Always'
+
+      const filesToEmbed: string[] = []
+      let backfilled = 0
+      let createdRows = 0
+      let createdPending = 0
+      let skipped = 0
+
+      for (const filePath of embeddableFiles) {
+        const stateRow = stateByPath.get(filePath) ?? null
+        const action = decideScanAction(stateRow, sourcesInQdrant.has(filePath), policy)
+
+        switch (action.kind) {
+          case 'skip':
+            skipped++
+            break
+          case 'backfill_indexed':
+            // Pre-RFC install (or a fresh admin pointed at an existing Qdrant
+            // volume): chunks already exist with no state row, so trust Qdrant
+            // and record `indexed` without re-embedding. chunks_embedded stays 0
+            // because we don't count points-per-source here.
+            await KbIngestState.create({
+              file_path: filePath,
+              state: 'indexed',
+              chunks_embedded: 0,
+            })
+            backfilled++
+            break
+          case 'create_pending':
+            // Manual mode: record that we've seen the file but don't dispatch.
+            // The KB panel surfaces a per-card "Index" affordance for these.
+            await KbIngestState.create({
+              file_path: filePath,
+              state: 'pending_decision',
+              chunks_embedded: 0,
+            })
+            createdPending++
+            break
+          case 'dispatch':
+            if (action.createStateRow) {
+              await KbIngestState.create({
+                file_path: filePath,
+                state: 'pending_decision',
+                chunks_embedded: 0,
+              })
+              createdRows++
+            }
+            filesToEmbed.push(filePath)
+            break
+        }
+      }
+
+      logger.info(
+        `[RAG] Scan results (policy=${policy}): ${filesToEmbed.length} to embed, ${backfilled} backfilled, ${createdRows} new pending, ${createdPending} waiting on user, ${skipped} skipped`
+      )
 
       if (filesToEmbed.length === 0) {
         return {

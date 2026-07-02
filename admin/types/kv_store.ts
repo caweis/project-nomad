@@ -3,6 +3,9 @@ export const KV_STORE_SCHEMA = {
   'chat.suggestionsEnabled':    'boolean',
   'chat.lastModel':             'string',
   'rag.docsEmbedded':           'boolean',
+  // KB auto-index policy ('Always' | 'Manual', RFC #883). Unset = 'Always' so
+  // existing installs keep their behavior until the user opts into Manual.
+  'rag.defaultIngestPolicy':    'string',
   'system.updateAvailable':     'boolean',
   'system.latestVersion':       'string',
   'system.earlyAccess':         'boolean',

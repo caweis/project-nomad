@@ -7,6 +7,7 @@ import { DockerService } from '#services/docker_service'
 import { OllamaService } from '#services/ollama_service'
 import { createHash } from 'crypto'
 import logger from '@adonisjs/core/services/logger'
+import KbIngestState from '#models/kb_ingest_state'
 
 export interface EmbedFileJobParams {
   filePath: string
@@ -16,6 +17,11 @@ export interface EmbedFileJobParams {
   batchOffset?: number  // Current batch offset (for ZIM files)
   totalArticles?: number // Total articles in ZIM (for progress tracking)
   isFinalBatch?: boolean // Whether this is the last batch (prevents premature deletion)
+  // Accumulated chunk count carried across batched ZIM continuation dispatches,
+  // so the final batch can persist the TRUE total via KbIngestState.markIndexed
+  // (#933 — each continuation is a new job, so job.data.chunks alone would
+  // collapse to just the last batch's count).
+  chunksSoFar?: number
 }
 
 export class EmbedFileJob {
@@ -95,13 +101,17 @@ export class EmbedFileJob {
           `[EmbedFileJob] Batch complete. Dispatching next batch at offset ${nextOffset}`
         )
 
-        // Dispatch next batch (not final yet)
+        // Dispatch next batch (not final yet), threading the running chunk
+        // count forward — the continuation is a NEW job, so without this the
+        // final batch would persist only its own chunks (#933).
+        const chunksSoFarNext = (job.data.chunksSoFar || 0) + (result.chunks || 0)
         await EmbedFileJob.dispatch({
           filePath,
           fileName,
           batchOffset: nextOffset,
           totalArticles: totalArticles || result.totalArticles,
           isFinalBatch: false, // Explicitly not final
+          chunksSoFar: chunksSoFarNext,
         })
 
         // Calculate progress based on articles processed
@@ -114,7 +124,7 @@ export class EmbedFileJob {
           ...job.data,
           status: 'batch_completed',
           lastBatchAt: Date.now(),
-          chunks: (job.data.chunks || 0) + (result.chunks || 0),
+          chunks: chunksSoFarNext,
         })
 
         return {
@@ -128,8 +138,11 @@ export class EmbedFileJob {
         }
       }
 
-      // Final batch or non-batched file - mark as complete
-      const totalChunks = (job.data.chunks || 0) + (result.chunks || 0)
+      // Final batch or non-batched file - mark as complete.
+      // chunksSoFar carries the accumulated count from prior dispatched batches
+      // (a continuation is a new job, so job.data.chunks alone would be only the
+      // last batch's count — #933).
+      const totalChunks = (job.data.chunksSoFar || 0) + (result.chunks || 0)
       await job.updateProgress(100)
       await job.updateData({
         ...job.data,
@@ -137,6 +150,17 @@ export class EmbedFileJob {
         completedAt: Date.now(),
         chunks: totalChunks,
       })
+
+      // Persist the settled state so the KB panel and the scan decision see a
+      // truly-indexed file (RFC #883). Non-fatal: the embed itself succeeded.
+      try {
+        await KbIngestState.markIndexed(filePath, totalChunks)
+      } catch (stateErr) {
+        logger.warn(
+          `[EmbedFileJob] Failed to persist indexed state for ${fileName}: %s`,
+          stateErr instanceof Error ? stateErr.message : String(stateErr)
+        )
+      }
 
       const batchMsg = isZimBatch ? ` (final batch, total chunks: ${totalChunks})` : ''
       logger.info(
@@ -159,6 +183,23 @@ export class EmbedFileJob {
         failedAt: Date.now(),
         error: error instanceof Error ? error.message : 'Unknown error',
       })
+
+      // Persist `failed` only when retries are exhausted — marking on every
+      // transient blip would suppress BullMQ's retry-driven recovery (upstream
+      // gates this on UnrecoverableError; we gate on the final attempt).
+      if (job.attemptsMade + 1 >= (job.opts?.attempts ?? 1)) {
+        try {
+          await KbIngestState.markFailed(
+            filePath,
+            error instanceof Error ? error.message : 'Unknown error'
+          )
+        } catch (stateErr) {
+          logger.warn(
+            `[EmbedFileJob] Failed to persist failed state for ${fileName}: %s`,
+            stateErr instanceof Error ? stateErr.message : String(stateErr)
+          )
+        }
+      }
 
       throw error
     }
