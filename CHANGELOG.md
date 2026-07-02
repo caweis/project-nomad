@@ -5,6 +5,18 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 
 ## [Unreleased]
 
+## [0.2.751-macos] - 2026-07-01
+
+### Maps
+- The map is interactive now. Click anywhere to drop a named, color-coded pin; pins persist on the server and a "Pins" panel lists them with fly-to and delete. The map also gains a scale bar with a metric/imperial toggle, a live coordinate readout under the cursor, and it reopens where you left it instead of snapping back to the default view.
+
+### Knowledge base
+- Kiwix now serves content in library mode. Adding or removing a ZIM updates a managed library file that Kiwix reloads on its own, so new content appears without restarting the container, and one corrupt file no longer takes down every other ZIM. A missing or damaged library file is rebuilt automatically on startup, and existing installs migrate on their next boot or restart.
+- The knowledge-base scan tracks each file's ingest state instead of guessing from search-index contents. Files that finished indexing, failed, or were left mid-ingest are told apart, so a sync no longer re-embeds settled files, and the chunk count recorded for a large ZIM is the true total rather than the last batch's. Groundwork for a Manual indexing mode is in place; the default behavior is unchanged.
+
+### Appearance
+- Night Ops: a dark mode. The toggle sits at the bottom of the sidebar (moon to switch in, sun to switch back) and turns the desert palette into a warm charcoal. The choice is remembered per browser and follows you across pages without a flash of the light theme.
+
 ## [0.2.750-macos] - 2026-06-28
 
 ### Supply Depot
