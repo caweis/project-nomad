@@ -11,3 +11,10 @@ export const deleteFileSchema = vine.compile(
     source: vine.string(),
   })
 )
+
+export const embedFileSchema = vine.compile(
+  vine.object({
+    source: vine.string(),
+    force: vine.boolean().optional(),
+  })
+)

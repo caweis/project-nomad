@@ -19,7 +19,8 @@ import { join, resolve, sep } from 'node:path'
 import KVStore from '#models/kv_store'
 import { ZIMExtractionService } from './zim_extraction_service.js'
 import { ZIM_BATCH_SIZE } from '../../constants/zim_extraction.js'
-import { ProcessAndEmbedFileResponse, ProcessZIMFileResponse, RAGResult, RerankedRAGResult } from '../../types/rag.js'
+import { ProcessAndEmbedFileResponse, ProcessZIMFileResponse, RAGResult, RerankedRAGResult, StoredFileInfo } from '../../types/rag.js'
+import type { KbIngestStateValue } from '../../types/kb_ingest_state.js'
 
 @inject()
 export class RagService {
@@ -1034,7 +1035,7 @@ export class RagService {
    * Retrieve all unique source files that have been stored in the knowledge base.
    * @returns Array of unique full source paths
    */
-  public async getStoredFiles(): Promise<string[]> {
+  public async getStoredFiles(): Promise<StoredFileInfo[]> {
     try {
       await this._ensureCollection(
         RagService.CONTENT_COLLECTION_NAME,
@@ -1042,10 +1043,134 @@ export class RagService {
       )
 
       const sources = await this.facetDistinctSources()
-      return Array.from(sources)
+
+      // Union the Qdrant-derived list with the disk-backed file paths the
+      // state machine has tracked (RFC #883). Without this, files known to the
+      // scanner but with zero embedded chunks (video-only ZIMs, failed-before-
+      // first-chunk ingestions, browse_only opt-outs) never get a row in Stored
+      // Files. The state machine is the authoritative "what's on disk?" view;
+      // Qdrant is "what made it into the vector store?".
+      const stateByPath = new Map<string, { state: KbIngestStateValue; chunks_embedded: number }>()
+      try {
+        const stateRows = await KbIngestState.query().select('file_path', 'state', 'chunks_embedded')
+        for (const row of stateRows) {
+          sources.add(row.file_path)
+          stateByPath.set(row.file_path, {
+            state: row.state,
+            chunks_embedded: row.chunks_embedded,
+          })
+        }
+      } catch (error) {
+        // Non-fatal: if the state machine query fails we'd rather return the
+        // Qdrant-derived list than 500 the whole panel.
+        logger.warn(
+          { err: error },
+          '[RagService.getStoredFiles] state-machine union skipped; returning Qdrant-only list'
+        )
+      }
+
+      const uploadsAbsPath = resolve(join(process.cwd(), RagService.UPLOADS_STORAGE_PATH))
+      return await Promise.all(
+        Array.from(sources).map(async (source) => {
+          const row = stateByPath.get(source)
+          const fileName = source.split(/[/\\]/).at(-1) ?? source
+          const isUserUpload = resolve(source).startsWith(uploadsAbsPath + sep)
+          const stats = await getFileStatsIfExists(source)
+          return {
+            source,
+            state: row?.state ?? null,
+            chunksEmbedded: row?.chunks_embedded ?? 0,
+            fileName,
+            size: stats?.size ?? null,
+            uploadedAt: stats?.modifiedTime.toISOString() ?? null,
+            isUserUpload,
+          }
+        })
+      )
     } catch (error) {
       logger.error('Error retrieving stored files:', error)
       return []
+    }
+  }
+
+  /**
+   * Queue a single file for embedding — the per-card "Index" action for files
+   * sitting in `pending_decision` (Manual mode) or retrying after `failed`
+   * (RFC #883 §5). `force` clears the file's existing points first (re-embed).
+   *
+   * Adapted from upstream's embedSingleFile to our fork's plumbing: our
+   * EmbedFileJob.dispatch already dedupes in-flight jobs (created:false), and
+   * the known-file check is a storage-root containment guard — a source with
+   * no state row must live under kb_uploads or the ZIM dir and be embeddable,
+   * so the endpoint can't be used to ingest arbitrary host paths.
+   */
+  public async embedSingleFile(
+    source: string,
+    force: boolean = false
+  ): Promise<{ success: boolean; code?: 'not_found' | 'inflight' | 'delete_failed' | 'dispatch_failed'; message: string }> {
+    const stateRow = await KbIngestState.query().where('file_path', source).first()
+    if (!stateRow) {
+      const uploadsAbsPath = resolve(join(process.cwd(), RagService.UPLOADS_STORAGE_PATH))
+      const zimAbsPath = resolve(join(process.cwd(), ZIM_STORAGE_PATH))
+      const resolved = resolve(source)
+      const inStorage =
+        resolved.startsWith(uploadsAbsPath + sep) || resolved.startsWith(zimAbsPath + sep)
+      const stats = inStorage ? await getFileStatsIfExists(resolved) : null
+      if (!inStorage || !stats || determineFileType(source) === 'unknown') {
+        return {
+          success: false,
+          code: 'not_found',
+          message: 'File is not a tracked knowledge-base source.',
+        }
+      }
+    }
+
+    if (force) {
+      try {
+        await this._ensureCollection(
+          RagService.CONTENT_COLLECTION_NAME,
+          RagService.EMBEDDING_DIMENSION
+        )
+        await this.qdrant!.delete(RagService.CONTENT_COLLECTION_NAME, {
+          filter: { must: [{ key: 'source', match: { value: source } }] },
+        })
+      } catch (err) {
+        logger.error(`[RAG] Failed to delete prior points for ${source}; aborting re-embed:`, err)
+        return {
+          success: false,
+          code: 'delete_failed',
+          message: 'Failed to clear prior embeddings before re-embed.',
+        }
+      }
+    }
+
+    try {
+      const { EmbedFileJob } = await import('#jobs/embed_file_job')
+      const fileName = source.split(/[/\\]/).pop() || source
+      const stats = await getFileStatsIfExists(source)
+      const result = await EmbedFileJob.dispatch({
+        filePath: source,
+        fileName,
+        fileSize: stats?.size,
+      })
+      if (!result.created) {
+        return {
+          success: false,
+          code: 'inflight',
+          message: 'A job for this file is already in progress. Wait for it to finish before re-queuing.',
+        }
+      }
+      return {
+        success: true,
+        message: force ? 'Re-embed queued for this file.' : 'Indexing queued for this file.',
+      }
+    } catch (err) {
+      logger.error(`[RAG] Failed to dispatch embed job for ${source}:`, err)
+      return {
+        success: false,
+        code: 'dispatch_failed',
+        message: 'Failed to dispatch embed job for this file.',
+      }
     }
   }
 

@@ -10,6 +10,34 @@ import { IconX } from '@tabler/icons-react'
 import { useModals } from '~/context/ModalContext'
 import StyledModal from '../StyledModal'
 import ActiveEmbedJobs from '~/components/ActiveEmbedJobs'
+import type { StoredFileInfo } from '../../../types/rag'
+import type { KbIngestStateValue } from '../../../types/kb_ingest_state'
+
+// Per-file ingest state pill (RFC #883 §5). `null` state = a Qdrant source the
+// scanner hasn't recorded yet (pre-RFC data) — its chunks exist, so show Indexed.
+const STATE_PILLS: Record<
+  KbIngestStateValue | 'legacy',
+  { label: string; className: string }
+> = {
+  indexed: { label: 'Indexed', className: 'bg-desert-green/10 text-desert-green' },
+  legacy: { label: 'Indexed', className: 'bg-desert-green/10 text-desert-green' },
+  pending_decision: { label: 'Pending', className: 'bg-desert-sand text-desert-stone-dark' },
+  browse_only: { label: 'Browse only', className: 'bg-surface-secondary text-text-secondary' },
+  failed: { label: 'Failed', className: 'bg-desert-red/10 text-desert-red' },
+  stalled: { label: 'Stalled', className: 'bg-amber-100 text-amber-800' },
+}
+
+function StatePill({ state, chunks }: { state: KbIngestStateValue | null; chunks: number }) {
+  const pill = STATE_PILLS[state ?? 'legacy']
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${pill.className}`}
+      title={chunks > 0 ? `${chunks.toLocaleString()} chunks embedded` : undefined}
+    >
+      {pill.label}
+    </span>
+  )
+}
 
 interface KnowledgeBaseModalProps {
   aiAssistantName?: string
@@ -52,6 +80,34 @@ export default function KnowledgeBaseModal({ aiAssistantName = "AI Assistant", o
         type: 'error',
         message: error?.message || 'Failed to upload document',
       })
+    },
+  })
+
+  // Global ingest policy (RFC #883 §1/§4): Always = auto-index new files on
+  // scan; Manual = record them as Pending and wait for a per-file Index click.
+  const { data: policySetting } = useQuery({
+    queryKey: ['setting', 'rag.defaultIngestPolicy'],
+    queryFn: () => api.getSetting('rag.defaultIngestPolicy'),
+  })
+  const policy: 'Always' | 'Manual' = policySetting?.value === 'Manual' ? 'Manual' : 'Always'
+  const policyMutation = useMutation({
+    mutationFn: (next: 'Always' | 'Manual') => api.updateSetting('rag.defaultIngestPolicy', next),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['setting', 'rag.defaultIngestPolicy'] })
+    },
+    onError: () => {
+      addNotification({ type: 'error', message: 'Failed to update the indexing policy.' })
+    },
+  })
+
+  const embedMutation = useMutation({
+    mutationFn: (source: string) => api.embedRAGFile(source),
+    onSuccess: (data) => {
+      addNotification({ type: 'success', message: data?.message || 'Indexing queued.' })
+      queryClient.invalidateQueries({ queryKey: ['storedFiles'] })
+    },
+    onError: (error: any) => {
+      addNotification({ type: 'error', message: error?.message || 'Failed to queue indexing.' })
     },
   })
 
@@ -213,18 +269,42 @@ export default function KnowledgeBaseModal({ aiAssistantName = "AI Assistant", o
           <div className="my-12">
             <div className='flex items-center justify-between mb-6'>
               <StyledSectionHeader title="Stored Knowledge Base Files" className='!mb-0' />
-              <StyledButton
-                variant="secondary"
-                size="md"
-                icon='IconRefresh'
-                onClick={handleConfirmSync}
-                disabled={syncMutation.isPending || uploadMutation.isPending}
-                loading={syncMutation.isPending || uploadMutation.isPending}
-              >
-                Sync Storage
-              </StyledButton>
+              <div className="flex items-center gap-3">
+                {/* Ingest policy (RFC #883): Always auto-indexes on scan; Manual
+                    records new files as Pending until Index is clicked per file. */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm text-text-secondary">Index new files:</span>
+                  <div className="inline-flex overflow-hidden rounded-md border border-border-default text-sm font-medium">
+                    {(['Always', 'Manual'] as const).map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        onClick={() => policy !== option && policyMutation.mutate(option)}
+                        disabled={policyMutation.isPending}
+                        className={`px-2.5 py-1 cursor-pointer transition-colors ${
+                          policy === option
+                            ? 'bg-desert-green text-white'
+                            : 'bg-surface-primary text-text-secondary hover:bg-surface-secondary'
+                        }`}
+                      >
+                        {option}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <StyledButton
+                  variant="secondary"
+                  size="md"
+                  icon='IconRefresh'
+                  onClick={handleConfirmSync}
+                  disabled={syncMutation.isPending || uploadMutation.isPending}
+                  loading={syncMutation.isPending || uploadMutation.isPending}
+                >
+                  Sync Storage
+                </StyledButton>
+              </div>
             </div>
-            <StyledTable<{ source: string }>
+            <StyledTable<StoredFileInfo>
               className="font-semibold"
               rowLines={true}
               columns={[
@@ -233,6 +313,13 @@ export default function KnowledgeBaseModal({ aiAssistantName = "AI Assistant", o
                   title: 'File Name',
                   render(record) {
                     return <span className="text-text-primary">{sourceToDisplayName(record.source)}</span>
+                  },
+                },
+                {
+                  accessor: 'state',
+                  title: 'Status',
+                  render(record) {
+                    return <StatePill state={record.state} chunks={record.chunksEmbedded} />
                   },
                 },
                 {
@@ -264,8 +351,23 @@ export default function KnowledgeBaseModal({ aiAssistantName = "AI Assistant", o
                         </div>
                       )
                     }
+                    // Pending (Manual mode) and failed files get a per-row Index /
+                    // Retry action (RFC #883 §5) alongside Delete.
+                    const canIndex = record.state === 'pending_decision' || record.state === 'failed'
                     return (
-                      <div className="flex justify-end">
+                      <div className="flex justify-end gap-2">
+                        {canIndex && (
+                          <StyledButton
+                            variant="primary"
+                            size="sm"
+                            icon="IconDatabasePlus"
+                            onClick={() => embedMutation.mutate(record.source)}
+                            disabled={embedMutation.isPending}
+                            loading={embedMutation.isPending && embedMutation.variables === record.source}
+                          >
+                            {record.state === 'failed' ? 'Retry' : 'Index'}
+                          </StyledButton>
+                        )}
                         <StyledButton
                           variant="danger"
                           size="sm"
@@ -279,7 +381,7 @@ export default function KnowledgeBaseModal({ aiAssistantName = "AI Assistant", o
                   },
                 },
               ]}
-              data={storedFiles.map((source) => ({ source }))}
+              data={storedFiles}
               loading={isLoadingFiles}
             />
           </div>

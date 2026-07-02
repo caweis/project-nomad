@@ -5,7 +5,7 @@ import type { HttpContext } from '@adonisjs/core/http'
 import app from '@adonisjs/core/services/app'
 import { randomBytes } from 'node:crypto'
 import { sanitizeFilename } from '../utils/fs.js'
-import { deleteFileSchema, getJobStatusSchema } from '#validators/rag'
+import { deleteFileSchema, embedFileSchema, getJobStatusSchema } from '#validators/rag'
 import logger from '@adonisjs/core/services/logger'
 
 @inject()
@@ -73,6 +73,22 @@ export default class RagController {
       return response.status(500).json({ error: result.message })
     }
     return response.status(200).json({ message: result.message })
+  }
+
+  /** Per-file "Index" / re-embed action (RFC #883 §5). 202 on queue. */
+  public async embedFile({ request, response }: HttpContext) {
+    const { source, force } = await request.validateUsing(embedFileSchema)
+    const result = await this.ragService.embedSingleFile(source, force ?? false)
+    if (!result.success) {
+      const status = {
+        not_found: 404,
+        inflight: 409,
+        delete_failed: 500,
+        dispatch_failed: 500,
+      }[result.code ?? 'dispatch_failed']
+      return response.status(status).json({ error: result.message, code: result.code })
+    }
+    return response.status(202).json({ message: result.message })
   }
 
   public async scanAndSync({ response }: HttpContext) {

@@ -303,6 +303,7 @@ router
     router.post('/upload', [RagController, 'upload'])
     router.get('/files', [RagController, 'getStoredFiles'])
     router.delete('/files', [RagController, 'deleteFile'])
+    router.post('/files/embed', [RagController, 'embedFile'])
     router.get('/active-jobs', [RagController, 'getActiveJobs'])
     router.get('/job-status', [RagController, 'getJobStatus'])
     router.post('/sync', [RagController, 'scanAndSync'])
