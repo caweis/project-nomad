@@ -20,11 +20,15 @@ export default class HomeController {
         // Per-app pin overrides (issue #44). Default {} so an install with no
         // saved pins renders the home exactly as the display_order rule dictates.
         const pins = (await KVStore.getValue('home.pins')) ?? {};
+        // Home layout preference: 'grid' (traditional flat tile grid, default) or
+        // 'decks' (categorized scenario decks). Anything unset/unknown → 'grid'.
+        const homeLayout = (await KVStore.getValue('ui.homeLayout')) === 'decks' ? 'decks' : 'grid';
         return inertia.render('home', {
             system: {
                 services
             },
             pins,
+            homeLayout,
         })
     }
 

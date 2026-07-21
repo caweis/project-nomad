@@ -13,6 +13,9 @@ export const KV_STORE_SCHEMA = {
   // Night Ops theme preference ('light' | 'dark'); synced cross-device from the
   // ThemeToggle via api.updateSetting. The FOUC script reads localStorage, not this.
   'ui.theme':                   'string',
+  // Home dashboard layout preference: 'grid' (traditional flat tile grid, the
+  // default) or 'decks' (categorized scenario decks). Null → 'grid'.
+  'ui.homeLayout':              'string',
   'ai.assistantCustomName':     'string',
   // Workshop / Offline STL Library — user has acknowledged the rights modal
   // on first visit ("Use at your own peril. You are responsible for ensuring

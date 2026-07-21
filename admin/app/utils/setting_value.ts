@@ -38,6 +38,11 @@ export function validateSettingValue(key: KVStoreKey, value: unknown): string | 
       }
       return null
     }
+    case 'ui.homeLayout':
+      if (value !== 'grid' && value !== 'decks') {
+        return 'Home layout must be "grid" or "decks".'
+      }
+      return null
     default:
       return null
   }
