@@ -32,6 +32,7 @@ import { RunDownloadJob } from '#jobs/run_download_job'
 import { SERVICE_NAMES } from '../../constants/service_names.js'
 import { CollectionManifestService } from './collection_manifest_service.js'
 import { decideSupersededDeletion } from '../utils/superseded_resource.js'
+import { resolveZimDownload, type ZimCatalogResult } from '../utils/zim_download_resolution.js'
 import type { CategoryWithStatus } from '../../types/collections.js'
 
 const ZIM_MIME_TYPES = ['application/x-zim', 'application/x-openzim', 'application/octet-stream']
@@ -217,6 +218,78 @@ export class ZimService {
     return manifestService.getCategoriesWithStatus()
   }
 
+  /**
+   * Best-effort lookup of the current catalog entry for each curated resource
+   * id (curated ids ARE Kiwix book names, e.g. `wikipedia_en_medicine_maxi`),
+   * via the OPDS `name` exact filter. Any failure — offline appliance, a book
+   * missing from the catalog, an unparseable entry — simply yields no map
+   * entry, so the caller falls back to the static manifest URL exactly as
+   * before this lookup existed.
+   */
+  private async getLatestCatalogEntries(
+    resourceIds: string[]
+  ): Promise<Map<string, ZimCatalogResult>> {
+    const OPDS_ENTRIES_URL = 'https://opds.library.kiwix.org/catalog/v2/entries'
+    const results = new Map<string, ZimCatalogResult>()
+
+    await Promise.all(
+      resourceIds.map(async (id) => {
+        try {
+          const res = await axios.get(OPDS_ENTRIES_URL, {
+            params: { name: id },
+            responseType: 'text',
+            timeout: 10_000,
+          })
+
+          const parser = new XMLParser({
+            ignoreAttributes: false,
+            attributeNamePrefix: '',
+            textNodeName: '#text',
+          })
+          const parsed = parser.parse(res.data)
+          if (!isRawListRemoteZimFilesResponse(parsed)) return
+
+          const entries = parsed.feed.entry
+            ? Array.isArray(parsed.feed.entry)
+              ? parsed.feed.entry
+              : [parsed.feed.entry]
+            : []
+          const entry = entries.find((e: unknown) => isRawRemoteZimFileEntry(e))
+          if (!entry) return
+
+          const downloadLink = entry.link.find((link: any) => {
+            return (
+              typeof link === 'object' &&
+              'rel' in link &&
+              'href' in link &&
+              'type' in link &&
+              link.type === 'application/x-zim'
+            )
+          })
+          if (!downloadLink) return
+
+          // href ends with .meta4; strip it to get the actual download URL.
+          const download_url = downloadLink.href.substring(0, downloadLink.href.length - 6)
+          const filename = download_url.split('/').pop()
+          if (!filename) return
+
+          // The dated filename is the catalog's version of record. Also guards
+          // against the name filter returning a different book than requested.
+          const parsedName = CollectionManifestService.parseZimFilename(filename)
+          if (!parsedName || parsedName.resource_id !== id) return
+
+          results.set(id, { version: parsedName.version, download_url })
+        } catch (error) {
+          logger.warn(
+            `[ZimService] Catalog lookup failed for ${id} (${error instanceof Error ? error.message : 'unknown error'}); using manifest URL`
+          )
+        }
+      })
+    )
+
+    return results
+  }
+
   async downloadCategoryTier(categorySlug: string, tierSlug: string): Promise<string[] | null> {
     const manifestService = new CollectionManifestService()
     const spec = await manifestService.getSpecWithFallback<import('../../types/collections.js').ZimCategoriesSpec>('zim_categories')
@@ -243,23 +316,36 @@ export class ZimService {
 
     if (toDownload.length === 0) return null
 
+    // Resolve possibly-stale manifest URLs against the live Kiwix catalog —
+    // Kiwix rotates dated filenames, so pinned URLs 404 once the file ages out.
+    // Offline or on any per-book failure this map is simply empty/missing the
+    // entry and the manifest URL is used unchanged.
+    const latestByResource = await this.getLatestCatalogEntries(toDownload.map((r) => r.id))
+
     const downloadFilenames: string[] = []
 
     for (const resource of toDownload) {
-      const existingJob = await RunDownloadJob.getByUrl(resource.url)
+      const resolved = resolveZimDownload(resource, latestByResource.get(resource.id) ?? null)
+      if (resolved.url !== resource.url) {
+        logger.info(
+          `[ZimService] Resolved ${resource.id} to catalog version ${resolved.version} (manifest pinned ${resource.version})`
+        )
+      }
+
+      const existingJob = await RunDownloadJob.getByUrl(resolved.url)
       if (existingJob) {
-        logger.warn(`[ZimService] Download already in progress for ${resource.url}, skipping.`)
+        logger.warn(`[ZimService] Download already in progress for ${resolved.url}, skipping.`)
         continue
       }
 
-      const filename = resource.url.split('/').pop()
+      const filename = resolved.url.split('/').pop()
       if (!filename) continue
 
       downloadFilenames.push(filename)
       const filepath = join(process.cwd(), ZIM_STORAGE_PATH, filename)
 
       await RunDownloadJob.dispatch({
-        url: resource.url,
+        url: resolved.url,
         filepath,
         timeout: 30000,
         allowedMimeTypes: ZIM_MIME_TYPES,
@@ -267,7 +353,7 @@ export class ZimService {
         filetype: 'zim',
         resourceMetadata: {
           resource_id: resource.id,
-          version: resource.version,
+          version: resolved.version,
           collection_ref: categorySlug,
         },
       })
