@@ -5,6 +5,37 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 
 ## [Unreleased]
 
+## [0.2.753-macos] - 2026-07-22
+
+Finishes the v1.34 upstream port batch: custom AI instructions, knowledge-base
+collections, fresher curated ZIM downloads, and the per-model thinking switch.
+
+### AI
+- NOMAD.md custom instructions. Keep standing instructions for your assistant —
+  persona, tone, priorities, house rules — in a NOMAD.md file, edited from a new
+  button in the chat sidebar (a markdown editor with highlighting and dark-mode
+  support) or directly on disk at storage/NOMAD.md. Its contents are sent as the
+  leading system prompt on every chat; an empty file changes nothing. (Ports
+  upstream #1127.)
+- The per-model thinking override is here. Models that support thinking get a
+  Thinking switch in the chat header; the choice is remembered per model, and the
+  global default in AI settings still covers models you haven't toggled.
+  (Completes the port of upstream #1079.)
+
+### Knowledge base
+- Collections. Tag uploads with a subject at upload time (recipes, health,
+  survival, or type your own), retag any stored file from the KB table, and
+  rename or remove tags without touching the files themselves. In chat, a
+  "Search in" picker scopes the assistant's retrieval to one collection.
+  (Ports upstream #1063.)
+
+### Downloads
+- Curated ZIM downloads now check the live Kiwix catalog before starting. Kiwix
+  rotates dated filenames and deletes old files, so the pinned URLs in curated
+  collections eventually 404; the download now resolves the current file and
+  falls back to the pinned URL when offline. (Fork-native take on upstream
+  #1091, built on our OPDS path.)
+
 ## [0.2.752-macos] - 2026-07-21
 
 Ports a batch of upstream v1.34 fixes and small features to this fork, and adds a
