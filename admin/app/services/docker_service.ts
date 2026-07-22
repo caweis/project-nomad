@@ -595,6 +595,15 @@ export class DockerService {
    * when the env var is genuinely absent. Falls back to NOMAD_STORAGE_PATH / the
    * default if the admin container or its storage mount can't be inspected.
    */
+  /**
+   * Public accessor for the resolved host path backing `/app/storage`, for the
+   * Debug Info bundle (the #1050 "moved my data, admin can't see it" class of
+   * report). Ported from upstream #1102.
+   */
+  async getHostStorageRoot(): Promise<string> {
+    return this._resolveHostStorageRoot()
+  }
+
   private async _resolveHostStorageRoot(): Promise<string> {
     if (this._hostStorageRoot) return this._hostStorageRoot
     const fallback = env.get('NOMAD_STORAGE_PATH', '/opt/project-nomad/storage')

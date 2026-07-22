@@ -16,6 +16,7 @@ import KVStore from '#models/kv_store'
 import { KV_STORE_SCHEMA, KVStoreKey } from '../../types/kv_store.js'
 import { isNewerVersion } from '../utils/version.js'
 import { CUSTOM_PORT_START, nextFreeCustomPort } from '#services/custom_app_ports'
+import { KiwixLibraryService } from '#services/kiwix_library_service'
 
 
 // Marker the host's drive-detect agent writes when a non-active, full-library
@@ -557,6 +558,28 @@ export class SystemService {
       this.checkLatestVersion().catch(() => null),
     ])
 
+    // Diagnostics for common support cases: storage relocation (#1050), the
+    // container/updater path (#858), Kiwix library state, and the auto-update
+    // trilogy. Best-effort — one failure never blanks the bundle. Ported from
+    // upstream #1102 (the GPU-passthrough field is dropped: this fork runs native
+    // Apple Metal, not Docker GPU passthrough).
+    const [dockerVersion, hostStorageRoot, kiwixBookCount] = await Promise.all([
+      this.dockerService.docker
+        .version()
+        .then((v: any) => v?.Version ?? null)
+        .catch(() => null),
+      this.dockerService.getHostStorageRoot().catch(() => null),
+      new KiwixLibraryService().getBookCount().catch(() => null),
+    ])
+    const [autoUpdateCore, autoUpdateApps, autoUpdateContent, autoDisabledReason] =
+      await Promise.all([
+        KVStore.getValue('autoUpdate.enabled').catch(() => null),
+        KVStore.getValue('appAutoUpdate.enabled').catch(() => null),
+        KVStore.getValue('contentAutoUpdate.enabled').catch(() => null),
+        KVStore.getValue('autoUpdate.autoDisabledReason').catch(() => null),
+      ])
+    const isEnabled = (v: any) => v === true || v === 'true'
+
     const lines: string[] = [
       'Project NOMAD Debug Info',
       '========================',
@@ -573,6 +596,7 @@ export class SystemService {
       if (os.hostname) lines.push(`  Hostname: ${os.hostname}`)
       if (os.kernel) lines.push(`  Kernel: ${os.kernel}`)
       if (os.arch) lines.push(`  Architecture: ${os.arch}`)
+      if (dockerVersion) lines.push(`  Docker Engine: ${dockerVersion}`)
       if (uptime?.uptime) lines.push(`  Uptime: ${this._formatUptime(uptime.uptime)}`)
 
       lines.push('')
@@ -614,6 +638,20 @@ export class SystemService {
       }
     }
 
+    lines.push('')
+    lines.push('Storage:')
+    lines.push(`  Host storage root: ${hostStorageRoot ?? 'unknown'}`)
+    lines.push('  Container path: /app/storage')
+    const storageEnv = process.env.NOMAD_STORAGE_PATH
+    lines.push(
+      `  NOMAD_STORAGE_PATH: ${storageEnv ? storageEnv : 'not set (auto-detected from admin mount)'}`
+    )
+    if (kiwixBookCount !== null) {
+      lines.push(
+        `  Kiwix library: ${kiwixBookCount === 0 ? 'empty (0 books)' : `${kiwixBookCount} book(s)`}`
+      )
+    }
+
     const installed = services.filter((s) => s.installed)
     lines.push('')
     if (installed.length > 0) {
@@ -635,6 +673,15 @@ export class SystemService {
         ? `Yes (${versionCheck.latestVersion} available)`
         : `No (${versionCheck.currentVersion} is latest)`
       lines.push(`Update Available: ${updateMsg}`)
+    }
+
+    lines.push('')
+    lines.push('Auto-Update:')
+    lines.push(`  Core: ${isEnabled(autoUpdateCore) ? 'Enabled' : 'Disabled'}`)
+    lines.push(`  Apps: ${isEnabled(autoUpdateApps) ? 'Enabled' : 'Disabled'}`)
+    lines.push(`  Content: ${isEnabled(autoUpdateContent) ? 'Enabled' : 'Disabled'}`)
+    if (autoDisabledReason) {
+      lines.push(`  Auto-disabled reason: ${autoDisabledReason}`)
     }
 
     return lines.join('\n')
