@@ -237,6 +237,7 @@ router
 router
   .group(() => {
     router.get('/jobs', [DownloadsController, 'index'])
+    router.post('/jobs/:jobId/retry', [DownloadsController, 'retryJob'])
     router.get('/jobs/:filetype', [DownloadsController, 'filetype'])
   })
   .prefix('/api/downloads')

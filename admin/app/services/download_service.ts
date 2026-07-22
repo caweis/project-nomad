@@ -2,7 +2,7 @@ import { inject } from '@adonisjs/core'
 import { QueueService } from './queue_service.js'
 import { RunDownloadJob } from '#jobs/run_download_job'
 import { DownloadModelJob } from '#jobs/download_model_job'
-import { DownloadJobWithProgress } from '../../types/downloads.js'
+import { DownloadJobWithProgress, RunDownloadJobParams } from '../../types/downloads.js'
 import { normalize } from 'path'
 
 @inject()
@@ -49,5 +49,40 @@ export class DownloadService {
       if (a.status !== 'failed' && b.status === 'failed') return -1
       return b.progress - a.progress
     })
+  }
+
+  /**
+   * Retry a failed download by re-dispatching it. Ported from upstream #1059.
+   * File downloads (zim/map/…) re-dispatch with the ORIGINAL job params so
+   * resourceMetadata and every other field survive the retry, which our hardened
+   * zim/map completion path depends on (Maxim 9); model downloads re-dispatch
+   * with the model name.
+   */
+  async retryFailedJob(jobId: string): Promise<{ success: boolean; message: string }> {
+    for (const queueName of [RunDownloadJob.queue, DownloadModelJob.queue]) {
+      const queue = this.queueService.getQueue(queueName)
+      const job = await queue.getJob(jobId)
+      if (!job) continue
+
+      if (queueName === DownloadModelJob.queue) {
+        const modelName = job.data.modelName
+        if (!modelName) {
+          return { success: false, message: 'Cannot retry: model name not found in job data' }
+        }
+        await DownloadModelJob.dispatch({ modelName })
+        await job.remove().catch(() => {})
+        return { success: true, message: `Retrying download for model ${modelName}` }
+      }
+
+      const params = job.data as RunDownloadJobParams
+      if (!params.url || !params.filepath) {
+        return { success: false, message: 'Cannot retry: missing URL or filepath in job data' }
+      }
+      await job.remove().catch(() => {})
+      await RunDownloadJob.dispatch(params)
+      return { success: true, message: `Retrying download for ${params.url}` }
+    }
+
+    return { success: false, message: 'Failed job not found. It may have already been dismissed.' }
   }
 }

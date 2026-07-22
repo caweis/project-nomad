@@ -2,7 +2,8 @@ import useDownloads, { useDownloadsProps } from '~/hooks/useDownloads'
 import HorizontalBarChart from './HorizontalBarChart'
 import { extractFileName } from '~/lib/util'
 import StyledSectionHeader from './StyledSectionHeader'
-import { IconAlertTriangle } from '@tabler/icons-react'
+import { IconAlertTriangle, IconReload } from '@tabler/icons-react'
+import api from '~/lib/api'
 
 interface ActiveDownloadProps {
   filetype?: useDownloadsProps['filetype']
@@ -10,7 +11,13 @@ interface ActiveDownloadProps {
 }
 
 const ActiveDownloads = ({ filetype, withHeader = false }: ActiveDownloadProps) => {
-  const { data: downloads } = useDownloads({ filetype })
+  const { data: downloads, invalidate } = useDownloads({ filetype })
+
+  // Retry a failed download, then refresh the list (#1059).
+  const handleRetry = async (jobId: string) => {
+    await api.retryDownloadJob(jobId)
+    invalidate()
+  }
 
   return (
     <>
@@ -37,6 +44,14 @@ const ActiveDownloads = ({ filetype, withHeader = false }: ActiveDownloadProps) 
                       Download failed{download.failedReason ? `: ${download.failedReason}` : ''}
                     </p>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRetry(download.jobId)}
+                    className="flex-shrink-0 inline-flex items-center gap-1 rounded border border-desert-green text-desert-green hover:bg-desert-green hover:text-white transition-colors px-2.5 py-1 text-xs font-medium"
+                  >
+                    <IconReload size={14} />
+                    Retry
+                  </button>
                 </div>
               ) : (
                 <HorizontalBarChart

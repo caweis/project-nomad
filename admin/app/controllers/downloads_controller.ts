@@ -15,4 +15,9 @@ export default class DownloadsController {
     const payload = await request.validateUsing(downloadJobsByFiletypeSchema)
     return this.downloadService.listDownloadJobs(payload.params.filetype)
   }
+
+  // Retry a failed download by re-dispatching it. Ported from upstream #1059.
+  async retryJob({ params }: HttpContext) {
+    return this.downloadService.retryFailedJob(params.jobId)
+  }
 }
