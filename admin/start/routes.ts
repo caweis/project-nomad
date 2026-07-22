@@ -15,6 +15,7 @@ import GrocyController from '#controllers/grocy_controller'
 import HomeController from '#controllers/home_controller'
 import InventoryController from '#controllers/inventory_controller'
 import MapsController from '#controllers/maps_controller'
+import NomadMdController from '#controllers/nomad_md_controller'
 import OllamaController from '#controllers/ollama_controller'
 import ReadinessController from '#controllers/readiness_controller'
 import ScenarioPlanController from '#controllers/scenario_plan_controller'
@@ -255,6 +256,13 @@ router
     router.get('/installed-models', [OllamaController, 'installedModels'])
   })
   .prefix('/api/ollama')
+
+router
+  .group(() => {
+    router.get('/nomad-md', [NomadMdController, 'show'])
+    router.put('/nomad-md', [NomadMdController, 'update'])
+  })
+  .prefix('/api/ai')
 
 // Bridge from admin UI to host-side `nomad` CLI commands. The host's
 // com.projectnomad.host-command-bridge LaunchAgent polls a directory on

@@ -5,6 +5,7 @@ import { ChatSession } from '../../../types/chat'
 import { IconMessage, IconX } from '@tabler/icons-react'
 import { useState } from 'react'
 import KnowledgeBaseModal from './KnowledgeBaseModal'
+import NomadMdModal from './NomadMdModal'
 
 interface ChatSidebarProps {
   sessions: ChatSession[]
@@ -35,6 +36,7 @@ export default function ChatSidebar({
   const [isKnowledgeBaseModalOpen, setIsKnowledgeBaseModalOpen] = useState(
     () => new URLSearchParams(window.location.search).get('knowledge_base') === 'true'
   )
+  const [isNomadMdModalOpen, setIsNomadMdModalOpen] = useState(false)
 
   function handleCloseKnowledgeBase() {
     setIsKnowledgeBaseModalOpen(false)
@@ -91,6 +93,7 @@ export default function ChatSidebar({
           isInModal={isInModal}
           aiAssistantName={aiAssistantName}
           setIsKnowledgeBaseModalOpen={setIsKnowledgeBaseModalOpen}
+          setIsNomadMdModalOpen={setIsNomadMdModalOpen}
           showMobileCloseButton={true}
           onMobileClose={onMobileClose}
         />
@@ -106,6 +109,7 @@ export default function ChatSidebar({
           isInModal={isInModal}
           aiAssistantName={aiAssistantName}
           setIsKnowledgeBaseModalOpen={setIsKnowledgeBaseModalOpen}
+          setIsNomadMdModalOpen={setIsNomadMdModalOpen}
           showMobileCloseButton={false}
         />
       </div>
@@ -116,6 +120,13 @@ export default function ChatSidebar({
           instance regardless of which breakpoint is active. */}
       {isKnowledgeBaseModalOpen && (
         <KnowledgeBaseModal aiAssistantName={aiAssistantName} onClose={handleCloseKnowledgeBase} />
+      )}
+      {/* Same single-instance hoisting as the Knowledge Base modal above. */}
+      {isNomadMdModalOpen && (
+        <NomadMdModal
+          aiAssistantName={aiAssistantName}
+          onClose={() => setIsNomadMdModalOpen(false)}
+        />
       )}
     </>
   )
@@ -133,6 +144,7 @@ interface SidebarBodyProps {
   isInModal: boolean
   aiAssistantName: string
   setIsKnowledgeBaseModalOpen: (open: boolean) => void
+  setIsNomadMdModalOpen: (open: boolean) => void
   showMobileCloseButton: boolean
   onMobileClose?: () => void
 }
@@ -146,6 +158,7 @@ function SidebarBody({
   isInModal,
   aiAssistantName: _aiAssistantName,
   setIsKnowledgeBaseModalOpen,
+  setIsNomadMdModalOpen,
   showMobileCloseButton,
   onMobileClose,
 }: SidebarBodyProps) {
@@ -247,6 +260,17 @@ function SidebarBody({
           fullWidth
         >
           Knowledge Base
+        </StyledButton>
+        <StyledButton
+          onClick={() => {
+            setIsNomadMdModalOpen(true)
+          }}
+          icon="IconFileDescription"
+          variant="primary"
+          size="sm"
+          fullWidth
+        >
+          NOMAD.md
         </StyledButton>
         {sessions.length > 0 && (
           <StyledButton
