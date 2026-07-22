@@ -1,4 +1,37 @@
 import * as cheerio from 'cheerio'
+import { NON_CONTENT_HEADING_PATTERNS } from '../constants/zim_extraction.js'
+
+/**
+ * True when a section heading is low-signal boilerplate (See also / References /
+ * External links / …). Sections under these are reference apparatus, not article
+ * content, and shouldn't reach embeddings. Ported from upstream #1044.
+ */
+function isNonContentHeading(heading: string): boolean {
+  return NON_CONTENT_HEADING_PATTERNS.some((pattern) => pattern.test(heading))
+}
+
+/**
+ * Render an HTML <table> into delimited text. cheerio's `.text()` concatenates
+ * every cell with no separators ("AgeDoseAdult500mg" word-salad), which is
+ * unsearchable and pollutes embeddings. Join cells with " | " and rows with
+ * newlines. Ported from upstream #1044.
+ */
+function tableToText($: cheerio.CheerioAPI, table: any): string {
+  const rows: string[] = []
+  $(table)
+    .find('tr')
+    .each((_, tr) => {
+      const cells = $(tr)
+        .find('th, td')
+        .map((__, cell) => $(cell).text().replace(/\s+/g, ' ').trim())
+        .get()
+        .filter((cell) => cell.length > 0)
+      if (cells.length > 0) {
+        rows.push(cells.join(' | '))
+      }
+    })
+  return rows.join('\n')
+}
 
 /**
  * One section of a ZIM article: a heading, the concatenated text of the block
@@ -41,7 +74,20 @@ export function extractStructuredContent(html: string): ZIMStructuredContent {
 
   // Extract sections with their headings and heading levels
   const sections: ZIMStructuredSection[] = []
-  let currentSection = { heading: 'Introduction', content: [] as string[], level: 2 }
+  let currentSection = { heading: 'Introduction', content: [] as string[], level: 2, skip: false }
+  let sawAnyElement = false
+
+  // Flush the current section unless it's a non-content one (References, See
+  // also, …) or empty. #1044.
+  const flush = () => {
+    if (!currentSection.skip && currentSection.content.length > 0) {
+      sections.push({
+        heading: currentSection.heading,
+        text: currentSection.content.join(' ').replace(/\s+/g, ' ').trim(),
+        level: currentSection.level,
+      })
+    }
+  }
 
   // Walk the full DOM, not just direct children of <body>. Modern ZIMs
   // (Devdocs, Wikipedia, FreeCodeCamp, etc.) wrap article content in a
@@ -50,46 +96,35 @@ export function extractStructuredContent(html: string): ZIMStructuredContent {
   $('body')
     .find('h2, h3, h4, p, ul, ol, dl, table')
     .each((_, element) => {
+      sawAnyElement = true
       const $el = $(element)
       const tagName = element.tagName?.toLowerCase()
 
       if (['h2', 'h3', 'h4'].includes(tagName)) {
-        // Save current section if it has content
-        if (currentSection.content.length > 0) {
-          sections.push({
-            heading: currentSection.heading,
-            text: currentSection.content.join(' ').replace(/\s+/g, ' ').trim(),
-            level: currentSection.level,
-          })
-        }
-        // Start new section
+        flush()
+        // Start new section; skip it entirely if its heading is boilerplate.
         const level = parseInt(tagName.substring(1)) // Extract number from h2, h3, h4
-        currentSection = {
-          heading: $el.text().replace(/\[edit\]/gi, '').trim(),
-          content: [],
-          level,
-        }
+        const heading = $el.text().replace(/\[edit\]/gi, '').trim()
+        currentSection = { heading, content: [], level, skip: isNonContentHeading(heading) }
       } else if (['p', 'ul', 'ol', 'dl', 'table'].includes(tagName)) {
-        const text = $el.text().trim()
+        if (currentSection.skip) return
+        // Tables get delimited rendering so cells stay searchable; #1044.
+        const text = tagName === 'table' ? tableToText($, element) : $el.text().trim()
         if (text.length > 0) {
           currentSection.content.push(text)
         }
       }
     })
 
-  // Push the last section if it has content
-  if (currentSection.content.length > 0) {
-    sections.push({
-      heading: currentSection.heading,
-      text: currentSection.content.join(' ').replace(/\s+/g, ' ').trim(),
-      level: currentSection.level,
-    })
-  }
+  // Push the last section (skip-aware).
+  flush()
 
-  // Fallback: if the selector walk produced no sections but the body has
-  // meaningful text (unusual markup, minimal headings/paragraphs), emit one
-  // section with the full body text so the article still contributes to the KB.
-  if (sections.length === 0) {
+  // Fallback: emit one whole-body section ONLY when the walk matched no
+  // structural elements at all (unusual markup). Deliberately NOT when we found
+  // sections but dropped them all as non-content — an all-references article
+  // should contribute nothing, not have its reference apparatus re-included
+  // whole (#1044, Maxim 9).
+  if (sections.length === 0 && !sawAnyElement) {
     const bodyText = $('body').text().replace(/\s+/g, ' ').trim()
     if (bodyText.length > 0) {
       sections.push({
