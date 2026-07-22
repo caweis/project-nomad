@@ -18,11 +18,24 @@
 NOMAD_DIR="/opt/project-nomad"
 MANAGEMENT_COMPOSE_FILE="${NOMAD_DIR}/compose.yml"
 
+# Color codes (ported from upstream #1098 — referenced below but never defined).
+RESET='\033[0m'
+YELLOW='\033[1;33m'
+WHITE_R='\033[39m' # Same as GRAY_R for terminals with white background.
+GRAY_R='\033[39m'
+RED='\033[1;31m' # Light Red.
+GREEN='\033[1;32m' # Light Green.
+
 ###################################################################################################################################################################################################
 #                                                                                                                                                                                                 #
 #                                                                                     Functions                                                                                                   #
 #                                                                                                                                                                                                 #
 ###################################################################################################################################################################################################
+
+header_red() {
+  if [[ "${script_option_debug}" != 'true' ]]; then clear; clear; fi
+  echo -e "${RED}#########################################################################${RESET}\\n"
+}
 
 check_has_sudo() {
   if sudo -n true 2>/dev/null; then
