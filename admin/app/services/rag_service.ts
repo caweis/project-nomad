@@ -11,6 +11,7 @@ import KbIngestState from '#models/kb_ingest_state'
 import { PDFParse } from 'pdf-parse'
 import { createWorker } from 'tesseract.js'
 import { fromBuffer } from 'pdf2pic'
+import mammoth from 'mammoth'
 import { OllamaService } from './ollama_service.js'
 import { SERVICE_NAMES } from '../../constants/service_names.js'
 import { removeStopwords } from 'stopword'
@@ -485,6 +486,16 @@ export class RagService {
     return filebuffer.toString('utf-8')
   }
 
+  /**
+   * Extract text from a DOCX file using mammoth. DOCX is a ZIP-based XML format,
+   * so raw-text extraction (extractTXTText) would return garbage — mammoth parses
+   * the document XML and returns clean plain text. Ported from upstream #1100.
+   */
+  private async processDocxFile(fileBuffer: Buffer): Promise<string> {
+    const { value: text } = await mammoth.extractRawText({ buffer: fileBuffer })
+    return text
+  }
+
   private async extractImageText(filebuffer: Buffer): Promise<string> {
     const worker = await createWorker('eng')
     const result = await worker.recognize(filebuffer)
@@ -714,6 +725,9 @@ export class RagService {
           break
         case 'pdf':
           extractedText = await this.processPDFFile(fileBuffer!)
+          break
+        case 'docx':
+          extractedText = await this.processDocxFile(fileBuffer!)
           break
         case 'text':
         default:
