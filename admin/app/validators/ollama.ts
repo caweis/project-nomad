@@ -15,6 +15,9 @@ export const chatSchema = vine.compile(
     // default), resolved client-side. Omitted → server falls back to the
     // ai.autoThinking KV default. Ported from upstream #1079.
     think: vine.boolean().optional(),
+    // KB subject tag to scope RAG retrieval to (upstream #1063). Omitted or
+    // empty → search the whole knowledge base.
+    collection: vine.string().trim().maxLength(40).optional(),
   })
 )
 

@@ -22,6 +22,9 @@ export interface EmbedFileJobParams {
   // (#933 — each continuation is a new job, so job.data.chunks alone would
   // collapse to just the last batch's count).
   chunksSoFar?: number
+  // Subject/collection tag stored on every Qdrant point and the ingest-state
+  // row (upstream #1063). Optional — absent means uncategorized.
+  collection?: string
 }
 
 export class EmbedFileJob {
@@ -38,7 +41,7 @@ export class EmbedFileJob {
   }
 
   async handle(job: Job) {
-    const { filePath, fileName, batchOffset, totalArticles } = job.data as EmbedFileJobParams
+    const { filePath, fileName, batchOffset, totalArticles, collection } = job.data as EmbedFileJobParams
 
     const isZimBatch = batchOffset !== undefined
     const batchInfo = isZimBatch ? ` (batch offset: ${batchOffset})` : ''
@@ -86,7 +89,8 @@ export class EmbedFileJob {
         filePath,
         allowDeletion,
         batchOffset,
-        onProgress
+        onProgress,
+        collection
       )
 
       if (!result.success) {
@@ -112,6 +116,9 @@ export class EmbedFileJob {
           totalArticles: totalArticles || result.totalArticles,
           isFinalBatch: false, // Explicitly not final
           chunksSoFar: chunksSoFarNext,
+          // Carry the tag forward — a continuation is a NEW job, so without
+          // this only the first batch's points would be tagged.
+          ...(collection ? { collection } : {}),
         })
 
         // Calculate progress based on articles processed
@@ -154,7 +161,7 @@ export class EmbedFileJob {
       // Persist the settled state so the KB panel and the scan decision see a
       // truly-indexed file (RFC #883). Non-fatal: the embed itself succeeded.
       try {
-        await KbIngestState.markIndexed(filePath, totalChunks)
+        await KbIngestState.markIndexed(filePath, totalChunks, collection)
       } catch (stateErr) {
         logger.warn(
           `[EmbedFileJob] Failed to persist indexed state for ${fileName}: %s`,

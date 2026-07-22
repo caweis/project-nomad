@@ -317,6 +317,10 @@ router
     router.get('/active-jobs', [RagController, 'getActiveJobs'])
     router.get('/job-status', [RagController, 'getJobStatus'])
     router.post('/sync', [RagController, 'scanAndSync'])
+    router.get('/collections', [RagController, 'getKnowledgeCollections'])
+    router.post('/update-collection', [RagController, 'updateFileCollection'])
+    router.post('/rename-collection', [RagController, 'renameKnowledgeCollection'])
+    router.post('/delete-collection', [RagController, 'deleteKnowledgeCollection'])
   })
   .prefix('/api/rag')
 

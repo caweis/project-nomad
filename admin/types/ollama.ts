@@ -47,6 +47,8 @@ export type OllamaChatRequest = {
   // Effective per-request thinking preference (per-model override or global
   // default). Omitted → server falls back to the ai.autoThinking KV default. #1079
   think?: boolean
+  // KB subject tag to scope RAG retrieval to. Omitted → whole knowledge base. #1063
+  collection?: string
 }
 
 export type OllamaChatResponse = {

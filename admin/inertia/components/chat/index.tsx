@@ -51,6 +51,7 @@ export default function Chat({
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [selectedModel, setSelectedModel] = useState<string>('')
+  const [collectionFilter, setCollectionFilter] = useState<string>('')
   const [isStreamingResponse, setIsStreamingResponse] = useState(false)
   // Tracks the mobile sidebar drawer open state. Desktop layout ignores
   // this entirely; the sidebar is permanently inline above the md
@@ -123,6 +124,13 @@ export default function Chat({
     } catch {}
   }, [])
 
+  const { data: knownCollections = [] } = useQuery({
+    queryKey: ['kbCollections'],
+    queryFn: () => api.getKnowledgeCollections(),
+    enabled,
+    select: (data) => data?.collections ?? [],
+  })
+
   const { data: chatSuggestions, isLoading: chatSuggestionsLoading } = useQuery<string[]>({
     queryKey: ['chatSuggestions'],
     queryFn: async ({ signal }) => {
@@ -168,6 +176,7 @@ export default function Chat({
       messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>
       sessionId?: number
       think?: boolean
+      collection?: string
     }) => api.sendChatMessage({ ...request, stream: false }),
     onSuccess: async (data) => {
       if (!data || !activeSessionId) {
@@ -322,7 +331,7 @@ export default function Chat({
 
         try {
           await api.streamChatMessage(
-            { model: selectedModel || 'llama3.2', messages: chatMessages, stream: true, sessionId: sessionId ? Number(sessionId) : undefined, think: effectiveThinking(selectedModel) },
+            { model: selectedModel || 'llama3.2', messages: chatMessages, stream: true, sessionId: sessionId ? Number(sessionId) : undefined, think: effectiveThinking(selectedModel), collection: collectionFilter || undefined },
             (chunkContent, chunkThinking, done) => {
               if (chunkThinking.length > 0 && thinkingStartTime === null) {
                 thinkingStartTime = Date.now()
@@ -414,10 +423,11 @@ export default function Chat({
           messages: chatMessages,
           sessionId: sessionId ? Number(sessionId) : undefined,
           think: effectiveThinking(selectedModel),
+          collection: collectionFilter || undefined,
         })
       }
     },
-    [activeSessionId, messages, selectedModel, chatMutation, queryClient, streamingEnabled, effectiveThinking]
+    [activeSessionId, messages, selectedModel, collectionFilter, chatMutation, queryClient, streamingEnabled, effectiveThinking]
   )
 
   return (
@@ -455,6 +465,24 @@ export default function Chat({
             </h2>
           </div>
           <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0">
+            {knownCollections.length > 0 && (
+              <div className="hidden sm:flex items-center gap-2">
+                <label htmlFor="collection-select" className="text-sm text-text-secondary">
+                  Search in:
+                </label>
+                <select
+                  id="collection-select"
+                  value={collectionFilter}
+                  onChange={(e) => setCollectionFilter(e.target.value)}
+                  className="px-2 sm:px-3 py-1.5 border border-border-default rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-desert-green focus:border-transparent bg-surface-primary max-w-[140px] truncate"
+                >
+                  <option value="">All</option>
+                  {knownCollections.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="flex items-center gap-2">
               <label htmlFor="model-select" className="hidden sm:inline text-sm text-text-secondary">
                 Model:

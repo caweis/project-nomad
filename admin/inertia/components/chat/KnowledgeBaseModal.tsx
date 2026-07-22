@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import FileUploader from '~/components/file-uploader'
 import StyledButton from '~/components/StyledButton'
 import StyledSectionHeader from '~/components/StyledSectionHeader'
@@ -12,6 +12,9 @@ import StyledModal from '../StyledModal'
 import ActiveEmbedJobs from '~/components/ActiveEmbedJobs'
 import type { StoredFileInfo } from '../../../types/rag'
 import type { KbIngestStateValue } from '../../../types/kb_ingest_state'
+import CollectionsManager from './CollectionsManager'
+import CollectionCombobox from './CollectionCombobox'
+import { KB_COLLECTIONS } from '../../../constants/kb_collections'
 
 // Per-file ingest state pill (RFC #883 §5). `null` state = a Qdrant source the
 // scanner hasn't recorded yet (pre-RFC data) — its chunks exist, so show Indexed.
@@ -52,6 +55,9 @@ function sourceToDisplayName(source: string): string {
 export default function KnowledgeBaseModal({ aiAssistantName = "AI Assistant", onClose }: KnowledgeBaseModalProps) {
   const { addNotification } = useNotifications()
   const [files, setFiles] = useState<File[]>([])
+  const [uploadCollection, setUploadCollection] = useState<string>('')
+  const [collectionFilter, setCollectionFilter] = useState<string>('All')
+  const [manageCollectionsOpen, setManageCollectionsOpen] = useState(false)
   const [confirmDeleteSource, setConfirmDeleteSource] = useState<string | null>(null)
   const fileUploaderRef = useRef<React.ComponentRef<typeof FileUploader>>(null)
   const { openModal, closeModal } = useModals()
@@ -63,8 +69,31 @@ export default function KnowledgeBaseModal({ aiAssistantName = "AI Assistant", o
     select: (data) => data || [],
   })
 
+  const { data: knownCollections = [] } = useQuery({
+    queryKey: ['kbCollections'],
+    queryFn: () => api.getKnowledgeCollections(),
+    select: (data) => data?.collections ?? [],
+  })
+
+  const comboboxOptions = useMemo(() => {
+    return Array.from(new Set([...KB_COLLECTIONS, ...knownCollections])).sort()
+  }, [knownCollections])
+
+  const updateCollectionMutation = useMutation({
+    mutationFn: ({ source, collection }: { source: string; collection: string }) =>
+      api.updateFileCollection(source, collection || null),
+    onSuccess: (data) => {
+      addNotification({ type: 'success', message: data?.message || 'Collection updated.' })
+      queryClient.invalidateQueries({ queryKey: ['storedFiles'] })
+      queryClient.invalidateQueries({ queryKey: ['kbCollections'] })
+    },
+    onError: (error: any) => {
+      addNotification({ type: 'error', message: error?.message || 'Failed to update collection.' })
+    },
+  })
+
   const uploadMutation = useMutation({
-    mutationFn: (file: File) => api.uploadDocument(file),
+    mutationFn: (file: File) => api.uploadDocument(file, uploadCollection || undefined),
     onSuccess: (data) => {
       addNotification({
         type: 'success',
@@ -194,7 +223,16 @@ export default function KnowledgeBaseModal({ aiAssistantName = "AI Assistant", o
                   setFiles(Array.from(uploadedFiles))
                 }}
               />
-              <div className="flex justify-center gap-4 my-6">
+              <div className="flex justify-center items-center gap-4 my-6">
+                <label className="flex items-center gap-2 text-sm text-text-secondary">
+                  Collection:
+                  <CollectionCombobox
+                    value={uploadCollection}
+                    onChange={setUploadCollection}
+                    options={comboboxOptions}
+                    className="w-48"
+                  />
+                </label>
                 <StyledButton
                   variant="primary"
                   size="lg"
@@ -267,9 +305,30 @@ export default function KnowledgeBaseModal({ aiAssistantName = "AI Assistant", o
           </div>
 
           <div className="my-12">
-            <div className='flex items-center justify-between mb-6'>
+            <div className='flex items-center justify-between mb-6 gap-2 flex-wrap'>
               <StyledSectionHeader title="Stored Knowledge Base Files" className='!mb-0' />
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
+                <label className="flex items-center gap-2 text-sm text-text-secondary">
+                  Show:
+                  <select
+                    value={collectionFilter}
+                    onChange={(e) => setCollectionFilter(e.target.value)}
+                    className="rounded border border-border-subtle bg-surface-primary px-3 py-2 text-text-primary"
+                  >
+                    <option value="All">All</option>
+                    {knownCollections.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </label>
+                <StyledButton
+                  variant="secondary"
+                  size="md"
+                  icon="IconSettings"
+                  onClick={() => setManageCollectionsOpen(true)}
+                >
+                  Manage Collections
+                </StyledButton>
                 {/* Ingest policy (RFC #883): Always auto-indexes on scan; Manual
                     records new files as Pending until Index is clicked per file. */}
                 <div className="flex items-center gap-1.5">
@@ -320,6 +379,24 @@ export default function KnowledgeBaseModal({ aiAssistantName = "AI Assistant", o
                   title: 'Status',
                   render(record) {
                     return <StatePill state={record.state} chunks={record.chunksEmbedded} />
+                  },
+                },
+                {
+                  accessor: 'collection',
+                  title: 'Collection',
+                  render(record) {
+                    const isSaving =
+                      updateCollectionMutation.isPending &&
+                      updateCollectionMutation.variables?.source === record.source
+                    return (
+                      <CollectionCombobox
+                        value={record.collection ?? ''}
+                        onChange={(val) => updateCollectionMutation.mutate({ source: record.source, collection: val })}
+                        options={comboboxOptions}
+                        disabled={isSaving}
+                        className="w-40"
+                      />
+                    )
                   },
                 },
                 {
@@ -381,12 +458,19 @@ export default function KnowledgeBaseModal({ aiAssistantName = "AI Assistant", o
                   },
                 },
               ]}
-              data={storedFiles}
+              data={
+                collectionFilter === 'All'
+                  ? storedFiles
+                  : storedFiles.filter((f) => f.collection === collectionFilter)
+              }
               loading={isLoadingFiles}
             />
           </div>
         </div>
       </div>
+      {manageCollectionsOpen && (
+        <CollectionsManager onClose={() => setManageCollectionsOpen(false)} />
+      )}
     </div>
   )
 }
