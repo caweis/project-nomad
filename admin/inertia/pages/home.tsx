@@ -19,6 +19,7 @@ import { ServiceSlim } from '../../types/services'
 import DynamicIcon, { DynamicIconName } from '~/components/DynamicIcon'
 import { useUpdateAvailable } from '~/hooks/useUpdateAvailable'
 import Alert from '~/components/Alert'
+import WhatsNewBanner from '~/components/WhatsNewBanner'
 import { SERVICE_NAMES } from '../../constants/service_names'
 import { groupIntoDecks } from '~/util/home_decks'
 
@@ -287,6 +288,8 @@ export default function Home(props: {
           />
         </div>
       )}
+
+      <WhatsNewBanner />
 
       <div className="p-4">
         {/* Header: layout switcher (Grid / Decks) + Browse-all. The "Command
