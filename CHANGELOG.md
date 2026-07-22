@@ -5,6 +5,54 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 
 ## [Unreleased]
 
+## [0.2.752-macos] - 2026-07-21
+
+Ports a batch of upstream v1.34 fixes and small features to this fork, and adds a
+home-layout choice.
+
+### Home
+- The Command Center opens as a flat tile grid again by default. The categorized
+  scenario decks stay available: a Grid / Decks switch on the home flips between
+  them, and your choice is remembered.
+- A dismissable "What's new" banner appears on the dashboard listing the recent
+  highlights. Once you dismiss it, it stays gone for that release. (Ports upstream
+  #1112.)
+
+### AI
+- Model thinking is now opt-in. Capable models used to always show their
+  reasoning; a "Model Thinking" switch in AI settings turns that on or off, and it
+  starts off. (Ports upstream #1079. The per-model override in the chat picker is
+  still to come.)
+
+### Downloads
+- Large Wikimedia downloads work again. download.kiwix.org routes the big
+  Wikipedia-family ZIMs to a mirror that returns 403 for a generic User-Agent,
+  which silently stalled the full Wikipedia. We now send a descriptive one. (Ports
+  upstream #1114.)
+- Failed downloads get a Retry button that re-runs the download with its original
+  settings. (Ports upstream #1059.)
+- After an admin update, superseded images are pruned to reclaim disk instead of
+  piling up across releases. (Ports upstream #1101.)
+
+### Knowledge base
+- Word documents (.docx) extract as clean text for the AI Assistant now, instead
+  of the ZIP/XML garbage the plain-text reader produced. (Ports upstream #1100.)
+- ZIM article extraction skips reference sections (References, See also, External
+  links) so that boilerplate stops reaching search and embeddings, and it renders
+  tables as readable rows instead of running every cell together. (Ports upstream
+  #1044.)
+
+### Diagnostics
+- The Debug Info bundle now reports the storage path, Docker engine version, Kiwix
+  library book count, and auto-update state, the fields support usually asks for.
+  (Ports upstream #1102.)
+
+### Under the hood
+- The Linux install and uninstall scripts define the colors and header helper they
+  referenced but never set, so they stop erroring on those lines. (Ports upstream
+  #1098.)
+- CONTRIBUTING gains a UI-consistency section. (Ports upstream #1080.)
+
 ## [0.2.751-macos] - 2026-07-01
 
 ### Maps
