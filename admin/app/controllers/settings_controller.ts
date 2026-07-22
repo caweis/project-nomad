@@ -120,6 +120,7 @@ export default class SettingsController {
         const installedModels = await this.ollamaService.getModels();
         const chatSuggestionsEnabled = await KVStore.getValue('chat.suggestionsEnabled')
         const aiAssistantCustomName = await KVStore.getValue('ai.assistantCustomName')
+        const autoThinking = await KVStore.getValue('ai.autoThinking')
         return inertia.render('settings/models', {
             models: {
                 availableModels: availableModels?.models || [],
@@ -127,6 +128,8 @@ export default class SettingsController {
                 settings: {
                     chatSuggestionsEnabled: chatSuggestionsEnabled ?? false,
                     aiAssistantCustomName: aiAssistantCustomName ?? '',
+                    // Global default for model thinking/reasoning (off by default). #1079
+                    autoThinking: autoThinking ?? false,
                 }
             },
             // Frontend uses this to hide the GPU-passthrough-failed "Reinstall

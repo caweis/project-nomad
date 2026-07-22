@@ -9,6 +9,7 @@ export const SETTINGS_KEYS: KVStoreKey[] = [
   'rag.defaultIngestPolicy',
   'system.earlyAccess',
   'ai.assistantCustomName',
+  'ai.autoThinking',
   'inventory.measurementSystem',
   // Self-Reliance Suite — Phase 2 Readiness Calculator household config. Each
   // is settable through the existing PATCH /api/system/settings endpoint (the

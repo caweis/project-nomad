@@ -44,6 +44,9 @@ export type OllamaChatRequest = {
   messages: OllamaChatMessage[]
   stream?: boolean
   sessionId?: number
+  // Effective per-request thinking preference (per-model override or global
+  // default). Omitted → server falls back to the ai.autoThinking KV default. #1079
+  think?: boolean
 }
 
 export type OllamaChatResponse = {

@@ -17,6 +17,9 @@ export const KV_STORE_SCHEMA = {
   // default) or 'decks' (categorized scenario decks). Null → 'grid'.
   'ui.homeLayout':              'string',
   'ai.assistantCustomName':     'string',
+  // Global default for model "thinking"/reasoning. Off by default; a per-request
+  // preference (resolved client-side) overrides it. Ported from upstream #1079.
+  'ai.autoThinking':            'boolean',
   // Workshop / Offline STL Library — user has acknowledged the rights modal
   // on first visit ("Use at your own peril. You are responsible for ensuring
   // you have the right to store every STL you put in this library."). Until

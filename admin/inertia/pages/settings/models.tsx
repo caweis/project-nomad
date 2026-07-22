@@ -26,7 +26,7 @@ export default function ModelsPage(props: {
   models: {
     availableModels: NomadOllamaModel[]
     installedModels: ModelResponse[]
-    settings: { chatSuggestionsEnabled: boolean; aiAssistantCustomName: string }
+    settings: { chatSuggestionsEnabled: boolean; aiAssistantCustomName: string; autoThinking: boolean }
   }
   // True when admin is configured to talk to a native (Homebrew) Ollama at
   // OLLAMA_HOST instead of managing the Docker container itself. Set by
@@ -107,6 +107,7 @@ export default function ModelsPage(props: {
   const [chatSuggestionsEnabled, setChatSuggestionsEnabled] = useState(
     props.models.settings.chatSuggestionsEnabled
   )
+  const [autoThinking, setAutoThinking] = useState(props.models.settings.autoThinking)
   const [aiAssistantCustomName, setAiAssistantCustomName] = useState(
     props.models.settings.aiAssistantCustomName
   )
@@ -324,6 +325,15 @@ export default function ModelsPage(props: {
                 }}
                 label="Chat Suggestions"
                 description="Display AI-generated conversation starters in the chat interface"
+              />
+              <Switch
+                checked={autoThinking}
+                onChange={(newVal) => {
+                  setAutoThinking(newVal)
+                  updateSettingMutation.mutate({ key: 'ai.autoThinking', value: newVal })
+                }}
+                label="Model Thinking"
+                description="Let capable models show their reasoning before answering. Off by default; slower but more thorough."
               />
               <Input
                 name="aiAssistantCustomName"

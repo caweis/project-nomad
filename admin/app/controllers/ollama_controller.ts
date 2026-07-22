@@ -3,6 +3,7 @@ import { OllamaService } from '#services/ollama_service'
 import { RagService } from '#services/rag_service'
 import { modelNameSchema } from '#validators/download'
 import { chatSchema, getAvailableModelsSchema } from '#validators/ollama'
+import KVStore from '#models/kv_store'
 import { inject } from '@adonisjs/core'
 import type { HttpContext } from '@adonisjs/core/http'
 import { RAG_CONTEXT_LIMITS, SYSTEM_PROMPTS } from '../../constants/ollama.js'
@@ -108,13 +109,21 @@ export default class OllamaController {
         }
       }
 
-      // Check if the model supports "thinking" capability for enhanced response generation
-      // If gpt-oss model, it requires a text param for "think" https://docs.ollama.com/api/chat
+      // Thinking is enabled only when the model supports it AND the user wants it: the explicit
+      // per-request preference wins, otherwise the global default (ai.autoThinking, default OFF).
+      // gpt-oss models take a 'medium' text param instead of true (https://docs.ollama.com/api/chat).
+      // Ported from upstream #1079 — previously thinking was auto-on whenever the model was capable.
       const thinkingCapability = await this.ollamaService.checkModelHasThinking(reqData.model)
-      const think: boolean | 'medium' = thinkingCapability ? (reqData.model.startsWith('gpt-oss') ? 'medium' : true) : false
+      let thinkingEnabled = false
+      if (thinkingCapability) {
+        thinkingEnabled = reqData.think ?? ((await KVStore.getValue('ai.autoThinking')) ?? false)
+      }
+      const think: boolean | 'medium' =
+        thinkingEnabled ? (reqData.model.startsWith('gpt-oss') ? 'medium' : true) : false
 
-      // Separate sessionId from the Ollama request payload — Ollama rejects unknown fields
-      const { sessionId, ...ollamaRequest } = reqData
+      // Separate sessionId and the resolved thinking preference from the Ollama request payload —
+      // Ollama rejects unknown fields, and `think` is re-derived above (not forwarded raw).
+      const { sessionId, think: _thinkPref, ...ollamaRequest } = reqData
 
       // Save user message to DB before streaming if sessionId provided
       let userContent: string | null = null
@@ -195,7 +204,14 @@ export default class OllamaController {
   }
 
   async installedModels({ }: HttpContext) {
-    return await this.ollamaService.getModels()
+    const models = await this.ollamaService.getModels()
+    // Enrich each model with its thinking capability so the settings/chat UI knows
+    // which models the thinking toggle applies to. checkModelHasThinking memoizes
+    // /api/show, so this stays cheap on repeat loads. Best-effort per model. #1079.
+    const thinking = await Promise.all(
+      models.map((m) => this.ollamaService.checkModelHasThinking(m.name))
+    )
+    return models.map((m, i) => ({ ...m, thinking: thinking[i] }))
   }
 
   /**
