@@ -77,16 +77,11 @@ export default function BenchmarkPage(props: {
   const runBenchmark = useMutation({
     mutationFn: async (type: 'full' | 'system' | 'ai') => {
       setIsRunning(true)
-      setProgress({
-        status: 'starting',
-        progress: 5,
-        message: 'Starting benchmark... This takes 2-5 minutes.',
-        current_stage: 'Starting',
-        benchmark_id: '',
-        timestamp: new Date().toISOString(),
-      })
 
-      // Use sync mode - runs inline without needing Redis/queue worker
+      // Use sync mode - runs inline without needing Redis/queue worker.
+      // No optimistic "starting" progress here — the isRunning stage simulator
+      // and the SSE subscription own the progress object, and a locally-stamped
+      // stale one fought them (upstream #1136).
       return await api.runBenchmark(type, true)
     },
     onSuccess: (data) => {
