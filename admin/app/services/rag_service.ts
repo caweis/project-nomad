@@ -28,6 +28,14 @@ export class RagService {
   private qdrant: QdrantClient | null = null
   private qdrantInitPromise: Promise<void> | null = null
   private embeddingModelVerified = false
+  // Collections already verified by this instance (created + payload indexes in
+  // place). Skips the getCollections/createPayloadIndex round-trips that otherwise
+  // run on every embed call — ~45% of per-document Qdrant time on large ingestions
+  // per upstream #1129. Instances are per-request/per-job in this fork (EmbedFileJob
+  // news one up per job), so staleness is bounded by the instance lifetime: if
+  // Qdrant restarts mid-job the next upsert fails and the retried job re-verifies
+  // with a fresh instance. (Ports upstream #1135.)
+  private ensuredCollections = new Set<string>()
   public static UPLOADS_STORAGE_PATH = 'storage/kb_uploads'
   public static CONTENT_COLLECTION_NAME = 'nomad_knowledge_base'
   // Upper bound on distinct sources returned by Qdrant's facet API. Real
@@ -84,6 +92,11 @@ export class RagService {
   ) {
     try {
       await this._ensureDependencies()
+
+      if (this.ensuredCollections.has(collectionName)) {
+        return
+      }
+
       const collections = await this.qdrant!.getCollections()
       const collectionExists = collections.collections.some((col) => col.name === collectionName)
 
@@ -111,6 +124,9 @@ export class RagService {
         field_name: 'collection',
         field_schema: 'keyword',
       })
+
+      // Only memoize after every step succeeded, so a partial failure is retried
+      this.ensuredCollections.add(collectionName)
     } catch (error) {
       logger.error('Error ensuring Qdrant collection:', error)
       throw error
