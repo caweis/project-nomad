@@ -5,6 +5,26 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 
 ## [Unreleased]
 
+## [0.2.754-macos] - 2026-07-24
+
+Small fixes from upstream's post-rc.2 work.
+
+### Knowledge base
+- Large ingestions run noticeably faster. The vector-store collection and its
+  indexes were being re-verified on every embedded document — roughly 45% of
+  per-document database time on big ZIM ingestions; that check now runs once.
+  (Ports upstream #1135.)
+
+### Benchmark
+- The progress display no longer flashes a stale "Starting benchmark" state over
+  live progress. (Ports upstream #1136.)
+- When a leaderboard submission fails, the message now tells you why — including
+  the one-submission-per-hour limit — instead of a generic failure. (Ports
+  upstream #1138.)
+
+### Under the hood
+- Dependency bumps: axios 1.18.1, systeminformation 5.31.7, matching upstream.
+
 ## [0.2.753-macos] - 2026-07-22
 
 Finishes the v1.34 upstream port batch: custom AI instructions, knowledge-base
