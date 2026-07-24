@@ -90,7 +90,7 @@ const DRUG_REFERENCE_ITEM: DashboardItem = {
   label: 'Drug Reference',
   to: '/drug-reference',
   target: '',
-  description: 'Offline FDA drug labels: search by drug name or by situation',
+  description: 'Offline FDA drug labels — search by drug name, or by situation (burn, fever, diarrhea)',
   icon: <IconPill size={DECK_ICON_SIZE} stroke={DECK_ICON_STROKE} />,
   installed: true,
   displayOrder: 6,
