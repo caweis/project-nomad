@@ -5,6 +5,24 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 
 ## [Unreleased]
 
+## [0.2.755-macos] - 2026-07-24
+
+### Drug Reference
+- Redesigned into three tabs: Search by drug, By situation, and FDA data. Each
+  tab runs one search direction, replacing the two overlapping result sections.
+- Drug search now groups results by active ingredient — "Ibuprofen, 28 products"
+  — with single-ingredient medicines ranked above combination products, and
+  result rows lead with the ingredient instead of the marketing label title. No
+  more homeopathic products burying the real OTC options.
+- You can select several situations at once (say, fever plus cough) and see the
+  drugs that match.
+- A one-time disclaimer now opens before first use, spelling out what the tool
+  is and isn't (not medical advice, not an interaction checker). Each browser
+  acknowledges it once.
+- Natural-remedy sections carry a clearer amber safety note, and the Drug
+  Reference pages use a compact header so the search box sits near the top of
+  the screen. (Ports upstream #1137.)
+
 ## [0.2.754-macos] - 2026-07-24
 
 Small fixes from upstream's post-rc.2 work.
