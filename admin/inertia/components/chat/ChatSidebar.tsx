@@ -226,18 +226,17 @@ function SidebarBody({
         <img src="/project_nomad_logo.png" alt="Project Nomad Logo" className="h-28 w-28 mb-6" />
         <StyledButton
           onClick={() => {
-            if (isInModal) {
-              window.open('/chat', '_blank')
-            } else {
-              router.visit('/home')
-            }
+            // /chat is served by the admin app itself, so navigate in place rather than
+            // spawning a window. Popping out broke anyone running NOMAD as an installed
+            // web app or in kiosk mode, who then had a stray window to get back out of.
+            router.visit(isInModal ? '/chat' : '/home')
           }}
-          icon={isInModal ? 'IconExternalLink' : 'IconHome'}
+          icon={isInModal ? 'IconArrowRight' : 'IconHome'}
           variant="outline"
           size="sm"
           fullWidth
         >
-          {isInModal ? 'Open in New Tab' : 'Back to Home'}
+          {isInModal ? 'Open Full Chat' : 'Back to Home'}
         </StyledButton>
         <StyledButton
           onClick={() => {
