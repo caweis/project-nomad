@@ -33,6 +33,8 @@ import { SERVICE_NAMES } from '../../constants/service_names.js'
 import { CollectionManifestService } from './collection_manifest_service.js'
 import { decideSupersededDeletion } from '../utils/superseded_resource.js'
 import { resolveZimDownload, type ZimCatalogResult } from '../utils/zim_download_resolution.js'
+import { isGatedResource } from '../utils/hosted_content.js'
+import { getHostedContentHeaders } from '../utils/hosted_content_auth.js'
 import type { CategoryWithStatus } from '../../types/collections.js'
 
 const ZIM_MIME_TYPES = ['application/x-zim', 'application/x-openzim', 'application/octet-stream']
@@ -319,7 +321,14 @@ export class ZimService {
     // Kiwix rotates dated filenames, so pinned URLs 404 once the file ages out.
     // Offline or on any per-book failure this map is simply empty/missing the
     // entry and the manifest URL is used unchanged.
-    const latestByResource = await this.getLatestCatalogEntries(toDownload.map((r) => r.id))
+    //
+    // Gated resources (upstream #1172) are excluded outright: they are not in
+    // the openzim catalog, resolveZimDownload pins them to the manifest URL
+    // anyway, and a resource-id collision must never redirect them to a
+    // third-party mirror.
+    const latestByResource = await this.getLatestCatalogEntries(
+      toDownload.filter((r) => !isGatedResource(r)).map((r) => r.id)
+    )
 
     const downloadFilenames: string[] = []
 
@@ -349,6 +358,9 @@ export class ZimService {
         timeout: 30000,
         allowedMimeTypes: ZIM_MIME_TYPES,
         filetype: 'zim',
+        // Undefined for every ungated resource, so the existing flow is
+        // untouched. (Upstream #1172.)
+        requestHeaders: getHostedContentHeaders(resource),
         resourceMetadata: {
           resource_id: resource.id,
           version: resolved.version,

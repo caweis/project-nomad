@@ -14,7 +14,10 @@
  * derives byte totals from the HTTP Content-Length at download time.
  *
  * Pure and dependency-free so it can run under the standalone test harness.
+ * (The type-only SpecResource import below is erased at compile time.)
  */
+
+import type { SpecResource } from '../../types/collections.js'
 
 export type ZimCatalogResult = {
   version: string
@@ -50,9 +53,28 @@ function compareZimVersions(left: string, right: string): number {
 }
 
 export function resolveZimDownload(
-  resource: { url: string; version: string },
+  resource: { url: string; version: string; auth?: SpecResource['auth'] },
   latest: ZimCatalogResult | null
 ): ResolvedZimDownload {
+  // Gated, self-hosted content (upstream #1172) is pinned to the manifest URL,
+  // never the Kiwix catalog. It isn't in the openzim catalog at all, so this is
+  // normally a no-op — but a resource-id collision would otherwise silently
+  // redirect a gated download to a third-party mirror, losing both the auth
+  // header and any guarantee about what the bytes are.
+  //
+  // Consequence, stated rather than implied: gated content does NOT participate
+  // in catalog-driven auto-update. New versions ship by bumping the manifest.
+  //
+  // The check is inlined (not imported from hosted_content.ts) so this module
+  // keeps zero runtime imports for the standalone harness; the SpecResource
+  // literal type keeps both sites compiler-checked against the same value.
+  if (resource.auth === 'nomad_app_key') {
+    return {
+      url: resource.url,
+      version: resource.version,
+    }
+  }
+
   if (!latest || compareZimVersions(latest.version, resource.version) < 0) {
     return {
       url: resource.url,

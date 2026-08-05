@@ -1,7 +1,7 @@
-import { Job } from 'bullmq'
+import { Job, UnrecoverableError } from 'bullmq'
 import { RunDownloadJobParams } from '../../types/downloads.js'
 import { QueueService } from '#services/queue_service'
-import { doResumableDownload } from '../utils/downloads.js'
+import { doResumableDownload, GatedContentAuthError } from '../utils/downloads.js'
 import { createHash } from 'crypto'
 import { DockerService } from '#services/docker_service'
 import { ZimService } from '#services/zim_service'
@@ -22,8 +22,16 @@ export class RunDownloadJob {
   }
 
   async handle(job: Job) {
-    const { url, filepath, timeout, allowedMimeTypes, forceNew, filetype, resourceMetadata } =
-      job.data as RunDownloadJobParams
+    const {
+      url,
+      filepath,
+      timeout,
+      allowedMimeTypes,
+      forceNew,
+      filetype,
+      resourceMetadata,
+      requestHeaders,
+    } = job.data as RunDownloadJobParams
 
     await doResumableDownload({
       url,
@@ -31,6 +39,9 @@ export class RunDownloadJob {
       timeout,
       allowedMimeTypes,
       forceNew,
+      // Present only for gated self-hosted resources (upstream #1172): carries
+      // the Authorization header the entitlement server requires.
+      requestHeaders,
       onProgress(progress) {
         const progressPercent = (progress.downloadedBytes / (progress.totalBytes || 1)) * 100
         job.updateProgress(Math.floor(progressPercent))
@@ -120,6 +131,17 @@ export class RunDownloadJob {
         }
         job.updateProgress(100)
       },
+    }).catch((error) => {
+      // A rejected entitlement is permanent — this install either has the key
+      // or it doesn't. Left to retry, BullMQ re-hits a server that already said
+      // no (attempts: 3, exponential backoff from 2s; see dispatch below) while
+      // the job reads as retrying/delayed instead of failed with the clear
+      // message. UnrecoverableError fails it immediately. (Ports upstream
+      // #1205, where 10 attempts from 30s meant a ~4h15m phantom download.)
+      if (error instanceof GatedContentAuthError) {
+        throw new UnrecoverableError(error.message)
+      }
+      throw error
     })
 
     return {

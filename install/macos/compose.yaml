@@ -100,6 +100,12 @@ services:
       # CLI persists this as NOMAD_AI_BACKEND in the --env-file. Admin reads it to
       # label the AI Assistant banner accurately. Defaults to ollama if unset.
       - NOMAD_AI_BACKEND=${NOMAD_AI_BACKEND:-ollama}
+      # Optional bearer key for gated self-hosted curated content (upstream
+      # #1172 port). Only needed when a manifest resource declares
+      # auth: 'nomad_app_key' and you run the gated server yourself. Set it in
+      # the installer's --env-file; empty means gated downloads fail fast with
+      # a clear "entitlement key" message instead of hanging in retries.
+      - HOSTED_CONTENT_APP_KEY=${HOSTED_CONTENT_APP_KEY:-}
     depends_on:
       mysql: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -160,6 +166,10 @@ services:
       - HOST_PLATFORM=${HOST_PLATFORM:-darwin}
       - OLLAMA_HOST=${NOMAD_OLLAMA_URL:-http://host.docker.internal:11434}
       - NOMAD_AI_BACKEND=${NOMAD_AI_BACKEND:-ollama}
+      # Same key as the admin service: headers are computed at dispatch time in
+      # admin, but keep the worker's env in parity so a future worker-side
+      # dispatch (e.g. scheduled installs) can't silently drop the gate.
+      - HOSTED_CONTENT_APP_KEY=${HOSTED_CONTENT_APP_KEY:-}
     depends_on:
       mysql: { condition: service_healthy }
       redis: { condition: service_healthy }

@@ -7,6 +7,15 @@ export type DoResumableDownloadParams = {
   onProgress?: (progress: DoResumableDownloadProgress) => void
   onComplete?: (url: string, path: string) => void | Promise<void>
   forceNew?: boolean
+  /**
+   * Extra HTTP request headers sent on BOTH the HEAD probe and the GET stream.
+   * Used for gated self-hosted curated content (upstream #1172) to carry the
+   * `Authorization: Bearer <key>` an entitlement server requires; the Range
+   * header still composes on top for resumed downloads. Kept generic so any
+   * gated source can reuse it. (Upstream's carrier is Creator Packs — a
+   * feature this fork does not ship.)
+   */
+  requestHeaders?: Record<string, string>
 }
 
 export type DoResumableDownloadWithRetryParams = DoResumableDownloadParams & {

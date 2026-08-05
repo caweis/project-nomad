@@ -10,6 +10,22 @@ import { rename } from 'fs/promises'
 import path from 'path'
 import logger from '@adonisjs/core/services/logger'
 
+/**
+ * A gated source rejected this install's credentials (401/403).
+ *
+ * Permanent by nature: whether this install has the entitlement key the source
+ * requires is not going to change between retries. Declared here rather than
+ * thrown as a BullMQ UnrecoverableError directly so this module stays free of
+ * a BullMQ dependency — RunDownloadJob translates it at the queue boundary.
+ * (Ports upstream #1172 + #1205.)
+ */
+export class GatedContentAuthError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'GatedContentAuthError'
+  }
+}
+
 // Some upstream mirrors reject requests with a missing or generic User-Agent.
 // Notably, download.kiwix.org routes the large Wikimedia-family ZIMs (Wikipedia,
 // Wikiversity, Wikibooks — including the flagship full Wikipedia) to
@@ -35,6 +51,7 @@ export async function doResumableDownload({
   onComplete,
   forceNew = false,
   allowedMimeTypes,
+  requestHeaders,
 }: DoResumableDownloadParams): Promise<string> {
   const dirname = path.dirname(filepath)
   await ensureDirectoryExists(dirname)
@@ -52,12 +69,36 @@ export async function doResumableDownload({
     appendMode = true
   }
 
+  // Merge default headers with any caller-supplied headers (a gated source's
+  // Authorization, upstream #1172). Gated sources need the auth header on the
+  // HEAD too, or the probe 401s before the GET is reached.
+  const baseHeaders: Record<string, string> = { ...DOWNLOAD_HEADERS, ...requestHeaders }
+
   // Get file info with HEAD request first
-  const headResponse = await axios.head(url, {
-    signal,
-    timeout,
-    headers: DOWNLOAD_HEADERS,
-  })
+  let headResponse
+  try {
+    headResponse = await axios.head(url, {
+      signal,
+      timeout,
+      headers: baseHeaders,
+    })
+  } catch (error: any) {
+    // A 401/403 here is not a network problem, and the raw axios message
+    // ("Request failed with status code 401") reads like the server is broken.
+    // Translate it: the practical cause is an install without the entitlement
+    // key the gated source requires. failedReason is surfaced verbatim on the
+    // downloads UI, and RunDownloadJob converts this error to an
+    // UnrecoverableError so the rejection is never retried (upstream #1205).
+    const status = error?.response?.status
+    if (status === 401 || status === 403) {
+      throw new GatedContentAuthError(
+        'This content is gated behind an entitlement key this install does not have. ' +
+          `The download server rejected the request (HTTP ${status}). ` +
+          'If you host this content yourself, set HOSTED_CONTENT_APP_KEY in the NOMAD env.'
+      )
+    }
+    throw error
+  }
 
   const contentType = String(headResponse.headers['content-type'] || '')
   const totalBytes = parseInt(String(headResponse.headers['content-length'] || '0'))
@@ -115,7 +156,7 @@ export async function doResumableDownload({
   const fetchStream = (hdrs: Record<string, string>) =>
     axios.get(url, {
       responseType: 'stream',
-      headers: { ...DOWNLOAD_HEADERS, ...hdrs },
+      headers: { ...baseHeaders, ...hdrs },
       signal,
       timeout,
     })

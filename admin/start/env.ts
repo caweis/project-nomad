@@ -63,6 +63,19 @@ export default await Env.create(new URL('../', import.meta.url), {
 
   /*
   |----------------------------------------------------------
+  | Optional bearer key for gated self-hosted curated content
+  | (upstream #1172 port). When a manifest resource declares
+  | auth: 'nomad_app_key', downloads for it send
+  | Authorization: Bearer <this value>. Upstream bakes the
+  | equivalent CREATOR_PACKS_APP_KEY into official builds; this
+  | fork has no baked key — operators hosting their own gated
+  | content set it via the installer's --env-file.
+  |----------------------------------------------------------
+  */
+  HOSTED_CONTENT_APP_KEY: Env.schema.string.optional(),
+
+  /*
+  |----------------------------------------------------------
   | Variables for configuring a native (non-Docker) Ollama instance
   | When set, the app connects to this URL instead of managing
   | an Ollama Docker container. Useful on macOS where native

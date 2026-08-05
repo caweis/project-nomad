@@ -88,4 +88,47 @@ check('unparseable versions fall back to locale comparison without throwing', ()
   assert.equal(resolved.version, 'stable')
 })
 
-console.log(`\nzim_download_resolution: ${passed}/6 checks passed`)
+// ---- Gated, self-hosted content (upstream #1172) ----
+//
+// Resources gated behind an entitlement key (`auth: 'nomad_app_key'`) are
+// pinned to the manifest URL. They are not in the openzim catalog, so a
+// catalog match can only ever be a resource-id collision, and following it
+// would swap the content for a third party's AND drop the Authorization
+// header.
+
+const gatedResource = {
+  version: '2026-07',
+  url: 'https://gated.example.org/content/field-manuals_2026-07.zim',
+  auth: 'nomad_app_key' as const,
+}
+
+check('gated resource ignores a newer catalog result and stays on the manifest URL', () => {
+  const resolved = resolveZimDownload(gatedResource, {
+    version: '2026-12',
+    download_url: 'https://download.kiwix.org/zim/other/field-manuals_2026-12.zim',
+  })
+  assert.deepEqual(resolved, {
+    url: gatedResource.url,
+    version: gatedResource.version,
+  })
+})
+
+check('gated resource resolves normally with no catalog result', () => {
+  assert.deepEqual(resolveZimDownload(gatedResource, null), {
+    url: gatedResource.url,
+    version: gatedResource.version,
+  })
+})
+
+check('absent auth leaves catalog precedence untouched', () => {
+  const resolved = resolveZimDownload(manifestResource, {
+    version: '2026-06',
+    download_url: 'https://download.kiwix.org/zim/wikipedia/wikipedia_en_all_mini_2026-06.zim',
+  })
+  assert.equal(
+    resolved.url,
+    'https://download.kiwix.org/zim/wikipedia/wikipedia_en_all_mini_2026-06.zim'
+  )
+})
+
+console.log(`\nzim_download_resolution: ${passed}/9 checks passed`)

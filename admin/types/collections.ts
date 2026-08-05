@@ -5,6 +5,22 @@ export type SpecResource = {
   description: string
   url: string
   size_mb: number
+  /**
+   * Marks a resource served from a gated (entitlement-key) source. Absent ==
+   * unauthenticated, so every existing manifest entry is unchanged.
+   *
+   * 'nomad_app_key' means "send `Authorization: Bearer <HOSTED_CONTENT_APP_KEY>`"
+   * (upstream #1172 bakes the equivalent CREATOR_PACKS_APP_KEY into official
+   * builds; this fork reads the operator-set env var instead). It also pins the
+   * download to `url`: resolveZimDownload deliberately skips the Kiwix-catalog
+   * comparison for these so a resource-id collision can never redirect gated
+   * content to a third-party mirror — which also means gated content does NOT
+   * auto-update from the catalog; new versions ship via the manifest.
+   *
+   * An enum rather than a boolean so a second scheme can be added later without
+   * another schema change.
+   */
+  auth?: 'nomad_app_key'
 }
 
 export type SpecTier = {

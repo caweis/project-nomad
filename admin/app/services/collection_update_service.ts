@@ -3,6 +3,7 @@ import env from '#start/env'
 import axios from 'axios'
 import InstalledResource from '#models/installed_resource'
 import { RunDownloadJob } from '../jobs/run_download_job.js'
+import { CollectionManifestService } from './collection_manifest_service.js'
 import { ZIM_STORAGE_PATH } from '../utils/fs.js'
 import { join } from 'path'
 import type {
@@ -28,7 +29,19 @@ export class CollectionUpdateService {
       }
     }
 
-    const installed = await InstalledResource.all()
+    const allInstalled = await InstalledResource.all()
+
+    // Gated self-hosted content (upstream #1172) is versioned by the manifest,
+    // not by the update API, so it has no business in this check. Excluding it
+    // also means a resource-id collision can't present a third-party file as a
+    // "newer version" of gated content — applyUpdate downloads carry no auth
+    // header and would silently overwrite it. See resolveZimDownload, which
+    // pins the same resources to their manifest URL on the install path.
+    const gatedIds = await new CollectionManifestService().getGatedZimResourceIds()
+    const installed = allInstalled.filter(
+      (r) => !(r.resource_type === 'zim' && gatedIds.has(r.resource_id))
+    )
+
     if (installed.length === 0) {
       return {
         updates: [],

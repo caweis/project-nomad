@@ -8,6 +8,7 @@ import InstalledResource from '#models/installed_resource'
 import WikipediaSelection from '#models/wikipedia_selection'
 import { zimCategoriesSpecSchema, mapsSpecSchema, wikipediaSpecSchema } from '#validators/curated_collections'
 import { isManagedWikipediaFile } from '../utils/wikipedia_reconcile.js'
+import { isGatedResource } from '../utils/hosted_content.js'
 import {
   ensureDirectoryExists,
   listDirectoryContents,
@@ -122,6 +123,40 @@ export class CollectionManifestService {
         total_count: collection.resources.length,
       }
     })
+  }
+
+  /**
+   * Resource ids in the ZIM manifest that are gated behind an entitlement key
+   * (`auth: 'nomad_app_key'`, upstream #1172).
+   *
+   * Used to keep gated content out of the content-update-check path. Those
+   * resources are not in the Nomad update API or the openzim catalog, so they
+   * can never legitimately match there — but a resource-id collision would
+   * otherwise let a third party present itself as a newer version and
+   * overwrite gated content (with the auth header dropped, since update
+   * downloads carry none). Their versions come from the manifest instead.
+   *
+   * Reads the CACHED spec rather than refetching: this sits on the update-check
+   * path and does not need a network round-trip. A gated resource cannot be
+   * installed without the manifest having been fetched first, so the cache is
+   * always populated by the time it matters.
+   *
+   * Returns an empty set if the manifest has never been cached, which correctly
+   * degrades to current behaviour rather than skipping every update.
+   */
+  async getGatedZimResourceIds(): Promise<Set<string>> {
+    const ids = new Set<string>()
+    const spec = await this.getCachedSpec<ZimCategoriesSpec>('zim_categories')
+    if (!spec) return ids
+
+    for (const category of spec.categories) {
+      for (const tier of category.tiers) {
+        for (const resource of tier.resources) {
+          if (isGatedResource(resource)) ids.add(resource.id)
+        }
+      }
+    }
+    return ids
   }
 
   // ---- Tier resolution ----

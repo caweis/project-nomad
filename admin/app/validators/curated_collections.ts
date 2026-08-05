@@ -9,6 +9,13 @@ export const specResourceValidator = vine.object({
   description: vine.string(),
   url: vine.string().url(),
   size_mb: vine.number().min(0).optional(),
+  // Gated-download discriminator (absent == unauthenticated), upstream #1172.
+  // MUST be declared here as well as on the SpecResource type: VineJS STRIPS
+  // unknown keys rather than rejecting them, so omitting it would silently drop
+  // the field on manifest fetch and every gated download would go out with no
+  // Authorization header and 401. An unrecognised value is rejected, not
+  // ignored.
+  auth: vine.enum(['nomad_app_key']).optional(),
 })
 
 // ---- ZIM Categories spec (versioned) ----
