@@ -1,5 +1,5 @@
 {
-  "spec_version": "2026-02-11",
+  "spec_version": "2026-03-15",
   "categories": [
     {
       "name": "Medicine",
@@ -108,15 +108,39 @@
         {
           "name": "Essential",
           "slug": "survival-essential",
-          "description": "Core survival concepts and winter preparedness videos. Start here for emergency basics.",
+          "description": "Water, food, and knot references plus core survival videos. Start here for emergency basics.",
           "recommended": true,
           "resources": [
             {
+              "id": "zimgit-water_en",
+              "version": "2024-08",
+              "title": "Water Treatment Library",
+              "description": "Collecting, filtering, and purifying drinking water",
+              "url": "https://download.kiwix.org/zim/other/zimgit-water_en_2024-08.zim",
+              "size_mb": 20
+            },
+            {
+              "id": "zimgit-food-preparation_en",
+              "version": "2025-04",
+              "title": "Food for Preppers",
+              "description": "Recipes and techniques for preparing and preserving food",
+              "url": "https://download.kiwix.org/zim/other/zimgit-food-preparation_en_2025-04.zim",
+              "size_mb": 97
+            },
+            {
+              "id": "zimgit-knots_en",
+              "version": "2024-08",
+              "title": "A Library of Knots",
+              "description": "Illustrated guides to knots, lashings, ladders, and sutures",
+              "url": "https://download.kiwix.org/zim/other/zimgit-knots_en_2024-08.zim",
+              "size_mb": 27
+            },
+            {
               "id": "canadian_prepper_winterprepping_en",
-              "version": "2025-11",
+              "version": "2026-02",
               "title": "Canadian Prepper: Winter Prepping",
               "description": "Video guides for winter survival and cold weather emergencies",
-              "url": "https://download.kiwix.org/zim/videos/canadian_prepper_winterprepping_en_2025-11.zim",
+              "url": "https://download.kiwix.org/zim/videos/canadian_prepper_winterprepping_en_2026-02.zim",
               "size_mb": 1340
             },
             {
@@ -132,23 +156,47 @@
         {
           "name": "Standard",
           "slug": "survival-standard",
-          "description": "Bug-out strategies and urban survival techniques. Includes everything in Essential.",
+          "description": "Official disaster planning, field skills, and radio communications, plus bug-out and urban survival techniques. Includes everything in Essential.",
           "includesTier": "survival-essential",
           "resources": [
             {
+              "id": "www.ready.gov_en",
+              "version": "2024-12",
+              "title": "Ready.gov",
+              "description": "Official US disaster planning guidance - weather, fire, evacuation plans, and emergency kits",
+              "url": "https://download.kiwix.org/zim/zimit/www.ready.gov_en_2024-12.zim",
+              "size_mb": 2429
+            },
+            {
+              "id": "outdoors.stackexchange.com_en_all",
+              "version": "2026-02",
+              "title": "The Great Outdoors Q&A",
+              "description": "Answered questions on hiking, camping, navigation, and wilderness skills",
+              "url": "https://download.kiwix.org/zim/stack_exchange/outdoors.stackexchange.com_en_all_2026-02.zim",
+              "size_mb": 142
+            },
+            {
+              "id": "ham.stackexchange.com_en_all",
+              "version": "2026-02",
+              "title": "Amateur Radio Q&A",
+              "description": "Answered questions on radio equipment, antennas, licensing, and emergency communications",
+              "url": "https://download.kiwix.org/zim/stack_exchange/ham.stackexchange.com_en_all_2026-02.zim",
+              "size_mb": 75
+            },
+            {
               "id": "canadian_prepper_bugoutconcepts_en",
-              "version": "2025-11",
+              "version": "2026-02",
               "title": "Canadian Prepper: Bug Out Concepts",
               "description": "Strategies and planning for emergency evacuation",
-              "url": "https://download.kiwix.org/zim/videos/canadian_prepper_bugoutconcepts_en_2025-11.zim",
+              "url": "https://download.kiwix.org/zim/videos/canadian_prepper_bugoutconcepts_en_2026-02.zim",
               "size_mb": 2890
             },
             {
               "id": "urban-prepper_en_all",
-              "version": "2025-11",
+              "version": "2026-02",
               "title": "Urban Prepper",
               "description": "Comprehensive urban emergency preparedness video series",
-              "url": "https://download.kiwix.org/zim/videos/urban-prepper_en_all_2025-11.zim",
+              "url": "https://download.kiwix.org/zim/videos/urban-prepper_en_all_2026-02.zim",
               "size_mb": 2240
             }
           ]
@@ -156,16 +204,32 @@
         {
           "name": "Comprehensive",
           "slug": "survival-comprehensive",
-          "description": "Complete prepper library with food storage strategies and classic military strategy. Includes everything in Standard.",
+          "description": "Complete prepper library - post-disaster recovery, growing and storing food, off-grid technical references, and classic military strategy. Includes everything in Standard.",
           "includesTier": "survival-standard",
           "resources": [
             {
-              "id": "canadian_prepper_preppingfood_en",
-              "version": "2025-09",
+              "id": "canadian-prepper_en_preppingfood",
+              "version": "2026-07",
               "title": "Canadian Prepper: Prepping Food",
               "description": "Long-term food storage and survival meal preparation",
-              "url": "https://download.kiwix.org/zim/videos/canadian_prepper_preppingfood_en_2025-09.zim",
+              "url": "https://download.kiwix.org/zim/videos/canadian-prepper_en_preppingfood_2026-07.zim",
               "size_mb": 2160
+            },
+            {
+              "id": "zimgit-post-disaster_en",
+              "version": "2024-05",
+              "title": "Post Disaster Resource Library",
+              "description": "Shelter, sanitation, salvage, and recovery guidance for the aftermath of a disaster",
+              "url": "https://download.kiwix.org/zim/other/zimgit-post-disaster_en_2024-05.zim",
+              "size_mb": 644
+            },
+            {
+              "id": "100r.co_en_all",
+              "version": "2026-06",
+              "title": "Hundred Rabbits",
+              "description": "Field notes on low-tech living - solar power, water, food, and repair from a decade off-grid",
+              "url": "https://download.kiwix.org/zim/zimit/100r.co_en_all_2026-06.zim",
+              "size_mb": 172
             },
             {
               "id": "gutenberg_en_lcc-u",
@@ -174,6 +238,14 @@
               "description": "Classic military strategy, tactics, and field manuals",
               "url": "https://download.kiwix.org/zim/gutenberg/gutenberg_en_lcc-u_2026-03.zim",
               "size_mb": 1200
+            },
+            {
+              "id": "cd3wdproject.org_en_all",
+              "version": "2025-11",
+              "title": "CD3WD: Appropriate Technology Library",
+              "description": "Practical guides to food production, water and sanitation, construction, and village-scale manufacturing without industrial supply chains",
+              "url": "https://download.kiwix.org/zim/zimit/cd3wdproject.org_en_all_2025-11.zim",
+              "size_mb": 581
             }
           ]
         }
@@ -194,10 +266,10 @@
           "resources": [
             {
               "id": "wikibooks_en_all_nopic",
-              "version": "2025-10",
+              "version": "2026-01",
               "title": "Wikibooks",
               "description": "Open-content textbooks covering math, science, computing, and more",
-              "url": "https://download.kiwix.org/zim/wikibooks/wikibooks_en_all_nopic_2025-10.zim",
+              "url": "https://download.kiwix.org/zim/wikibooks/wikibooks_en_all_nopic_2026-01.zim",
               "size_mb": 3100
             }
           ]
@@ -210,35 +282,35 @@
           "resources": [
             {
               "id": "ted_mul_ted-ed",
-              "version": "2025-07",
+              "version": "2026-01",
               "title": "TED-Ed",
               "description": "Educational video lessons on science, history, literature, and more",
-              "url": "https://download.kiwix.org/zim/ted/ted_mul_ted-ed_2025-07.zim",
+              "url": "https://download.kiwix.org/zim/ted/ted_mul_ted-ed_2026-01.zim",
               "size_mb": 5610
             },
             {
               "id": "wikiversity_en_all_maxi",
-              "version": "2025-11",
+              "version": "2026-02",
               "title": "Wikiversity",
               "description": "Tutorials, courses, and learning materials for all levels",
-              "url": "https://download.kiwix.org/zim/wikiversity/wikiversity_en_all_maxi_2025-11.zim",
+              "url": "https://download.kiwix.org/zim/wikiversity/wikiversity_en_all_maxi_2026-02.zim",
               "size_mb": 2370
             },
             {
               "id": "libretexts.org_en_math",
-              "version": "2025-01",
+              "version": "2026-01",
               "title": "LibreTexts Mathematics",
               "description": "Open-source math textbooks from algebra to calculus",
-              "url": "https://download.kiwix.org/zim/libretexts/libretexts.org_en_math_2025-01.zim",
-              "size_mb": 831
+              "url": "https://download.kiwix.org/zim/libretexts/libretexts.org_en_math_2026-01.zim",
+              "size_mb": 792
             },
             {
               "id": "libretexts.org_en_phys",
-              "version": "2025-01",
+              "version": "2026-01",
               "title": "LibreTexts Physics",
               "description": "Physics courses and textbooks",
-              "url": "https://download.kiwix.org/zim/libretexts/libretexts.org_en_phys_2025-01.zim",
-              "size_mb": 560
+              "url": "https://download.kiwix.org/zim/libretexts/libretexts.org_en_phys_2026-01.zim",
+              "size_mb": 534
             },
             {
               "id": "libretexts.org_en_chem",
@@ -266,18 +338,18 @@
           "resources": [
             {
               "id": "wikibooks_en_all_maxi",
-              "version": "2025-10",
+              "version": "2026-01",
               "title": "Wikibooks (With Images)",
               "description": "Open textbooks with full illustrations and diagrams",
-              "url": "https://download.kiwix.org/zim/wikibooks/wikibooks_en_all_maxi_2025-10.zim",
+              "url": "https://download.kiwix.org/zim/wikibooks/wikibooks_en_all_maxi_2026-01.zim",
               "size_mb": 5400
             },
             {
               "id": "ted_mul_ted-conference",
-              "version": "2025-08",
+              "version": "2026-02",
               "title": "TED Conference",
               "description": "Main TED conference talks on ideas worth spreading",
-              "url": "https://download.kiwix.org/zim/ted/ted_mul_ted-conference_2025-08.zim",
+              "url": "https://download.kiwix.org/zim/ted/ted_mul_ted-conference_2026-02.zim",
               "size_mb": 16500
             },
             {
@@ -290,11 +362,11 @@
             },
             {
               "id": "libretexts.org_en_geo",
-              "version": "2025-01",
+              "version": "2026-01",
               "title": "LibreTexts Geosciences",
               "description": "Earth science, geology, and environmental studies",
-              "url": "https://download.kiwix.org/zim/libretexts/libretexts.org_en_geo_2025-01.zim",
-              "size_mb": 1190
+              "url": "https://download.kiwix.org/zim/libretexts/libretexts.org_en_geo_2026-01.zim",
+              "size_mb": 1127
             },
             {
               "id": "libretexts.org_en_eng",
@@ -306,11 +378,11 @@
             },
             {
               "id": "libretexts.org_en_biz",
-              "version": "2025-01",
+              "version": "2026-01",
               "title": "LibreTexts Business",
               "description": "Business, economics, and management textbooks",
-              "url": "https://download.kiwix.org/zim/libretexts/libretexts.org_en_biz_2025-01.zim",
-              "size_mb": 840
+              "url": "https://download.kiwix.org/zim/libretexts/libretexts.org_en_biz_2026-01.zim",
+              "size_mb": 801
             }
           ]
         }
@@ -331,18 +403,18 @@
           "resources": [
             {
               "id": "woodworking.stackexchange.com_en_all",
-              "version": "2025-12",
+              "version": "2026-02",
               "title": "Woodworking Q&A",
               "description": "Stack Exchange Q&A for carpentry, joinery, and woodcraft",
-              "url": "https://download.kiwix.org/zim/stack_exchange/woodworking.stackexchange.com_en_all_2025-12.zim",
+              "url": "https://download.kiwix.org/zim/stack_exchange/woodworking.stackexchange.com_en_all_2026-02.zim",
               "size_mb": 99
             },
             {
               "id": "mechanics.stackexchange.com_en_all",
-              "version": "2025-12",
+              "version": "2026-02",
               "title": "Motor Vehicle Maintenance Q&A",
               "description": "Stack Exchange Q&A for car and motorcycle repair",
-              "url": "https://download.kiwix.org/zim/stack_exchange/mechanics.stackexchange.com_en_all_2025-12.zim",
+              "url": "https://download.kiwix.org/zim/stack_exchange/mechanics.stackexchange.com_en_all_2026-02.zim",
               "size_mb": 321
             }
           ]
@@ -355,10 +427,10 @@
           "resources": [
             {
               "id": "diy.stackexchange.com_en_all",
-              "version": "2025-12",
+              "version": "2026-02",
               "title": "DIY & Home Improvement Q&A",
               "description": "Stack Exchange Q&A for home repairs, electrical, plumbing, and construction",
-              "url": "https://download.kiwix.org/zim/stack_exchange/diy.stackexchange.com_en_all_2025-12.zim",
+              "url": "https://download.kiwix.org/zim/stack_exchange/diy.stackexchange.com_en_all_2026-02.zim",
               "size_mb": 1900
             }
           ]
@@ -375,7 +447,7 @@
               "title": "iFixit Repair Guides",
               "description": "Step-by-step repair guides for electronics, appliances, and vehicles",
               "url": "https://download.kiwix.org/zim/ifixit/ifixit_en_all_2025-12.zim",
-              "size_mb": 3570
+              "size_mb": 3380
             }
           ]
         }
@@ -396,18 +468,18 @@
           "resources": [
             {
               "id": "foss.cooking_en_all",
-              "version": "2025-11",
+              "version": "2026-02",
               "title": "FOSS Cooking",
               "description": "Quick and easy cooking guides and recipes",
-              "url": "https://download.kiwix.org/zim/zimit/foss.cooking_en_all_2025-11.zim",
+              "url": "https://download.kiwix.org/zim/zimit/foss.cooking_en_all_2026-02.zim",
               "size_mb": 24
             },
             {
               "id": "based.cooking_en_all",
-              "version": "2025-11",
+              "version": "2026-02",
               "title": "Based.Cooking",
               "description": "Simple, practical recipes from the community",
-              "url": "https://download.kiwix.org/zim/zimit/based.cooking_en_all_2025-11.zim",
+              "url": "https://download.kiwix.org/zim/zimit/based.cooking_en_all_2026-02.zim",
               "size_mb": 16
             }
           ]
@@ -420,18 +492,18 @@
           "resources": [
             {
               "id": "gardening.stackexchange.com_en_all",
-              "version": "2025-12",
+              "version": "2026-02",
               "title": "Gardening Q&A",
               "description": "Stack Exchange Q&A for growing your own food, plant care, and landscaping",
-              "url": "https://download.kiwix.org/zim/stack_exchange/gardening.stackexchange.com_en_all_2025-12.zim",
+              "url": "https://download.kiwix.org/zim/stack_exchange/gardening.stackexchange.com_en_all_2026-02.zim",
               "size_mb": 923
             },
             {
               "id": "cooking.stackexchange.com_en_all",
-              "version": "2025-12",
+              "version": "2026-02",
               "title": "Cooking Q&A",
               "description": "Stack Exchange Q&A for cooking techniques, food safety, and recipes",
-              "url": "https://download.kiwix.org/zim/stack_exchange/cooking.stackexchange.com_en_all_2025-12.zim",
+              "url": "https://download.kiwix.org/zim/stack_exchange/cooking.stackexchange.com_en_all_2026-02.zim",
               "size_mb": 236
             },
             {
@@ -452,11 +524,11 @@
           "resources": [
             {
               "id": "lrnselfreliance_en_all",
-              "version": "2025-12",
+              "version": "2026-06",
               "title": "Learning Self-Reliance: Homesteading",
               "description": "Beekeeping, animal husbandry, and sustainable living practices",
-              "url": "https://download.kiwix.org/zim/videos/lrnselfreliance_en_all_2025-12.zim",
-              "size_mb": 3970
+              "url": "https://download.kiwix.org/zim/videos/lrnselfreliance_en_all_2026-06.zim",
+              "size_mb": 3790
             },
             {
               "id": "gutenberg_en_lcc-s",
@@ -485,42 +557,42 @@
           "resources": [
             {
               "id": "freecodecamp_en_all",
-              "version": "2025-11",
+              "version": "2026-02",
               "title": "freeCodeCamp",
               "description": "Interactive programming tutorials - JavaScript, algorithms, and data structures",
-              "url": "https://download.kiwix.org/zim/freecodecamp/freecodecamp_en_all_2025-11.zim",
+              "url": "https://download.kiwix.org/zim/freecodecamp/freecodecamp_en_all_2026-02.zim",
               "size_mb": 8
             },
             {
               "id": "devdocs_en_python",
-              "version": "2026-01",
+              "version": "2026-02",
               "title": "Python Documentation",
               "description": "Complete Python language reference and tutorials",
-              "url": "https://download.kiwix.org/zim/devdocs/devdocs_en_python_2026-01.zim",
+              "url": "https://download.kiwix.org/zim/devdocs/devdocs_en_python_2026-02.zim",
               "size_mb": 4
             },
             {
               "id": "devdocs_en_javascript",
-              "version": "2026-01",
+              "version": "2026-07",
               "title": "JavaScript Documentation",
               "description": "MDN JavaScript reference and guides",
-              "url": "https://download.kiwix.org/zim/devdocs/devdocs_en_javascript_2026-01.zim",
+              "url": "https://download.kiwix.org/zim/devdocs/devdocs_en_javascript_2026-07.zim",
               "size_mb": 3
             },
             {
               "id": "devdocs_en_html",
-              "version": "2026-01",
+              "version": "2026-07",
               "title": "HTML Documentation",
               "description": "MDN HTML elements and attributes reference",
-              "url": "https://download.kiwix.org/zim/devdocs/devdocs_en_html_2026-01.zim",
+              "url": "https://download.kiwix.org/zim/devdocs/devdocs_en_html_2026-07.zim",
               "size_mb": 2
             },
             {
               "id": "devdocs_en_css",
-              "version": "2026-01",
+              "version": "2026-07",
               "title": "CSS Documentation",
               "description": "MDN CSS properties and selectors reference",
-              "url": "https://download.kiwix.org/zim/devdocs/devdocs_en_css_2026-01.zim",
+              "url": "https://download.kiwix.org/zim/devdocs/devdocs_en_css_2026-07.zim",
               "size_mb": 5
             }
           ]
@@ -533,26 +605,26 @@
           "resources": [
             {
               "id": "arduino.stackexchange.com_en_all",
-              "version": "2025-12",
+              "version": "2026-02",
               "title": "Arduino Q&A",
               "description": "Stack Exchange Q&A for Arduino microcontroller projects",
-              "url": "https://download.kiwix.org/zim/stack_exchange/arduino.stackexchange.com_en_all_2025-12.zim",
+              "url": "https://download.kiwix.org/zim/stack_exchange/arduino.stackexchange.com_en_all_2026-02.zim",
               "size_mb": 247
             },
             {
               "id": "raspberrypi.stackexchange.com_en_all",
-              "version": "2025-12",
+              "version": "2026-02",
               "title": "Raspberry Pi Q&A",
               "description": "Stack Exchange Q&A for Raspberry Pi projects and troubleshooting",
-              "url": "https://download.kiwix.org/zim/stack_exchange/raspberrypi.stackexchange.com_en_all_2025-12.zim",
+              "url": "https://download.kiwix.org/zim/stack_exchange/raspberrypi.stackexchange.com_en_all_2026-02.zim",
               "size_mb": 285
             },
             {
               "id": "devdocs_en_node",
-              "version": "2026-01",
+              "version": "2026-02",
               "title": "Node.js Documentation",
               "description": "Node.js API reference and guides",
-              "url": "https://download.kiwix.org/zim/devdocs/devdocs_en_node_2026-01.zim",
+              "url": "https://download.kiwix.org/zim/devdocs/devdocs_en_node_2026-02.zim",
               "size_mb": 1
             },
             {
@@ -565,11 +637,11 @@
             },
             {
               "id": "devdocs_en_git",
-              "version": "2026-01",
+              "version": "2026-07",
               "title": "Git Documentation",
               "description": "Git version control reference",
-              "url": "https://download.kiwix.org/zim/devdocs/devdocs_en_git_2026-01.zim",
-              "size_mb": 1
+              "url": "https://download.kiwix.org/zim/devdocs/devdocs_en_git_2026-07.zim",
+              "size_mb": 2
             }
           ]
         },
@@ -581,26 +653,26 @@
           "resources": [
             {
               "id": "electronics.stackexchange.com_en_all",
-              "version": "2025-12",
+              "version": "2026-02",
               "title": "Electronics Q&A",
               "description": "Stack Exchange Q&A for circuit design, components, and electrical engineering",
-              "url": "https://download.kiwix.org/zim/stack_exchange/electronics.stackexchange.com_en_all_2025-12.zim",
+              "url": "https://download.kiwix.org/zim/stack_exchange/electronics.stackexchange.com_en_all_2026-02.zim",
               "size_mb": 3800
             },
             {
               "id": "robotics.stackexchange.com_en_all",
-              "version": "2025-12",
+              "version": "2026-02",
               "title": "Robotics Q&A",
               "description": "Stack Exchange Q&A for robotics projects and automation",
-              "url": "https://download.kiwix.org/zim/stack_exchange/robotics.stackexchange.com_en_all_2025-12.zim",
+              "url": "https://download.kiwix.org/zim/stack_exchange/robotics.stackexchange.com_en_all_2026-02.zim",
               "size_mb": 233
             },
             {
               "id": "devdocs_en_docker",
-              "version": "2026-01",
+              "version": "2026-07",
               "title": "Docker Documentation",
               "description": "Docker container reference and guides",
-              "url": "https://download.kiwix.org/zim/devdocs/devdocs_en_docker_2026-01.zim",
+              "url": "https://download.kiwix.org/zim/devdocs/devdocs_en_docker_2026-07.zim",
               "size_mb": 2
             },
             {
