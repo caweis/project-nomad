@@ -5,6 +5,25 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 
 ## [Unreleased]
 
+## [0.2.757-macos] - 2026-08-05
+
+### Content
+- Curated collections can now include gated content you host yourself. Mark a
+  manifest resource with auth: "nomad_app_key" and NOMAD sends your
+  HOSTED_CONTENT_APP_KEY as a bearer token when downloading it. A rejected key
+  fails the download immediately with a message that says what to fix, instead
+  of silently retrying for hours. Gated items always download from their
+  manifest URL — never a catalog mirror — and sit out automatic content
+  updates. (Ports upstream #1172 and #1205; unlike upstream, no key ships in
+  the image — you set your own.)
+
+### Benchmark
+- Results now record the platform they ran on: CPU architecture, the container
+  VM's OS, the engine (OrbStack, Docker Desktop, Colima, Lima), and whether the
+  native or sysbench benchmark produced the scores. Shown under Benchmark
+  Details. Leaderboard submissions are unchanged. (Ports upstream #1158,
+  adapted.)
+
 ## [0.2.756-macos] - 2026-08-05
 
 Integrates upstream's v1.34.0 final release (their rc.2 → final delta).
