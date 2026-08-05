@@ -769,8 +769,14 @@ export class BenchmarkService {
         { model: AI_BENCHMARK_MODEL, prompt: 'warm up', stream: false, options: { num_predict: 1 } },
         { timeout: 120000, ...BENCH_AXIOS_OPTS }
       )
-    } catch {
+    } catch (error) {
       // Warm-up is best-effort — the timed run below still works if it fails.
+      // But log the swallowed failure: silently discarding it makes a run whose
+      // cold-load exclusion did not actually apply indistinguishable from a
+      // clean one after the fact. (Ports the logging half of upstream #1164.)
+      logger.warn(
+        `[BenchmarkService] AI warm-up failed (${error instanceof Error ? error.message : error}); the first timed run may include model-load time.`
+      )
     }
 
     const startTime = Date.now()
