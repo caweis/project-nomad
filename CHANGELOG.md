@@ -5,6 +5,52 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 
 ## [Unreleased]
 
+## [0.2.756-macos] - 2026-08-05
+
+Integrates upstream's v1.34.0 final release (their rc.2 → final delta).
+
+### Knowledge base
+- Collections now stick. Assigning a collection to a file before it's indexed
+  reaches the vectors when indexing runs, ZIM content is tagged at all (it
+  previously never was, so ZIM files couldn't be filtered by collection), and
+  assigning a collection to a not-yet-indexed file no longer reports success
+  while storing nothing. (Ports upstream #1200.)
+- The collection dropdown isn't clipped to a sliver by the table row anymore,
+  and the Knowledge Base modal is wider. (Ports upstream #1198.)
+
+### Downloads
+- Interrupted content downloads resume from where they stopped instead of
+  restarting multi-GB files from byte zero. A partial file that no longer
+  matches what the server has (Kiwix replaced the build under the same name) is
+  discarded instead of erroring forever. (Ports upstream #1202.)
+- The downloads panel no longer breaks permanently when an orphaned queue entry
+  with no payload shows up. (Ports upstream #1191.)
+
+### Drug Reference
+- Comparing labels uses the full width of the screen — one drug reads
+  full-width, two split it — instead of narrow fixed columns beside empty
+  space. Two leftover light-mode-only colors now follow the theme. (Ports
+  upstream #1163.)
+- The in-app docs gain a Drug Reference guide. (Ports upstream #1161.)
+
+### Content
+- Curated collections refreshed to upstream v1.34.0: the dead Wikipedia
+  download links point at current builds, Survival & Preparedness is rebalanced
+  and gains CD3WD, ready.gov, knots, water purification, post-disaster guides,
+  and the ham radio and outdoors Stack Exchange archives. (Ports upstream
+  #1148, #1189, and the v1.34 rebalance.)
+
+### Chat
+- "Open Full Chat" from the chat modal navigates in place instead of spawning a
+  new window. (Ports upstream #1181.)
+
+### Under the hood
+- A failed AI-benchmark warm-up is logged instead of silently swallowed (ports
+  part of upstream #1164; the rest of their benchmark-submission gating doesn't
+  apply to this fork's native-Ollama architecture).
+- Supply Depot docs point MeshCore Web at the official meshcore.io site. Deps:
+  tar 7.5.16, vite 6.4.3.
+
 ## [0.2.755-macos] - 2026-07-24
 
 ### Drug Reference
