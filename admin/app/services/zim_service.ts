@@ -196,7 +196,6 @@ export class ZimService {
       filepath,
       timeout: 30000,
       allowedMimeTypes: ZIM_MIME_TYPES,
-      forceNew: true,
       filetype: 'zim',
       resourceMetadata,
     })
@@ -349,7 +348,6 @@ export class ZimService {
         filepath,
         timeout: 30000,
         allowedMimeTypes: ZIM_MIME_TYPES,
-        forceNew: true,
         filetype: 'zim',
         resourceMetadata: {
           resource_id: resource.id,
@@ -668,7 +666,6 @@ export class ZimService {
       filepath,
       timeout: 30000,
       allowedMimeTypes: ZIM_MIME_TYPES,
-      forceNew: true,
       filetype: 'zim',
     })
 

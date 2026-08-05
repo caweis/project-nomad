@@ -104,7 +104,6 @@ export class CollectionUpdateService {
       timeout: 30000,
       allowedMimeTypes:
         update.resource_type === 'zim' ? ZIM_MIME_TYPES : PMTILES_MIME_TYPES,
-      forceNew: true,
       filetype: update.resource_type,
       resourceMetadata: {
         resource_id: update.resource_id,
