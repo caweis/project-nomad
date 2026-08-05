@@ -105,9 +105,9 @@ A browser-based control panel for [Meshtastic](https://meshtastic.org) devices. 
 
 ## MeshCore Web {% #meshcore-web %}
 
-A browser-based client for [MeshCore](https://meshcore.co.uk) radios. MeshCore is another take on off-grid, long-range LoRa mesh messaging, a sibling to Meshtastic: small radios that form their own network and pass text and location for miles with no cell service, no internet, and no fees. This app is how you configure a MeshCore radio and read and send messages from a full-size screen. If you're not already running MeshCore gear, the Meshtastic client above is the more common starting point. This one is here for people who use MeshCore.
+A browser-based client for [MeshCore](https://meshcore.io) radios. MeshCore is another take on off-grid, long-range LoRa mesh messaging, a sibling to Meshtastic: small radios that form their own network and pass text and location for miles with no cell service, no internet, and no fees. This app is how you configure a MeshCore radio and read and send messages from a full-size screen. If you're not already running MeshCore gear, the Meshtastic client above is the more common starting point. This one is here for people who use MeshCore.
 
-**Official site:** [meshcore.co.uk](https://meshcore.co.uk) · **Source:** [github.com/aXistem-dev/meshcore-web](https://github.com/aXistem-dev/meshcore-web) (a packaged build of Liam Cottle's MeshCore client)
+**Official site:** [meshcore.io](https://meshcore.io) · **Source:** [github.com/aXistem-dev/meshcore-web](https://github.com/aXistem-dev/meshcore-web) (a packaged build of Liam Cottle's MeshCore client)
 
 **You need a MeshCore radio to use this.** Like the Meshtastic client, this is just the control panel. With no radio connected, there's nothing for it to talk to.
 

@@ -29,6 +29,9 @@ export class DocsService {
     // constants/supply_depot_docs.ts. prettify('supply-depot-apps') already
     // yields "Supply Depot Apps", so no TITLE_OVERRIDES entry is needed.
     'supply-depot-apps': 17,
+    // In-app guide for the Drug Reference (upstream #1161), adapted to this
+    // fork's built-in install flow (no curated-tier delivery here).
+    'drug-reference': 18,
   }
 
   async getDocs() {
