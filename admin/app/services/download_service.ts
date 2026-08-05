@@ -14,21 +14,30 @@ export class DownloadService {
     const queue = this.queueService.getQueue(RunDownloadJob.queue)
     const fileJobs = await queue.getJobs(['waiting', 'active', 'delayed', 'failed'])
 
-    const fileDownloads = fileJobs.map((job) => ({
-      jobId: job.id!.toString(),
-      url: job.data.url,
-      progress: parseInt(job.progress.toString(), 10),
-      filepath: normalize(job.data.filepath),
-      filetype: job.data.filetype,
-      status: (job.failedReason ? 'failed' : 'active') as 'active' | 'failed',
-      failedReason: job.failedReason || undefined,
-    }))
+    // A job id can outlive its payload — BullMQ still returns an entry for it,
+    // with `data` empty. One of those in the failed set used to throw on every
+    // poll of this endpoint (normalize(undefined)), and because failed jobs are
+    // never evicted the endpoint stayed broken until Redis was cleared by hand.
+    // Drop them: with no payload there is nothing to show anyway. (Upstream #1191.)
+    const fileDownloads = fileJobs
+      .filter((job) => job?.id != null && job.data != null)
+      .map((job) => ({
+        jobId: job.id!.toString(),
+        url: job.data.url,
+        progress: parseInt(job.progress.toString(), 10),
+        filepath: job.data.filepath ? normalize(job.data.filepath) : '',
+        filetype: job.data.filetype,
+        status: (job.failedReason ? 'failed' : 'active') as 'active' | 'failed',
+        failedReason: job.failedReason || undefined,
+      }))
 
     // Get Ollama model download jobs
     const modelQueue = this.queueService.getQueue(DownloadModelJob.queue)
     const modelJobs = await modelQueue.getJobs(['waiting', 'active', 'delayed', 'failed'])
 
-    const modelDownloads = modelJobs.map((job) => ({
+    const modelDownloads = modelJobs
+      .filter((job) => job?.id != null && job.data != null)
+      .map((job) => ({
       jobId: job.id!.toString(),
       url: job.data.modelName || 'Unknown Model', // Use model name as url
       progress: parseInt(job.progress.toString(), 10),
