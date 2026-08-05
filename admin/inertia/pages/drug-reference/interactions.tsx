@@ -208,7 +208,7 @@ export default function DrugReferenceInteractions({ ingestStatus, rowCount }: Pa
                     .map((id) => (
                       <span
                         key={id}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-300 text-gray-600 animate-pulse"
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-surface-elevated text-text-secondary animate-pulse"
                       >
                         #{id}
                         <button
@@ -268,11 +268,16 @@ export default function DrugReferenceInteractions({ ingestStatus, rowCount }: Pa
                 <p className="text-sm">Loading…</p>
               </div>
             ) : (
-              // Stacked single-column on phones; fixed-min-width columns that
-              // scroll sideways (never crush) from sm: up, even at MAX_COMPARE.
+              // Stacked single-column on phones. From sm: up the columns share
+              // the available width instead of sitting at a fixed 15rem, so one
+              // selection reads full-width and two split it in half. Label text
+              // runs long (opioid interaction sections are hundreds of words),
+              // and a narrow column next to empty space made it near-unreadable.
+              // min-w-60 keeps the old width as a floor, so at MAX_COMPARE on a
+              // narrow viewport they still scroll sideways rather than crush.
               <div className="flex flex-col gap-3 sm:flex-row sm:gap-3 sm:overflow-x-auto sm:pb-2">
                 {entries.map((entry) => (
-                  <div key={entry.id} className="w-full sm:flex-none sm:w-60">
+                  <div key={entry.id} className="w-full sm:flex-1 sm:min-w-60">
                     <InteractionColumn entry={entry} onRemove={removeId} />
                   </div>
                 ))}
