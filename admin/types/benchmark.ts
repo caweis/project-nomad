@@ -26,6 +26,20 @@ export type HardwareInfo = Pick<
   'cpu_model' | 'cpu_cores' | 'cpu_threads' | 'ram_bytes' | 'disk_type' | 'gpu_model'
 >
 
+// Platform metadata captured at benchmark-run time from the Docker daemon
+// (fork port of upstream #1158). All nullable: detection is best-effort and
+// must never fail a benchmark. On macOS engines os_name/os_version describe
+// the Docker host VM (e.g. 'OrbStack'), not macOS — see
+// BenchmarkService._detectPlatformMetadata for what is truthfully knowable.
+// benchmark_flavor is recorded separately at run time (it comes from the
+// benchmark path taken, not from docker.info()).
+export type PlatformMetadata = {
+  cpu_architecture: string | null
+  os_name: string | null
+  os_version: string | null
+  container_engine: string | null
+}
+
 // Individual benchmark scores
 export type SystemScores = Pick<
   BenchmarkResult,

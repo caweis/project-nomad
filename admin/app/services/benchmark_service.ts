@@ -22,7 +22,10 @@ import type {
   RepositorySubmission,
   RepositorySubmitResponse,
   RepositoryStats,
+  PlatformMetadata,
 } from '../../types/benchmark.js'
+import { mapDockerArch } from '../utils/host_arch.js'
+import { deriveOsName, detectContainerEngine } from '../utils/platform_metadata.js'
 import { randomUUID, createHmac } from 'node:crypto'
 import { DockerService } from './docker_service.js'
 import { SERVICE_NAMES } from '../../constants/service_names.js'
@@ -49,7 +52,18 @@ const SCORE_WEIGHTS = {
 }
 
 // Benchmark configuration constants
-const SYSBENCH_IMAGE = 'severalnines/sysbench:latest'
+//
+// Official multi-arch sysbench image, pinned by digest (upstream #1158).
+// severalnines/sysbench publishes amd64 ONLY. On this fork the sysbench path
+// is a Linux-only fallback — macOS always takes the native Node benchmarks
+// below — but if that fallback ever runs on an arm64 host the old image could
+// not execute natively. ONE digest covers amd64 + arm64 because a manifest
+// list resolves per-arch on pull; upstream verified this digest on a
+// Raspberry Pi 5 (arm64) and x86, and 1.0.17 -> 1.0.20 measured within
+// run-to-run noise (~1.25%) on identical hardware, so no rescoring.
+// DockerService.pullImage already normalizes digest-pinned refs.
+const SYSBENCH_IMAGE =
+  'ghcr.io/crosstalk-solutions/nomad-sysbench@sha256:1f08e527f5d440135de9bd49006a2c13342cb1e483c59a53774e2db35e8e13f0'
 const SYSBENCH_CONTAINER_NAME = 'nomad_benchmark_sysbench'
 
 // Reference model for AI benchmark - small but meaningful
@@ -414,6 +428,55 @@ export class BenchmarkService {
   }
 
   /**
+   * Platform metadata from the Docker daemon (fork port of upstream #1158).
+   *
+   * The daemon is deliberately the source: inside the admin container
+   * os.arch()/si.osInfo() describe the CONTAINER, not the machine being
+   * benchmarked. What the daemon can truthfully report on this fork:
+   *
+   * - cpu_architecture: the real silicon. OrbStack/Docker Desktop VMs run
+   *   natively on the host CPU, so 'aarch64' -> 'arm64' IS the Mac's arch.
+   * - os_name/os_version: the DOCKER HOST's OS as the daemon reports it. On
+   *   macOS engines that is the Linux VM ('OrbStack', 'Docker Desktop'), NOT
+   *   macOS — the macOS version is not visible from inside the container and
+   *   we do not fabricate it.
+   * - container_engine: which engine/VM flavor ran the benchmark — the macOS
+   *   analog of upstream's WSL2-vs-native run_environment field.
+   *
+   * Best-effort by design: any daemon hiccup leaves nulls. Metadata must never
+   * fail a benchmark.
+   */
+  private async _detectPlatformMetadata(): Promise<PlatformMetadata> {
+    const info: PlatformMetadata = {
+      cpu_architecture: null,
+      os_name: null,
+      os_version: null,
+      container_engine: null,
+    }
+
+    try {
+      const dockerInfo = await this.dockerService.docker.info()
+      if (dockerInfo?.Architecture) {
+        info.cpu_architecture = mapDockerArch(String(dockerInfo.Architecture))
+      }
+      if (dockerInfo?.OperatingSystem) {
+        const osVersion = dockerInfo.OSVersion ? String(dockerInfo.OSVersion) : null
+        info.os_version = osVersion
+        info.os_name = deriveOsName(String(dockerInfo.OperatingSystem), osVersion)
+      }
+      info.container_engine = detectContainerEngine(
+        dockerInfo?.OperatingSystem ? String(dockerInfo.OperatingSystem) : null,
+        dockerInfo?.KernelVersion ? String(dockerInfo.KernelVersion) : null,
+        dockerInfo?.Name ? String(dockerInfo.Name) : null
+      )
+    } catch (error) {
+      logger.warn(`[BenchmarkService] Platform metadata detection failed: ${error.message}`)
+    }
+
+    return info
+  }
+
+  /**
    * Main benchmark execution method
    */
   private async _runBenchmark(type: BenchmarkType, includeAI: boolean): Promise<BenchmarkResult> {
@@ -428,6 +491,10 @@ export class BenchmarkService {
       // Detect hardware
       const hardware = await this.getHardwareInfo()
 
+      // Platform metadata (upstream #1158, fork-adapted). Best-effort — a
+      // daemon hiccup records nulls rather than failing the run.
+      const platform = await this._detectPlatformMetadata()
+
       // Run system benchmarks
       let systemScores: SystemScores = {
         cpu_score: 0,
@@ -436,7 +503,15 @@ export class BenchmarkService {
         disk_write_score: 0,
       }
 
+      // Which suite produced the system numbers. The fork's native (Node) and
+      // sysbench flavors normalize against different reference scores, so raw
+      // scores are only comparable within a flavor. Null when system
+      // benchmarks did not run (AI-only). Mirrors the _isMacOS() branch inside
+      // _runSystemBenchmarks — deterministic within a run.
+      let benchmarkFlavor: string | null = null
+
       if (type === 'full' || type === 'system') {
+        benchmarkFlavor = this._isMacOS() ? 'native' : 'sysbench'
         systemScores = await this._runSystemBenchmarks()
       }
 
@@ -478,6 +553,11 @@ export class BenchmarkService {
         ai_time_to_first_token: aiScores.ai_time_to_first_token || null,
         nomad_score: nomadScore,
         submitted_to_repository: false,
+        cpu_architecture: platform.cpu_architecture,
+        os_name: platform.os_name,
+        os_version: platform.os_version,
+        container_engine: platform.container_engine,
+        benchmark_flavor: benchmarkFlavor,
       })
 
       this._updateStatus('completed', 'Benchmark completed successfully')

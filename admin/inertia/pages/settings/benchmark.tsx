@@ -855,6 +855,33 @@ export default function BenchmarkPage(props: {
                                 <span>{latestResult.ai_model_used}</span>
                               </div>
                             )}
+                            {latestResult.cpu_architecture && (
+                              <div className="flex justify-between">
+                                <span className="text-desert-stone-dark">Architecture</span>
+                                <span className="font-mono">{latestResult.cpu_architecture}</span>
+                              </div>
+                            )}
+                            {latestResult.benchmark_flavor && (
+                              <div className="flex justify-between">
+                                <span className="text-desert-stone-dark">Benchmark Suite</span>
+                                <span className="font-mono">{latestResult.benchmark_flavor}</span>
+                              </div>
+                            )}
+                            {latestResult.container_engine && (
+                              <div className="flex justify-between">
+                                <span className="text-desert-stone-dark">Container Engine</span>
+                                <span className="font-mono">{latestResult.container_engine}</span>
+                              </div>
+                            )}
+                            {latestResult.os_name && (
+                              <div className="flex justify-between">
+                                <span className="text-desert-stone-dark">Docker Host OS</span>
+                                <span>
+                                  {latestResult.os_name}
+                                  {latestResult.os_version ? ` ${latestResult.os_version}` : ''}
+                                </span>
+                              </div>
+                            )}
                             <div className="flex justify-between">
                               <span className="text-desert-stone-dark">
                                 Submitted to Repository

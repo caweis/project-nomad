@@ -77,6 +77,30 @@ export default class BenchmarkResult extends BaseModel {
   @column()
   declare builder_tag: string | null
 
+  // Platform metadata (nullable — fork port of upstream #1158). Sourced from
+  // the Docker daemon, not systeminformation: inside the admin container
+  // si.osInfo()/os.arch() describe the container, not the host. On macOS
+  // engines os_name/os_version describe the container VM (e.g. 'OrbStack'),
+  // not macOS — see BenchmarkService._detectPlatformMetadata.
+  @column()
+  declare cpu_architecture: string | null
+
+  @column()
+  declare os_name: string | null
+
+  @column()
+  declare os_version: string | null
+
+  // Fork-specific: which engine/VM ran the benchmark ('orbstack',
+  // 'docker-desktop', 'colima', 'lima'; null when unproven).
+  @column()
+  declare container_engine: string | null
+
+  // Fork-specific: 'native' (Node benchmarks, macOS path) or 'sysbench'
+  // (Linux container fallback). Scores are only comparable within a flavor.
+  @column()
+  declare benchmark_flavor: string | null
+
   @column.dateTime({ autoCreate: true })
   declare created_at: DateTime
 
