@@ -43,6 +43,15 @@ export class EmbedFileJob {
   async handle(job: Job) {
     const { filePath, fileName, batchOffset, totalArticles, collection } = job.data as EmbedFileJobParams
 
+    // Only the direct KB-upload controller passes `collection` on dispatch; the other
+    // dispatch sites (scan/sync, re-embed, single-file Index, and this job's own ZIM
+    // batch continuation) do not. Fall back to whatever the file is already assigned
+    // to, so an assignment made *before* the file was indexed still reaches the
+    // vectors. Resolving it here rather than at each dispatch site keeps one source
+    // of truth and covers batch continuations too. (Ports upstream #1200.)
+    const effectiveCollection =
+      collection ?? (await KbIngestState.findBy('file_path', filePath))?.collection ?? undefined
+
     const isZimBatch = batchOffset !== undefined
     const batchInfo = isZimBatch ? ` (batch offset: ${batchOffset})` : ''
     logger.info(`[EmbedFileJob] Starting embedding process for: ${fileName}${batchInfo}`)
@@ -90,7 +99,7 @@ export class EmbedFileJob {
         allowDeletion,
         batchOffset,
         onProgress,
-        collection
+        effectiveCollection
       )
 
       if (!result.success) {
@@ -118,7 +127,7 @@ export class EmbedFileJob {
           chunksSoFar: chunksSoFarNext,
           // Carry the tag forward — a continuation is a NEW job, so without
           // this only the first batch's points would be tagged.
-          ...(collection ? { collection } : {}),
+          ...(effectiveCollection ? { collection: effectiveCollection } : {}),
         })
 
         // Calculate progress based on articles processed
@@ -161,7 +170,7 @@ export class EmbedFileJob {
       // Persist the settled state so the KB panel and the scan decision see a
       // truly-indexed file (RFC #883). Non-fatal: the embed itself succeeded.
       try {
-        await KbIngestState.markIndexed(filePath, totalChunks, collection)
+        await KbIngestState.markIndexed(filePath, totalChunks, effectiveCollection)
       } catch (stateErr) {
         logger.warn(
           `[EmbedFileJob] Failed to persist indexed state for ${fileName}: %s`,

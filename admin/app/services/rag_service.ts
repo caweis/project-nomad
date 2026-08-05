@@ -563,7 +563,8 @@ export class RagService {
     filepath: string,
     deleteAfterEmbedding: boolean,
     batchOffset?: number,
-    onProgress?: (percent: number) => Promise<void>
+    onProgress?: (percent: number) => Promise<void>,
+    collection?: string
   ): Promise<ProcessZIMFileResponse> {
     const zimExtractionService = new ZIMExtractionService()
 
@@ -590,6 +591,9 @@ export class RagService {
       const result = await this.embedAndStoreText(zimChunk.text, {
         source: filepath,
         content_type: 'zim_article',
+        // Without this the ZIM path writes points with no `collection` at all, so
+        // getKnowledgeCollections() (which facets on it) never sees them.
+        ...(collection ? { collection } : {}),
 
         // Article-level context
         article_title: zimChunk.articleTitle,
@@ -737,7 +741,7 @@ export class RagService {
       // Process based on file type
       // ZIM files are handled specially since they have their own embedding workflow
       if (fileType === 'zim') {
-        return await this.processZIMFile(filepath, deleteAfterEmbedding, batchOffset, onProgress)
+        return await this.processZIMFile(filepath, deleteAfterEmbedding, batchOffset, onProgress, collection)
       }
 
       // Extract text based on file type
@@ -1173,11 +1177,13 @@ export class RagService {
         filter: { must: [{ key: 'source', match: { value: source } }] },
       })
 
-      const row = await KbIngestState.query().where('file_path', source).first()
-      if (row) {
-        row.collection = collection
-        await row.save()
-      }
+      // The setPayload above only reaches points that already exist, so for a file
+      // that has not been indexed yet it matches nothing. The row is therefore the
+      // only durable record of the choice until EmbedFileJob picks it up — create
+      // it when absent rather than reporting success and storing the value nowhere.
+      const row = await KbIngestState.getOrCreate(source)
+      row.collection = collection
+      await row.save()
 
       return { success: true, message: collection ? `Moved to "${collection}".` : 'Moved to Uncategorized.' }
     } catch (error) {
