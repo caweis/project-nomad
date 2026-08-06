@@ -221,13 +221,19 @@ class API {
   }
 
   async getChatSuggestions(signal?: AbortSignal) {
-    return catchInternal(async () => {
+    // Deliberately NOT catchInternal: suggestions are decorative, so a slow or
+    // failing backend must neither toast nor wedge the chat page. The timeout
+    // bounds the "Thinking" indicator even if the server hangs.
+    try {
       const response = await this.client.get<{ suggestions: string[] }>(
         '/chat/suggestions',
-        { signal }
+        { signal, timeout: 30_000 }
       )
       return response.data.suggestions
-    })()
+    } catch (error) {
+      console.debug('[api] chat suggestions unavailable:', error)
+      return []
+    }
   }
 
   async getDebugInfo() {
