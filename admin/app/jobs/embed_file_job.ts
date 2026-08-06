@@ -260,75 +260,51 @@ export class EmbedFileJob {
     // and the ZIM stops embedding after the first batch. See isContinuationBatch().
     if (!isContinuation) {
       addOptions.jobId = jobId
+
+      // queue.add NEVER throws on a duplicate custom jobId (BullMQ dedupes and
+      // returns the existing id; only negative codes throw), so stale-record
+      // cleanup must happen BEFORE the add. A retained completed/failed record
+      // would absorb this re-dispatch silently — worst case, force re-embed
+      // deletes the file's Qdrant points first and the "queued" no-op never
+      // restores them. Continuation batches never pin a jobId and skip this.
+      const existing = await queue.getJob(jobId)
+      if (existing) {
+        const state = await existing.getState()
+        if (state === 'active' || state === 'waiting' || state === 'delayed') {
+          // Genuinely in-flight — leave it alone.
+          logger.info(`[EmbedFileJob] Job already exists for file: ${params.fileName}`)
+          return {
+            job: existing,
+            created: false,
+            jobId,
+            message: `Embedding job already exists for: ${params.fileName}`,
+          }
+        }
+        try {
+          await existing.remove()
+          logger.info(
+            `[EmbedFileJob] Removed stale ${state} embedding job for: ${params.fileName} before re-dispatch`
+          )
+        } catch {
+          // Best-effort: fall through to add, which dedupes onto whatever remains.
+        }
+      }
     }
 
-    try {
-      const job = await queue.add(this.key, params, addOptions)
+    const job = await queue.add(this.key, params, addOptions)
 
-      const continuationLabel = isContinuation
-        ? ` (continuation @ offset ${params.batchOffset})`
-        : ''
-      logger.info(
-        `[EmbedFileJob] Dispatched embedding job for file: ${params.fileName}${continuationLabel}`
-      )
+    const continuationLabel = isContinuation
+      ? ` (continuation @ offset ${params.batchOffset})`
+      : ''
+    logger.info(
+      `[EmbedFileJob] Dispatched embedding job for file: ${params.fileName}${continuationLabel}`
+    )
 
-      return {
-        job,
-        created: true,
-        jobId: job.id ?? jobId,
-        message: `File queued for embedding: ${params.fileName}`,
-      }
-    } catch (error) {
-      // Deterministic-jobId dedupe only applies to initial dispatches. A
-      // continuation batch never pins a jobId, so it cannot collide and falls
-      // through to the rethrow below.
-      if (!isContinuation && error.message && error.message.includes('job already exists')) {
-        // Completed/failed records are retained (removeOnComplete/Fail keep N),
-        // so a re-scanned file collides on the deterministic jobId and never
-        // re-embeds. Remove the stale record and re-add so it actually runs.
-        const existing = await queue.getJob(jobId)
-        const state = existing ? await existing.getState() : null
-
-        if (existing && (state === 'completed' || state === 'failed')) {
-          try {
-            await existing.remove()
-          } catch (removeError) {
-            // Race: another dispatch may have removed/re-added it. Fall back to
-            // the existing job rather than crashing dispatch.
-            logger.warn(
-              `[EmbedFileJob] Could not remove stale ${state} job for ${params.fileName}, returning existing`,
-              removeError
-            )
-            return {
-              job: existing,
-              created: false,
-              jobId,
-              message: `Embedding job already exists for: ${params.fileName}`,
-            }
-          }
-
-          const job = await queue.add(this.key, params, addOptions)
-          logger.info(
-            `[EmbedFileJob] Re-queued embedding job for file: ${params.fileName} (was ${state})`
-          )
-          return {
-            job,
-            created: true,
-            jobId,
-            message: `File re-queued for embedding: ${params.fileName} (was ${state})`,
-          }
-        }
-
-        // Genuinely in-flight (waiting/active/delayed/paused) — leave it alone.
-        logger.info(`[EmbedFileJob] Job already exists for file: ${params.fileName}`)
-        return {
-          job: existing,
-          created: false,
-          jobId,
-          message: `Embedding job already exists for: ${params.fileName}`,
-        }
-      }
-      throw error
+    return {
+      job,
+      created: true,
+      jobId: job.id ?? jobId,
+      message: `File queued for embedding: ${params.fileName}`,
     }
   }
 

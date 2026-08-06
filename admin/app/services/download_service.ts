@@ -78,8 +78,11 @@ export class DownloadService {
         if (!modelName) {
           return { success: false, message: 'Cannot retry: model name not found in job data' }
         }
-        await DownloadModelJob.dispatch({ modelName })
+        // Remove BEFORE dispatching: both share the deterministic jobId, so
+        // dispatching first would dedupe onto this failed record, and removing
+        // afterwards would delete the fresh job. Mirrors the file branch below.
         await job.remove().catch(() => {})
+        await DownloadModelJob.dispatch({ modelName })
         return { success: true, message: `Retrying download for model ${modelName}` }
       }
 

@@ -96,55 +96,38 @@ export class DownloadModelJob {
       removeOnFail: false, // Keep failed jobs for debugging
     }
 
-    try {
-      const job = await queue.add(this.key, params, addOptions)
-
-      return {
-        job,
-        created: true,
-        message: `Dispatched model download job for ${params.modelName}`,
-      }
-    } catch (error) {
-      if (error.message.includes('job already exists')) {
-        // A finished job (completed/failed) retains its record because
-        // removeOnComplete/removeOnFail are false, so the deterministic jobId
-        // collides forever. Remove the stale record and re-add so retries work.
-        const existing = await queue.getJob(jobId)
-        const state = existing ? await existing.getState() : null
-
-        if (existing && (state === 'completed' || state === 'failed')) {
-          try {
-            await existing.remove()
-          } catch (removeError) {
-            // Race: another dispatch may have removed/re-added it. Fall back to
-            // the existing job rather than crashing dispatch.
-            logger.warn(
-              `[DownloadModelJob] Could not remove stale ${state} job for ${params.modelName}, returning existing`,
-              removeError
-            )
-            return {
-              job: existing,
-              created: false,
-              message: `Job already exists for model ${params.modelName}`,
-            }
-          }
-
-          const job = await queue.add(this.key, params, addOptions)
-          return {
-            job,
-            created: true,
-            message: `Re-queued model download for ${params.modelName} (was ${state})`,
-          }
-        }
-
-        // Genuinely in-flight (waiting/active/delayed/paused) — leave it alone.
+    // queue.add NEVER throws on a duplicate custom jobId — BullMQ's
+    // addStandardJob Lua returns the existing id and the client only throws
+    // on negative codes — so stale-record cleanup must happen BEFORE the add.
+    // A completed/failed record (retained forever: removeOnComplete/Fail are
+    // false) would otherwise absorb every re-dispatch silently, permanently
+    // blocking the model name (delete-then-reinstall, retry-after-failure).
+    const existing = await queue.getJob(jobId)
+    if (existing) {
+      const state = await existing.getState()
+      if (state === 'active' || state === 'waiting' || state === 'delayed') {
+        // Genuinely in-flight — leave it alone.
         return {
           job: existing,
           created: false,
           message: `Job already exists for model ${params.modelName}`,
         }
       }
-      throw error
+      try {
+        await existing.remove()
+        logger.info(
+          `[DownloadModelJob] Removed stale ${state} job for ${params.modelName} before re-dispatch`
+        )
+      } catch {
+        // Best-effort: fall through to add, which dedupes onto whatever remains.
+      }
+    }
+
+    const job = await queue.add(this.key, params, addOptions)
+    return {
+      job,
+      created: true,
+      message: `Dispatched model download job for ${params.modelName}`,
     }
   }
 }
