@@ -5,6 +5,19 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 
 ## [Unreleased]
 
+## [0.2.759-macos] - 2026-08-06
+
+### Chat
+- Suggestion chips no longer hang the chat page. The suggestion generator
+  preferred your last-used chat model no matter its size, and when the AI
+  backend reports zero sizes for models (oMLX does), the smallest-model
+  fallback silently picked the first model in the list instead. On a box whose
+  first model is a 32B, every visit to the chat page tried to load it and
+  "Thinking" never ended. Suggestion generation is now capped to small models,
+  by reported size or the parameter count in the model's name, and the page
+  shows no chips rather than ever waiting on a big model. The browser request
+  also times out quietly now instead of spinning forever.
+
 ## [0.2.758-macos] - 2026-08-05
 
 ### Downloads
