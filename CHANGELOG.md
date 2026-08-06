@@ -5,6 +5,28 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 
 ## [Unreleased]
 
+## [0.2.758-macos] - 2026-08-05
+
+### Downloads
+- A failed download no longer blocks that URL forever. The failed job stayed in
+  the queue under a fixed id, so every later attempt — Apply update, category
+  tiers, the Wikipedia switcher, map regions, direct ZIM downloads — either
+  reported success while downloading nothing or claimed a download was already
+  in progress. Stale finished jobs are now cleared before re-dispatch. (Ports
+  the fix from upstream PR #1213 and applies it to every download guard.)
+- The same trap existed for model downloads and knowledge-base embedding, where
+  it was worse: a model could never be reinstalled after deletion, the Retry
+  button on a failed model download did nothing while reporting success, and
+  "force re-embed" could delete a file's vectors and then never rebuild them.
+  All three paths now clear the stale job first.
+
+### Security
+- Dependency fixes: undici 6.28, ip-address 10.4, tar 7.5.22 (fixes a critical
+  crash advisory), protobufjs 7.6.5 (critical), form-data, brace-expansion,
+  postcss, yaml, and bullmq updated within their current majors. Production
+  advisories drop from 34 (2 critical) to 16, all remaining ones tied to major
+  upgrades tracked separately (sharp, dockerode, AdonisJS line).
+
 ## [0.2.757-macos] - 2026-08-05
 
 ### Content
