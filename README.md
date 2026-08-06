@@ -97,6 +97,8 @@ Full reference: [`install/macos/README.md`](./install/macos/README.md), or `man 
 - [proximasan/project-nomad-silicon](https://github.com/proximasan/project-nomad-silicon) — Apple Silicon admin patches, multi-arch images
 - [snfettig/project-nomad-macos-arm64](https://github.com/snfettig/project-nomad-macos-arm64) — native Ollama on Metal, immediate fork-parent
 
+A build of this fork shows up briefly in Crosstalk's video ["This Free Offline Server Just Got a Massive Upgrade"](https://www.youtube.com/watch?v=ilLCN_SRKLc) — not by name, but by build.
+
 ## Status
 
 `main` is the canonical line — installs and `nomad update` track it. Validated end-to-end on a Mac mini M4 with 32 GB. Weekly upstream-diff reports land in [Issues](https://github.com/caweis/project-nomad/issues?q=label%3Aupstream-tracking).
