@@ -157,34 +157,52 @@ export class RunDownloadJob {
     return await queue.getJob(jobId)
   }
 
+  /**
+   * Returns the job for this URL only if it is still live (active, waiting, delayed).
+   * If the job exists in a terminal state (failed, completed), removes it and returns
+   * undefined, so a following dispatch creates a fresh job instead of BullMQ deduping
+   * onto the stale one. Without this, one failed download blocks its URL forever:
+   * dispatch uses a deterministic jobId with no removeOnFail, so the failed job sits
+   * in Redis and every re-attempt "succeeds" without downloading. (Ports upstream #1213.)
+   */
+  static async getActiveByUrl(url: string): Promise<Job | undefined> {
+    const job = await this.getByUrl(url)
+    if (!job) return undefined
+
+    const state = await job.getState()
+    if (state === 'active' || state === 'waiting' || state === 'delayed') {
+      return job
+    }
+
+    // Terminal state -- clean up stale job so it doesn't block re-download
+    try {
+      await job.remove()
+    } catch {
+      // May already be gone
+    }
+    return undefined
+  }
+
   static async dispatch(params: RunDownloadJobParams) {
     const queueService = QueueService.getInstance()
     const queue = queueService.getQueue(this.queue)
     const jobId = this.getJobId(params.url)
 
-    try {
-      const job = await queue.add(this.key, params, {
-        jobId,
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 2000 },
-        removeOnComplete: true,
-      })
+    // NOTE: queue.add never throws on a duplicate jobId — BullMQ dedupes and
+    // returns the existing job — so there is no "job already exists" error to
+    // catch. Guard sites call getActiveByUrl first to purge stale terminal
+    // jobs, which is what makes this add create a fresh, runnable job.
+    const job = await queue.add(this.key, params, {
+      jobId,
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 2000 },
+      removeOnComplete: true,
+    })
 
-      return {
-        job,
-        created: true,
-        message: `Dispatched download job for URL ${params.url}`,
-      }
-    } catch (error) {
-      if (error.message.includes('job already exists')) {
-        const existing = await queue.getJob(jobId)
-        return {
-          job: existing,
-          created: false,
-          message: `Job already exists for URL ${params.url}`,
-        }
-      }
-      throw error
+    return {
+      job,
+      created: true,
+      message: `Dispatched download job for URL ${params.url}`,
     }
   }
 }

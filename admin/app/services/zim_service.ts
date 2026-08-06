@@ -173,7 +173,7 @@ export class ZimService {
       throw new Error(`Invalid ZIM file URL: ${url}. URL must end with .zim`)
     }
 
-    const existing = await RunDownloadJob.getByUrl(url)
+    const existing = await RunDownloadJob.getActiveByUrl(url)
     if (existing) {
       throw new Error('A download for this URL is already in progress')
     }
@@ -340,7 +340,7 @@ export class ZimService {
         )
       }
 
-      const existingJob = await RunDownloadJob.getByUrl(resolved.url)
+      const existingJob = await RunDownloadJob.getActiveByUrl(resolved.url)
       if (existingJob) {
         logger.warn(`[ZimService] Download already in progress for ${resolved.url}, skipping.`)
         continue
@@ -641,7 +641,7 @@ export class ZimService {
     }
 
     // Check if already downloading
-    const existingJob = await RunDownloadJob.getByUrl(selectedOption.url)
+    const existingJob = await RunDownloadJob.getActiveByUrl(selectedOption.url)
     if (existingJob) {
       return { success: false, message: 'Download already in progress' }
     }

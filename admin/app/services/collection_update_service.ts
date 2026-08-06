@@ -96,15 +96,15 @@ export class CollectionUpdateService {
     update: ResourceUpdateInfo,
     options?: { auto?: boolean }
   ): Promise<{ success: boolean; jobId?: string; error?: string }> {
-    // Check if a download is already in progress for this URL
-    const existingJob = await RunDownloadJob.getByUrl(update.download_url)
+    // Check if a download is already in progress for this URL. getActiveByUrl
+    // removes a stale failed/completed job first — with the raw getByUrl, a
+    // failed job fell through this guard and the dispatch below deduped onto
+    // it, reporting success while downloading nothing (upstream #1213).
+    const existingJob = await RunDownloadJob.getActiveByUrl(update.download_url)
     if (existingJob) {
-      const state = await existingJob.getState()
-      if (state === 'active' || state === 'waiting' || state === 'delayed') {
-        return {
-          success: false,
-          error: `A download is already in progress for ${update.resource_id}`,
-        }
+      return {
+        success: false,
+        error: `A download is already in progress for ${update.resource_id}`,
       }
     }
 

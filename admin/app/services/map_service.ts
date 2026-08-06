@@ -113,10 +113,7 @@ export class MapService implements IMapService {
 
     for (const resource of toDownload) {
       // SSRF guard: refuse to download from private/loopback addresses.
-      // Ports the security part of upstream 806b2c1. We keep our existing
-      // RunDownloadJob.getByUrl call rather than upstream's getActiveByUrl
-      // since the latter lives in bac53e2 (rich-progress UI) which we
-      // haven't forward-ported yet.
+      // Ports the security part of upstream 806b2c1.
       try {
         assertNotPrivateUrl(resource.url)
       } catch {
@@ -124,7 +121,7 @@ export class MapService implements IMapService {
         continue
       }
 
-      const existing = await RunDownloadJob.getByUrl(resource.url)
+      const existing = await RunDownloadJob.getActiveByUrl(resource.url)
       if (existing) {
         logger.warn(`[MapService] Download already in progress for URL ${resource.url}, skipping.`)
         continue
@@ -220,11 +217,6 @@ export class MapService implements IMapService {
       throw new Error(`Invalid PMTiles file URL: ${url}. URL must end with .pmtiles`)
     }
 
-    const existing = await RunDownloadJob.getByUrl(url)
-    if (existing) {
-      throw new Error(`Download already in progress for URL ${url}`)
-    }
-
     const filename = url.split('/').pop()
     if (!filename) {
       throw new Error('Could not determine filename from URL')
@@ -232,13 +224,21 @@ export class MapService implements IMapService {
 
     const filepath = join(process.cwd(), this.mapStoragePath, 'pmtiles', filename)
 
-
     // First, ensure base assets are present - regions depend on them
     const baseAssetsExist = await this.ensureBaseAssets()
     if (!baseAssetsExist) {
       throw new Error(
         'Base map assets are missing and could not be downloaded. Please check your connection and try again.'
       )
+    }
+
+    // Guard AFTER ensureBaseAssets: getActiveByUrl purges a stale failed job,
+    // so it must be the last check before dispatch — purging and then failing
+    // on base assets would strip the Downloads-page failed row (and its Retry)
+    // without dispatching a replacement.
+    const existing = await RunDownloadJob.getActiveByUrl(url)
+    if (existing) {
+      throw new Error(`Download already in progress for URL ${url}`)
     }
 
     // Parse resource metadata
