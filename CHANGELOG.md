@@ -5,6 +5,14 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 
 ## [Unreleased]
 
+## [0.2.761-macos] - 2026-08-06
+
+### Supply Depot
+- The eBook Library row now shows its sign-in note, the way Grocy's does, so a
+  fresh install tells you how to get in and to change the password once you
+  are. The credential is calibre-web's own, which it seeds on first run and
+  publishes in its documentation; NOMAD sets no password of its own.
+
 ## [0.2.760-macos] - 2026-08-06
 
 ### Supply Depot
