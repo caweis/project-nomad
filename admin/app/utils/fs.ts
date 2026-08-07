@@ -20,6 +20,12 @@ export const MESHCORE_WEB_STORAGE_PATH = '/storage/meshcore-web'
 // DockerService._runPreinstallActions__Vaultwarden.
 export const VAULTWARDEN_STORAGE_PATH = '/storage/vaultwarden'
 
+// Calibre-Web (eBook Library): /config bind root; the library lives under
+// books/ (bound as /books in the container). The preinstall provisioner seeds
+// an empty Calibre library and points the app at it so there is no first-run
+// wizard. See DockerService._runPreinstallActions__CalibreWeb.
+export const CALIBRE_WEB_STORAGE_PATH = '/storage/calibre-web'
+
 export async function listDirectoryContents(path: string): Promise<FileEntry[]> {
   const entries = await readdir(path, { withFileTypes: true })
   const results: FileEntry[] = []

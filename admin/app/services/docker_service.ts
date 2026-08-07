@@ -9,6 +9,7 @@ import { join } from 'path'
 import { ZIM_STORAGE_PATH, MESHCORE_WEB_STORAGE_PATH, VAULTWARDEN_STORAGE_PATH } from '../utils/fs.js'
 import { SERVICE_NAMES } from '../../constants/service_names.js'
 import { KiwixLibraryService } from './kiwix_library_service.js'
+import { CalibreWebProvisioner } from './calibre_web_provisioner.js'
 import { KIWIX_LIBRARY_CMD } from '../../constants/kiwix.js'
 import { exec } from 'child_process'
 import { promisify } from 'util'
@@ -752,6 +753,15 @@ export class DockerService {
         )
       }
 
+      if (service.service_name === SERVICE_NAMES.CALIBRE_WEB) {
+        await this._runPreinstallActions__CalibreWeb(service, containerConfig)
+        this._broadcast(
+          service.service_name,
+          'preinstall-complete',
+          `Pre-install actions for eBook Library completed.`
+        )
+      }
+
       if (service.service_name === SERVICE_NAMES.VAULTWARDEN) {
         await this._runPreinstallActions__Vaultwarden()
         this._broadcast(
@@ -1138,6 +1148,89 @@ export class DockerService {
    * service's existing /data bind mount, so no extra bind is needed. Same one-time browser warning
    * as other HTTPS-only apps; the cert is RSA (Rocket can't load an ECC key).
    */
+  /**
+   * Provision the eBook Library so it opens without its first-run wizard:
+   * seed the empty Calibre library, let the app materialize its own app.db,
+   * then point it at /books. Unlike the Vaultwarden preinstall this FAILS
+   * OPEN — provisioning is a convenience, and a failed convenience must not
+   * fail the install. Worst case is the pre-0.2.760 behavior: the wizard.
+   */
+  private async _runPreinstallActions__CalibreWeb(
+    service: Service,
+    containerConfig: any
+  ): Promise<void> {
+    this._broadcast(
+      SERVICE_NAMES.CALIBRE_WEB,
+      'preinstall',
+      'Preparing the eBook Library (library + first-run setup)...'
+    )
+    try {
+      const binds: string[] = containerConfig?.HostConfig?.Binds ?? []
+      const configBind = binds.find((b) => b.endsWith(':/config'))
+      if (!configBind) {
+        throw new Error('calibre-web /config bind not found in container config')
+      }
+      const hostConfigDir = configBind.slice(0, -':/config'.length)
+
+      const result = await CalibreWebProvisioner.provision({
+        docker: this.docker,
+        image: service.container_image,
+        hostConfigDir,
+      })
+      this._broadcast(
+        SERVICE_NAMES.CALIBRE_WEB,
+        'preinstall',
+        result.steps.length > 0
+          ? 'eBook Library is set up — open it and sign in, no setup wizard.'
+          : 'eBook Library is already set up.'
+      )
+    } catch (error) {
+      this._broadcast(
+        SERVICE_NAMES.CALIBRE_WEB,
+        'preinstall-warning',
+        `eBook Library auto-setup skipped (${error instanceof Error ? error.message : error}). The app will show its own setup wizard instead.`
+      )
+      logger.error(
+        `[DockerService] Calibre-Web provisioning failed (continuing install): ${error instanceof Error ? error.message : error}`
+      )
+    }
+  }
+
+  /**
+   * Boot-time reconcile for an ALREADY-INSTALLED eBook Library that never got
+   * past (or never saw) the first-run wizard — installs that predate the
+   * provisioner. No-op when the app is configured or not installed. Restarts
+   * the container after provisioning so it re-reads its settings row.
+   */
+  async reconcileCalibreWebProvision(): Promise<{ provisioned: boolean }> {
+    const service = await Service.query()
+      .where('service_name', SERVICE_NAMES.CALIBRE_WEB)
+      .first()
+    if (!service?.installed || !service.container_config) return { provisioned: false }
+
+    const { decideProvisionSteps } = await import('../utils/calibre_provision_decision.js')
+    if (decideProvisionSteps(CalibreWebProvisioner.readState()).length === 0) {
+      return { provisioned: false }
+    }
+
+    const containerConfig = this._parseContainerConfig(service.container_config)
+    await this._applyHostStorageRoot(containerConfig)
+    await this._runPreinstallActions__CalibreWeb(service, containerConfig)
+
+    // Only a configured result warrants a restart; a failed-open provision
+    // leaves the app exactly as it was.
+    if (decideProvisionSteps(CalibreWebProvisioner.readState()).length > 0) {
+      return { provisioned: false }
+    }
+
+    const containers = await this.docker.listContainers({ all: false })
+    const running = containers.find((c) => c.Names.includes(`/${SERVICE_NAMES.CALIBRE_WEB}`))
+    if (running) {
+      await this.docker.getContainer(running.Id).restart()
+    }
+    return { provisioned: true }
+  }
+
   private async _runPreinstallActions__Vaultwarden(): Promise<void> {
     const certDir = join(process.cwd(), VAULTWARDEN_STORAGE_PATH, 'certs')
 
