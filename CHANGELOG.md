@@ -5,6 +5,20 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 
 ## [Unreleased]
 
+## [0.2.760-macos] - 2026-08-06
+
+### Supply Depot
+- The eBook Library now works straight out of the box. Installing it used to
+  land you in Calibre-Web's setup wizard, which is a dead end on a fresh
+  server: it demands an existing Calibre library and has no way to create one.
+  NOMAD now seeds an empty library from the app's own bundled template, lets
+  Calibre-Web initialize its settings database itself, points it at the
+  library, and turns on browser uploads. It opens to a sign-in (admin /
+  admin123 — change it) and an empty shelf ready for uploads. Copies installed
+  earlier that are stuck at the wizard get the same treatment automatically at
+  the next admin restart; an install where you already configured a library is
+  left untouched.
+
 ## [0.2.759-macos] - 2026-08-06
 
 ### Chat
