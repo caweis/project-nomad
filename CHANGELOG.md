@@ -5,6 +5,33 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 
 ## [Unreleased]
 
+## [0.2.762-macos] - 2026-08-20
+
+Three things that failed on a machine with no internet connection, which is the
+machine this fork is for.
+
+### Information Library
+- Installing it no longer needs a connection. It used to download a starter
+  Wikipedia file and fail the whole install if that didn't work, even on a
+  server whose drive was already full of content, because the check that would
+  have noticed sat behind a network request. Now it uses what's on the drive,
+  falls back to a starter copy carried inside NOMAD itself, and only downloads
+  as a last resort. A file that downloaded is also added to the Kiwix library
+  now, so it's actually readable.
+
+### Wikipedia selector
+- The Wikipedia list no longer errors when the catalog can't be reached; it
+  keeps the last catalog it saw, the way the content categories and maps
+  already do. It also reads this fork's own catalog now instead of upstream's,
+  so the corrected download links from 0.2.756 finally reach it.
+
+### Setup wizard
+- You can walk through setup and finish it without a connection. It used to
+  refuse to move between steps at all, which left an offline server stuck in
+  the wizard with no way out. Anything that has to be downloaded is still
+  unavailable offline, and the wizard now names which of your selections is
+  holding up Finish instead of just grey-ing the button out.
+
 ## [0.2.761-macos] - 2026-08-06
 
 ### Supply Depot
