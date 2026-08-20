@@ -24,8 +24,6 @@ import {
 } from '../utils/fs.js'
 import { join, resolve, sep } from 'path'
 import { WikipediaOption, WikipediaState } from '../../types/downloads.js'
-import vine from '@vinejs/vine'
-import { wikipediaOptionsFileSchema } from '#validators/curated_collections'
 import WikipediaSelection from '#models/wikipedia_selection'
 import InstalledResource from '#models/installed_resource'
 import { RunDownloadJob } from '#jobs/run_download_job'
@@ -35,10 +33,9 @@ import { decideSupersededDeletion } from '../utils/superseded_resource.js'
 import { resolveZimDownload, type ZimCatalogResult } from '../utils/zim_download_resolution.js'
 import { isGatedResource } from '../utils/hosted_content.js'
 import { getHostedContentHeaders } from '../utils/hosted_content_auth.js'
-import type { CategoryWithStatus } from '../../types/collections.js'
+import type { CategoryWithStatus, WikipediaSpec } from '../../types/collections.js'
 
 const ZIM_MIME_TYPES = ['application/x-zim', 'application/x-openzim', 'application/octet-stream']
-const WIKIPEDIA_OPTIONS_URL = 'https://raw.githubusercontent.com/Crosstalk-Solutions/project-nomad/refs/heads/main/collections/wikipedia.json'
 
 @inject()
 export class ZimService {
@@ -543,21 +540,27 @@ export class ZimService {
 
   // Wikipedia selector methods
 
+  /**
+   * The Wikipedia catalog: refreshed from the manifest when the network is
+   * reachable, served from the cached copy when it isn't.
+   *
+   * This used to fetch the JSON directly and throw on any failure, which turned
+   * the Wikipedia selector into an error on a host with no connection — the
+   * exact machine this fork is built for. Routing through
+   * CollectionManifestService reuses the cache-with-fallback the ZIM categories
+   * and maps already rely on, so an offline host keeps the last catalog it saw.
+   * A host that has never cached one gets an empty list and renders no selector,
+   * which beats failing the page.
+   *
+   * It also fixes the source. The old constant pointed at upstream's
+   * collections/wikipedia.json, so this fork's own catalog — including the
+   * refreshed download URLs in 0.2.756 — was never what the selector read.
+   */
   async getWikipediaOptions(): Promise<WikipediaOption[]> {
-    try {
-      const response = await axios.get(WIKIPEDIA_OPTIONS_URL)
-      const data = response.data
-
-      const validated = await vine.validate({
-        schema: wikipediaOptionsFileSchema,
-        data,
-      })
-
-      return validated.options
-    } catch (error) {
-      logger.error(`[ZimService] Failed to fetch Wikipedia options:`, error)
-      throw new Error('Failed to fetch Wikipedia options')
-    }
+    const spec = await new CollectionManifestService().getSpecWithFallback<WikipediaSpec>(
+      'wikipedia'
+    )
+    return spec?.options ?? []
   }
 
   async getWikipediaSelection(): Promise<WikipediaSelection | null> {

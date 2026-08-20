@@ -63,12 +63,19 @@ export class CollectionManifestService {
         return changed
       }
 
-      await CollectionManifest.create({
-        type,
-        spec_version: specVersion,
-        spec_data: validated,
-        fetched_at: DateTime.now(),
-      })
+      // updateOrCreate, not create: two callers can race to cache the same
+      // manifest on a first boot (Easy Setup refreshes them on mount while the
+      // page's own queries ask for one), and `type` is the primary key, so the
+      // loser used to take a duplicate-key error that surfaced in the log as a
+      // spurious "failed to fetch spec".
+      await CollectionManifest.updateOrCreate(
+        { type },
+        {
+          spec_version: specVersion,
+          spec_data: validated,
+          fetched_at: DateTime.now(),
+        }
+      )
 
       return true
     } catch (error) {

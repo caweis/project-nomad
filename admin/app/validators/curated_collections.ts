@@ -75,16 +75,3 @@ export const wikipediaSpecSchema = vine.object({
   ).minLength(1),
 })
 
-// ---- Wikipedia validators (used by ZimService) ----
-
-export const wikipediaOptionSchema = vine.object({
-  id: vine.string(),
-  name: vine.string(),
-  description: vine.string(),
-  size_mb: vine.number().min(0),
-  url: vine.string().url().nullable(),
-})
-
-export const wikipediaOptionsFileSchema = vine.object({
-  options: vine.array(wikipediaOptionSchema).minLength(1),
-})

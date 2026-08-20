@@ -66,10 +66,6 @@ export type WikipediaOption = {
   url: string | null
 }
 
-export type WikipediaOptionsFile = {
-  options: WikipediaOption[]
-}
-
 export type WikipediaCurrentSelection = {
   optionId: string
   status: 'none' | 'downloading' | 'installed' | 'failed'
