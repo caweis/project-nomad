@@ -28,6 +28,12 @@ import { useSystemInfo } from '~/hooks/useSystemInfo'
 import classNames from 'classnames'
 import type { CategoryWithStatus, SpecTier, SpecResource } from '../../../types/collections'
 import { resolveTierResources } from '~/lib/collections'
+import {
+  canCompleteSetupOffline,
+  describeOfflineBlockers,
+  offlineBlockers,
+  type WizardSelections,
+} from '~/lib/offline_setup'
 import { SERVICE_NAMES } from '../../../constants/service_names'
 
 // Capability definitions - maps user-friendly categories to services
@@ -147,6 +153,17 @@ export default function EasySetupWizard(props: {
   // can't ride the Capability path (no service_name in SERVICE_NAMES). It gets
   // its own bespoke boolean selection state instead.
   const [selectDrugReference, setSelectDrugReference] = useState(false)
+
+  // What the current picks would fetch. Used to decide whether Finish can run
+  // with no connection, and to say which selections are in the way if not.
+  const currentSelections: WizardSelections = {
+    services: selectedServices,
+    mapCollections: selectedMapCollections,
+    categoryTierCount: selectedTiers.size,
+    aiModels: selectedAiModels,
+    wikipediaOptionId: selectedWikipedia,
+    drugReference: selectDrugReference,
+  }
 
   const { addNotification } = useNotifications()
   const { isOnline } = useInternetStatus()
@@ -412,7 +429,8 @@ export default function EasySetupWizard(props: {
   const storageInfo = getStorageInfo()
 
   const canProceedToNextStep = () => {
-    if (!isOnline) return false // Must be online to proceed
+    // Moving between steps fetches nothing, so it doesn't need a connection.
+    // Finish is where the network actually matters — see handleFinish.
     if (currentStep === 1) return true // Can skip app installation
     if (currentStep === 2) return true // Can skip map downloads
     if (currentStep === 3) return true // Can skip ZIM downloads
@@ -432,12 +450,16 @@ export default function EasySetupWizard(props: {
   }
 
   const handleFinish = async () => {
+    // Offline, finishing is fine as long as nothing selected needs fetching —
+    // that's the ordinary path for someone setting the box up before they have
+    // content or a connection. Only the selections that download are blocked,
+    // and the message names them instead of refusing flatly.
     if (!isOnline) {
-      addNotification({
-        type: 'error',
-        message: 'You must have an internet connection to complete the setup.',
-      })
-      return
+      const blockers = offlineBlockers(currentSelections)
+      if (blockers.length > 0) {
+        addNotification({ type: 'error', message: describeOfflineBlockers(blockers) })
+        return
+      }
     }
 
     setIsProcessing(true)
@@ -624,6 +646,11 @@ export default function EasySetupWizard(props: {
   const toggleCapability = (capability: Capability) => {
     // Don't allow toggling installed capabilities
     if (isCapabilityInstalled(capability)) return
+    // Installing an app pulls a container image, so it needs a connection —
+    // same rule the maps, models and Wikipedia surfaces already apply. This was
+    // the one selectable surface without the guard; the old blanket
+    // canProceedToNextStep check hid that until it was lifted.
+    if (!isOnline) return
 
     const isSelected = isCapabilitySelected(capability)
     if (isSelected) {
@@ -654,6 +681,7 @@ export default function EasySetupWizard(props: {
         onClick={() => toggleCapability(capability)}
         className={classNames(
           'p-6 rounded-lg border-2 transition-all',
+          !isOnline && !installed && 'opacity-50 cursor-not-allowed',
           installed
             ? 'border-desert-green bg-desert-green/20 cursor-default'
             : selected
@@ -1405,7 +1433,7 @@ export default function EasySetupWizard(props: {
       {!isOnline && (
         <Alert
           title="No Internet Connection"
-          message="You'll need an internet connection to proceed. Please connect to the internet and try again."
+          message="You can still walk through setup and finish. Anything that has to be downloaded — apps, maps, content, AI models, Wikipedia — stays unavailable until you connect."
           type="warning"
           variant="solid"
           className="mb-8"
@@ -1475,15 +1503,35 @@ export default function EasySetupWizard(props: {
                     Next
                   </StyledButton>
                 ) : (
-                  <StyledButton
-                    onClick={handleFinish}
-                    disabled={isProcessing || !isOnline || !anySelectionMade}
-                    loading={isProcessing}
-                    variant="success"
-                    icon="IconCheck"
-                  >
-                    Complete Setup
-                  </StyledButton>
+                  <div className="flex flex-col items-end gap-2">
+                    {/* Say why Finish is unavailable. Without this the button
+                        just greys out and an offline operator has no idea which
+                        of their picks is the problem. */}
+                    {!isOnline && !canCompleteSetupOffline(currentSelections) && (
+                      <p className="text-sm text-text-muted max-w-md text-right">
+                        {describeOfflineBlockers(offlineBlockers(currentSelections))}
+                      </p>
+                    )}
+                    <StyledButton
+                      onClick={handleFinish}
+                      // Online, Finish still wants at least one selection. Offline,
+                      // that test is the exact inverse of "can this finish without
+                      // a connection", so requiring both would leave the button
+                      // dead no matter what was picked. Offline the rule is simply
+                      // that nothing selected needs downloading, which includes
+                      // selecting nothing at all — the way you complete setup on a
+                      // box before it has content or a connection.
+                      disabled={
+                        isProcessing ||
+                        (isOnline ? !anySelectionMade : !canCompleteSetupOffline(currentSelections))
+                      }
+                      loading={isProcessing}
+                      variant="success"
+                      icon="IconCheck"
+                    >
+                      Complete Setup
+                    </StyledButton>
+                  </div>
                 )}
               </div>
             </div>
