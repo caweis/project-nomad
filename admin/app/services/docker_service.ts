@@ -6,14 +6,20 @@ import transmit from '@adonisjs/transmit/services/main'
 import { doResumableDownloadWithRetry } from '../utils/downloads.js'
 import { buildUpdatedImageRef } from '../utils/image_ref.js'
 import { join } from 'path'
-import { ZIM_STORAGE_PATH, MESHCORE_WEB_STORAGE_PATH, VAULTWARDEN_STORAGE_PATH } from '../utils/fs.js'
+import {
+  ZIM_STORAGE_PATH,
+  MESHCORE_WEB_STORAGE_PATH,
+  VAULTWARDEN_STORAGE_PATH,
+  SEED_ZIM_PATH,
+  ensureDirectoryExists,
+} from '../utils/fs.js'
 import { SERVICE_NAMES } from '../../constants/service_names.js'
 import { KiwixLibraryService } from './kiwix_library_service.js'
 import { CalibreWebProvisioner } from './calibre_web_provisioner.js'
 import { KIWIX_LIBRARY_CMD } from '../../constants/kiwix.js'
 import { exec } from 'child_process'
 import { promisify } from 'util'
-import { mkdir, access, chmod, writeFile } from 'node:fs/promises'
+import { mkdir, access, chmod, writeFile, readdir, copyFile, stat } from 'node:fs/promises'
 import KVStore from '#models/kv_store'
 import { BROADCAST_CHANNELS } from '../../constants/broadcast.js'
 import env from '#start/env'
@@ -991,22 +997,92 @@ export class DockerService {
     }
   }
 
+  /**
+   * ZIM files already in storage. Never throws: an unreadable or missing
+   * directory just means none are present.
+   */
+  private async _listExistingZimFiles(): Promise<string[]> {
+    try {
+      const dir = join(process.cwd(), ZIM_STORAGE_PATH)
+      // Case-SENSITIVE on purpose: every other consumer of this directory
+      // matches '.zim' exactly, so counting a '.ZIM' here would satisfy the
+      // gate with a file nothing downstream will actually serve.
+      const entries = (await readdir(dir)).filter((entry) => entry.endsWith('.zim'))
+
+      // A zero-byte file is what a failed or interrupted transfer leaves behind.
+      // It matches the name test but is not a library, so it must not count as
+      // "content is already present" and suppress the seed.
+      const usable: string[] = []
+      for (const entry of entries) {
+        try {
+          if ((await stat(join(dir, entry))).size > 0) usable.push(entry)
+        } catch {
+          // Vanished between readdir and stat; treat as not present.
+        }
+      }
+      return usable
+    } catch {
+      return []
+    }
+  }
+
   private async _runPreinstallActions__KiwixServe(): Promise<void> {
     /**
-     * At least one .zim file must be available before we can start the kiwix container.
-     * We'll download the lightweight mini Wikipedia Top 100 zim file for this purpose.
+     * Kiwix needs at least one .zim present before its container will start.
+     *
+     * This used to go straight to a download and throw when it failed, so
+     * installing the Information Library on a host with no connection failed
+     * outright — including a host whose content drive was already full of ZIMs,
+     * because the check that would have noticed them sits behind a HEAD request.
+     * Now: use what's on disk, else the copy bundled in this image, and only
+     * then reach for the network.
      **/
     const WIKIPEDIA_ZIM_URL =
       'https://github.com/Crosstalk-Solutions/project-nomad/raw/refs/heads/main/install/wikipedia_en_100_mini_2025-06.zim'
     const filename = 'wikipedia_en_100_mini_2025-06.zim'
     const filepath = join(process.cwd(), ZIM_STORAGE_PATH, filename)
-    logger.info(`[DockerService] Kiwix Serve pre-install: Downloading ZIM file to ${filepath}`)
 
     this._broadcast(
       SERVICE_NAMES.KIWIX,
       'preinstall',
       `Running pre-install actions for Kiwix Serve...`
     )
+
+    // 1. Anything already on disk satisfies the requirement.
+    const existingZims = await this._listExistingZimFiles()
+    if (existingZims.length > 0) {
+      logger.info(
+        `[DockerService] Kiwix Serve pre-install: ${existingZims.length} ZIM file(s) already in storage, skipping download`
+      )
+      this._broadcast(
+        SERVICE_NAMES.KIWIX,
+        'preinstall',
+        `Found ${existingZims.length} ZIM file(s) already in storage. No download needed.`
+      )
+      await new KiwixLibraryService().rebuildFromDisk()
+      return
+    }
+
+    // 2. The seed copy baked into this image (see Dockerfile). Lets a host with
+    //    no connection and no content still bring the Information Library up.
+    await ensureDirectoryExists(join(process.cwd(), ZIM_STORAGE_PATH))
+    try {
+      await copyFile(SEED_ZIM_PATH, filepath)
+      logger.info(`[DockerService] Kiwix Serve pre-install: seeded ${filename} from the image`)
+      this._broadcast(
+        SERVICE_NAMES.KIWIX,
+        'preinstall',
+        `Seeded the starter Wikipedia file from this install. No download needed.`
+      )
+      await new KiwixLibraryService().rebuildFromDisk()
+      return
+    } catch (error) {
+      logger.warn(
+        `[DockerService] Kiwix Serve pre-install: no seed ZIM available (${error.message}); falling back to download`
+      )
+    }
+
+    // 3. Last resort: fetch it.
     this._broadcast(
       SERVICE_NAMES.KIWIX,
       'preinstall',
@@ -1030,6 +1106,10 @@ export class DockerService {
         'preinstall',
         `Downloaded Wikipedia ZIM file to ${filepath}`
       )
+      // Same as the other two branches: Kiwix runs in library mode and serves
+      // what the XML lists, so a ZIM that never makes it into the library is a
+      // ZIM nobody can read.
+      await new KiwixLibraryService().rebuildFromDisk()
     } catch (error) {
       this._broadcast(
         SERVICE_NAMES.KIWIX,

@@ -78,5 +78,9 @@ COPY --from=build /app/build /app
 COPY package.json /app/version.json
 COPY admin/docs /app/docs
 COPY README.md /app/README.md
+# Starter ZIM (4.4 MB). Kiwix won't start without at least one ZIM present, so
+# carrying it in the image lets the Information Library install on a host with
+# no connection. See DockerService._runPreinstallActions__KiwixServe.
+COPY install/wikipedia_en_100_mini_2025-06.zim /app/seed/wikipedia_en_100_mini_2025-06.zim
 EXPOSE 8080
 CMD ["node", "./bin/server.js"]

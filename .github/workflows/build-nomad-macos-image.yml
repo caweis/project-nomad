@@ -28,6 +28,9 @@ on:
       - 'Dockerfile'
       - 'package.json'
       - '.github/workflows/build-nomad-macos-image.yml'
+      # Baked into the image as the Kiwix starter library, so a change to it has
+      # to rebuild or the image ships a stale copy of its own seed content.
+      - 'install/wikipedia_en_100_mini_2025-06.zim'
     tags:
       - 'v*'
   workflow_dispatch:

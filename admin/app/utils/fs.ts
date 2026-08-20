@@ -20,6 +20,13 @@ export const MESHCORE_WEB_STORAGE_PATH = '/storage/meshcore-web'
 // DockerService._runPreinstallActions__Vaultwarden.
 export const VAULTWARDEN_STORAGE_PATH = '/storage/vaultwarden'
 
+// A small starter ZIM baked into the admin image (Dockerfile copies it to
+// /app/seed). Kiwix refuses to start without at least one ZIM, so an install
+// with no connection and no content of its own seeds from here instead of
+// failing. Absent on a dev checkout that runs outside the image, which the
+// caller treats as "fall through to the download".
+export const SEED_ZIM_PATH = '/app/seed/wikipedia_en_100_mini_2025-06.zim'
+
 // Calibre-Web (eBook Library): /config bind root; the library lives under
 // books/ (bound as /books in the container). The preinstall provisioner seeds
 // an empty Calibre library and points the app at it so there is no first-run
