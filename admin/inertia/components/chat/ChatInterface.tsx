@@ -5,10 +5,6 @@ import { ChatMessage } from '../../../types/chat'
 import ChatMessageBubble from './ChatMessageBubble'
 import ChatAssistantAvatar from './ChatAssistantAvatar'
 import BouncingDots from '../BouncingDots'
-import StyledModal from '../StyledModal'
-import api from '~/lib/api'
-import { DEFAULT_QUERY_REWRITE_MODEL } from '../../../constants/ollama'
-import { useNotifications } from '~/context/NotificationContext'
 import { usePage } from '@inertiajs/react'
 
 interface ChatInterfaceProps {
@@ -18,7 +14,6 @@ interface ChatInterfaceProps {
   chatSuggestions?: string[]
   chatSuggestionsEnabled?: boolean
   chatSuggestionsLoading?: boolean
-  rewriteModelAvailable?: boolean
 }
 
 export default function ChatInterface({
@@ -28,28 +23,11 @@ export default function ChatInterface({
   chatSuggestions = [],
   chatSuggestionsEnabled = false,
   chatSuggestionsLoading = false,
-  rewriteModelAvailable = false
 }: ChatInterfaceProps) {
   const { aiAssistantName } = usePage<{ aiAssistantName: string }>().props
-  const { addNotification } = useNotifications()
   const [input, setInput] = useState('')
-  const [downloadDialogOpen, setDownloadDialogOpen] = useState(false)
-  const [isDownloading, setIsDownloading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-
-  const handleDownloadModel = async () => {
-    setIsDownloading(true)
-    try {
-      await api.downloadModel(DEFAULT_QUERY_REWRITE_MODEL)
-      addNotification({ type: 'success', message: 'Model download queued' })
-    } catch (error) {
-      addNotification({ type: 'error', message: 'Failed to queue model download' })
-    } finally {
-      setIsDownloading(false)
-      setDownloadDialogOpen(false)
-    }
-  }
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -186,34 +164,6 @@ export default function ChatInterface({
             )}
           </button>
         </form>
-        {!rewriteModelAvailable && (
-          <div className="text-sm text-text-muted mt-2">
-            {DEFAULT_QUERY_REWRITE_MODEL} isn't installed. It helps the AI find more relevant passages from your uploaded documents.{' '}
-            <button
-              onClick={() => setDownloadDialogOpen(true)}
-              className="text-desert-green underline hover:text-desert-green/80 cursor-pointer"
-            >
-              Download it
-            </button>
-          </div>
-        )}
-        <StyledModal
-          open={downloadDialogOpen}
-          title={`Download ${DEFAULT_QUERY_REWRITE_MODEL}?`}
-          confirmText="Download"
-          cancelText="Cancel"
-          confirmIcon='IconDownload'
-          confirmVariant='primary'
-          confirmLoading={isDownloading}
-          onConfirm={handleDownloadModel}
-          onCancel={() => setDownloadDialogOpen(false)}
-          onClose={() => setDownloadDialogOpen(false)}
-        >
-          <p className="text-text-primary">
-            The download runs in the background and may take a while. Once installed,{' '}
-            <span className="font-mono font-medium">{DEFAULT_QUERY_REWRITE_MODEL}</span> helps the AI find more relevant passages in your uploaded documents.
-          </p>
-        </StyledModal>
       </div>
     </div>
   )

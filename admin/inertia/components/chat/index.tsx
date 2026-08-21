@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import ChatSidebar from './ChatSidebar'
 import ChatInterface from './ChatInterface'
@@ -141,24 +141,6 @@ export default function Chat({
     refetchOnWindowFocus: false,
     refetchOnMount: false,
   })
-
-  // The chat UI surfaces a "qwen2.5:3b isn't installed — install for better
-  // Knowledge Base RAG" notice when this is false. The 3B model is a fast
-  // dedicated query-rewrite helper; without it the runtime falls back to the
-  // user's primary chat model for the rewrite step (slower but functional).
-  //
-  // Default behavior: hide the notice when ANY chat model is installed. If
-  // the user already has, say, a 14B model, nagging them to install an
-  // older 3B model adds friction without value — their setup works. The
-  // user can opt into the 3B speed optimization from Settings → Apps if
-  // they want it.
-  //
-  // Only show the notice when the user has nothing installed at all —
-  // which is a different (and equally important) thing to surface.
-  const rewriteModelAvailable = useMemo(
-    () => installedModels.length > 0,
-    [installedModels]
-  )
 
   const deleteAllSessionsMutation = useMutation({
     mutationFn: () => api.deleteAllChatSessions(),
@@ -546,7 +528,6 @@ export default function Chat({
           chatSuggestions={chatSuggestions}
           chatSuggestionsEnabled={suggestionsEnabled}
           chatSuggestionsLoading={chatSuggestionsLoading}
-          rewriteModelAvailable={rewriteModelAvailable}
         />
       </div>
     </div>
