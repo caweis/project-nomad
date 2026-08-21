@@ -282,6 +282,10 @@ export default class OllamaController {
 
       // Reuse the model the user is already chatting with for the rewrite, so we
       // don't force-load a separate model on every message (heavy under MLX).
+      // No reasoning wanted: the rewritten query is embedded and matched against
+      // Qdrant verbatim, so a thinking preamble is retrieval noise as well as
+      // latency. OllamaService still strips inline <think> tags for the backends
+      // that ignore this.
       const response = await this.ollamaService.chat({
         model,
         messages: [
@@ -294,6 +298,7 @@ export default class OllamaController {
             content: `Conversation:\n${conversationContext}\n\nRewritten Query:`,
           },
         ],
+        think: false,
       })
 
       const rewrittenQuery = response.message.content.trim()

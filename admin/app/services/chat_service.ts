@@ -50,6 +50,8 @@ export class ChatService {
         return []
       }
 
+      // No reasoning wanted: suggestions are three short prompts, and a
+      // thinking preamble is pure latency on a page-load request.
       const response = await this.ollamaService.chat({
         model: chosen.name,
         messages: [
@@ -59,6 +61,7 @@ export class ChatService {
           }
         ],
         stream: false,
+        think: false,
       })
 
       if (response && response.message && response.message.content) {
@@ -248,6 +251,7 @@ export class ChatService {
 
       // Reuse the model the user is already chatting with, so title generation
       // doesn't force-load a separate model on the first message of a session.
+      // No reasoning wanted: the reply becomes the sidebar title verbatim.
       const response = await this.ollamaService.chat({
         model,
         messages: [
@@ -255,6 +259,7 @@ export class ChatService {
           { role: 'user', content: userMessage },
           { role: 'assistant', content: assistantMessage },
         ],
+        think: false,
       })
 
       title = response?.message?.content?.trim()

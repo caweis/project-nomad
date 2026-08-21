@@ -1,8 +1,9 @@
 import { inject } from '@adonisjs/core'
-import { ChatRequest, Ollama } from 'ollama'
+import { ChatRequest, ChatResponse, Ollama } from 'ollama'
 import { NomadOllamaModel } from '../../types/ollama.js'
 import { FALLBACK_RECOMMENDED_OLLAMA_MODELS, MLX_HIGHLIGHT_MODELS, MODEL_DESCRIPTION_OVERRIDES } from '../../constants/ollama.js'
 import { withMlxPullNames } from '../../util/mlx.js'
+import { normalizeNonStreamed, ThinkTagSplitter } from '../utils/think_stream.js'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import logger from '@adonisjs/core/services/logger'
@@ -23,6 +24,7 @@ const CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000 // 24 hours
 export class OllamaService {
   private ollama: Ollama | null = null
   private ollamaInitPromise: Promise<void> | null = null
+  private thinkingCapability = new Map<string, Promise<boolean>>()
 
   constructor() { }
 
@@ -128,15 +130,28 @@ export class OllamaService {
     return this.ollama!
   }
 
+  /**
+   * Non-streaming chat. Every caller of this path — title generation, chat
+   * suggestions, the RAG query rewrite — reads `message.content` straight
+   * through, so inline `<think>` output has to come off it here: a model that
+   * emits the tags would otherwise put its reasoning in the sidebar title and
+   * in the string that gets embedded for Qdrant. Asking for `think: false` is
+   * not enough, since oMLX ignores it and the MLX chat template decides.
+   */
   public async chat(chatRequest: ChatRequest & { stream?: boolean }) {
     await this._ensureDependencies()
     if (!this.ollama) {
       throw new Error('Ollama client is not initialized.')
     }
-    return await this.ollama.chat({
+    const response = await this.ollama.chat({
       ...chatRequest,
       stream: false,
     })
+    const { content, thinking } = normalizeNonStreamed(
+      response.message.content,
+      response.message.thinking
+    )
+    return { ...response, message: { ...response.message, content, thinking } }
   }
 
   public async chatStream(chatRequest: ChatRequest) {
@@ -144,10 +159,59 @@ export class OllamaService {
     if (!this.ollama) {
       throw new Error('Ollama client is not initialized.')
     }
-    return await this.ollama.chat({
+    const stream = await this.ollama.chat({
       ...chatRequest,
       stream: true,
     })
+    return this.splitThinkTagsFromStream(stream)
+  }
+
+  /**
+   * Re-yield a chat stream with inline `<think>` output moved off the content
+   * channel. One splitter spans the whole stream because a tag can straddle a
+   * chunk boundary ("<thi" then "nk>"), so this cannot be done per chunk.
+   *
+   * The controller both writes each chunk to the SSE response and accumulates
+   * `chunk.message.content` into the assistant message it saves, so cleaning
+   * here keeps the tags out of stored history too. `done` and every other
+   * field ride through untouched.
+   */
+  private async *splitThinkTagsFromStream(
+    stream: AsyncIterable<ChatResponse>
+  ): AsyncGenerator<ChatResponse> {
+    const splitter = new ThinkTagSplitter()
+    let lastChunk: ChatResponse | null = null
+
+    for await (const chunk of stream) {
+      lastChunk = chunk
+      const streamed = splitter.push(chunk.message?.content ?? '')
+      // Flush on the terminating chunk so a held-back partial tag rides out on
+      // it rather than needing a chunk of its own after `done`.
+      const tail = chunk.done ? splitter.flush() : { content: '', thinking: '' }
+      yield {
+        ...chunk,
+        message: {
+          ...chunk.message,
+          content: streamed.content + tail.content,
+          thinking: (chunk.message?.thinking ?? '') + streamed.thinking + tail.thinking,
+        },
+      }
+    }
+
+    // Belt and braces: a stream that ends without ever reporting `done` — an
+    // abort, or a proxy that omits the field — would otherwise swallow
+    // whatever the splitter still holds, silently truncating the answer.
+    const pending = splitter.flush()
+    if (lastChunk && (pending.content || pending.thinking)) {
+      yield {
+        ...lastChunk,
+        message: {
+          ...lastChunk.message,
+          content: pending.content,
+          thinking: pending.thinking,
+        },
+      }
+    }
   }
 
   public async checkModelHasThinking(modelName: string): Promise<boolean> {
@@ -157,11 +221,25 @@ export class OllamaService {
     // every oMLX chat ("error processing your request"). Guard the field AND
     // swallow any probe failure → default to no-thinking (chat still works;
     // thinking just isn't requested).
+    //
+    // Memoized per model: the installed-models list probes every model on every
+    // page load and the chat path probes on every message, so an unmemoized
+    // /api/show is a round trip per message. Only a resolved probe stays
+    // cached — a failed one evicts itself, so a transient Ollama blip cannot
+    // pin a model to "no thinking" for the life of the process.
     try {
       await this._ensureDependencies()
       if (!this.ollama) return false
-      const modelInfo = await this.ollama.show({ model: modelName })
-      return modelInfo.capabilities?.includes('thinking') ?? false
+
+      const cached = this.thinkingCapability.get(modelName)
+      if (cached) return await cached
+
+      const probe = this.ollama
+        .show({ model: modelName })
+        .then((modelInfo) => modelInfo.capabilities?.includes('thinking') ?? false)
+      probe.catch(() => this.thinkingCapability.delete(modelName))
+      this.thinkingCapability.set(modelName, probe)
+      return await probe
     } catch (error) {
       logger.warn(
         `[OllamaService] thinking-capability probe failed for "${modelName}" — proceeding without thinking: ${error instanceof Error ? error.message : error}`
