@@ -43,6 +43,25 @@ export function validateSettingValue(key: KVStoreKey, value: unknown): string | 
         return 'Home layout must be "grid" or "decks".'
       }
       return null
+    case 'ai.tasksModel': {
+      // A model name, or empty to mean "use the chat model" — SystemService
+      // .updateSetting clears string keys on '' / null / undefined, and the
+      // settings PATCH body makes `value` optional, so all three are valid.
+      // Whether the name is installed and whether it clears the background-task
+      // size cap are call-time decisions pickTasksModel makes against the live
+      // model list, which a pure validator can't see. This only bounds the
+      // shape so one bad caller can't store a blob where a model name belongs.
+      if (value === undefined || value === null || value === '') {
+        return null
+      }
+      if (typeof value !== 'string' || value.trim() === '') {
+        return 'The tasks model must be a model name.'
+      }
+      if (value.length > 256) {
+        return 'That tasks model name is too long to be a model name.'
+      }
+      return null
+    }
     default:
       return null
   }

@@ -43,6 +43,16 @@ check('accepts a large byte cap', () => ok('contentAutoUpdate.maxBytesPerWindow'
 check('rejects negative cap', () => bad('contentAutoUpdate.maxBytesPerWindow', '-5'))
 check('rejects fractional cap', () => bad('contentAutoUpdate.maxBytesPerWindow', '1.5'))
 
+// tasks model (#1244) — shape only; installed-ness and the background-task size
+// cap are call-time decisions pickTasksModel makes against the live model list.
+check('accepts a model name as the tasks model', () => ok('ai.tasksModel', 'qwen2.5:3b'))
+check('accepts empty (means "use the chat model")', () => ok('ai.tasksModel', ''))
+check('accepts an omitted value (clears the key)', () => ok('ai.tasksModel', undefined))
+check('accepts a null value (clears the key)', () => ok('ai.tasksModel', null))
+check('rejects a non-string tasks model', () => bad('ai.tasksModel', 42))
+check('rejects a whitespace-only tasks model', () => bad('ai.tasksModel', '   '))
+check('rejects an absurdly long tasks model name', () => bad('ai.tasksModel', 'x'.repeat(257)))
+
 // keys without a value constraint pass through
 check('enabled toggle has no value constraint', () => ok('autoUpdate.enabled', true))
 check('an unconstrained key passes through', () => ok('chat.lastModel', 'llama3.2:1b'))

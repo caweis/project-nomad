@@ -2,7 +2,12 @@ import ChatSession from '#models/chat_session'
 import ChatMessage from '#models/chat_message'
 import KVStore from '#models/kv_store'
 import logger from '@adonisjs/core/services/logger'
-import { chooseSuggestionModel } from '../utils/chat_suggestion_model.js'
+import {
+  chooseSuggestionModel,
+  pickTasksModel,
+  SUGGESTION_MODEL_MAX_BYTES,
+  type SuggestionModel,
+} from '../utils/chat_suggestion_model.js'
 import { DateTime } from 'luxon'
 import { inject } from '@adonisjs/core'
 import { OllamaService } from './ollama_service.js'
@@ -12,6 +17,70 @@ import { toTitleCase } from '../utils/misc.js'
 @inject()
 export class ChatService {
   constructor(private ollamaService: OllamaService) {}
+
+  /**
+   * The model that should run short ancillary AI work — chat titles, the
+   * suggestion chips, and the RAG query rewrite — instead of the model the user
+   * is chatting with. Reads the operator's `ai.tasksModel` setting (#1244).
+   *
+   * Public because OllamaController.rewriteQueryWithContext is the third
+   * ancillary caller and already has ChatService injected; one resolver keeps a
+   * single KV read path and a single log vocabulary across all three sites.
+   *
+   * Returns `fallback` when the setting is unset (the default, so previous
+   * behaviour is untouched), when the KV read or the model listing fails, or
+   * when pickTasksModel refuses the configured model — the refusals are logged
+   * rather than silent, since a setting that quietly does nothing is worse than
+   * one that says why. `installed` is passed by callers that already listed
+   * models, to avoid a second round-trip.
+   */
+  async resolveTasksModel(
+    fallback: string | null,
+    installed?: SuggestionModel[]
+  ): Promise<string | null> {
+    let configured: string | null = null
+    try {
+      configured = await KVStore.getValue('ai.tasksModel')
+    } catch (error) {
+      logger.error(
+        `[ChatService] Failed to read ai.tasksModel: ${error instanceof Error ? error.message : error}`
+      )
+      return fallback
+    }
+    if (!configured?.trim()) {
+      return fallback
+    }
+
+    let models = installed
+    if (!models) {
+      try {
+        models = await this.ollamaService.getModels()
+      } catch (error) {
+        logger.error(
+          `[ChatService] Failed to list models while resolving the tasks model: ${error instanceof Error ? error.message : error}`
+        )
+        return fallback
+      }
+    }
+
+    const { model, staleConfigured, oversizedConfigured } = pickTasksModel(
+      configured,
+      models ?? [],
+      fallback
+    )
+    if (staleConfigured) {
+      logger.warn(
+        `[ChatService] Tasks model "${staleConfigured}" is not installed; using "${fallback ?? 'none'}" instead`
+      )
+    }
+    if (oversizedConfigured) {
+      const capGb = (SUGGESTION_MODEL_MAX_BYTES / 1_000_000_000).toFixed(0)
+      logger.warn(
+        `[ChatService] Tasks model "${oversizedConfigured}" is over the ${capGb} GB background-task limit; using "${fallback ?? 'none'}" instead. Pick a smaller model for background work.`
+      )
+    }
+    return model
+  }
 
   async getAllSessions() {
     try {
@@ -50,10 +119,16 @@ export class ChatService {
         return []
       }
 
+      // The operator's dedicated tasks model wins when it is set AND clears the
+      // same size cap chooseSuggestionModel just applied; otherwise this stays
+      // the capped pick above. Either way the model that answers is cap-eligible,
+      // so the setting can't reopen the load-wedge the cap closed.
+      const model = (await this.resolveTasksModel(chosen.name, models)) ?? chosen.name
+
       // No reasoning wanted: suggestions are three short prompts, and a
       // thinking preamble is pure latency on a page-load request.
       const response = await this.ollamaService.chat({
-        model: chosen.name,
+        model,
         messages: [
           {
             role: 'user',
@@ -249,11 +324,17 @@ export class ChatService {
     try {
       let title: string
 
-      // Reuse the model the user is already chatting with, so title generation
-      // doesn't force-load a separate model on the first message of a session.
+      // Titles go to the operator's tasks model when one is set — a three-word
+      // sidebar title isn't worth a reasoning model's time (#1244). With the
+      // setting unset (the default) this stays the model the user is already
+      // chatting with, so title generation doesn't force-load a separate model
+      // on the first message of a session — which is also why an over-cap tasks
+      // model is refused here rather than honoured (see pickTasksModel).
       // No reasoning wanted: the reply becomes the sidebar title verbatim.
+      const titleModel = (await this.resolveTasksModel(model)) ?? model
+
       const response = await this.ollamaService.chat({
-        model,
+        model: titleModel,
         messages: [
           { role: 'system', content: SYSTEM_PROMPTS.title_generation },
           { role: 'user', content: userMessage },

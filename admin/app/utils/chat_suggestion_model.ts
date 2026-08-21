@@ -66,3 +66,62 @@ export function chooseSuggestionModel<T extends SuggestionModel>(
     )
   )
 }
+
+/**
+ * Why a configured tasks model was not used, when it was not used. The two
+ * rejections are reported separately because they need different operator
+ * advice: reinstall the model, versus pick a smaller one.
+ */
+export interface TasksModelDecision {
+  /** The model to actually run the task on — the configured pick or the fallback. */
+  model: string | null
+  /** Set when the configured model is no longer installed. */
+  staleConfigured: string | null
+  /** Set when the configured model is installed but over SUGGESTION_MODEL_MAX_BYTES. */
+  oversizedConfigured: string | null
+}
+
+/**
+ * Decide which model runs a short ancillary AI task — a chat title, the
+ * suggestion chips, or the RAG query rewrite — instead of the model the user is
+ * chatting with. `configured` is the operator's `ai.tasksModel` setting.
+ *
+ * Unset means "use the caller's fallback", which is the pre-setting behaviour:
+ * titles and query rewrites ride the chat model, suggestions ride whatever
+ * chooseSuggestionModel picked.
+ *
+ * Two things disqualify a configured pick, and this fork cares about both:
+ *
+ *  - It is no longer installed. A model can be deleted from /settings/models
+ *    long after it was selected here, and a request for a missing model 404s.
+ *
+ *  - Its effective size is over SUGGESTION_MODEL_MAX_BYTES. Upstream #1244
+ *    gates on installed-ness alone, which holds on Ollama and does not hold
+ *    here: on the oMLX backend every model reports size 0, so an explicitly
+ *    picked 32B walks straight past the cap chooseSuggestionModel exists to
+ *    enforce and cold-loads a second large model beside the chat model — the
+ *    exact wedge (chat stuck on "Thinking") the cap was added for. A model
+ *    chosen to keep *background* work cheap is small by definition, so an
+ *    over-cap pick is a misconfiguration rather than a tradeoff: refuse it,
+ *    fall back, and hand the name back so the caller can say why.
+ *
+ * Names match exactly — "llama3.1" is a family, only "llama3.1:8b" is pullable.
+ */
+export function pickTasksModel(
+  configured: string | null | undefined,
+  installed: SuggestionModel[],
+  fallback: string | null
+): TasksModelDecision {
+  const trimmed = configured?.trim()
+  if (!trimmed) {
+    return { model: fallback, staleConfigured: null, oversizedConfigured: null }
+  }
+  const match = installed.find((m) => m.name === trimmed)
+  if (!match) {
+    return { model: fallback, staleConfigured: trimmed, oversizedConfigured: null }
+  }
+  if (effectiveSizeBytes(match) > SUGGESTION_MODEL_MAX_BYTES) {
+    return { model: fallback, staleConfigured: null, oversizedConfigured: trimmed }
+  }
+  return { model: trimmed, staleConfigured: null, oversizedConfigured: null }
+}
