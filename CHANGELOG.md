@@ -5,6 +5,29 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 
 ## [Unreleased]
 
+## [0.2.764-macos] - 2026-08-21
+
+### AI Assistant
+- The assistant does three small jobs in the background: naming your chats,
+  writing the suggestion chips, and turning your question into the text it
+  searches your knowledge base with. AI Assistant settings now takes a model
+  for those three, and "Use the chat model" keeps the old behaviour. Naming and
+  search text used whichever model you were chatting with, which made both as
+  slow and as memory-hungry as the conversation itself. The chips were already
+  held to a small model, and now follow the same setting.
+- Models too large for background work are listed as such and cannot be picked,
+  and a model that was set here and later deleted is listed as not installed.
+  Loading a second large model beside the chat model is what left the chat
+  sitting on "Thinking" in 0.2.759, so an oversized model is refused again when
+  the job runs, and the chat model does it instead.
+
+### Chat
+- Searching your knowledge base before the assistant answers is now a switch,
+  in the chat window and in AI Assistant settings. It is on by default. Turning
+  it off skips the search, which is quicker and uses less memory when your
+  knowledge base is small or empty. Both switches drive the same setting, and it
+  applies to the assistant rather than to a single conversation.
+
 ## [0.2.763-macos] - 2026-08-21
 
 ### AI Assistant
