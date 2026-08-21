@@ -9,6 +9,7 @@ import { inject } from '@adonisjs/core'
 import type { HttpContext } from '@adonisjs/core/http'
 import { RAG_CONTEXT_LIMITS, SYSTEM_PROMPTS } from '../../constants/ollama.js'
 import { buildContextLabel } from '../utils/rag_context.js'
+import { isRagRetrievalEnabled } from '../utils/rag_toggle.js'
 import logger from '@adonisjs/core/services/logger'
 import type { Message } from 'ollama'
 
@@ -66,9 +67,29 @@ export default class OllamaController {
         reqData.messages.unshift({ role: 'system' as const, content: nomadPrompt })
       }
 
+      // Knowledge base retrieval is user-toggleable — the chat header switch and
+      // the AI Assistant settings switch write the same rag.enabled KV key, so
+      // they are one control in two places. Unset means ON, so installs that
+      // predate the toggle keep retrieving (isRagRetrievalEnabled coerces off
+      // the negative for exactly that reason).
+      //
+      // Turning it off has to actually cost nothing, and null is already this
+      // pipeline's skip-everything channel: rewriteQueryWithContext returns null
+      // when the knowledge base is empty, and the `if (rewrittenQuery)` below is
+      // what gates the Qdrant search. Not calling it at all also skips the
+      // hasDocuments check and the query-rewrite LLM call, so all three of the
+      // expensive steps are skipped rather than just the injection.
+      // Ported from upstream #1247.
+      const ragEnabled = isRagRetrievalEnabled(await KVStore.getValue('rag.enabled'))
+      if (!ragEnabled) {
+        logger.debug('[RAG] Retrieval disabled by setting, skipping')
+      }
+
       // Query rewriting for better RAG retrieval with manageable context
       // Will return user's latest message if no rewriting is needed
-      const rewrittenQuery = await this.rewriteQueryWithContext(reqData.messages, reqData.model)
+      const rewrittenQuery = ragEnabled
+        ? await this.rewriteQueryWithContext(reqData.messages, reqData.model)
+        : null
 
       logger.debug(`[OllamaController] Rewritten query for RAG: "${rewrittenQuery}"`)
       if (rewrittenQuery) {
@@ -280,14 +301,20 @@ export default class OllamaController {
         })
         .join('\n')
 
-      // Reuse the model the user is already chatting with for the rewrite, so we
-      // don't force-load a separate model on every message (heavy under MLX).
+      // The rewrite runs on the operator's tasks model when one is set (#1244).
+      // With the setting unset (the default) it reuses the model the user is
+      // already chatting with, so we don't force-load a separate model on every
+      // message (heavy under MLX) — and because this is the most frequent
+      // ancillary call of the three, it is also why an over-cap tasks model is
+      // refused rather than honoured (see pickTasksModel).
       // No reasoning wanted: the rewritten query is embedded and matched against
       // Qdrant verbatim, so a thinking preamble is retrieval noise as well as
       // latency. OllamaService still strips inline <think> tags for the backends
       // that ignore this.
+      const rewriteModel = (await this.chatService.resolveTasksModel(model)) ?? model
+
       const response = await this.ollamaService.chat({
-        model,
+        model: rewriteModel,
         messages: [
           {
             role: 'system',

@@ -121,6 +121,8 @@ export default class SettingsController {
         const chatSuggestionsEnabled = await KVStore.getValue('chat.suggestionsEnabled')
         const aiAssistantCustomName = await KVStore.getValue('ai.assistantCustomName')
         const autoThinking = await KVStore.getValue('ai.autoThinking')
+        const ragEnabled = await KVStore.getValue('rag.enabled')
+        const tasksModel = await KVStore.getValue('ai.tasksModel')
         return inertia.render('settings/models', {
             models: {
                 availableModels: availableModels?.models || [],
@@ -130,6 +132,16 @@ export default class SettingsController {
                     aiAssistantCustomName: aiAssistantCustomName ?? '',
                     // Global default for model thinking/reasoning (off by default). #1079
                     autoThinking: autoThinking ?? false,
+                    // Knowledge base retrieval master switch (#1247). Unset
+                    // means ON, so installs predating the toggle keep
+                    // retrieving — same default as the server-side read.
+                    ragEnabled: ragEnabled ?? true,
+                    // Model for short ancillary work — chat titles, suggestion
+                    // chips, RAG query rewriting (#1244). '' means "use the chat
+                    // model", the behaviour from before the setting existed. The
+                    // page marks over-cap models unselectable; the backend
+                    // refuses them again at call time (pickTasksModel).
+                    tasksModel: tasksModel ?? '',
                 }
             },
             // Frontend uses this to hide the GPU-passthrough-failed "Reinstall

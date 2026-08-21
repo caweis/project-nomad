@@ -10,6 +10,7 @@ import { ChatMessage } from '../../../types/chat'
 import classNames from '~/lib/classNames'
 import { IconMenu2, IconX } from '@tabler/icons-react'
 import { useSystemSetting } from '~/hooks/useSystemSetting'
+import { isRagRetrievalEnabled } from '../../../app/utils/rag_toggle'
 import Switch from '~/components/inputs/Switch'
 import InfoTooltip from '~/components/InfoTooltip'
 
@@ -83,6 +84,31 @@ export default function Chat({
   // booleans have historically round-tripped as strings.
   const autoThinkingDefault =
     autoThinkingSetting?.value === true || autoThinkingSetting?.value === 'true'
+
+  // Knowledge base retrieval, shared with AI Assistant settings — same
+  // rag.enabled KV key, so the two switches are one control in two places.
+  // Note the coercion differs from autoThinking directly above on purpose:
+  // this setting defaults ON, so an absent value must not read as false.
+  const { data: ragEnabledSetting } = useSystemSetting({ key: 'rag.enabled', enabled })
+  const ragEnabled = isRagRetrievalEnabled(ragEnabledSetting?.value)
+
+  const ragEnabledMutation = useMutation({
+    mutationFn: async (value: boolean) => await api.updateSetting('rag.enabled', value),
+    // Flip the switch immediately rather than after the round-trip, and roll it
+    // back if the write fails.
+    onMutate: async (value: boolean) => {
+      await queryClient.cancelQueries({ queryKey: ['system-setting', 'rag.enabled'] })
+      const previous = queryClient.getQueryData(['system-setting', 'rag.enabled'])
+      queryClient.setQueryData(['system-setting', 'rag.enabled'], { key: 'rag.enabled', value })
+      return { previous }
+    },
+    onError: (_err, _value, context) => {
+      queryClient.setQueryData(['system-setting', 'rag.enabled'], context?.previous)
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['system-setting', 'rag.enabled'] })
+    },
+  })
 
   const { data: installedModels = [], isLoading: isLoadingModels } = useQuery({
     queryKey: ['installedModels'],
@@ -447,7 +473,7 @@ export default function Chat({
             </h2>
           </div>
           <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0">
-            {knownCollections.length > 0 && (
+            {ragEnabled && knownCollections.length > 0 && (
               <div className="hidden sm:flex items-center gap-2">
                 <label htmlFor="collection-select" className="text-sm text-text-secondary">
                   Search in:
@@ -490,6 +516,19 @@ export default function Chat({
                   ))}
                 </select>
               )}
+            </div>
+            <div className="flex items-center">
+              <span className="text-sm text-text-secondary select-none">Knowledge Base:</span>
+              <InfoTooltip
+                position="bottom"
+                align="right"
+                text="When on, the assistant searches your knowledge base for relevant documents before answering. Turning it off skips that search, which is quicker and uses less memory when your knowledge base is small or empty. This is the same setting as the one in AI Assistant settings."
+              />
+              <Switch
+                id="chat-rag-toggle"
+                checked={ragEnabled}
+                onChange={(v) => ragEnabledMutation.mutate(v)}
+              />
             </div>
             {selectedModelSupportsThinking && (
               <div className="flex items-center">

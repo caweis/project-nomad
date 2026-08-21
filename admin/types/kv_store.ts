@@ -6,6 +6,15 @@ export const KV_STORE_SCHEMA = {
   // KB auto-index policy ('Always' | 'Manual', RFC #883). Unset = 'Always' so
   // existing installs keep their behavior until the user opts into Manual.
   'rag.defaultIngestPolicy':    'string',
+  // Master switch for chat-time knowledge base retrieval (upstream #1247).
+  // Unset/null means ON — the behaviour from before the toggle existed. Off
+  // skips the whole retrieval pipeline in OllamaController.chat: the
+  // hasDocuments check, the query-rewrite LLM call and the Qdrant search. That
+  // matters on a small Mac and when the knowledge base is small or empty. Read
+  // it through isRagRetrievalEnabled (app/utils/rag_toggle.ts), never a bare
+  // truthiness check — the default is ON, so an absent value must not read as
+  // false.
+  'rag.enabled':                'boolean',
   'system.updateAvailable':     'boolean',
   'system.latestVersion':       'string',
   'system.earlyAccess':         'boolean',
@@ -20,6 +29,15 @@ export const KV_STORE_SCHEMA = {
   // Global default for model "thinking"/reasoning. Off by default; a per-request
   // preference (resolved client-side) overrides it. Ported from upstream #1079.
   'ai.autoThinking':            'boolean',
+  // Model used for short ancillary AI work — chat titles, suggestion chips, and
+  // RAG query rewriting — instead of whichever model the user is chatting with.
+  // Unset/null keeps the previous behaviour: titles and query rewrites reuse the
+  // chat model, suggestions use chooseSuggestionModel's capped pick. Ported from
+  // upstream #1244, with the fork's background-task size cap still enforced —
+  // pickTasksModel refuses a pick that is uninstalled or over
+  // SUGGESTION_MODEL_MAX_BYTES and falls back rather than cold-loading a second
+  // large model (see app/utils/chat_suggestion_model.ts).
+  'ai.tasksModel':              'string',
   // Workshop / Offline STL Library — user has acknowledged the rights modal
   // on first visit ("Use at your own peril. You are responsible for ensuring
   // you have the right to store every STL you put in this library."). Until

@@ -14,8 +14,13 @@ import StyledModal from '~/components/StyledModal'
 import { ModelResponse } from 'ollama'
 import { SERVICE_NAMES } from '../../../constants/service_names'
 import Switch from '~/components/inputs/Switch'
+import Select from '~/components/inputs/Select'
+import {
+  effectiveSizeBytes,
+  SUGGESTION_MODEL_MAX_BYTES,
+} from '../../../app/utils/chat_suggestion_model'
 import StyledSectionHeader from '~/components/StyledSectionHeader'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import Input from '~/components/inputs/Input'
 import { IconSearch, IconRefresh } from '@tabler/icons-react'
 import useDebounce from '~/hooks/useDebounce'
@@ -26,7 +31,7 @@ export default function ModelsPage(props: {
   models: {
     availableModels: NomadOllamaModel[]
     installedModels: ModelResponse[]
-    settings: { chatSuggestionsEnabled: boolean; aiAssistantCustomName: string; autoThinking: boolean }
+    settings: { chatSuggestionsEnabled: boolean; aiAssistantCustomName: string; autoThinking: boolean; tasksModel: string; ragEnabled: boolean }
   }
   // True when admin is configured to talk to a native (Homebrew) Ollama at
   // OLLAMA_HOST instead of managing the Docker container itself. Set by
@@ -47,6 +52,7 @@ export default function ModelsPage(props: {
   const { openModal, closeAllModals } = useModals()
   const { debounce } = useDebounce()
   const { data: systemInfo } = useSystemInfo({})
+  const queryClient = useQueryClient()
 
   const [gpuBannerDismissed, setGpuBannerDismissed] = useState(() => {
     try {
@@ -108,6 +114,8 @@ export default function ModelsPage(props: {
     props.models.settings.chatSuggestionsEnabled
   )
   const [autoThinking, setAutoThinking] = useState(props.models.settings.autoThinking)
+  const [ragEnabled, setRagEnabled] = useState(props.models.settings.ragEnabled)
+  const [tasksModel, setTasksModel] = useState(props.models.settings.tasksModel)
   const [aiAssistantCustomName, setAiAssistantCustomName] = useState(
     props.models.settings.aiAssistantCustomName
   )
@@ -213,11 +221,42 @@ export default function ModelsPage(props: {
     )
   }
 
+  // Options for the tasks-model picker. Two kinds of model are shown but not
+  // selectable, so a refusal is understood at pick time instead of discovered
+  // later as a setting that quietly does nothing:
+  //
+  //  - Over the background-task size cap. The backend applies the same cap
+  //    (SUGGESTION_MODEL_MAX_BYTES) at call time and falls back to the chat
+  //    model, because loading a second large model beside the chat model is the
+  //    wedge that cap exists to prevent. effectiveSizeBytes is the shared rule:
+  //    on the oMLX backend every model reports size 0, so it ranks by the
+  //    parameter hint in the name instead of trusting the reported size.
+  //  - Selected earlier and since deleted from this page. The backend falls
+  //    back for that too; showing the stale name beats rendering an empty box.
+  const tasksModelOptions = [
+    { value: '', label: 'Use the chat model' },
+    ...props.models.installedModels.map((model) => {
+      const overCap = effectiveSizeBytes(model) > SUGGESTION_MODEL_MAX_BYTES
+      return {
+        value: model.name,
+        label: overCap ? `${model.name} (too large for background tasks)` : model.name,
+        disabled: overCap,
+      }
+    }),
+    ...(tasksModel && !props.models.installedModels.some((m) => m.name === tasksModel)
+      ? [{ value: tasksModel, label: `${tasksModel} (not installed)`, disabled: true }]
+      : []),
+  ]
+
   const updateSettingMutation = useMutation({
     mutationFn: async ({ key, value }: { key: string; value: boolean | string }) => {
       return await api.updateSetting(key, value)
     },
-    onSuccess: () => {
+    onSuccess: (_data, { key }) => {
+      // Anything reading this key through useSystemSetting — the chat header's
+      // own copy of the retrieval switch, most of all — should pick the change
+      // up without a reload.
+      queryClient.invalidateQueries({ queryKey: ['system-setting', key] })
       addNotification({
         message: 'Setting updated successfully.',
         type: 'success',
@@ -335,6 +374,15 @@ export default function ModelsPage(props: {
                 label="Model Thinking"
                 description="Let capable models show their reasoning before answering. Off by default; slower but more thorough."
               />
+              <Switch
+                checked={ragEnabled}
+                onChange={(newVal) => {
+                  setRagEnabled(newVal)
+                  updateSettingMutation.mutate({ key: 'rag.enabled', value: newVal })
+                }}
+                label="Knowledge Base Retrieval"
+                description="Search your knowledge base for relevant documents before answering. Turn it off to skip that search when your knowledge base is small or empty — replies come back sooner and use less memory. This is the same switch as the one in the chat window."
+              />
               <Input
                 name="aiAssistantCustomName"
                 label="Assistant Name"
@@ -348,6 +396,17 @@ export default function ModelsPage(props: {
                     value: aiAssistantCustomName,
                   })
                 }
+              />
+              <Select
+                name="tasksModel"
+                label="Tasks Model"
+                helpText="Small, fast model for background work: chat titles, suggestion chips, and knowledge base query rewriting. Leave it on the chat model to keep using whichever model the chat is using. Reasoning models are a poor fit here. Models too large for background work are listed but can't be picked, because loading a second large model alongside the chat model can leave the chat stuck on Thinking."
+                value={tasksModel}
+                options={tasksModelOptions}
+                onChange={(newVal) => {
+                  setTasksModel(newVal)
+                  updateSettingMutation.mutate({ key: 'ai.tasksModel', value: newVal })
+                }}
               />
             </div>
           </div>
