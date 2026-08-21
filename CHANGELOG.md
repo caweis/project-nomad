@@ -5,6 +5,24 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 
 ## [Unreleased]
 
+## [0.2.763-macos] - 2026-08-21
+
+### AI Assistant
+- Models that think out loud no longer leak that thinking into the rest of the
+  app. Depending on the model, the reasoning it does before answering could end
+  up in your chat titles, in the suggestion chips, in the message the chat saved
+  to its history, and in the search text used to look things up in your
+  knowledge base. Answers stay in the answer, and reasoning stays in the
+  collapsible section where it belongs. Asking a model politely not to think
+  isn't enough on the Apple MLX backend, so this strips it directly.
+- The chat page no longer asks the AI service which models can think on every
+  single load. It asks once and remembers, and forgets again if the service was
+  unreachable so a hiccup doesn't leave a model wrongly marked.
+
+### Chat
+- Removed a warning banner about a missing query-rewrite model. The setting it
+  referred to no longer exists, so the banner could not appear.
+
 ## [0.2.762-macos] - 2026-08-20
 
 Three things that failed on a machine with no internet connection, which is the
