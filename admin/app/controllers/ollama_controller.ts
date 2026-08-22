@@ -8,7 +8,8 @@ import KVStore from '#models/kv_store'
 import { inject } from '@adonisjs/core'
 import type { HttpContext } from '@adonisjs/core/http'
 import { RAG_CONTEXT_LIMITS, SYSTEM_PROMPTS } from '../../constants/ollama.js'
-import { buildContextLabel } from '../utils/rag_context.js'
+import { buildContextBlock } from '../utils/rag_context.js'
+import { getContextLimitsForModel, trimToContextBudget } from '../utils/rag_prompt.js'
 import { isRagRetrievalEnabled } from '../utils/rag_toggle.js'
 import logger from '@adonisjs/core/services/logger'
 import type { Message } from 'ollama'
@@ -104,32 +105,17 @@ export default class OllamaController {
 
         // If relevant context is found, inject as a system message with adaptive limits
         if (relevantDocs.length > 0) {
-          // Determine context budget based on model size
-          const { maxResults, maxTokens } = this.getContextLimitsForModel(reqData.model)
-          let trimmedDocs = relevantDocs.slice(0, maxResults)
-
-          // Apply token cap if set (estimate ~4 chars per token)
-          // Always include the first (most relevant) result — the cap only gates subsequent results
-          if (maxTokens > 0) {
-            const charCap = maxTokens * 4
-            let totalChars = 0
-            trimmedDocs = trimmedDocs.filter((doc, idx) => {
-              totalChars += doc.text.length
-              return idx === 0 || totalChars <= charCap
-            })
-          }
+          // Budgeting and rendering both moved to pure helpers so they can be
+          // tested without MySQL/Qdrant/Ollama — see rag_prompt.standalone.ts.
+          // Behaviour is unchanged, quirks included.
+          const limits = getContextLimitsForModel(reqData.model, RAG_CONTEXT_LIMITS)
+          const trimmedDocs = trimToContextBudget(relevantDocs, limits)
 
           logger.debug(
-            `[RAG] Injecting ${trimmedDocs.length}/${relevantDocs.length} results (model: ${reqData.model}, maxResults: ${maxResults}, maxTokens: ${maxTokens || 'unlimited'})`
+            `[RAG] Injecting ${trimmedDocs.length}/${relevantDocs.length} results (model: ${reqData.model}, maxResults: ${limits.maxResults}, maxTokens: ${limits.maxTokens || 'unlimited'})`
           )
 
-          // Label each context block with its source title when available, never
-          // the raw relevance score — surfacing e.g. "42%" primes the model to
-          // distrust correct context (nomic cosine scores for genuinely-relevant
-          // passages sit ~0.4-0.6). The score is still logged above for debugging.
-          const contextText = trimmedDocs
-            .map((doc, idx) => `${buildContextLabel(idx, doc.metadata)}\n${doc.text}`)
-            .join('\n\n')
+          const contextText = buildContextBlock(trimmedDocs)
 
           const systemMessage = {
             role: 'system' as const,
@@ -246,25 +232,6 @@ export default class OllamaController {
       models.map((m) => this.ollamaService.checkModelHasThinking(m.name))
     )
     return models.map((m, i) => ({ ...m, thinking: thinking[i] }))
-  }
-
-  /**
-   * Determines RAG context limits based on model size extracted from the model name.
-   * Parses size indicators like "1b", "3b", "8b", "70b" from model names/tags.
-   */
-  private getContextLimitsForModel(modelName: string): { maxResults: number; maxTokens: number } {
-    // Extract parameter count from model name (e.g., "llama3.2:3b", "qwen2.5:1.5b", "gemma:7b")
-    const sizeMatch = modelName.match(/(\d+\.?\d*)[bB]/)
-    const paramBillions = sizeMatch ? parseFloat(sizeMatch[1]) : 8 // default to 8B if unknown
-
-    for (const tier of RAG_CONTEXT_LIMITS) {
-      if (paramBillions <= tier.maxParams) {
-        return { maxResults: tier.maxResults, maxTokens: tier.maxTokens }
-      }
-    }
-
-    // Fallback: no limits
-    return { maxResults: 5, maxTokens: 0 }
   }
 
   private async rewriteQueryWithContext(

@@ -39,3 +39,22 @@ export function buildContextLabel(
   const title = metadata?.full_title || metadata?.article_title
   return title ? `[Context ${index + 1} — ${title}]` : `[Context ${index + 1}]`
 }
+
+/**
+ * Render retrieved chunks into the block the `rag_context` system prompt wraps.
+ *
+ * Lives here rather than beside the budgeting helpers in `rag_prompt.ts`
+ * because it needs `buildContextLabel`, and `rag_prompt.ts` has to stay
+ * import-free to remain runnable under bare `node --experimental-strip-types`
+ * (see the note in that file). Keeping it next to the label rule also means
+ * there is exactly one place that decides how a context block is presented.
+ *
+ * Extracted from OllamaController.chat unchanged (upstream #1233 shape).
+ */
+export function buildContextBlock(
+  docs: { text: string; metadata?: { full_title?: string; article_title?: string } }[]
+): string {
+  return docs
+    .map((doc, idx) => `${buildContextLabel(idx, doc.metadata)}\n${doc.text}`)
+    .join('\n\n')
+}
