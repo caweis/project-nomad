@@ -31,7 +31,7 @@ export default function ModelsPage(props: {
   models: {
     availableModels: NomadOllamaModel[]
     installedModels: ModelResponse[]
-    settings: { chatSuggestionsEnabled: boolean; aiAssistantCustomName: string; autoThinking: boolean; tasksModel: string; ragEnabled: boolean }
+    settings: { chatSuggestionsEnabled: boolean; aiAssistantCustomName: string; autoThinking: boolean; tasksModel: string; ragEnabled: boolean; contextWindow: string }
   }
   // True when admin is configured to talk to a native (Homebrew) Ollama at
   // OLLAMA_HOST instead of managing the Docker container itself. Set by
@@ -116,6 +116,7 @@ export default function ModelsPage(props: {
   const [autoThinking, setAutoThinking] = useState(props.models.settings.autoThinking)
   const [ragEnabled, setRagEnabled] = useState(props.models.settings.ragEnabled)
   const [tasksModel, setTasksModel] = useState(props.models.settings.tasksModel)
+  const [contextWindow, setContextWindow] = useState(props.models.settings.contextWindow)
   const [aiAssistantCustomName, setAiAssistantCustomName] = useState(
     props.models.settings.aiAssistantCustomName
   )
@@ -233,6 +234,19 @@ export default function ModelsPage(props: {
   //    parameter hint in the name instead of trusting the reported size.
   //  - Selected earlier and since deleted from this page. The backend falls
   //    back for that too; showing the stale name beats rendering an empty box.
+  // Ladder rungs only: Ollama unloads and reloads a model whenever a request
+  // asks for a different num_ctx, so arbitrary sizes would stall a turn and
+  // discard the KV cache. Must match CONTEXT_LADDER in app/utils/context_window.ts.
+  const contextWindowOptions = [
+    { value: 'auto', label: 'Auto (recommended)' },
+    { value: '4096', label: '4K tokens' },
+    { value: '8192', label: '8K tokens' },
+    { value: '16384', label: '16K tokens' },
+    { value: '32768', label: '32K tokens' },
+    { value: '65536', label: '64K tokens' },
+    { value: '131072', label: '128K tokens' },
+  ]
+
   const tasksModelOptions = [
     { value: '', label: 'Use the chat model' },
     ...props.models.installedModels.map((model) => {
@@ -406,6 +420,17 @@ export default function ModelsPage(props: {
                 onChange={(newVal) => {
                   setTasksModel(newVal)
                   updateSettingMutation.mutate({ key: 'ai.tasksModel', value: newVal })
+                }}
+              />
+              <Select
+                name="contextWindow"
+                label="Context Window"
+                helpText="How much conversation and knowledge base context each reply can take into account. Auto sizes this per model from the length it was trained for. Choosing a value sets an upper limit: it can lower the window to save memory, but never raises it past what a model supports. Takes effect on new replies."
+                value={contextWindow}
+                options={contextWindowOptions}
+                onChange={(newVal) => {
+                  setContextWindow(newVal)
+                  updateSettingMutation.mutate({ key: 'ai.contextWindow', value: newVal })
                 }}
               />
             </div>

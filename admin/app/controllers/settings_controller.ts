@@ -123,6 +123,7 @@ export default class SettingsController {
         const autoThinking = await KVStore.getValue('ai.autoThinking')
         const ragEnabled = await KVStore.getValue('rag.enabled')
         const tasksModel = await KVStore.getValue('ai.tasksModel')
+        const contextWindow = await KVStore.getValue('ai.contextWindow')
         return inertia.render('settings/models', {
             models: {
                 availableModels: availableModels?.models || [],
@@ -142,6 +143,11 @@ export default class SettingsController {
                     // page marks over-cap models unselectable; the backend
                     // refuses them again at call time (pickTasksModel).
                     tasksModel: tasksModel ?? '',
+                    // Ceiling on the per-reply context window (#1253). 'auto'
+                    // lets ContextWindowService size it per model from what
+                    // /api/show reports. An explicit rung only ever LOWERS the
+                    // window: a model that was not trained that long still wins.
+                    contextWindow: contextWindow ?? 'auto',
                 }
             },
             // Frontend uses this to hide the GPU-passthrough-failed "Reinstall
