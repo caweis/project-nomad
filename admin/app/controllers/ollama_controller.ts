@@ -1,4 +1,5 @@
 import { ChatService } from '#services/chat_service'
+import { ContextWindowService } from '#services/context_window_service'
 import { NomadMdService } from '#services/nomad_md_service'
 import { OllamaService } from '#services/ollama_service'
 import { RagService } from '#services/rag_service'
@@ -10,6 +11,7 @@ import type { HttpContext } from '@adonisjs/core/http'
 import { RAG_CONTEXT_LIMITS, SYSTEM_PROMPTS } from '../../constants/ollama.js'
 import { buildContextBlock } from '../utils/rag_context.js'
 import { getContextLimitsForModel, trimToContextBudget } from '../utils/rag_prompt.js'
+import { planPrompt, splitForBudget, type BudgetMessage } from '../utils/context_budget.js'
 import { isRagRetrievalEnabled } from '../utils/rag_toggle.js'
 import logger from '@adonisjs/core/services/logger'
 import type { Message } from 'ollama'
@@ -20,7 +22,8 @@ export default class OllamaController {
     private chatService: ChatService,
     private ollamaService: OllamaService,
     private ragService: RagService,
-    private nomadMdService: NomadMdService
+    private nomadMdService: NomadMdService,
+    private contextWindowService: ContextWindowService
   ) { }
 
   async availableModels({ request }: HttpContext) {
@@ -155,10 +158,47 @@ export default class OllamaController {
         }
       }
 
+      // Size the context window, then make the prompt fit inside it.
+      //
+      // Nothing here ever set num_ctx, so every conversation ran at whatever
+      // the backend defaults to and was truncated from the middle — dropping
+      // recent history and retrieved context first, which is the worst part to
+      // lose. planPrompt evicts whole turns oldest-first instead, in blocks so
+      // the prefix stays stable for the KV cache, and reserves room for the
+      // answer (num_predict) so generation cannot run past the window.
+      //
+      // Applied AFTER the message above is written to the session, so history
+      // always stores what the user actually typed rather than a trimmed copy.
+      //
+      // The retrieved-context block is part of systemBlocks here, so it is
+      // still bounded only by the model-size tiers in rag_prompt.ts rather than
+      // by this budget. Folding retrieval into the budget properly means moving
+      // the injection point, which changes what reaches the model, so it wants
+      // its own measured change.
+      const contextWindow = await this.contextWindowService.windowFor(reqData.model)
+      const planned = planPrompt({
+        ...splitForBudget(ollamaRequest.messages as BudgetMessage[]),
+        ragChunks: [],
+        renderRagBlock: () => '',
+        contextWindow,
+      })
+      if (planned.trace.turnsDropped > 0 || planned.trace.queryTruncated) {
+        logger.debug(
+          `[OllamaController] Budgeted prompt for "${reqData.model}": window ${contextWindow}, ` +
+            `${planned.trace.estimatedPromptTokens}/${planned.trace.promptBudget} tokens, ` +
+            `${planned.trace.turnsDropped} turn(s) dropped, truncated=${planned.trace.queryTruncated}`
+        )
+      }
+      const budgetedRequest = {
+        ...ollamaRequest,
+        messages: planned.messages as Message[],
+        options: { num_ctx: contextWindow, num_predict: planned.numPredict },
+      }
+
       if (reqData.stream) {
         logger.debug(`[OllamaController] Initiating streaming response for model: "${reqData.model}" with think: ${think}`)
         // Headers already flushed above
-        const stream = await this.ollamaService.chatStream({ ...ollamaRequest, think })
+        const stream = await this.ollamaService.chatStream({ ...budgetedRequest, think })
         let fullContent = ''
         for await (const chunk of stream) {
           if (chunk.message?.content) {
@@ -182,7 +222,7 @@ export default class OllamaController {
       }
 
       // Non-streaming (legacy) path
-      const result = await this.ollamaService.chat({ ...ollamaRequest, think })
+      const result = await this.ollamaService.chat({ ...budgetedRequest, think })
 
       if (sessionId && result?.message?.content) {
         await this.chatService.addMessage(sessionId, 'assistant', result.message.content)

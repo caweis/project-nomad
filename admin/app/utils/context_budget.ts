@@ -14,8 +14,9 @@
  * Everything below is pure: no I/O, no clock, no framework, no Adonis, no
  * Ollama client. That is what lets context_budget.standalone.ts exercise it.
  *
- * Ported from upstream #1253 (a02178d), with two defects fixed — see
- * ELISION_RESERVE and the query-truncation notice below.
+ * Ported from upstream #1253 (a02178d), with three defects fixed. Each is
+ * marked FORK FIX at the site and pinned by a test in
+ * context_budget.standalone.ts that fails against the unmodified version.
  */
 
 /**
@@ -541,5 +542,38 @@ export function planPrompt(inputs: BudgetInputs): BudgetResult {
       queryTruncated,
       ragPlacement: placement,
     },
+  }
+}
+
+/**
+ * Split an assembled chat payload into the three parts planPrompt budgets.
+ *
+ * The chat endpoint assembles messages as [system blocks][prior turns][current
+ * question], which is the shape it has always sent: system prompts are
+ * unshifted onto the front and the retrieved-context block is spliced in among
+ * them. Everything from the first non-system message onward is conversation,
+ * and the last of those is the question being asked now.
+ *
+ * A payload consisting only of system messages yields an empty question rather
+ * than throwing — a malformed request should not be able to take chat down.
+ */
+export function splitForBudget(messages: BudgetMessage[]): {
+  systemBlocks: BudgetMessage[]
+  history: BudgetMessage[]
+  query: BudgetMessage
+} {
+  const firstNonSystem = messages.findIndex((m) => m.role !== 'system')
+  if (firstNonSystem === -1) {
+    return {
+      systemBlocks: [...messages],
+      history: [],
+      query: { role: 'user', content: '' },
+    }
+  }
+  const rest = messages.slice(firstNonSystem)
+  return {
+    systemBlocks: messages.slice(0, firstNonSystem),
+    history: rest.slice(0, -1),
+    query: rest[rest.length - 1],
   }
 }

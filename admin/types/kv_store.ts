@@ -38,6 +38,7 @@ export const KV_STORE_SCHEMA = {
   // SUGGESTION_MODEL_MAX_BYTES and falls back rather than cold-loading a second
   // large model (see app/utils/chat_suggestion_model.ts).
   'ai.tasksModel':              'string',
+  'ai.contextWindow':           'string',
   // Workshop / Offline STL Library — user has acknowledged the rights modal
   // on first visit ("Use at your own peril. You are responsible for ensuring
   // you have the right to store every STL you put in this library."). Until

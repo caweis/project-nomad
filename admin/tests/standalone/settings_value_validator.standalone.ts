@@ -8,7 +8,11 @@
  * value is rejected with 422 before it reaches the KV store and the scheduler.
  */
 import assert from 'node:assert/strict'
-import { validateSettingValue } from '../../app/utils/setting_value.ts'
+import {
+  validateSettingValue,
+  CONTEXT_LADDER as LADDER_FROM_VALIDATOR,
+} from '../../app/utils/setting_value.ts'
+import { CONTEXT_LADDER } from '../../app/utils/context_window.ts'
 
 let passed = 0
 function check(name: string, fn: () => void) {
@@ -56,5 +60,34 @@ check('rejects an absurdly long tasks model name', () => bad('ai.tasksModel', 'x
 // keys without a value constraint pass through
 check('enabled toggle has no value constraint', () => ok('autoUpdate.enabled', true))
 check('an unconstrained key passes through', () => ok('chat.lastModel', 'llama3.2:1b'))
+
+// ── ai.contextWindow (upstream #1253) ──
+check('the context-window ladder in this validator matches the resolver', () => {
+  // The validator duplicates CONTEXT_LADDER because it must stay import-free to
+  // run standalone. This is the guard that turns drift into a failing test
+  // rather than a window the resolver can produce but the validator rejects.
+  assert.deepEqual([...LADDER_FROM_VALIDATOR], [...CONTEXT_LADDER])
+})
+
+check('auto and empty hand the decision back to the resolver', () => {
+  assert.equal(validateSettingValue('ai.contextWindow', 'auto'), null)
+  assert.equal(validateSettingValue('ai.contextWindow', ''), null)
+  assert.equal(validateSettingValue('ai.contextWindow', null), null)
+  assert.equal(validateSettingValue('ai.contextWindow', undefined), null)
+})
+
+check('every ladder rung is accepted', () => {
+  for (const rung of CONTEXT_LADDER) {
+    assert.equal(validateSettingValue('ai.contextWindow', String(rung)), null, `rung ${rung}`)
+  }
+})
+
+check('an off-ladder window is refused', () => {
+  // Ollama unloads and reloads whenever num_ctx changes, so an arbitrary value
+  // would stall a turn and discard the KV cache.
+  assert.ok(validateSettingValue('ai.contextWindow', '5000'))
+  assert.ok(validateSettingValue('ai.contextWindow', 'banana'))
+  assert.ok(validateSettingValue('ai.contextWindow', '0'))
+})
 
 console.log(`\n${passed} passed`)

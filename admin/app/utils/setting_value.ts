@@ -12,6 +12,18 @@ import type { KVStoreKey } from '../../types/kv_store.js'
 
 const HHMM_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/
 
+/**
+ * The context-window rungs accepted for `ai.contextWindow`.
+ *
+ * DUPLICATED ON PURPOSE from `context_window.ts`'s CONTEXT_LADDER. This module
+ * keeps only type-only imports so it stays runnable under bare
+ * `node --experimental-strip-types` (see the header), and a value import of the
+ * real constant would break that. `settings_value_validator.standalone.ts`
+ * asserts the two lists stay identical, so drift fails a test instead of
+ * silently rejecting a window the resolver can produce.
+ */
+export const CONTEXT_LADDER = [4096, 8192, 16384, 32768, 65536, 131072] as const
+
 export function validateSettingValue(key: KVStoreKey, value: unknown): string | null {
   switch (key) {
     case 'autoUpdate.windowStart':
@@ -59,6 +71,25 @@ export function validateSettingValue(key: KVStoreKey, value: unknown): string | 
       }
       if (value.length > 256) {
         return 'That tasks model name is too long to be a model name.'
+      }
+      return null
+    }
+    case 'ai.contextWindow': {
+      // "auto" (or empty) hands the decision to ContextWindowService, which
+      // sizes it per model from what /api/show reports. An explicit value is a
+      // CEILING, never a floor: it can lower the window to save memory, and a
+      // model that was not trained that long still wins, because running past
+      // the trained length degrades the answer rather than extending it.
+      //
+      // Restricted to ladder rungs because Ollama unloads and reloads a model
+      // whenever a request asks for a different num_ctx, so arbitrary values
+      // would stall a turn and throw away the KV cache.
+      if (value === undefined || value === null || value === '' || value === 'auto') {
+        return null
+      }
+      const rung = Number(value)
+      if (!CONTEXT_LADDER.includes(rung as (typeof CONTEXT_LADDER)[number])) {
+        return `Context window must be "auto" or one of: ${CONTEXT_LADDER.join(', ')}.`
       }
       return null
     }

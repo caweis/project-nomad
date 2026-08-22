@@ -60,3 +60,24 @@ export type OllamaChatResponse = {
   }
   done: boolean
 }
+
+/**
+ * What a single /api/show call tells us about an installed model.
+ *
+ * Every field beyond `hasThinking` is optional because the oMLX proxy answers
+ * /api/show with a much thinner body than Ollama does — no `capabilities`, and
+ * often no `model_info`. A missing field means "not known", never "zero", and
+ * the context-window resolver treats it that way.
+ */
+export interface NomadModelInfo {
+  hasThinking: boolean
+  /** Trained context length from model_info, e.g. `llama.context_length`. */
+  contextLength?: number
+  /** num_ctx baked into the modelfile, treated as the author's ceiling hint. */
+  modelfileNumCtx?: number
+  /** e.g. "8.0B" — used to estimate KV cost when model_info is unavailable. */
+  parameterSize?: string
+  quantizationLevel?: string
+  /** Raw model_info, for exact KV-cache sizing when the metadata is complete. */
+  rawModelInfo?: unknown
+}

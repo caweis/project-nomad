@@ -1,6 +1,7 @@
 import { inject } from '@adonisjs/core'
 import { ChatRequest, ChatResponse, Ollama } from 'ollama'
-import { NomadOllamaModel } from '../../types/ollama.js'
+import { NomadModelInfo, NomadOllamaModel } from '../../types/ollama.js'
+import { readContextLength, readModelfileNumCtx } from '../utils/context_window.js'
 import { FALLBACK_RECOMMENDED_OLLAMA_MODELS, MLX_HIGHLIGHT_MODELS, MODEL_DESCRIPTION_OVERRIDES } from '../../constants/ollama.js'
 import { withMlxPullNames } from '../../util/mlx.js'
 import { normalizeNonStreamed, ThinkTagSplitter } from '../utils/think_stream.js'
@@ -24,7 +25,7 @@ const CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000 // 24 hours
 export class OllamaService {
   private ollama: Ollama | null = null
   private ollamaInitPromise: Promise<void> | null = null
-  private thinkingCapability = new Map<string, Promise<boolean>>()
+  private modelInfo = new Map<string, Promise<NomadModelInfo>>()
 
   constructor() { }
 
@@ -214,38 +215,55 @@ export class OllamaService {
     }
   }
 
-  public async checkModelHasThinking(modelName: string): Promise<boolean> {
-    // A thinking-capability probe must NEVER block chat. The oMLX proxy's
-    // /api/show returns no `capabilities` field, so the old unguarded
-    // `modelInfo.capabilities.includes(...)` threw a TypeError and killed
-    // every oMLX chat ("error processing your request"). Guard the field AND
-    // swallow any probe failure → default to no-thinking (chat still works;
-    // thinking just isn't requested).
-    //
-    // Memoized per model: the installed-models list probes every model on every
-    // page load and the chat path probes on every message, so an unmemoized
-    // /api/show is a round trip per message. Only a resolved probe stays
-    // cached — a failed one evicts itself, so a transient Ollama blip cannot
-    // pin a model to "no thinking" for the life of the process.
+  /**
+   * Everything one /api/show call can tell us about a model: whether it can
+   * think, its trained context length, any num_ctx baked into its modelfile,
+   * and its size and quantization. The context fields feed the num_ctx
+   * decision (see ContextWindowService); the thinking flag has been in use
+   * since #1079.
+   *
+   * A probe must NEVER block chat. The oMLX proxy's /api/show returns no
+   * `capabilities` field, so an unguarded `modelInfo.capabilities.includes(...)`
+   * threw a TypeError and killed every oMLX chat ("error processing your
+   * request"). Guard every field AND swallow any probe failure, returning
+   * "nothing known" rather than throwing — chat still works, it just does not
+   * get to size the window from metadata.
+   *
+   * Memoized per model: the installed-models list probes every model on every
+   * page load and the chat path probes on every message, so an unmemoized
+   * /api/show is a round trip per message. Only a resolved probe stays cached —
+   * a failed one evicts itself, so a transient Ollama blip cannot pin a model
+   * to "no thinking" or to a wrong window for the life of the process.
+   */
+  public async getModelInfo(modelName: string): Promise<NomadModelInfo> {
     try {
       await this._ensureDependencies()
-      if (!this.ollama) return false
+      if (!this.ollama) return { hasThinking: false }
 
-      const cached = this.thinkingCapability.get(modelName)
+      const cached = this.modelInfo.get(modelName)
       if (cached) return await cached
 
-      const probe = this.ollama
-        .show({ model: modelName })
-        .then((modelInfo) => modelInfo.capabilities?.includes('thinking') ?? false)
-      probe.catch(() => this.thinkingCapability.delete(modelName))
-      this.thinkingCapability.set(modelName, probe)
+      const probe = this.ollama.show({ model: modelName }).then((info) => ({
+        hasThinking: info.capabilities?.includes('thinking') ?? false,
+        contextLength: readContextLength(info.model_info),
+        modelfileNumCtx: readModelfileNumCtx(info.parameters),
+        parameterSize: info.details?.parameter_size,
+        quantizationLevel: info.details?.quantization_level,
+        rawModelInfo: info.model_info,
+      }))
+      probe.catch(() => this.modelInfo.delete(modelName))
+      this.modelInfo.set(modelName, probe)
       return await probe
     } catch (error) {
       logger.warn(
-        `[OllamaService] thinking-capability probe failed for "${modelName}" — proceeding without thinking: ${error instanceof Error ? error.message : error}`
+        `[OllamaService] /api/show probe failed for "${modelName}" — proceeding without model metadata: ${error instanceof Error ? error.message : error}`
       )
-      return false
+      return { hasThinking: false }
     }
+  }
+
+  public async checkModelHasThinking(modelName: string): Promise<boolean> {
+    return (await this.getModelInfo(modelName)).hasThinking
   }
 
   public async deleteModel(modelName: string) {

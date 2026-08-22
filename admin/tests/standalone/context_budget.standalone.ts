@@ -20,6 +20,7 @@ import {
   estimateTokens,
   groupIntoTurns,
   planPrompt,
+  splitForBudget,
   updateEwma,
   clampRatio,
   type BudgetMessage,
@@ -212,6 +213,36 @@ check('the calibration ratio rejects nonsense', () => {
   assert.equal(clampRatio(-3), 1)
   assert.ok(clampRatio(99) <= 2.5)
   assert.ok(clampRatio(0.01) >= 0.5)
+})
+
+// ── Splitting the assembled payload ──
+check('splits the payload into system blocks, history and the question', () => {
+  const msgs: BudgetMessage[] = [
+    { role: 'system', content: 'S1' },
+    { role: 'system', content: 'S2' },
+    { role: 'user', content: 'q1' },
+    { role: 'assistant', content: 'a1' },
+    { role: 'user', content: 'NOW' },
+  ]
+  const s = splitForBudget(msgs)
+  assert.deepEqual(s.systemBlocks.map((m) => m.content), ['S1', 'S2'])
+  assert.deepEqual(s.history.map((m) => m.content), ['q1', 'a1'])
+  assert.equal(s.query.content, 'NOW')
+})
+
+check('a payload with no conversation yields an empty question, not a throw', () => {
+  // A malformed request must not be able to take chat down.
+  const s = splitForBudget([{ role: 'system', content: 'only' }])
+  assert.equal(s.query.content, '')
+  assert.deepEqual(s.history, [])
+  assert.equal(s.systemBlocks.length, 1)
+})
+
+check('a single question with no history splits cleanly', () => {
+  const s = splitForBudget([{ role: 'user', content: 'hello' }])
+  assert.deepEqual(s.systemBlocks, [])
+  assert.deepEqual(s.history, [])
+  assert.equal(s.query.content, 'hello')
 })
 
 console.log(`\n${passed} passed`)

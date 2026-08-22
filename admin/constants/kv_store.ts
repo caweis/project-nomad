@@ -12,6 +12,7 @@ export const SETTINGS_KEYS: KVStoreKey[] = [
   'ai.assistantCustomName',
   'ai.autoThinking',
   'ai.tasksModel',
+  'ai.contextWindow',
   'inventory.measurementSystem',
   // Self-Reliance Suite — Phase 2 Readiness Calculator household config. Each
   // is settable through the existing PATCH /api/system/settings endpoint (the
