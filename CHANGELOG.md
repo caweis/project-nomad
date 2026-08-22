@@ -5,6 +5,24 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 
 ## [Unreleased]
 
+## [0.2.765-macos] - 2026-08-22
+
+### AI Assistant
+- Long conversations stop losing their middle. Nothing ever told the model how
+  much it was allowed to read, so every reply ran at whatever the backend
+  falls back to, and anything past that was cut. What went first was the recent
+  back-and-forth and the knowledge base passages that had just been looked up,
+  which are the two parts most likely to matter. NOMAD now works out how much
+  each model can actually take and asks for that much.
+- When a conversation still does not fit, whole exchanges are dropped from the
+  oldest end, and the assistant is told that earlier messages are missing
+  rather than left to fill the gap itself. Room is set aside for the reply too,
+  so an answer is not cut off mid-sentence by the same limit.
+- AI Assistant settings has a Context Window control. Auto sizes it per model
+  and is the one to leave it on. Picking a size sets an upper limit, which is
+  worth doing on a machine short of memory. It cannot push a model past the
+  length it was trained for.
+
 ## [0.2.764-macos] - 2026-08-21
 
 ### AI Assistant
