@@ -5,6 +5,14 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 
 ## [Unreleased]
 
+### Maintainer tools
+- `node ace eval:retrieval` scores knowledge base search against a written-down
+  set of questions and the documents that should answer them, so a change to
+  retrieval can be checked against numbers rather than a few queries typed by
+  hand. Reports can be saved and compared against an earlier run, and a
+  comparison is refused when the two runs used different search settings. No
+  user-facing change.
+
 ## [0.2.765-macos] - 2026-08-22
 
 ### AI Assistant

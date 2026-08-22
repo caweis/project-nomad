@@ -1,0 +1,22 @@
+// A golden set for `node ace eval:retrieval`. One JSON object per line.
+// Blank lines and lines starting with // are ignored.
+//
+// THIS IS A TEMPLATE, not a working set. "relevantDocIds" are document ids from
+// YOUR knowledge base: the source filename without its extension, so a chunk
+// from /storage/kb/water-treatment.md has the id "water-treatment". Replace
+// these with questions and documents that exist on your box, or every question
+// scores zero and the run looks like a total retrieval failure.
+//
+// Required: id, query. Answerable questions need relevantDocIds. Questions the
+// knowledge base genuinely cannot answer set expectRefusal instead, and must
+// NOT list relevantDocIds — the two say opposite things about good behaviour.
+{"id": "water-boil-time", "query": "How long should I boil water to make it safe to drink?", "relevantDocIds": ["water-treatment"], "tags": ["single-hop", "water"]}
+{"id": "water-turbid", "query": "What do I do if the water is cloudy before I treat it?", "relevantDocIds": ["water-treatment"], "tags": ["single-hop", "water"]}
+{"id": "generator-derate-altitude", "query": "Does a generator lose output at altitude?", "relevantDocIds": ["generator-basics"], "tags": ["single-hop", "power"]}
+{"id": "acronym-sar", "query": "What does SAR stand for?", "relevantDocIds": ["glossary"], "tags": ["acronym"]}
+{"id": "multi-hop-battery-runtime", "query": "How long will my battery bank run a fridge overnight?", "relevantDocIds": ["battery-basics", "fridge-loads"], "tags": ["multi-hop", "power"]}
+// An out-of-corpus question. Retrieving nothing is the CORRECT answer here, and
+// this is the case that catches a score threshold set too low: context handed
+// to the model for a question it cannot answer is what produces a confident,
+// wrong reply to someone with no way to check it.
+{"id": "out-of-corpus-sports", "query": "Who won the 1998 World Cup final?", "expectRefusal": true, "tags": ["out-of-corpus"]}
