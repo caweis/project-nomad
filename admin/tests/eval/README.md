@@ -6,16 +6,38 @@ Manual spot-checking cannot answer it. A retrieval change moves results for
 questions nobody thought to retype, and the ones that break are rarely the ones
 tried by hand.
 
-```bash
-# In the admin container
-node ace eval:retrieval --goldens=tests/eval/goldens/example.jsonl
+## Running it
 
-# Scope it to one collection, and look deeper down the ranking
-node ace eval:retrieval --goldens=… --collection=Medicine --top-k=10
+This is a maintainer tool. Nothing in normal NOMAD use needs it.
+
+**On a running appliance**, it runs inside the admin container:
+
+```bash
+docker exec -it nomad_admin node ace eval:retrieval --goldens=/app/storage/goldens.jsonl
+```
+
+Note the path. **The golden set in this directory does not ship in the image** —
+`node ace build` only emits compiled TypeScript, and a `.jsonl` is not in
+`metaFiles`, so `tests/eval/goldens/` exists in the source tree and nowhere
+else. The host's `${NOMAD_DATA_ROOT}/storage` is mounted at `/app/storage`, so
+put your golden set there and point `--goldens` at it. Anywhere else in the
+container is not reachable from the host.
+
+**From a source checkout** the relative path works as written:
+
+```bash
+node ace eval:retrieval --goldens=tests/eval/goldens/example.jsonl
+```
+
+Either way:
+
+```bash
+# Scope to one collection, and look deeper down the ranking
+… eval:retrieval --goldens=… --collection=Medicine --top-k=10
 
 # Record a baseline, change something, compare
-node ace eval:retrieval --goldens=… --out=before.json
-node ace eval:retrieval --goldens=… --baseline=before.json
+… eval:retrieval --goldens=… --out=/app/storage/before.json
+… eval:retrieval --goldens=… --baseline=/app/storage/before.json
 ```
 
 ## Writing a golden set

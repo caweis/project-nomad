@@ -42,7 +42,16 @@ import {
  * parameters that do move retrieval here, and --baseline refuses to diff across
  * a changed stamp rather than reporting a meaningless delta.
  *
- *   node ace eval:retrieval --goldens=tests/eval/goldens/retrieval.jsonl
+ * On a running appliance this lives inside the admin container, and the golden
+ * set has to come in through the storage mount — tests/eval/goldens/ is source
+ * only, since `node ace build` emits compiled TypeScript and a .jsonl is not in
+ * metaFiles, so it is not in the image:
+ *
+ *   docker exec -it nomad_admin node ace eval:retrieval --goldens=/app/storage/goldens.jsonl
+ *
+ * From a source checkout the relative path works directly:
+ *
+ *   node ace eval:retrieval --goldens=tests/eval/goldens/example.jsonl
  *   node ace eval:retrieval --goldens=… --collection=Medicine --top-k=10
  *   node ace eval:retrieval --goldens=… --out=report.json
  *   node ace eval:retrieval --goldens=… --baseline=report.json
