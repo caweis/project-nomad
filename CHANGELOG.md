@@ -5,6 +5,22 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 
 ## [Unreleased]
 
+### Knowledge base
+- Deleting a file now removes what the assistant learned from it. Deleting a
+  ZIM removed the file and left everything indexed from it in place, so the
+  assistant carried on quoting content that was no longer on the server, and a
+  replaced file left its old text sitting beside the new. Storage scans also
+  clear out anything left behind by an earlier version. A scan that finds no
+  files at all now does nothing rather than treating everything as deleted.
+
+### Chat
+- Walking away from an answer now stops it. Leaving the page, switching
+  conversation, or turning chat off part-way through a reply used to leave it
+  generating with nobody reading it, which kept the assistant busy and made the
+  next question wait. Starting a new reply also stops the one it replaces, and
+  a reply that finishes late can no longer clear the "thinking" state of a
+  newer one still arriving.
+
 ### Maintainer tools
 - `node ace eval:retrieval` scores knowledge base search against a written-down
   set of questions and the documents that should answer them, so a change to
