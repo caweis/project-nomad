@@ -11,6 +11,7 @@ import classNames from '~/lib/classNames'
 import { IconMenu2, IconX } from '@tabler/icons-react'
 import { useSystemSetting } from '~/hooks/useSystemSetting'
 import { isRagRetrievalEnabled } from '../../../app/utils/rag_toggle'
+import { abortActiveStream, claimStream, ownsStream } from '../../lib/stream_abort'
 import Switch from '~/components/inputs/Switch'
 import InfoTooltip from '~/components/InfoTooltip'
 
@@ -122,6 +123,19 @@ export default function Chat({
   // An entry here means the user explicitly toggled thinking for that model; absent means fall
   // back to the global default (ai.autoThinking). Seeded from localStorage when models load.
   const [thinkingOverrides, setThinkingOverrides] = useState<Record<string, boolean>>({})
+  // Cancel an abandoned reply (caweis#51). Chat built an AbortController for
+  // every stream and never called abort(), so leaving the page, switching
+  // conversation, or turning chat off mid-reply left the fetch running. The
+  // browser keeps that connection occupied, and the server keeps generating
+  // into a response nobody will read — with one Ollama slot, the next message
+  // waits behind an answer that was already walked away from.
+  useEffect(() => {
+    if (!enabled) abortActiveStream(streamAbortRef)
+    return () => {
+      abortActiveStream(streamAbortRef)
+    }
+  }, [enabled])
+
   useEffect(() => {
     const next: Record<string, boolean> = {}
     for (const m of installedModels) {
@@ -324,8 +338,8 @@ export default function Chat({
 
       if (streamingEnabled !== false) {
         // Streaming path
-        const abortController = new AbortController()
-        streamAbortRef.current = abortController
+        // Claim the stream slot, cancelling any reply still running (caweis#51).
+        const abortController = claimStream(streamAbortRef)
 
         setIsStreamingResponse(true)
 
@@ -408,8 +422,13 @@ export default function Chat({
             })
           }
         } finally {
-          setIsStreamingResponse(false)
-          streamAbortRef.current = null
+          // Only the stream still on screen may clear the shared state. A
+          // straggler finishing after a newer reply started would otherwise
+          // turn off the spinner for an answer still arriving (caweis#51).
+          if (ownsStream(streamAbortRef, abortController)) {
+            setIsStreamingResponse(false)
+            streamAbortRef.current = null
+          }
         }
 
         if (fullContent && sessionId) {
