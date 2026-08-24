@@ -14,6 +14,8 @@ import { findReplacedWikipediaFiles } from '../utils/zim_filename.js'
 import logger from '@adonisjs/core/services/logger'
 import { DockerService } from './docker_service.js'
 import { KiwixLibraryService } from './kiwix_library_service.js'
+import { RagService } from './rag_service.js'
+import { OllamaService } from './ollama_service.js'
 import { inject } from '@adonisjs/core'
 import {
   deleteFileIfExists,
@@ -526,6 +528,23 @@ export class ZimService {
     }
 
     await deleteFileIfExists(fullPath)
+
+    // Drop the file's vectors too (caweis#50). Deleting the file used to leave
+    // its embedded passages in the vector store, so the assistant kept quoting
+    // content that was no longer on the box — and on a machine with no
+    // internet, that answer is not something the user can check anywhere else.
+    //
+    // Best-effort on purpose. The file is already gone, so a Qdrant outage must
+    // not turn a successful delete into an error; the reverse sweep in
+    // RagService.scanAndSyncStorage catches whatever this misses.
+    try {
+      const ragService = new RagService(this.dockerService, new OllamaService())
+      await ragService.purgeOrphanedSource(fullPath)
+    } catch (error) {
+      logger.error(
+        `[ZimService] Could not purge vectors for ${fullPath}; the storage scan will catch it: ${error instanceof Error ? error.message : error}`
+      )
+    }
 
     // Clean up InstalledResource entry
     const parsed = CollectionManifestService.parseZimFilename(fileName)

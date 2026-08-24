@@ -7,6 +7,7 @@ import sharp from 'sharp'
 import { deleteFileIfExists, determineFileType, getFile, getFileStatsIfExists, listDirectoryContentsRecursive, ZIM_STORAGE_PATH } from '../utils/fs.js'
 import { computeHeadingBoost } from '../utils/rag_context.js'
 import { decideScanAction, type IngestPolicy } from '../utils/kb_ingest_decision.js'
+import { decideOrphans, filterOrphanCandidates } from '../utils/kb_orphan_decision.js'
 import KbIngestState from '#models/kb_ingest_state'
 import { PDFParse } from 'pdf-parse'
 import { createWorker } from 'tesseract.js'
@@ -1357,6 +1358,31 @@ export class RagService {
    * the corresponding file from disk if it lives under the uploads directory.
    * @param source - Full source path as stored in Qdrant payloads
    */
+  /**
+   * Drop every point for a source whose file is already gone, and forget its
+   * ingest state (caweis#50).
+   *
+   * Deliberately not `deleteFileBySource`. That one is the user-initiated
+   * "remove this file from the knowledge base" path, and it also tries to
+   * delete the file from disk — which for an orphan means logging a warning
+   * about a file that does not exist. Here the disk side is already settled;
+   * only the vector store and the state row are behind.
+   *
+   * Failures are logged and swallowed: an orphan that survives one sweep is
+   * caught by the next, and it must not take down the whole storage scan.
+   */
+  public async purgeOrphanedSource(source: string): Promise<void> {
+    try {
+      await this.qdrant!.delete(RagService.CONTENT_COLLECTION_NAME, {
+        filter: { must: [{ key: 'source', match: { value: source } }] },
+      })
+      await KbIngestState.remove(source)
+      logger.info(`[RAG] Purged orphaned source with no file on disk: ${source}`)
+    } catch (error) {
+      logger.error(`[RAG] Failed to purge orphaned source ${source}:`, error)
+    }
+  }
+
   public async deleteFileBySource(source: string): Promise<{ success: boolean; message: string }> {
     try {
       await this._ensureCollection(
@@ -1542,6 +1568,39 @@ export class RagService {
       const embeddableFiles = filesInStorage.filter(
         (filePath) => determineFileType(filePath) !== 'unknown'
       )
+
+      // Reverse sweep (caweis#50). Everything above asks "is this file on disk
+      // embedded?"; nothing asked "does this embedded source still have a file?".
+      // ZimService.delete removes a file, its Kiwix entry and its DB row without
+      // touching Qdrant, so a deleted ZIM stayed answerable in chat, and a
+      // replaced file left its old points beside the new ones.
+      //
+      // Candidates are narrowed to the roots this scan actually walked, which
+      // keeps NOMAD's own bundled docs (discoverNomadDocs, outside both roots)
+      // out of it. A null decision means the disk scan told us nothing.
+      //
+      // Measured against filesInStorage rather than embeddableFiles on purpose.
+      // The question is "does a file still exist on disk", not "would we choose
+      // to embed it today" — if determineFileType ever stops recognising a type
+      // it used to accept, the narrower set would call every already-embedded
+      // file of that type an orphan and delete its vectors.
+      const orphans = decideOrphans(
+        filterOrphanCandidates([...sourcesInQdrant], {
+          kbUploadsPath: KB_UPLOADS_PATH,
+          zimPath: ZIM_PATH,
+        }),
+        filesInStorage
+      )
+      if (orphans === null) {
+        logger.warn(
+          '[RAG] Storage scan returned no files; skipping the orphan sweep rather than treating every indexed source as deleted.'
+        )
+      } else if (orphans.length > 0) {
+        logger.info(`[RAG] Purging ${orphans.length} orphaned source(s) from the vector store`)
+        for (const source of orphans) {
+          await this.purgeOrphanedSource(source)
+        }
+      }
 
       // Global ingest policy. Unset is treated as 'Always' so existing installs
       // keep their behavior until the user opts into Manual from the KB panel.
