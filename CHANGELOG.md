@@ -20,6 +20,28 @@ Notable changes to the macOS distribution layer of this fork. Format follows
   a link, in a new tab, and never starts, stops, updates or checks on whatever
   is behind it. (Ports upstream 2c73139b and its follow-ups.)
 
+### Maps
+- Pins can be looked after, not just dropped. Dropping one now asks for notes
+  as well as a name (up to 500 characters, and a link in them can be followed),
+  and clicking a pin shows them with an Edit button. A pin can carry one of 36
+  icons chosen for marking places you rely on offline, such as water, shelter,
+  first aid, power, fuel and hazards, and a custom color beside the six
+  presets. The icon is drawn light or dark, whichever reads better on that
+  color. Pins are drawn as a pin shape with the icon inside, its point exactly
+  on the place marked. Saved Locations gains search, sorting (by name, hue,
+  icon or visibility), a show and hide switch on each pin, and Hide all.
+  Deleting a pin first flies to it and asks, since two pins called "Well" look
+  the same in a list. (Ports upstream a01aa5dc and its follow-ups.)
+- Go to a place by its coordinates. A box in the top bar takes "lat, lng" as
+  map sites copy them, and flies there or starts a pin there. A link such as
+  `/maps?lat=40.015&lng=-105.27&zoom=14` opens on that place. The scale bar
+  gains Nautical, and a button turns the live cursor coordinates off. The
+  coordinate tools appear from tablet width up; a phone's top bar has no room
+  for them.
+- A pin that fails to save or delete no longer looks as if it worked. Its
+  popup stays open with what you typed, and a pin that could not be deleted
+  stays in the list.
+
 ### Knowledge base
 - Indexing a ZIM no longer stops partway through. Indexing works through an
   archive in batches and took a batch that yielded little text as the end of

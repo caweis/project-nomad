@@ -17,6 +17,7 @@ import BenchmarkResult from '#models/benchmark_result'
 import { BenchmarkType, RunBenchmarkResponse, SubmitBenchmarkResponse, UpdateBuilderTagResponse } from '../../types/benchmark'
 import { DrugIngestStatus } from '../../types/drug_reference'
 import type { ChatSource } from '../../types/chat'
+import type { CreateMapMarkerPayload, MapMarkerResponse, UpdateMapMarkerPayload } from '../../types/maps'
 
 class API {
   private client: AxiosInstance
@@ -1065,37 +1066,33 @@ class API {
     })()
   }
 
-  // Map markers — parity with upstream v1.33.0.
+  // Map markers — parity with upstream v1.33.0, typed as of v1.35 (a01aa5dc).
   async listMapMarkers() {
     return catchInternal(async () => {
-      const response = await this.client.get<
-        Array<{ id: number; name: string; longitude: number; latitude: number; color: string; notes: string | null; created_at: string }>
-      >('/maps/markers')
+      const response = await this.client.get<MapMarkerResponse[]>('/maps/markers')
       return response.data
     })()
   }
 
-  async createMapMarker(data: { name: string; longitude: number; latitude: number; color?: string }) {
+  async createMapMarker(data: CreateMapMarkerPayload) {
     return catchInternal(async () => {
-      const response = await this.client.post<
-        { id: number; name: string; longitude: number; latitude: number; color: string; notes: string | null; created_at: string }
-      >('/maps/markers', data)
+      const response = await this.client.post<MapMarkerResponse>('/maps/markers', data)
       return response.data
     })()
   }
 
-  async updateMapMarker(id: number, data: { name?: string; color?: string }) {
+  async updateMapMarker(id: number, data: UpdateMapMarkerPayload) {
     return catchInternal(async () => {
-      const response = await this.client.patch<
-        { id: number; name: string; longitude: number; latitude: number; color: string }
-      >(`/maps/markers/${id}`, data)
+      const response = await this.client.patch<MapMarkerResponse>(`/maps/markers/${id}`, data)
       return response.data
     })()
   }
 
+  // True once the server has deleted it; undefined (after catchInternal's toast) if not.
   async deleteMapMarker(id: number) {
     return catchInternal(async () => {
       await this.client.delete(`/maps/markers/${id}`)
+      return true
     })()
   }
 }
