@@ -89,6 +89,9 @@ export function toRetrievedChunk(result: RerankedRAGResult) {
       hierarchy: result.hierarchy,
       document_id: result.document_id,
       content_type: result.content_type,
+      // Citation metadata (upstream #1179)
+      archive_title: result.archive_title,
+      archive_date: result.archive_date,
     },
   }
 }

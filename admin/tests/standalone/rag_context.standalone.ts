@@ -74,6 +74,14 @@ check('the retrieved score is the reranked score, with the semantic one alongsid
   assert.equal(chunk.metadata.full_title, 'Water purification — Boiling')
 })
 
+check('the archive title and date ride along for citations', () => {
+  // ZIM ingestion has always written both into the payload; they were read
+  // off every point and then dropped here, so nothing could cite them.
+  const chunk = toRetrievedChunk(reranked({ archive_title: 'Wikipedia (Medicine)', archive_date: '2026-01' }))
+  assert.equal(chunk.metadata.archive_title, 'Wikipedia (Medicine)')
+  assert.equal(chunk.metadata.archive_date, '2026-01')
+})
+
 check('what search returns is what the retrieval eval can credit to a document', () => {
   // End to end across the seam that broke: without `source`, every chunk
   // search returned was unresolvable and eval:retrieval scored zero recall.

@@ -55,6 +55,8 @@ export type RAGResult = {
   document_id?: string
   content_type?: string
   source?: string
+  archive_title?: string
+  archive_date?: string
 }
 
 export type RerankedRAGResult = Omit<RAGResult, 'keywords'> & {

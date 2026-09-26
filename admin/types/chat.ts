@@ -1,3 +1,14 @@
+/**
+ * A single provenance entry under an assistant answer: the document a chunk of
+ * injected context came from. `source` is the originating file/ZIM path and is
+ * what dedupes the list; `title` is what the user actually reads.
+ */
+export interface ChatSource {
+  title: string
+  date?: string
+  source?: string
+}
+
 export interface ChatMessage {
   id: string
   role: 'system' | 'user' | 'assistant'
@@ -9,6 +20,8 @@ export interface ChatMessage {
   thinkingDuration?: number
   // Generation stopped at the length limit, so the answer ends mid-thought.
   truncated?: boolean
+  // The documents the answer was given to read (upstream #1179).
+  sources?: ChatSource[]
 }
 
 export interface ChatSession {

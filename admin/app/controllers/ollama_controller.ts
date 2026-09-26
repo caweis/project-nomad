@@ -10,6 +10,8 @@ import { inject } from '@adonisjs/core'
 import type { HttpContext } from '@adonisjs/core/http'
 import { RAG_CONTEXT_LIMITS, SYSTEM_PROMPTS } from '../../constants/ollama.js'
 import { buildContextBlock } from '../utils/rag_context.js'
+import { buildCitations } from '../utils/citations.js'
+import type { ChatSource } from '../../types/chat.js'
 import { getContextLimitsForModel, trimToContextBudget } from '../utils/rag_prompt.js'
 import { planPrompt, splitForBudget, type BudgetMessage } from '../utils/context_budget.js'
 import { isRagRetrievalEnabled } from '../utils/rag_toggle.js'
@@ -103,6 +105,10 @@ export default class OllamaController {
         : null
 
       logger.debug(`[OllamaController] Rewritten query for RAG: "${rewrittenQuery}"`)
+      // Provenance for the answer about to be generated (upstream #1179),
+      // surfaced under it as "Sources". Stays empty whenever retrieval was off
+      // or found nothing, which is the honest result: no context, no citations.
+      let sources: ChatSource[] = []
       if (rewrittenQuery) {
         const relevantDocs = await this.ragService.searchSimilarDocuments(
           rewrittenQuery,
@@ -126,6 +132,12 @@ export default class OllamaController {
           )
 
           const contextText = buildContextBlock(trimmedDocs)
+          // From trimmedDocs, not relevantDocs: a chunk trimmed out above never
+          // reached the model, and citing it would credit the answer to a
+          // document it was not based on. The block goes in as a leading system
+          // message, which planPrompt never drops, so this is what the model
+          // reads.
+          sources = buildCitations(trimmedDocs)
 
           const systemMessage = {
             role: 'system' as const,
@@ -248,6 +260,11 @@ export default class OllamaController {
           }
           throw err
         }
+        // Trailing citation event, written before end(). It carries no `message`
+        // key, which is how the client tells it apart from Ollama's own chunks.
+        if (sources.length > 0) {
+          response.response.write(`data: ${JSON.stringify({ sources })}\n\n`)
+        }
         response.response.end()
         if (cutOff) {
           this._logLengthStop(reqData.model, contextWindow, planned.numPredict, completionTokens)
@@ -255,7 +272,7 @@ export default class OllamaController {
 
         // Save assistant message and optionally generate title
         if (sessionId && fullContent) {
-          await this.chatService.addMessage(sessionId, 'assistant', fullContent)
+          await this.chatService.addMessage(sessionId, 'assistant', fullContent, sources)
           const messageCount = await this.chatService.getMessageCount(sessionId)
           if (messageCount <= 2 && userContent) {
             this.chatService.generateTitle(sessionId, userContent, fullContent, reqData.model).catch((err) => {
@@ -273,7 +290,7 @@ export default class OllamaController {
       }
 
       if (sessionId && result?.message?.content) {
-        await this.chatService.addMessage(sessionId, 'assistant', result.message.content)
+        await this.chatService.addMessage(sessionId, 'assistant', result.message.content, sources)
         const messageCount = await this.chatService.getMessageCount(sessionId)
         if (messageCount <= 2 && userContent) {
           this.chatService.generateTitle(sessionId, userContent, result.message.content, reqData.model).catch((err) => {
@@ -282,7 +299,7 @@ export default class OllamaController {
         }
       }
 
-      return result
+      return { ...result, sources }
     } catch (error) {
       if (reqData.stream) {
         response.response.write(`data: ${JSON.stringify({ error: true })}\n\n`)

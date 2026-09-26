@@ -12,6 +12,7 @@ import { ChatResponse, ModelResponse } from 'ollama'
 import BenchmarkResult from '#models/benchmark_result'
 import { BenchmarkType, RunBenchmarkResponse, SubmitBenchmarkResponse, UpdateBuilderTagResponse } from '../../types/benchmark'
 import { DrugIngestStatus } from '../../types/drug_reference'
+import type { ChatSource } from '../../types/chat'
 
 class API {
   private client: AxiosInstance
@@ -271,7 +272,10 @@ class API {
 
   async sendChatMessage(chatRequest: OllamaChatRequest) {
     return catchInternal(async () => {
-      const response = await this.client.post<ChatResponse>('/ollama/chat', chatRequest)
+      const response = await this.client.post<ChatResponse & { sources?: ChatSource[] }>(
+        '/ollama/chat',
+        chatRequest
+      )
       return response.data
     })()
   }
@@ -280,6 +284,7 @@ class API {
     chatRequest: OllamaChatRequest,
     onChunk: (content: string, thinking: string, done: boolean) => void,
     signal?: AbortSignal,
+    onSources?: (sources: ChatSource[]) => void,
     onDoneReason?: (reason: string) => void
   ): Promise<void> {
     // Axios doesn't support ReadableStream in browser, so need to use fetch
@@ -315,6 +320,14 @@ class API {
           } catch { continue /* skip malformed chunks */ }
 
           if (data.error) throw new Error('The model encountered an error. Please try again.')
+
+          // Citation metadata (upstream #1179) arrives as a distinct trailing
+          // event with no `message` key; route it separately rather than
+          // through onChunk.
+          if (data.sources) {
+            onSources?.(data.sources)
+            continue
+          }
 
           onChunk(
             data.message?.content ?? '',
@@ -377,6 +390,7 @@ class API {
           role: 'system' | 'user' | 'assistant'
           content: string
           timestamp: string
+          sources?: ChatSource[]
         }>
       }>(`/chat/sessions/${sessionId}`)
       return response.data

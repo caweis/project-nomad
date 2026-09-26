@@ -14,6 +14,13 @@ Notable changes to the macOS distribution layer of this fork. Format follows
   files at all now does nothing rather than treating everything as deleted.
 
 ### Chat
+- Answers that drew on your knowledge base now list their sources underneath:
+  the archive each passage came from, with its date where the archive records
+  one, or the file name for something you uploaded. Only what the assistant
+  was actually given to read is listed, never everything the search turned up,
+  so a source under an answer is one it was based on. Reopened conversations
+  keep their lists. Content indexed before this release is cited too; nothing
+  needs re-indexing. (Ports upstream #1179.)
 - Long answers are no longer cut off at about 750 words. 0.2.765 set aside
   room for each reply so it could not be squeezed out by the conversation, and
   by mistake that room also became the most a reply could ever use: 1,024

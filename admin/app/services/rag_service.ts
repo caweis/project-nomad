@@ -887,6 +887,11 @@ export class RagService {
         document_id: result.payload?.document_id as string | undefined,
         content_type: result.payload?.content_type as string | undefined,
         source: result.payload?.source as string | undefined,
+        // Citation metadata (upstream #1179): the title and date of the archive
+        // a chunk was extracted from. ZIM ingestion has always written both;
+        // they were never read back. Undefined for non-ZIM content.
+        archive_title: result.payload?.archive_title as string | undefined,
+        archive_date: result.payload?.archive_date as string | undefined,
       }))
 
       const rerankedResults = this.rerankResults(resultsWithMetadata, keywords, query)
