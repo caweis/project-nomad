@@ -6,6 +6,15 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 ## [Unreleased]
 
 ### Knowledge base
+- Indexing a ZIM no longer stops partway through. Indexing works through an
+  archive in batches and took a batch that yielded little text as the end of
+  the file, which is how most reference archives open (navigation pages,
+  category listings, media wrappers). The rest of the archive was skipped
+  without a word; upstream measured WikiMed at 28% indexed and Medicine
+  LibreTexts at 16 passages out of 23,171 articles. A ZIM indexed before this
+  release may be only partly searchable: remove it from the knowledge base and
+  Sync to index it in full (with indexing set to Manual, press Index once it
+  reappears). (Ports upstream 1933f8ee.)
 - Deleting a file now removes what the assistant learned from it. Deleting a
   ZIM removed the file and left everything indexed from it in place, so the
   assistant carried on quoting content that was no longer on the server, and a
