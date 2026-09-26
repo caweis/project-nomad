@@ -5,6 +5,7 @@ import { readContextLength, readModelfileNumCtx } from '../utils/context_window.
 import { FALLBACK_RECOMMENDED_OLLAMA_MODELS, MLX_HIGHLIGHT_MODELS, MODEL_DESCRIPTION_OVERRIDES } from '../../constants/ollama.js'
 import { withMlxPullNames } from '../../util/mlx.js'
 import { normalizeNonStreamed, ThinkTagSplitter } from '../utils/think_stream.js'
+import { abortWith } from '../utils/abortable_stream.js'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import logger from '@adonisjs/core/services/logger'
@@ -155,7 +156,13 @@ export class OllamaService {
     return { ...response, message: { ...response.message, content, thinking } }
   }
 
-  public async chatStream(chatRequest: ChatRequest) {
+  /**
+   * Streaming chat. `signal` is the reader: when it fires, or when the caller
+   * stops iterating early, the request to Ollama is aborted, which is what
+   * stops the model generating. Closing the browser's side of the SSE response
+   * alone does not; the loop reading this stream would carry on to the end.
+   */
+  public async chatStream(chatRequest: ChatRequest, signal?: AbortSignal) {
     await this._ensureDependencies()
     if (!this.ollama) {
       throw new Error('Ollama client is not initialized.')
@@ -164,7 +171,7 @@ export class OllamaService {
       ...chatRequest,
       stream: true,
     })
-    return this.splitThinkTagsFromStream(stream)
+    return this.splitThinkTagsFromStream(abortWith(stream, signal))
   }
 
   /**

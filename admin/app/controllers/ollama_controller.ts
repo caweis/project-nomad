@@ -42,11 +42,18 @@ export default class OllamaController {
 
     // Flush SSE headers immediately so the client connection is open while
     // pre-processing (query rewriting, RAG lookup) runs in the background.
+    //
+    // The reader is tracked from here, not from the start of generation.
+    // Someone who leaves during the query rewrite or the knowledge-base search
+    // has left all the same, and a 'close' listener attached after the socket
+    // closed would never hear about it.
+    const readerGone = new AbortController()
     if (reqData.stream) {
       response.response.setHeader('Content-Type', 'text/event-stream')
       response.response.setHeader('Cache-Control', 'no-cache')
       response.response.setHeader('Connection', 'keep-alive')
       response.response.flushHeaders()
+      response.response.on('close', () => readerGone.abort())
     }
 
     try {
@@ -197,9 +204,15 @@ export default class OllamaController {
       }
 
       if (reqData.stream) {
+        // The reader left while the question was being prepared. Their message
+        // is saved above; starting the model now would only make the next
+        // question wait behind an answer nobody will read.
+        if (readerGone.signal.aborted) {
+          logger.debug('[OllamaController] Client left before generation started; not starting it')
+          return
+        }
         logger.debug(`[OllamaController] Initiating streaming response for model: "${reqData.model}" with think: ${think}`)
         // Headers already flushed above
-        const stream = await this.ollamaService.chatStream({ ...budgetedRequest, think })
         let fullContent = ''
         // ollama-js ends the stream at the first chunk marked done, so exactly
         // one stop reason arrives. On oMLX the proxy stamps the token count on
@@ -207,13 +220,28 @@ export default class OllamaController {
         // log shows '?' for tokens there.
         let cutOff = false
         let completionTokens: number | undefined
-        for await (const chunk of stream) {
-          if (chunk.message?.content) {
-            fullContent += chunk.message.content
+        try {
+          const stream = await this.ollamaService.chatStream(
+            { ...budgetedRequest, think },
+            readerGone.signal
+          )
+          for await (const chunk of stream) {
+            if (chunk.message?.content) {
+              fullContent += chunk.message.content
+            }
+            if (chunk.done_reason === 'length') cutOff = true
+            if (typeof chunk.eval_count === 'number') completionTokens = chunk.eval_count
+            response.response.write(`data: ${JSON.stringify(chunk)}\n\n`)
           }
-          if (chunk.done_reason === 'length') cutOff = true
-          if (typeof chunk.eval_count === 'number') completionTokens = chunk.eval_count
-          response.response.write(`data: ${JSON.stringify(chunk)}\n\n`)
+        } catch (err) {
+          // Aborting the request to Ollama surfaces here as an AbortError. The
+          // partial answer is not saved: it ends mid-sentence with nothing to
+          // say so, and nobody was reading it.
+          if (readerGone.signal.aborted) {
+            logger.debug('[OllamaController] Client disconnected; stopped generating')
+            return
+          }
+          throw err
         }
         response.response.end()
         if (cutOff) {

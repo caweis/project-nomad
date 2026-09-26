@@ -28,7 +28,10 @@ Notable changes to the macOS distribution layer of this fork. Format follows
   generating with nobody reading it, which kept the assistant busy and made the
   next question wait. Starting a new reply also stops the one it replaces, and
   a reply that finishes late can no longer clear the "thinking" state of a
-  newer one still arriving.
+  newer one still arriving. The model itself now stops too, not just the page:
+  leaving while your question is still being looked up means it never starts.
+  A reply stopped this way is not kept in the conversation, since it would end
+  mid-sentence; your question is.
 
 ### Maintainer tools
 - `node ace eval:retrieval` scores knowledge base search against a written-down
