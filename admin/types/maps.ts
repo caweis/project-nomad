@@ -21,3 +21,34 @@ export type MapLayer = {
   'source-layer'?: string
   [key: string]: any
 }
+
+// Map markers (upstream a01aa5dc). Field names are the API's (snake_case); the
+// marker hook maps them to its own camelCase MapMarker.
+export type CreateMapMarkerPayload = {
+  name: string
+  notes?: string | null
+  longitude: number
+  latitude: number
+  color?: string
+  custom_color?: string | null
+  icon?: string | null
+  icon_color?: string | null
+  visible?: boolean
+}
+
+export type UpdateMapMarkerPayload = Partial<CreateMapMarkerPayload>
+
+export type MapMarkerResponse = {
+  id: number
+  name: string
+  longitude: number
+  latitude: number
+  color: string
+  custom_color?: string | null
+  icon?: string | null
+  icon_color?: string | null
+  visible?: boolean
+  notes?: string | null
+  created_at: string
+  updated_at?: string
+}

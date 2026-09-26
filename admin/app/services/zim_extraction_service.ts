@@ -41,7 +41,10 @@ export class ZIMExtractionService {
      * @param filePath - Path to the ZIM file
      * @param opts - Options including maxArticles, strategy, onProgress, startOffset, and batchSize
      */
-    async extractZIMContent(filePath: string, opts: ExtractZIMContentOptions = {}): Promise<ZIMContentChunk[]> {
+    async extractZIMContent(
+        filePath: string,
+        opts: ExtractZIMContentOptions = {}
+    ): Promise<{ chunks: ZIMContentChunk[]; articlesProcessed: number }> {
         try {
             logger.info(`[ZIMExtractionService]: Processing ZIM file at path: ${filePath}`)
             
@@ -167,7 +170,10 @@ export class ZIMExtractionService {
                 textPreview: c.text.substring(0, 100)
             })))
             logger.debug("Total structured sections extracted:", toReturn.length)
-            return toReturn
+            // articlesProcessed is what the batch loop has to gate and advance
+            // on; see zim_batch_decision.ts. It was counted and logged all
+            // along, then thrown away here.
+            return { chunks: toReturn, articlesProcessed }
         } catch (error) {
             logger.error('Error processing ZIM file:', error)
             throw error

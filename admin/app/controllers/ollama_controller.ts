@@ -10,6 +10,8 @@ import { inject } from '@adonisjs/core'
 import type { HttpContext } from '@adonisjs/core/http'
 import { RAG_CONTEXT_LIMITS, SYSTEM_PROMPTS } from '../../constants/ollama.js'
 import { buildContextBlock } from '../utils/rag_context.js'
+import { buildCitations } from '../utils/citations.js'
+import type { ChatSource } from '../../types/chat.js'
 import { getContextLimitsForModel, trimToContextBudget } from '../utils/rag_prompt.js'
 import { planPrompt, splitForBudget, type BudgetMessage } from '../utils/context_budget.js'
 import { isRagRetrievalEnabled } from '../utils/rag_toggle.js'
@@ -42,11 +44,18 @@ export default class OllamaController {
 
     // Flush SSE headers immediately so the client connection is open while
     // pre-processing (query rewriting, RAG lookup) runs in the background.
+    //
+    // The reader is tracked from here, not from the start of generation.
+    // Someone who leaves during the query rewrite or the knowledge-base search
+    // has left all the same, and a 'close' listener attached after the socket
+    // closed would never hear about it.
+    const readerGone = new AbortController()
     if (reqData.stream) {
       response.response.setHeader('Content-Type', 'text/event-stream')
       response.response.setHeader('Cache-Control', 'no-cache')
       response.response.setHeader('Connection', 'keep-alive')
       response.response.flushHeaders()
+      response.response.on('close', () => readerGone.abort())
     }
 
     try {
@@ -96,6 +105,10 @@ export default class OllamaController {
         : null
 
       logger.debug(`[OllamaController] Rewritten query for RAG: "${rewrittenQuery}"`)
+      // Provenance for the answer about to be generated (upstream #1179),
+      // surfaced under it as "Sources". Stays empty whenever retrieval was off
+      // or found nothing, which is the honest result: no context, no citations.
+      let sources: ChatSource[] = []
       if (rewrittenQuery) {
         const relevantDocs = await this.ragService.searchSimilarDocuments(
           rewrittenQuery,
@@ -119,6 +132,12 @@ export default class OllamaController {
           )
 
           const contextText = buildContextBlock(trimmedDocs)
+          // From trimmedDocs, not relevantDocs: a chunk trimmed out above never
+          // reached the model, and citing it would credit the answer to a
+          // document it was not based on. The block goes in as a leading system
+          // message, which planPrompt never drops, so this is what the model
+          // reads.
+          sources = buildCitations(trimmedDocs)
 
           const systemMessage = {
             role: 'system' as const,
@@ -164,8 +183,9 @@ export default class OllamaController {
       // the backend defaults to and was truncated from the middle — dropping
       // recent history and retrieved context first, which is the worst part to
       // lose. planPrompt evicts whole turns oldest-first instead, in blocks so
-      // the prefix stays stable for the KV cache, and reserves room for the
-      // answer (num_predict) so generation cannot run past the window.
+      // the prefix stays stable for the KV cache, holds back a floor of room for
+      // the answer, and caps generation (num_predict) at whatever the window
+      // has left once the prompt is in, so it cannot run past the window.
       //
       // Applied AFTER the message above is written to the session, so history
       // always stores what the user actually typed rather than a trimmed copy.
@@ -196,21 +216,63 @@ export default class OllamaController {
       }
 
       if (reqData.stream) {
+        // The reader left while the question was being prepared. Their message
+        // is saved above; starting the model now would only make the next
+        // question wait behind an answer nobody will read.
+        if (readerGone.signal.aborted) {
+          logger.debug('[OllamaController] Client left before generation started; not starting it')
+          return
+        }
         logger.debug(`[OllamaController] Initiating streaming response for model: "${reqData.model}" with think: ${think}`)
         // Headers already flushed above
-        const stream = await this.ollamaService.chatStream({ ...budgetedRequest, think })
         let fullContent = ''
-        for await (const chunk of stream) {
-          if (chunk.message?.content) {
-            fullContent += chunk.message.content
+        // ollama-js ends the stream at the first chunk marked done, so exactly
+        // one stop reason arrives. On oMLX the proxy stamps the token count on
+        // a later [DONE] frame that ollama-js never reads, so the length-stop
+        // log shows '?' for tokens there.
+        let cutOff = false
+        let completionTokens: number | undefined
+        try {
+          // Cancel only where the backend survives it (see cancel_safety.ts).
+          // Without the signal, a reader who leaves costs one wasted answer, as
+          // it did in every earlier release; with it, on an Ollama build that
+          // predates the fix, it can leave the runner spinning until restarted.
+          const cancelOnLeave = await this.ollamaService.canCancelGeneration()
+          const stream = await this.ollamaService.chatStream(
+            { ...budgetedRequest, think },
+            cancelOnLeave ? readerGone.signal : undefined
+          )
+          for await (const chunk of stream) {
+            if (chunk.message?.content) {
+              fullContent += chunk.message.content
+            }
+            if (chunk.done_reason === 'length') cutOff = true
+            if (typeof chunk.eval_count === 'number') completionTokens = chunk.eval_count
+            response.response.write(`data: ${JSON.stringify(chunk)}\n\n`)
           }
-          response.response.write(`data: ${JSON.stringify(chunk)}\n\n`)
+        } catch (err) {
+          // Aborting the request to Ollama surfaces here as an AbortError. The
+          // partial answer is not saved: it ends mid-sentence with nothing to
+          // say so, and nobody was reading it.
+          if (readerGone.signal.aborted) {
+            logger.debug('[OllamaController] Client disconnected; stopped generating')
+            return
+          }
+          throw err
+        }
+        // Trailing citation event, written before end(). It carries no `message`
+        // key, which is how the client tells it apart from Ollama's own chunks.
+        if (sources.length > 0) {
+          response.response.write(`data: ${JSON.stringify({ sources })}\n\n`)
         }
         response.response.end()
+        if (cutOff) {
+          this._logLengthStop(reqData.model, contextWindow, planned.numPredict, completionTokens)
+        }
 
         // Save assistant message and optionally generate title
         if (sessionId && fullContent) {
-          await this.chatService.addMessage(sessionId, 'assistant', fullContent)
+          await this.chatService.addMessage(sessionId, 'assistant', fullContent, sources)
           const messageCount = await this.chatService.getMessageCount(sessionId)
           if (messageCount <= 2 && userContent) {
             this.chatService.generateTitle(sessionId, userContent, fullContent, reqData.model).catch((err) => {
@@ -223,9 +285,12 @@ export default class OllamaController {
 
       // Non-streaming (legacy) path
       const result = await this.ollamaService.chat({ ...budgetedRequest, think })
+      if (result?.done_reason === 'length') {
+        this._logLengthStop(reqData.model, contextWindow, planned.numPredict, result.eval_count)
+      }
 
       if (sessionId && result?.message?.content) {
-        await this.chatService.addMessage(sessionId, 'assistant', result.message.content)
+        await this.chatService.addMessage(sessionId, 'assistant', result.message.content, sources)
         const messageCount = await this.chatService.getMessageCount(sessionId)
         if (messageCount <= 2 && userContent) {
           this.chatService.generateTitle(sessionId, userContent, result.message.content, reqData.model).catch((err) => {
@@ -234,7 +299,7 @@ export default class OllamaController {
         }
       }
 
-      return result
+      return { ...result, sources }
     } catch (error) {
       if (reqData.stream) {
         response.response.write(`data: ${JSON.stringify({ error: true })}\n\n`)
@@ -243,6 +308,24 @@ export default class OllamaController {
       }
       throw error
     }
+  }
+
+  /**
+   * A reply that hit the generation cap reaches the user cut off. The client
+   * shows that from done_reason; this puts it in the admin log with the numbers
+   * needed to tell a small window from a cap that is set too low (upstream
+   * #1342).
+   */
+  private _logLengthStop(
+    model: string,
+    numCtx: number,
+    numPredict: number,
+    completionTokens: number | undefined
+  ): void {
+    logger.info(
+      `[OllamaController] ${model} stopped at the length limit: ` +
+        `${completionTokens ?? '?'} tokens generated, num_predict=${numPredict}, num_ctx=${numCtx}`
+    )
   }
 
   async deleteModel({ request }: HttpContext) {

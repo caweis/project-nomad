@@ -10,8 +10,8 @@ import assert from 'node:assert/strict'
 import { DECKS, deckForKey, isPinned, groupIntoDecks } from '../../inertia/util/home_decks.ts'
 let p = 0; const check = (n: string, f: () => void) => { f(); p++; console.log(`  ok - ${n}`) }
 
-check('deck order, secure-ai first', () => {
-  assert.deepEqual(DECKS.map(d => d.key), ['secure-ai','communicate','knowledge-maps','health-supplies','tools-workshop'])
+check('deck order, secure-ai first, the user\'s links last', () => {
+  assert.deepEqual(DECKS.map(d => d.key), ['secure-ai','communicate','knowledge-maps','health-supplies','tools-workshop','links'])
 })
 check('deckForKey maps known + falls back', () => {
   assert.equal(deckForKey('nomad_vaultwarden'), 'secure-ai')
@@ -66,5 +66,33 @@ check('groupIntoDecks: absent overrides === legacy behavior', () => {
   const legacy = groupIntoDecks(items as any)
   const withEmpty = groupIntoDecks(items as any, {})
   assert.deepEqual(withEmpty.map(d => d.deck.key), legacy.map(d => d.deck.key))
+})
+
+// ── Link tiles (upstream 2c73139b) ──
+// The home is the only place a link tile lives: the Supply Depot leaves it out and
+// "Browse all apps" cannot reach it. An unpinned tile would be lost from every screen.
+check('a link tile is always pinned, past the display_order band and over an override', () => {
+  const tile = { deckKey: 'nomad_link_living_room_nas', displayOrder: 90, isLinkTile: true }
+  assert.equal(isPinned(tile), true)
+  assert.equal(isPinned(tile, { nomad_link_living_room_nas: false }), true)
+})
+check('link tiles group into their own deck, after every app deck', () => {
+  const items = [
+    { deckKey: 'nomad_link_router', displayOrder: 90, isLinkTile: true },
+    { deckKey: 'maps', displayOrder: 4 },
+    { deckKey: 'nomad_link_printer', displayOrder: 90, isLinkTile: true },
+  ]
+  const decks = groupIntoDecks(items)
+  assert.deepEqual(decks.map(d => d.deck.key), ['knowledge-maps', 'links'])
+  assert.deepEqual(decks[1].items.map(i => i.deckKey), ['nomad_link_router', 'nomad_link_printer'])
+})
+check('a link tile never borrows an app deck, even when its key maps to one', () => {
+  // deckForKey would put an unknown key in tools-workshop, and a known key in its app's deck.
+  const decks = groupIntoDecks([{ deckKey: 'nomad_vaultwarden', displayOrder: 90, isLinkTile: true }])
+  assert.deepEqual(decks.map(d => d.deck.key), ['links'])
+})
+check('with no link tiles the links deck stays hidden', () => {
+  const decks = groupIntoDecks([{ deckKey: 'maps', displayOrder: 4 }])
+  assert.ok(!decks.some(d => d.deck.key === 'links'))
 })
 console.log(`\n${p} checks passed`)

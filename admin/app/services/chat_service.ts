@@ -13,6 +13,8 @@ import { inject } from '@adonisjs/core'
 import { OllamaService } from './ollama_service.js'
 import { SYSTEM_PROMPTS } from '../../constants/ollama.js'
 import { toTitleCase } from '../utils/misc.js'
+import { parseStoredSources } from '../utils/citations.js'
+import type { ChatSource } from '../../types/chat.js'
 
 @inject()
 export class ChatService {
@@ -197,6 +199,7 @@ export class ChatService {
           role: msg.role,
           content: msg.content,
           timestamp: msg.created_at.toJSDate(),
+          sources: parseStoredSources(msg.sources),
         })),
       }
     } catch (error) {
@@ -259,12 +262,22 @@ export class ChatService {
     }
   }
 
-  async addMessage(sessionId: number, role: 'system' | 'user' | 'assistant', content: string) {
+  async addMessage(
+    sessionId: number,
+    role: 'system' | 'user' | 'assistant',
+    content: string,
+    sources?: ChatSource[]
+  ) {
     try {
       const message = await ChatMessage.create({
         session_id: sessionId,
         role,
         content,
+        // Only written when there is something to store; the column's default
+        // covers everything else. User messages and unsourced answers never
+        // name the column, so on a device that has somehow not run this
+        // release's migration, only answers that carry sources fail to save.
+        ...(sources && sources.length > 0 ? { sources: JSON.stringify(sources) } : {}),
       })
 
       // Update session's updated_at timestamp
@@ -277,6 +290,7 @@ export class ChatService {
         role: message.role,
         content: message.content,
         timestamp: message.created_at.toJSDate(),
+        sources: sources && sources.length > 0 ? sources : undefined,
       }
     } catch (error) {
       logger.error(

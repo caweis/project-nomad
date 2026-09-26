@@ -7,6 +7,9 @@ interface SwitchProps {
   description?: string
   disabled?: boolean
   id?: string
+  /** The switch's name for screen readers when there is no visible `label`,
+   * e.g. one switch per table row. */
+  ariaLabel?: string
 }
 
 export default function Switch({
@@ -16,6 +19,7 @@ export default function Switch({
   description,
   disabled = false,
   id,
+  ariaLabel,
 }: SwitchProps) {
   const switchId = id || `switch-${label?.replace(/\s+/g, '-').toLowerCase()}`
 
@@ -39,7 +43,10 @@ export default function Switch({
           id={switchId}
           type="button"
           role="switch"
-          aria-checked={checked}
+          // A real boolean even if a caller passes MySQL's 1/0: aria-checked="1" is
+          // not a valid value, and a screen reader reports nothing (upstream f1624228).
+          aria-checked={!!checked}
+          aria-label={label ? undefined : ariaLabel}
           disabled={disabled}
           onClick={() => !disabled && onChange(!checked)}
           className={clsx(

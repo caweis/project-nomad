@@ -1,5 +1,9 @@
 import axios, { AxiosInstance } from 'axios'
-import { ListRemoteZimFilesResponse, ListZimFilesResponse } from '../../types/zim'
+import {
+  ListCatalogLanguagesResponse,
+  ListRemoteZimFilesResponse,
+  ListZimFilesResponse,
+} from '../../types/zim'
 import { ServiceSlim } from '../../types/services'
 import { FileEntry } from '../../types/files'
 import { CandidateDriveResponse, CheckLatestVersionResult, SystemInformationResponse, SystemUpdateStatus } from '../../types/system'
@@ -12,6 +16,8 @@ import { ChatResponse, ModelResponse } from 'ollama'
 import BenchmarkResult from '#models/benchmark_result'
 import { BenchmarkType, RunBenchmarkResponse, SubmitBenchmarkResponse, UpdateBuilderTagResponse } from '../../types/benchmark'
 import { DrugIngestStatus } from '../../types/drug_reference'
+import type { ChatSource } from '../../types/chat'
+import type { CreateMapMarkerPayload, MapMarkerResponse, UpdateMapMarkerPayload } from '../../types/maps'
 
 class API {
   private client: AxiosInstance
@@ -271,7 +277,10 @@ class API {
 
   async sendChatMessage(chatRequest: OllamaChatRequest) {
     return catchInternal(async () => {
-      const response = await this.client.post<ChatResponse>('/ollama/chat', chatRequest)
+      const response = await this.client.post<ChatResponse & { sources?: ChatSource[] }>(
+        '/ollama/chat',
+        chatRequest
+      )
       return response.data
     })()
   }
@@ -279,7 +288,9 @@ class API {
   async streamChatMessage(
     chatRequest: OllamaChatRequest,
     onChunk: (content: string, thinking: string, done: boolean) => void,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    onSources?: (sources: ChatSource[]) => void,
+    onDoneReason?: (reason: string) => void
   ): Promise<void> {
     // Axios doesn't support ReadableStream in browser, so need to use fetch
     const response = await fetch('/api/ollama/chat', {
@@ -315,11 +326,27 @@ class API {
 
           if (data.error) throw new Error('The model encountered an error. Please try again.')
 
+          // Citation metadata (upstream #1179) arrives as a distinct trailing
+          // event with no `message` key; route it separately rather than
+          // through onChunk.
+          if (data.sources) {
+            onSources?.(data.sources)
+            continue
+          }
+
           onChunk(
             data.message?.content ?? '',
             data.message?.thinking ?? '',
             data.done ?? false
           )
+
+          // Only a chunk that ends generation carries it; 'length' means the
+          // answer was cut off rather than finished (upstream #1342). Reported
+          // after onChunk so an answer whose first chunk is also its last
+          // already exists to be marked.
+          if (data.done_reason) {
+            onDoneReason?.(data.done_reason)
+          }
         }
       }
     } finally {
@@ -368,6 +395,7 @@ class API {
           role: 'system' | 'user' | 'assistant'
           content: string
           timestamp: string
+          sources?: ChatSource[]
         }>
       }>(`/chat/sessions/${sessionId}`)
       return response.data
@@ -557,10 +585,12 @@ class API {
     start = 0,
     count = 12,
     query,
+    language,
   }: {
     start?: number
     count?: number
     query?: string
+    language?: string
   }) {
     return catchInternal(async () => {
       return await this.client.get<ListRemoteZimFilesResponse>('/zim/list-remote', {
@@ -568,8 +598,16 @@ class API {
           start,
           count,
           query,
+          language,
         },
       })
+    })()
+  }
+
+  async listCatalogLanguages() {
+    return catchInternal(async () => {
+      const response = await this.client.get<ListCatalogLanguagesResponse>('/zim/catalog-languages')
+      return response.data.languages
     })()
   }
 
@@ -718,6 +756,28 @@ class API {
         source,
         collection,
       })
+      return response.data
+    })()
+  }
+
+  // Whether search may use a file, or a named collection's files (upstream f1624228).
+  // `active` goes as a JSON boolean; the server refuses anything else.
+  async setFileActive(source: string, active: boolean) {
+    return catchInternal(async () => {
+      const response = await this.client.post<{ message: string }>('/rag/files/active', {
+        source,
+        active,
+      })
+      return response.data
+    })()
+  }
+
+  async setKnowledgeCollectionActive(collection: string, active: boolean) {
+    return catchInternal(async () => {
+      const response = await this.client.post<{ message: string; affectedCount: number }>(
+        '/rag/collection-active',
+        { collection, active }
+      )
       return response.data
     })()
   }
@@ -879,6 +939,65 @@ class API {
     })()
   }
 
+  // ── Home-screen link tiles (upstream 2c73139b) ──
+  //
+  // A duplicate name (409) or an address the server refuses (422) is the user's to fix, not an
+  // internal error, so those come back as { success: false, message } in the server's own
+  // words for the form to show, instead of catchInternal's "An internal error occurred" toast.
+  // Anything else still goes through catchInternal.
+  private async linkTileRequest(
+    send: () => Promise<{ data: { success: boolean; message?: string } }>
+  ) {
+    return catchInternal(async () => {
+      try {
+        const response = await send()
+        return response.data
+      } catch (error: any) {
+        const status = error?.response?.status
+        if (status === 409 || status === 422) {
+          const body = error.response.data
+          return {
+            success: false,
+            message: (body?.message ?? body?.errors?.[0]?.message) as string | undefined,
+          }
+        }
+        throw error
+      }
+    })()
+  }
+
+  async createLinkTile(data: {
+    friendly_name: string
+    url: string
+    description?: string | null
+    icon?: string | null
+    display_order?: number
+    link_color?: string
+  }) {
+    return this.linkTileRequest(() => this.client.post('/system/services/links', data))
+  }
+
+  async updateLinkTile(data: {
+    service_name: string
+    friendly_name: string
+    url: string
+    description?: string | null
+    icon?: string | null
+    display_order?: number
+    link_color?: string
+  }) {
+    return this.linkTileRequest(() => this.client.put('/system/services/links', data))
+  }
+
+  async deleteLinkTile(service_name: string) {
+    return catchInternal(async () => {
+      const response = await this.client.delete<{ success: boolean }>('/system/services/links', {
+        data: { service_name },
+      })
+      return response.data
+    })()
+  }
+
   async deleteCustomApp(service_name: string, remove_image = false) {
     return catchInternal(async () => {
       const response = await this.client.delete<{ success: boolean; message: string }>(
@@ -969,37 +1088,33 @@ class API {
     })()
   }
 
-  // Map markers — parity with upstream v1.33.0.
+  // Map markers — parity with upstream v1.33.0, typed as of v1.35 (a01aa5dc).
   async listMapMarkers() {
     return catchInternal(async () => {
-      const response = await this.client.get<
-        Array<{ id: number; name: string; longitude: number; latitude: number; color: string; notes: string | null; created_at: string }>
-      >('/maps/markers')
+      const response = await this.client.get<MapMarkerResponse[]>('/maps/markers')
       return response.data
     })()
   }
 
-  async createMapMarker(data: { name: string; longitude: number; latitude: number; color?: string }) {
+  async createMapMarker(data: CreateMapMarkerPayload) {
     return catchInternal(async () => {
-      const response = await this.client.post<
-        { id: number; name: string; longitude: number; latitude: number; color: string; notes: string | null; created_at: string }
-      >('/maps/markers', data)
+      const response = await this.client.post<MapMarkerResponse>('/maps/markers', data)
       return response.data
     })()
   }
 
-  async updateMapMarker(id: number, data: { name?: string; color?: string }) {
+  async updateMapMarker(id: number, data: UpdateMapMarkerPayload) {
     return catchInternal(async () => {
-      const response = await this.client.patch<
-        { id: number; name: string; longitude: number; latitude: number; color: string }
-      >(`/maps/markers/${id}`, data)
+      const response = await this.client.patch<MapMarkerResponse>(`/maps/markers/${id}`, data)
       return response.data
     })()
   }
 
+  // True once the server has deleted it; undefined (after catchInternal's toast) if not.
   async deleteMapMarker(id: number) {
     return catchInternal(async () => {
       await this.client.delete(`/maps/markers/${id}`)
+      return true
     })()
   }
 }

@@ -98,32 +98,16 @@ export const customAppValidator = vine.compile(
 )
 
 // Set or clear an app's custom launch URL. A null/empty value clears the override; a non-empty
-// value is normalized + validated to a http(s) URL by normalizeCustomUrl in the controller.
+// value is normalized + validated to a http(s) URL by normalizeCustomUrl (util/custom_url.ts)
+// in the controller. The 255 is CUSTOM_URL_MAX_LENGTH, the width of services.custom_url; it is
+// written out because this module must stay free of relative imports to load under the
+// standalone harness, and the normalized value is bounded again there (upstream ce60e063).
 export const setServiceCustomUrlValidator = vine.compile(
   vine.object({
     service_name: vine.string().trim(),
-    custom_url: vine.string().trim().nullable(),
+    custom_url: vine.string().trim().maxLength(255).nullable(),
   })
 )
-
-/**
- * Normalize a user-supplied custom app URL. Accepts a bare host or a full URL; prepends http://
- * when no scheme is present. Returns the normalized href, or null when empty (clears the override)
- * or not a valid http(s) URL. Restricting to http/https blocks javascript:/data: from ever being
- * stored.
- */
-export function normalizeCustomUrl(input: string | null | undefined): string | null {
-  const trimmed = (input ?? '').trim()
-  if (!trimmed) return null
-  const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`
-  try {
-    const url = new URL(withScheme)
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
-    return url.href
-  } catch {
-    return null
-  }
-}
 
 export const deleteCustomAppValidator = vine.compile(
   vine.object({

@@ -21,6 +21,7 @@ import useInternetStatus from '~/hooks/useInternetStatus'
 import Alert from '~/components/Alert'
 import useServiceInstalledStatus from '~/hooks/useServiceInstalledStatus'
 import Input from '~/components/inputs/Input'
+import Select from '~/components/inputs/Select'
 import { IconSearch, IconBooks, IconCloudOff } from '@tabler/icons-react'
 import useDebounce from '~/hooks/useDebounce'
 import CategoryCard from '~/components/CategoryCard'
@@ -34,6 +35,9 @@ import { SERVICE_NAMES } from '../../../../constants/service_names'
 
 const CURATED_CATEGORIES_KEY = 'curated-categories'
 const WIKIPEDIA_STATE_KEY = 'wikipedia-state'
+const CATALOG_LANGUAGES_KEY = 'catalog-languages'
+const LANGUAGE_STORAGE_KEY = 'nomad:zim-library-language'
+const LANGUAGE_LIST_FRESH_MS = 60 * 60 * 1000
 
 export default function ZimRemoteExplorer() {
   const queryClient = useQueryClient()
@@ -47,6 +51,23 @@ export default function ZimRemoteExplorer() {
 
   const [query, setQuery] = useState('')
   const [queryUI, setQueryUI] = useState('')
+  // Catalog language filter (upstream dde8aa55), remembered per browser:
+  // someone browsing in their own language wants it on every visit. Storage can
+  // throw (private mode, blocked site data); the filter still works, it just is
+  // not remembered.
+  const [language, setLanguage] = useState<string>(() => {
+    try {
+      return localStorage.getItem(LANGUAGE_STORAGE_KEY) || 'eng'
+    } catch {
+      return 'eng'
+    }
+  })
+  const handleLanguageChange = (value: string) => {
+    try {
+      localStorage.setItem(LANGUAGE_STORAGE_KEY, value)
+    } catch {}
+    setLanguage(value)
+  }
 
   // Category/tier selection state
   const [tierModalOpen, setTierModalOpen] = useState(false)
@@ -79,13 +100,33 @@ export default function ZimRemoteExplorer() {
     enabled: true,
   })
 
+  // The catalog's own language list, so every option can actually be browsed and
+  // carries a real book count. Comes back empty without internet, and the picker
+  // hides itself. An empty list is never held as fresh: this appliance is often
+  // offline when the page first opens, and the browser's own online events never
+  // fire for the machine's internet going away and coming back, so Retry below
+  // asks for it again.
+  const { data: catalogLanguages, refetch: refetchLanguages } = useQuery({
+    queryKey: [CATALOG_LANGUAGES_KEY],
+    queryFn: () => api.listCatalogLanguages(),
+    refetchOnWindowFocus: false,
+    staleTime: (q) => (q.state.data && q.state.data.length > 0 ? LANGUAGE_LIST_FRESH_MS : 0),
+  })
+
   const { data, fetchNextPage, isFetching, isLoading, refetch } =
     useInfiniteQuery<ListRemoteZimFilesResponse>({
-      queryKey: ['remote-zim-files', query],
+      // `language` is part of the key, so changing it starts pagination over
+      // rather than appending another language's pages to the first one's.
+      queryKey: ['remote-zim-files', query, language],
       queryFn: async ({ pageParam = 0 }) => {
         const pageParsed = parseInt((pageParam as number).toString(), 10)
         const start = isNaN(pageParsed) ? 0 : pageParsed * 12
-        const res = await api.listRemoteZimFiles({ start, count: 12, query: query || undefined })
+        const res = await api.listRemoteZimFiles({
+          start,
+          count: 12,
+          query: query || undefined,
+          language,
+        })
         if (!res) {
           throw new Error('Failed to fetch remote ZIM files.')
         }
@@ -389,14 +430,17 @@ export default function ZimRemoteExplorer() {
                 variant="outline"
                 className="mt-5"
                 loading={isFetching}
-                onClick={() => refetch()}
+                onClick={() => {
+                  refetch()
+                  refetchLanguages()
+                }}
               >
                 Retry
               </StyledButton>
             </div>
           ) : (
             <>
-              <div className="flex justify-start mt-4">
+              <div className="flex flex-wrap items-end justify-start gap-3 mt-4">
                 <Input
                   name="search"
                   label=""
@@ -409,6 +453,24 @@ export default function ZimRemoteExplorer() {
                   className="w-1/3"
                   leftIcon={<IconSearch className="w-5 h-5 text-text-muted" />}
                 />
+                {/* Not rendered when the list is unavailable, rather than shown
+                    as an empty picker nobody can act on. */}
+                {catalogLanguages && catalogLanguages.length > 0 && (
+                  <Select
+                    name="zim-language"
+                    label="Language"
+                    className="w-64"
+                    value={language}
+                    onChange={handleLanguageChange}
+                    options={[
+                      { value: 'all', label: 'All languages' },
+                      ...catalogLanguages.map((lang) => ({
+                        value: lang.code,
+                        label: `${lang.label} (${lang.book_count.toLocaleString()})`,
+                      })),
+                    ]}
+                  />
+                )}
               </div>
               <StyledTable<RemoteZimFileEntry & { actions?: any }>
                 data={flatData.map((i, idx) => {

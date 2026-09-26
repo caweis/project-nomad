@@ -5,21 +5,123 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 
 ## [Unreleased]
 
+### Home
+- Put your own links on the Command Center. Add a link, beside Browse all
+  apps, makes a shortcut to anything you already run, on this Mac or elsewhere
+  on your network: a NAS, a router's settings page, a printer. Give it a name
+  and an address, and if you like a description, one of 36 icons and one of
+  six colors. A bare address such as `192.168.1.50:8080` is fine, and the form
+  shows the exact address the link will open before you save it; a link is
+  always a web address (http or https). Links are drawn with a dashed
+  outline so they are not mistaken for apps NOMAD runs, each has its own Edit
+  and Remove buttons, and removing one asks first. They always stay on the
+  home, since the Supply Depot lists apps and a link is not one; in the Decks
+  layout they sit together in a Your links deck of their own. NOMAD only opens
+  a link, in a new tab, and never starts, stops, updates or checks on whatever
+  is behind it. (Ports upstream 2c73139b and its follow-ups.)
+
+### Maps
+- Pins can be looked after, not just dropped. Dropping one now asks for notes
+  as well as a name (up to 500 characters, and a link in them can be followed),
+  and clicking a pin shows them with an Edit button. A pin can carry one of 36
+  icons chosen for marking places you rely on offline, such as water, shelter,
+  first aid, power, fuel and hazards, and a custom color beside the six
+  presets. The icon is drawn light or dark, whichever reads better on that
+  color. Pins are drawn as a pin shape with the icon inside, its point exactly
+  on the place marked. Saved Locations gains search, sorting (by name, hue,
+  icon or visibility), a show and hide switch on each pin, and Hide all.
+  Deleting a pin first flies to it and asks, since two pins called "Well" look
+  the same in a list. (Ports upstream a01aa5dc and its follow-ups.)
+- Go to a place by its coordinates. A box in the top bar takes "lat, lng" as
+  map sites copy them, and flies there or starts a pin there. A link such as
+  `/maps?lat=40.015&lng=-105.27&zoom=14` opens on that place. The scale bar
+  gains Nautical, and a button turns the live cursor coordinates off. The
+  coordinate tools appear from tablet width up; a phone's top bar has no room
+  for them.
+- A pin that fails to save or delete no longer looks as if it worked. Its
+  popup stays open with what you typed, and a pin that could not be deleted
+  stays in the list.
+
 ### Knowledge base
+- Choose which files the assistant uses. Each file in the Knowledge Base window
+  has an In answers switch. Switch a file off and the assistant stops drawing
+  on it; nothing is deleted or indexed again, and switching it back on is
+  instant. A file switched off stays off when it is indexed again, after a
+  retry or when its content is replaced. With a collection chosen under Show,
+  Turn all on and Turn all off switch every file in it at once. With every file
+  switched off, chat skips the knowledge base search, and the step that
+  rewrites your question for it, altogether. A newer edition of a ZIM arrives
+  under a new file name, so it starts switched on. (Ports upstream #1286.)
+- Choosing a file's collection lists every collection again. The list opened
+  already filtered down to the collection the file was in.
+- Indexing a ZIM no longer stops partway through. Indexing works through an
+  archive in batches and took a batch that yielded little text as the end of
+  the file, which is how most reference archives open (navigation pages,
+  category listings, media wrappers). The rest of the archive was skipped
+  without a word; upstream measured WikiMed at 28% indexed and Medicine
+  LibreTexts at 16 passages out of 23,171 articles. A ZIM indexed before this
+  release may be only partly searchable: remove it from the knowledge base and
+  Sync to index it in full (with indexing set to Manual, press Index once it
+  reappears). (Ports upstream 1933f8ee.)
 - Deleting a file now removes what the assistant learned from it. Deleting a
   ZIM removed the file and left everything indexed from it in place, so the
   assistant carried on quoting content that was no longer on the server, and a
   replaced file left its old text sitting beside the new. Storage scans also
   clear out anything left behind by an earlier version. A scan that finds no
-  files at all now does nothing rather than treating everything as deleted.
+  files at all now does nothing rather than treating everything as deleted,
+  and a scan that cannot find one of its folders leaves everything learned
+  from that folder alone, so a missing `zim` folder cannot empty the knowledge
+  base of every ZIM at once. (Ports upstream f8a29693.)
 
 ### Chat
+- Answers that drew on your knowledge base now list their sources underneath:
+  the archive each passage came from, with its date where the archive records
+  one, or the file name for something you uploaded. Only what the assistant
+  was actually given to read is listed, never everything the search turned up,
+  so a source under an answer is one it was based on. Reopened conversations
+  keep their lists. Content indexed before this release is cited too; nothing
+  needs re-indexing. (Ports upstream #1179.)
+- Long answers are no longer cut off at about 750 words. 0.2.765 set aside
+  room for each reply so it could not be squeezed out by the conversation, and
+  by mistake that room also became the most a reply could ever use: 1,024
+  tokens, however large the model's window. Longer answers stopped
+  mid-sentence with nothing to say they had. A reply can now use whatever the
+  window has left once the conversation is in. (Ports the fix for upstream
+  #1342.)
+- An answer that does run out of room now says so, and the newest one offers a
+  Continue button that picks up where it stopped.
 - Walking away from an answer now stops it. Leaving the page, switching
   conversation, or turning chat off part-way through a reply used to leave it
   generating with nobody reading it, which kept the assistant busy and made the
   next question wait. Starting a new reply also stops the one it replaces, and
   a reply that finishes late can no longer clear the "thinking" state of a
-  newer one still arriving.
+  newer one still arriving. The model itself now stops too, not just the page:
+  leaving while your question is still being looked up means it never starts.
+  A reply stopped this way is not kept in the conversation, since it would end
+  mid-sentence; your question is. Stopping the model needs Ollama 0.33.3 or
+  later, or the Apple MLX backend. Older Ollama builds can hang when a reply is
+  cancelled, so on those a reply you leave still runs to the end, as before;
+  `nomad upgrade ollama` brings Ollama up to date.
+
+### Content Explorer
+- Browse the Kiwix Library in any language. It only ever showed English, which
+  is about 1,300 of the library's roughly 10,900 books. A Language picker next
+  to the search box lists every language the library holds books in, by its own
+  name ("français", "中文") and with how many books each has, plus All
+  languages. English stays the default, and your choice is remembered in this
+  browser. Like the rest of this section it needs an internet connection; the
+  picker stays out of the way without one, and Retry brings it back.
+  (Ports upstream dde8aa55.)
+
+### Dark mode
+- Green text is readable in dark mode. Links in chat answers, the Continue
+  button, and everywhere else the app draws text in its accent green measured
+  under 2.2:1 against the dark backgrounds, and 1.6:1 inside a chat bubble:
+  hard to read in good light and close to invisible in poor light. Accent text
+  now uses a lighter shade of the same green, and buttons filled with the green
+  are unchanged. The Builder Tag fields in Settings > Benchmark, which were
+  darker still, now use the normal text color. (Ports upstream 02fe66e9 and
+  c9a1a763.)
 
 ### Maintainer tools
 - `node ace eval:retrieval` scores knowledge base search against a written-down

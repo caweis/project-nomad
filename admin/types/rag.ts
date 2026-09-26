@@ -30,6 +30,9 @@ export type StoredFileInfo = {
   isUserUpload: boolean
   /** Subject/category tag, or null if uncategorized. */
   collection: string | null
+  /** Whether search may use this file. Switching it off keeps its vectors and
+   * never re-embeds; see app/utils/kb_active.ts (upstream f1624228). */
+  active: boolean
 }
 
 export type ProcessAndEmbedFileResponse = {
@@ -55,6 +58,8 @@ export type RAGResult = {
   document_id?: string
   content_type?: string
   source?: string
+  archive_title?: string
+  archive_date?: string
 }
 
 export type RerankedRAGResult = Omit<RAGResult, 'keywords'> & {

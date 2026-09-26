@@ -18,6 +18,10 @@ export default class ChatMessage extends BaseModel {
   @column()
   declare content: string
 
+  // JSON array of ChatSource, or null. Read through parseStoredSources.
+  @column()
+  declare sources: string | null
+
   @belongsTo(() => ChatSession, { foreignKey: 'session_id', localKey: 'id' })
   declare session: BelongsTo<typeof ChatSession>
 

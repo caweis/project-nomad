@@ -29,7 +29,12 @@ export class CheckServiceUpdatesJob {
       logger.warn(`[CheckServiceUpdatesJob] ${m}`)
     )
 
-    const installedServices = await Service.query().where('installed', true)
+    // Link tiles are installed rows with no image, so there is nothing to check. Left in,
+    // each one's empty image would be taken for one on :latest, logging a warning every
+    // night and stamping update fields on a row that has nothing to update.
+    const installedServices = await Service.query()
+      .where('installed', true)
+      .where('is_link_tile', false)
     let updatesFound = 0
 
     for (const service of installedServices) {

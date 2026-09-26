@@ -63,7 +63,10 @@ body {
   --color-desert-white: #2a2918;
   --color-desert-green-darker: #f7eedc;
   --color-desert-green-dark: #e8dfc8;
+  /* Accent green stays dark enough for white text on buttons; text drawn in
+     the accent uses the lighter foreground below instead (upstream 02fe66e9). */
   --color-desert-green: #525530;
+  --color-desert-green-foreground: #babaaa;
   --color-desert-green-light: #3a3c24;
   --color-desert-green-lighter: #2d2e1c;
   --color-desert-orange-dark: #c85815;
@@ -99,12 +102,77 @@ body {
   color-scheme: dark;
 }
 
+/* Keep foreground accents readable without lightening green button backgrounds.
+   #525530 on the dark surfaces measures 1.6-2.2:1 (WCAG AA wants 4.5:1); the
+   foreground token measures 6.4-8.8:1 on the same three. */
+[data-theme="dark"] .text-desert-green {
+  color: var(--color-desert-green-foreground);
+}
+
+[data-theme="dark"] .hover\:text-desert-green:hover {
+  color: var(--color-desert-green-foreground);
+}
+
+[data-theme="dark"] .hover\:text-desert-green\/80:hover {
+  color: color-mix(in oklab, var(--color-desert-green-foreground) 80%, transparent);
+}
+
+[data-theme="dark"] .group-hover\:text-desert-green:is(:where(.group):hover *) {
+  color: var(--color-desert-green-foreground);
+}
+
 /* MapLibre popup styling for dark mode */
 [data-theme="dark"] .maplibregl-popup-content { background: #2a2918; color: #f7eedc; }
-[data-theme="dark"] .maplibregl-popup-content input { background: #353420; color: #f7eedc; border-color: #424420; }
-[data-theme="dark"] .maplibregl-popup-content input::placeholder { color: #8f8f82; }
+[data-theme="dark"] .maplibregl-popup-content input,
+[data-theme="dark"] .maplibregl-popup-content textarea { background: #353420; color: #f7eedc; border-color: #424420; }
+[data-theme="dark"] .maplibregl-popup-content input::placeholder,
+[data-theme="dark"] .maplibregl-popup-content textarea::placeholder { color: #8f8f82; }
 [data-theme="dark"] .maplibregl-popup-tip { border-top-color: #2a2918; }
 [data-theme="dark"] .maplibregl-popup-anchor-bottom .maplibregl-popup-tip { border-top-color: #2a2918; }
 [data-theme="dark"] .maplibregl-popup-anchor-top .maplibregl-popup-tip { border-bottom-color: #2a2918; }
 [data-theme="dark"] .maplibregl-popup-close-button { color: #afafa5; }
 [data-theme="dark"] .maplibregl-popup-close-button:hover { color: #f7eedc; background: #353420; }
+
+/* A scroll area whose bar stays hidden until it is hovered or focused (upstream
+   a01aa5dc; the pin notes field). Upstream also fades the top and bottom 8px with
+   mask-image, but a mask covers the whole element, border included, and rendered
+   in Chromium it erased the notes field's top and bottom borders under a fully
+   bordered name field. The fade is left out. */
+.themed-scrollbar {
+  scrollbar-width: none; /* Firefox */
+}
+
+/* Chrome / Safari */
+.themed-scrollbar::-webkit-scrollbar {
+  width: 0px;
+}
+
+/* Show scrollbar on hover OR focus */
+.themed-scrollbar:hover,
+.themed-scrollbar:focus {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-default) transparent;
+}
+
+.themed-scrollbar:hover::-webkit-scrollbar,
+.themed-scrollbar:focus::-webkit-scrollbar {
+  width: 8px;
+}
+
+.themed-scrollbar:hover::-webkit-scrollbar-track,
+.themed-scrollbar:focus::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.themed-scrollbar:hover::-webkit-scrollbar-thumb,
+.themed-scrollbar:focus::-webkit-scrollbar-thumb {
+  background-color: var(--color-border-default);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+.themed-scrollbar:hover::-webkit-scrollbar-thumb:hover,
+.themed-scrollbar:focus::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-text-muted);
+}

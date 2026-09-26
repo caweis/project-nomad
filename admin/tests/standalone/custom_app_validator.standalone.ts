@@ -11,11 +11,9 @@
  * Run: node --experimental-strip-types tests/standalone/custom_app_validator.standalone.ts
  */
 import assert from 'node:assert/strict'
-import {
-  customAppValidator,
-  updateCustomAppValidator,
-  normalizeCustomUrl,
-} from '../../app/validators/system.ts'
+import { customAppValidator, updateCustomAppValidator } from '../../app/validators/system.ts'
+// Moved out of validators/system.ts so the link-tile form runs the same rules in the browser.
+import { normalizeCustomUrl } from '../../util/custom_url.ts'
 
 let passed = 0
 async function check(name: string, fn: () => Promise<void>) {

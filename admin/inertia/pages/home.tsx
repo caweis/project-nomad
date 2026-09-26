@@ -1,16 +1,21 @@
 import {
   IconApps,
   IconBox,
+  IconExternalLink,
   IconLayoutGrid,
   IconLayoutList,
   IconMapRoute,
+  IconPencil,
   IconPill,
   IconPin,
+  IconPlus,
   IconShieldCheck,
+  IconTrash,
   IconWand,
   IconWifiOff,
 } from '@tabler/icons-react'
 import { Head, router, usePage } from '@inertiajs/react'
+import { useState } from 'react'
 import classNames from 'classnames'
 import api from '~/lib/api'
 import HomeLayout from '~/layouts/HomeLayout'
@@ -20,7 +25,12 @@ import DynamicIcon, { DynamicIconName } from '~/components/DynamicIcon'
 import { useUpdateAvailable } from '~/hooks/useUpdateAvailable'
 import Alert from '~/components/Alert'
 import WhatsNewBanner from '~/components/WhatsNewBanner'
+import LinkTileModal from '~/components/LinkTileModal'
+import { useNotifications } from '~/context/NotificationContext'
 import { SERVICE_NAMES } from '../../constants/service_names'
+import { DEFAULT_LINK_TILE_ICON } from '../../constants/link_tile_icons'
+import { linkTileColor } from '../../constants/link_tile_colors'
+import { normalizeCustomUrl } from '../../util/custom_url'
 import { groupIntoDecks } from '~/util/home_decks'
 
 // Deck card icon sizing. The glyphs sit centered in each card; the stock 48px
@@ -131,6 +141,10 @@ interface DashboardItem {
   // (ai-assistant / maps / workshop / drug-reference / preparedness). Unknown
   // keys fall to 'tools-workshop' via deckForKey.
   deckKey: string
+  // Set only for the user's own link tiles (upstream 2c73139b), which are always
+  // pinned, group in their own deck, and render and behave differently.
+  isLinkTile?: boolean
+  linkTile?: ServiceSlim
 }
 
 export default function Home(props: {
@@ -148,18 +162,40 @@ export default function Home(props: {
   const items: DashboardItem[] = []
   const updateInfo = useUpdateAvailable()
   const { aiAssistantName } = usePage<{ aiAssistantName: string }>().props
+  const { addNotification } = useNotifications()
+
+  // Link tile management. `editingTile` null with the modal open means "create".
+  const [linkModalOpen, setLinkModalOpen] = useState(false)
+  const [editingTile, setEditingTile] = useState<ServiceSlim | null>(null)
+  // Removing a tile cannot be undone and the tile is the user's own data, so the
+  // trash button arms a confirm rather than removing on the first click.
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null)
+
+  const refreshServices = () => router.reload({ only: ['system'] })
+
+  const handleDeleteTile = async (serviceName: string) => {
+    const result = await api.deleteLinkTile(serviceName)
+    setPendingDelete(null)
+    if (!result?.success) {
+      addNotification({ type: 'error', message: 'Failed to remove this link.' })
+      return
+    }
+    refreshServices()
+  }
 
   // Add installed services (non-dependency services only).
   //
   // Skip the OLLAMA row here — the AI Assistant tile is rendered separately
   // below (with a custom label, icon, and description). Without this filter
-  // an installed OLLAMA row would produce a duplicate tile.
+  // an installed OLLAMA row would produce a duplicate tile. Link tiles are
+  // collected separately below and rendered with their own treatment.
   props.system.services
     .filter(
       (service) =>
         service.installed &&
         service.ui_location &&
-        service.service_name !== SERVICE_NAMES.OLLAMA
+        service.service_name !== SERVICE_NAMES.OLLAMA &&
+        !service.is_link_tile
     )
     .forEach((service) => {
       items.push({
@@ -182,6 +218,34 @@ export default function Home(props: {
         displayOrder: service.display_order ?? 100,
         poweredBy: service.powered_by ?? null,
         deckKey: service.service_name,
+      })
+    })
+
+  // The user's own link tiles: shortcuts to things NOMAD does not manage. The
+  // stored URL was normalized to http(s) on the server; it is normalized again
+  // here because it goes straight into an href, and a value that somehow is not
+  // http(s) should become a dead link, never a javascript: one.
+  props.system.services
+    .filter((service) => service.is_link_tile && service.custom_url)
+    .forEach((service) => {
+      items.push({
+        label: service.friendly_name || service.service_name,
+        to: normalizeCustomUrl(service.custom_url) ?? '#',
+        target: '_blank',
+        description: service.description || 'Opens in a new tab',
+        icon: (
+          <DynamicIcon
+            icon={(service.icon || DEFAULT_LINK_TILE_ICON) as DynamicIconName}
+            className="!size-8"
+            stroke={DECK_ICON_STROKE}
+          />
+        ),
+        installed: true,
+        displayOrder: service.display_order ?? 90,
+        poweredBy: null,
+        deckKey: service.service_name,
+        isLinkTile: true,
+        linkTile: service,
       })
     })
 
@@ -243,9 +307,92 @@ export default function Home(props: {
     api.updateSetting('ui.homeLayout', next).finally(() => router.reload({ only: ['homeLayout'] }))
   }
 
+  // A link tile is deliberately not styled like an app: outlined and dashed rather
+  // than filled, with an external-link marker. If it looked the same, people would
+  // expect Start, Stop and Update and file bugs when those controls are not there
+  // (upstream 2c73139b). Its Edit and Remove controls replace the pin button and
+  // stay visible, as the pin does, rather than appearing on hover as upstream's do:
+  // on a phone or tablet there is no hover, and a hidden control is one a touch
+  // user can never reach.
+  const renderLinkTile = (item: DashboardItem) => {
+    const tile = item.linkTile!
+    const color = linkTileColor(tile.link_color)
+    const confirming = pendingDelete === tile.service_name
+    return (
+      <div key={item.deckKey} className="relative flex flex-col">
+        <a
+          href={item.to}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex flex-col flex-1"
+        >
+          <div
+            className={classNames(
+              'relative rounded border-2 border-dashed text-text-primary hover:bg-surface-secondary transition-colors shadow-sm min-h-48 flex-1 flex flex-col items-center justify-center cursor-pointer text-center px-4 py-4',
+              color.border,
+              color.bg
+            )}
+          >
+            <span
+              className={classNames('absolute top-2 left-2', color.marker)}
+              title="A shortcut you added. NOMAD does not manage this."
+            >
+              <IconExternalLink size={18} />
+            </span>
+            <div className="flex items-center justify-center mb-2">{item.icon}</div>
+            <h3 className="font-bold text-2xl">{item.label}</h3>
+            <p className="xl:text-lg mt-2">{item.description}</p>
+          </div>
+        </a>
+        {confirming ? (
+          <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => handleDeleteTile(tile.service_name)}
+              className="rounded bg-desert-red px-2 py-1 text-xs font-medium text-white hover:brightness-110"
+            >
+              Remove
+            </button>
+            <button
+              type="button"
+              onClick={() => setPendingDelete(null)}
+              className="rounded border border-border-default bg-surface-primary px-2 py-1 text-xs text-text-secondary hover:bg-surface-secondary"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => {
+                setEditingTile(tile)
+                setLinkModalOpen(true)
+              }}
+              title="Edit this link"
+              aria-label={`Edit the ${item.label} link`}
+              className="rounded p-1 text-text-muted hover:bg-surface-secondary hover:text-text-primary transition-colors"
+            >
+              <IconPencil size={18} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setPendingDelete(tile.service_name)}
+              title="Remove this link"
+              aria-label={`Remove the ${item.label} link`}
+              className="rounded p-1 text-text-muted hover:bg-surface-secondary hover:text-desert-red transition-colors"
+            >
+              <IconTrash size={18} />
+            </button>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   // Shared card — used by both the flat grid and the decks so the two layouts
   // stay identical at the card level.
-  const renderCard = (item: DashboardItem) => (
+  const renderAppCard = (item: DashboardItem) => (
     <a key={item.label} href={item.to} target={item.target} className="flex flex-col">
       <div className="relative rounded border-desert-green border-2 bg-desert-green hover:bg-transparent hover:text-black text-white transition-colors shadow-sm min-h-48 flex-1 flex flex-col items-center justify-center cursor-pointer text-center px-4 py-4">
         <button
@@ -264,6 +411,9 @@ export default function Home(props: {
       </div>
     </a>
   )
+
+  const renderCard = (item: DashboardItem) =>
+    item.isLinkTile ? renderLinkTile(item) : renderAppCard(item)
 
   return (
     <HomeLayout>
@@ -330,13 +480,28 @@ export default function Home(props: {
             </button>
           </div>
 
-          <a
-            href="/settings/apps"
-            className="inline-flex items-center gap-2 rounded border-desert-green border-2 bg-desert-green hover:bg-transparent hover:text-black text-white transition-colors px-4 py-2 font-semibold"
-          >
-            <IconApps size={20} />
-            Browse all apps
-          </a>
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Dashed like the tiles it makes, so it reads as "add your own", not
+                as another app to install. */}
+            <button
+              type="button"
+              onClick={() => {
+                setEditingTile(null)
+                setLinkModalOpen(true)
+              }}
+              className="inline-flex items-center gap-2 rounded border-2 border-dashed border-desert-green text-desert-green hover:bg-desert-green/10 transition-colors px-4 py-2 font-semibold"
+            >
+              <IconPlus size={20} />
+              Add a link
+            </button>
+            <a
+              href="/settings/apps"
+              className="inline-flex items-center gap-2 rounded border-desert-green border-2 bg-desert-green hover:bg-transparent hover:text-black text-white transition-colors px-4 py-2 font-semibold"
+            >
+              <IconApps size={20} />
+              Browse all apps
+            </a>
+          </div>
         </div>
 
         {props.homeLayout === 'decks' ? (
@@ -364,6 +529,17 @@ export default function Home(props: {
         )}
       </div>
       </div>
+
+      <LinkTileModal
+        open={linkModalOpen}
+        tile={editingTile}
+        onClose={() => setLinkModalOpen(false)}
+        onSaved={() => {
+          setLinkModalOpen(false)
+          refreshServices()
+        }}
+        showError={(message) => addNotification({ type: 'error', message })}
+      />
     </HomeLayout>
   )
 }

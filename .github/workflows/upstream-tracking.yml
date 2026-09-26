@@ -38,6 +38,9 @@ jobs:
           git remote add crosstalk https://github.com/Crosstalk-Solutions/project-nomad.git || true
           git remote add proximasan https://github.com/proximasan/project-nomad-silicon.git || true
           git fetch --quiet crosstalk main
+          # Upstream lands features on dev and merges to main only at GA, so
+          # main alone shows nothing of a release until it ships.
+          git fetch --quiet crosstalk dev || true
           git fetch --quiet --tags crosstalk
           git fetch --quiet proximasan main || true
 
@@ -69,6 +72,8 @@ jobs:
           BEHIND="$(git rev-list --count "${BASE_BRANCH}".."crosstalk/main" -- admin/ 2>/dev/null || echo "?")"
           AHEAD="$(git rev-list --count "crosstalk/main".."${BASE_BRANCH}" -- admin/ 2>/dev/null || echo "?")"
           echo "**admin/ delta:** ${BEHIND} commits behind, ${AHEAD} commits ahead (our patches)." >> "$REPORT"
+          echo "" >> "$REPORT"
+          echo "_This fork ports upstream changes rather than merging them, so the behind count only grows. What has actually been carried across is recorded in the parity ledgers under [docs/superpowers/audits](../tree/main/docs/superpowers/audits)._" >> "$REPORT"
           echo "" >> "$REPORT"
 
           if [[ "$BEHIND" != "0" && "$BEHIND" != "?" ]]; then
@@ -104,6 +109,30 @@ jobs:
             echo "" >> "$REPORT"
           else
             echo "✅ No new commits in admin/ since last sync." >> "$REPORT"
+            echo "" >> "$REPORT"
+          fi
+
+          # ─── Upstream's next release (crosstalk/dev) ─────────────────────────
+          # Features land on dev weeks before main. Everything below is what the
+          # next upstream release will bring, whether or not it has shipped.
+          echo "## Headed for upstream's next release (crosstalk/dev)" >> "$REPORT"
+          echo "" >> "$REPORT"
+          if git rev-parse --verify --quiet crosstalk/dev >/dev/null; then
+            DEV_HEAD="$(git rev-parse --short crosstalk/dev)"
+            DEV_DATE="$(git log -1 --format='%cd' --date=short crosstalk/dev)"
+            DEV_TAG="$(git describe --tags --abbrev=0 crosstalk/dev 2>/dev/null || echo '(untagged)')"
+            DEV_AHEAD="$(git rev-list --count --no-merges crosstalk/main..crosstalk/dev -- admin/)"
+            echo "- dev HEAD: \`$DEV_HEAD\` ($DEV_DATE), nearest tag \`$DEV_TAG\`" >> "$REPORT"
+            echo "- **${DEV_AHEAD} commits touching admin/ are on dev and not yet on main.**" >> "$REPORT"
+            echo "" >> "$REPORT"
+            if [[ "$DEV_AHEAD" != "0" ]]; then
+              echo '```' >> "$REPORT"
+              git log --oneline --no-merges -40 crosstalk/main..crosstalk/dev -- admin/ >> "$REPORT" || true
+              echo '```' >> "$REPORT"
+              echo "" >> "$REPORT"
+            fi
+          else
+            echo "⚠️ crosstalk/dev not found; upstream may have renamed its integration branch." >> "$REPORT"
             echo "" >> "$REPORT"
           fi
 

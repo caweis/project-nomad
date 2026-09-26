@@ -39,7 +39,12 @@ export default class SettingsController {
     // reaches both pages and they can't drift. The comments below document why
     // each prop exists (the frontend depends on all three).
     private async buildSupplyDepotProps() {
-        const services = await this.systemService.getServices({ installedOnly: false });
+        // Link tiles are left out of both pages. They are home-screen shortcuts with no
+        // container, so every per-app action here (Start, Stop, Update, Uninstall, auto-update)
+        // would act on something that does not exist; they are edited and removed on the home
+        // screen instead. (Upstream's Supply Depot does not filter them out.)
+        const allServices = await this.systemService.getServices({ installedOnly: false });
+        const services = allServices.filter((service) => !service.is_link_tile);
         const isNativeOllama = DockerService.isNativeOllama();
         // Which backend the host CLI selected ('omlx' | 'ollama'). Both set
         // OLLAMA_HOST (so isNativeOllama is true for both), so the pages need this

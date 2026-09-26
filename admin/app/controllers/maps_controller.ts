@@ -1,6 +1,6 @@
 import { MapService } from '#services/map_service'
 import MapMarker from '#models/map_marker'
-import vine from '@vinejs/vine'
+import { createMapMarkerValidator, updateMapMarkerValidator } from '#validators/map_marker'
 import {
   assertNotPrivateUrl,
   downloadCollectionValidator,
@@ -108,29 +108,23 @@ export default class MapsController {
     }
   }
 
-  // Map markers (user-placed pins) — ported from upstream v1.33.0.
+  // Map markers (user-placed pins) — ported from upstream v1.33.0; custom color, icon
+  // and visibility from v1.35 (a01aa5dc). Validators: validators/map_marker.ts.
   async listMarkers({}: HttpContext) {
     return await MapMarker.query().orderBy('created_at', 'asc')
   }
 
   async createMarker({ request }: HttpContext) {
-    const payload = await request.validateUsing(
-      vine.compile(
-        vine.object({
-          name: vine.string().trim().minLength(1).maxLength(255),
-          longitude: vine.number().min(-180).max(180),
-          latitude: vine.number().min(-90).max(90),
-          color: vine.string().trim().maxLength(20).optional(),
-          notes: vine.string().trim().nullable().optional(),
-          marker_type: vine.string().trim().maxLength(20).optional(),
-        })
-      )
-    )
+    const payload = await request.validateUsing(createMapMarkerValidator)
     const marker = await MapMarker.create({
       name: payload.name,
       longitude: payload.longitude,
       latitude: payload.latitude,
       color: payload.color ?? 'orange',
+      custom_color: payload.custom_color ?? null,
+      icon: payload.icon ?? null,
+      icon_color: payload.icon_color ?? null,
+      visible: payload.visible ?? true,
       notes: payload.notes ?? null,
       marker_type: payload.marker_type ?? 'pin',
     })
@@ -143,20 +137,13 @@ export default class MapsController {
     if (!marker) {
       return response.status(404).send({ message: 'Marker not found' })
     }
-    const payload = await request.validateUsing(
-      vine.compile(
-        vine.object({
-          name: vine.string().trim().minLength(1).maxLength(255).optional(),
-          color: vine.string().trim().maxLength(20).optional(),
-          longitude: vine.number().min(-180).max(180).optional(),
-          latitude: vine.number().min(-90).max(90).optional(),
-          notes: vine.string().trim().nullable().optional(),
-          marker_type: vine.string().trim().maxLength(20).optional(),
-        })
-      )
-    )
+    const payload = await request.validateUsing(updateMapMarkerValidator)
     if (payload.name !== undefined) marker.name = payload.name
     if (payload.color !== undefined) marker.color = payload.color
+    if (payload.custom_color !== undefined) marker.custom_color = payload.custom_color
+    if (payload.icon !== undefined) marker.icon = payload.icon
+    if (payload.icon_color !== undefined) marker.icon_color = payload.icon_color
+    if (payload.visible !== undefined) marker.visible = payload.visible
     if (payload.longitude !== undefined) marker.longitude = payload.longitude
     if (payload.latitude !== undefined) marker.latitude = payload.latitude
     if (payload.notes !== undefined) marker.notes = payload.notes

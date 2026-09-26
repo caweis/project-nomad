@@ -204,7 +204,9 @@ export class SystemService {
         'category',
         'is_custom',
         'custom_url',
-        'auto_update_enabled'
+        'auto_update_enabled',
+        'is_link_tile',
+        'link_color'
       )
       .where('is_dependency_service', false)
     if (installedOnly) {
@@ -244,6 +246,8 @@ export class SystemService {
         is_custom: Boolean(service.is_custom),
         custom_url: service.custom_url,
         auto_update_enabled: Boolean(service.auto_update_enabled),
+        is_link_tile: Boolean(service.is_link_tile),
+        link_color: service.link_color,
       })
     }
 
@@ -726,6 +730,14 @@ export class SystemService {
       for (const service of allServices) {
         // Skip sync for native Ollama — it has no Docker container
         if (service.service_name === SERVICE_NAMES.OLLAMA && DockerService.isNativeOllama()) {
+          continue
+        }
+
+        // Link tiles are shortcuts with no container behind them, so they are always
+        // "installed" in the only sense that matters: the home screen shows them.
+        // Without this every tile was marked not-installed on the next sync and
+        // vanished seconds after it was added (upstream a8fb58da).
+        if (service.is_link_tile) {
           continue
         }
 

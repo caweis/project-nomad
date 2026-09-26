@@ -35,6 +35,26 @@ export default class MapMarker extends BaseModel {
   @column()
   declare notes: string | null
 
+  // A "#rrggbb" that overrides the preset `color` when set (upstream a01aa5dc).
+  @column()
+  declare custom_color: string | null
+
+  // A name from the curated icon set, e.g. "tabler:IconDroplet"; null is the default pin.
+  @column()
+  declare icon: string | null
+
+  // A "#rrggbb" for the icon; null picks whichever of light or dark reads better on the pin.
+  @column()
+  declare icon_color: string | null
+
+  @column({
+    // MySQL stores this as tinyint(1) and mysql2 hands back 1/0, not true/false.
+    // Without this, strict comparisons (visible === false) silently never match
+    // (upstream 102a00ba).
+    consume: (value: number | boolean) => Boolean(value),
+  })
+  declare visible: boolean
+
   @column.dateTime({ autoCreate: true })
   declare created_at: DateTime
 

@@ -313,6 +313,9 @@ router
     router.get('/files', [RagController, 'getStoredFiles'])
     router.delete('/files', [RagController, 'deleteFile'])
     router.post('/files/embed', [RagController, 'embedFile'])
+    // Whether search may use a file, or every file in a collection (upstream f1624228).
+    router.post('/files/active', [RagController, 'setFileActive'])
+    router.post('/collection-active', [RagController, 'setKnowledgeCollectionActive'])
     router.post('/estimate-batch', [RagController, 'estimateBatch'])
     router.get('/active-jobs', [RagController, 'getActiveJobs'])
     router.get('/job-status', [RagController, 'getJobStatus'])
@@ -379,6 +382,17 @@ router
     router
       .post('/services/auto-update', [SystemController, 'setServiceAutoUpdate'])
       .use(middleware.localNetworkOnly())
+    // Home-screen link tiles (upstream 2c73139b). No container is touched, but a tile's URL
+    // becomes a link on everyone's home screen, so writes carry the same gate as custom-url.
+    router
+      .post('/services/links', [SystemController, 'createLinkTile'])
+      .use(middleware.localNetworkOnly())
+    router
+      .put('/services/links', [SystemController, 'updateLinkTile'])
+      .use(middleware.localNetworkOnly())
+    router
+      .delete('/services/links', [SystemController, 'deleteLinkTile'])
+      .use(middleware.localNetworkOnly())
     router.get('/services/:name/logs', [SystemController, 'getServiceLogs'])
     router.get('/services/:name/stats', [SystemController, 'getServiceStats'])
 
@@ -396,6 +410,7 @@ router
   .group(() => {
     router.get('/list', [ZimController, 'list'])
     router.get('/list-remote', [ZimController, 'listRemote'])
+    router.get('/catalog-languages', [ZimController, 'listCatalogLanguages'])
     router.get('/curated-categories', [ZimController, 'listCuratedCategories'])
     router.post('/download-remote', [ZimController, 'downloadRemote'])
     router.post('/download-category-tier', [ZimController, 'downloadCategoryTier'])

@@ -211,6 +211,8 @@ export default function Chat({
         role: 'assistant',
         content: data.message?.content || 'Sorry, I could not generate a response.',
         timestamp: new Date(),
+        truncated: data.done_reason === 'length',
+        sources: data.sources,
       }
 
       setMessages((prev) => [...prev, assistantMessage])
@@ -291,6 +293,7 @@ export default function Chat({
             role: m.role,
             content: m.content,
             timestamp: new Date(m.timestamp),
+            sources: m.sources,
           }))
         )
       } else {
@@ -399,7 +402,19 @@ export default function Chat({
               fullContent += chunkContent
               thinkingContent += chunkThinking
             },
-            abortController.signal
+            abortController.signal,
+            (sources) => {
+              setMessages((prev) =>
+                prev.map((m) => (m.id === assistantMsgId ? { ...m, sources } : m))
+              )
+            },
+            (reason) => {
+              // Only a cut-off is worth marking; 'stop' is a finished answer.
+              if (reason !== 'length') return
+              setMessages((prev) =>
+                prev.map((m) => (m.id === assistantMsgId ? { ...m, truncated: true } : m))
+              )
+            }
           )
         } catch (error: any) {
           if (error?.name !== 'AbortError') {

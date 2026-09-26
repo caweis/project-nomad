@@ -58,12 +58,50 @@ function makeInputs(overrides: Partial<Parameters<typeof planPrompt>[0]> = {}) {
   }
 }
 
-// ── Response reserve ──
-check('reserves room for the answer and reports it as numPredict', () => {
+// ── Response reserve and the generation cap ──
+check('reserves room for the answer out of the prompt budget', () => {
   const r = planPrompt(makeInputs({ contextWindow: 8192 }))
   // 25% of the window, capped at MAX_RESPONSE_RESERVE.
-  assert.equal(r.numPredict, MAX_RESPONSE_RESERVE)
-  assert.ok(r.trace.promptBudget <= 8192 - r.numPredict)
+  assert.equal(r.trace.responseReserve, 2048)
+  assert.equal(r.trace.promptBudget, 8192 - r.trace.responseReserve)
+  assert.ok(r.numPredict >= r.trace.responseReserve)
+  assert.equal(r.trace.numPredict, r.numPredict)
+})
+
+check('numPredict uses the free window instead of pinning at 1024 (upstream #1342)', () => {
+  // The defect this pins: numPredict WAS the reserve, and the reserve was
+  // capped at 1024, so every answer stopped at 1024 tokens however large the
+  // window, usually mid-sentence and with nothing to say it had been cut.
+  const r = planPrompt(makeInputs({ contextWindow: 65536 }))
+  assert.ok(r.numPredict > 60_000, `numPredict ${r.numPredict} should use the free window`)
+  assert.ok(
+    r.trace.estimatedPromptTokens + r.numPredict <= 65536,
+    'prompt plus answer must still fit the window'
+  )
+})
+
+check('numPredict never runs past the window, even with a full prompt', () => {
+  for (const contextWindow of [4096, 8192, 32768]) {
+    const r = planPrompt(makeInputs({ history: history(400), contextWindow }))
+    assert.ok(r.trace.historyElided, `window ${contextWindow}: this fixture must fill the prompt`)
+    assert.ok(r.numPredict >= r.trace.responseReserve)
+    assert.ok(
+      r.trace.estimatedPromptTokens + r.numPredict <= contextWindow,
+      `window ${contextWindow}: ${r.trace.estimatedPromptTokens} + ${r.numPredict} overflows`
+    )
+  }
+})
+
+check('the response reserve is capped so large windows keep their prompt space', () => {
+  const r = planPrompt(makeInputs({ contextWindow: 131072 }))
+  assert.equal(r.trace.responseReserve, MAX_RESPONSE_RESERVE)
+})
+
+check('an explicit response reserve is still honoured as the floor', () => {
+  const r = planPrompt(makeInputs({ contextWindow: 8192, responseReserve: 500 }))
+  assert.equal(r.trace.responseReserve, 500)
+  assert.equal(r.trace.promptBudget, 8192 - 500)
+  assert.ok(r.numPredict >= 500)
 })
 
 check('a small window still reserves a usable floor', () => {
