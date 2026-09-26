@@ -11,7 +11,10 @@ Notable changes to the macOS distribution layer of this fork. Format follows
   assistant carried on quoting content that was no longer on the server, and a
   replaced file left its old text sitting beside the new. Storage scans also
   clear out anything left behind by an earlier version. A scan that finds no
-  files at all now does nothing rather than treating everything as deleted.
+  files at all now does nothing rather than treating everything as deleted,
+  and a scan that cannot find one of its folders leaves everything learned
+  from that folder alone, so a missing `zim` folder cannot empty the knowledge
+  base of every ZIM at once. (Ports upstream f8a29693.)
 
 ### Chat
 - Answers that drew on your knowledge base now list their sources underneath:

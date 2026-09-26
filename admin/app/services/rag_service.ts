@@ -1491,6 +1491,10 @@ export class RagService {
       const ZIM_PATH = join(process.cwd(), ZIM_STORAGE_PATH)
 
       const filesInStorage: string[] = []
+      // The roots actually listed on this pass. A missing root is skipped
+      // below rather than fatal, and the orphan sweep must be able to tell
+      // "walked and empty" from "not there" (see filterOrphanCandidates).
+      const scannedRoots: string[] = []
 
       // Force resync of Nomad docs
       await this.discoverNomadDocs(true).catch((error) => {
@@ -1500,6 +1504,7 @@ export class RagService {
       // Scan kb_uploads directory
       try {
         const kbContents = await listDirectoryContentsRecursive(KB_UPLOADS_PATH)
+        scannedRoots.push(KB_UPLOADS_PATH)
         kbContents.forEach((entry) => {
           if (entry.type === 'file') {
             filesInStorage.push(entry.key)
@@ -1517,6 +1522,7 @@ export class RagService {
       // Scan zim directory
       try {
         const zimContents = await listDirectoryContentsRecursive(ZIM_PATH)
+        scannedRoots.push(ZIM_PATH)
         zimContents.forEach((entry) => {
           if (entry.type === 'file') {
             filesInStorage.push(entry.key)
@@ -1567,7 +1573,10 @@ export class RagService {
       //
       // Candidates are narrowed to the roots this scan actually walked, which
       // keeps NOMAD's own bundled docs (discoverNomadDocs, outside both roots)
-      // out of it. A null decision means the disk scan told us nothing.
+      // out of it, and keeps a root that was missing on this pass out of it
+      // too: a missing zim folder beside a non-empty kb_uploads would
+      // otherwise have every ZIM reaped (upstream f8a29693). A null decision
+      // means the disk scan told us nothing.
       //
       // Measured against filesInStorage rather than embeddableFiles on purpose.
       // The question is "does a file still exist on disk", not "would we choose
@@ -1575,10 +1584,7 @@ export class RagService {
       // it used to accept, the narrower set would call every already-embedded
       // file of that type an orphan and delete its vectors.
       const orphans = decideOrphans(
-        filterOrphanCandidates([...sourcesInQdrant], {
-          kbUploadsPath: KB_UPLOADS_PATH,
-          zimPath: ZIM_PATH,
-        }),
+        filterOrphanCandidates([...sourcesInQdrant], scannedRoots),
         filesInStorage
       )
       if (orphans === null) {

@@ -44,23 +44,31 @@ export function decideOrphans(
 
 /**
  * Narrow Qdrant's sources to the ones the disk scan can actually speak for:
- * those under the roots it walked.
+ * those under the roots it walked, meaning the roots it listed on this pass,
+ * not the roots it meant to list.
  *
- * This guard is load-bearing, not defensive dressing. NOMAD embeds its own
- * bundled documentation into the same knowledge base (`discoverNomadDocs`), and
- * those files live outside both scan roots. Without this filter the first sweep
- * would find every one of them "missing from disk" and purge the product's own
- * docs out of the knowledge base.
+ * This guard is load-bearing, not defensive dressing, twice over.
+ *
+ * NOMAD embeds its own bundled documentation into the same knowledge base
+ * (`discoverNomadDocs`), and those files live outside both scan roots. Without
+ * this filter the first sweep would find every one of them "missing from disk"
+ * and purge the product's own docs out of the knowledge base.
+ *
+ * And the scan skips a root that is not there rather than failing, because a
+ * fresh install has no kb_uploads until the first upload. A missing zim root
+ * next to a kb_uploads with files in it still yields a non-empty file list, so
+ * decideOrphans' empty-scan guard passes, and if the configured roots were
+ * passed here every ZIM in the index would be an orphan purged in one batch:
+ * hours of re-embedding, from pressing Sync. Only walked roots are passed, so a
+ * missing one contributes no candidates, while a root that was walked and held
+ * nothing still gives up its orphans. (Upstream f8a29693.)
  *
  * Filtering by scanned root rather than by a list of known-safe names means a
  * future embedding source added outside these roots is left alone by default
  * instead of being reaped the first time it appears.
  */
-export function filterOrphanCandidates(
-  sourcesInQdrant: string[],
-  scanRoots: { kbUploadsPath: string; zimPath: string }
-): string[] {
-  const prefixes = [scanRoots.kbUploadsPath, scanRoots.zimPath]
+export function filterOrphanCandidates(sourcesInQdrant: string[], scannedRoots: string[]): string[] {
+  const prefixes = scannedRoots
     // A trailing separator matters: without it "/storage/zim-backup" shares a
     // string prefix with "/storage/zim" and would be swept.
     .filter((p) => typeof p === 'string' && p !== '')

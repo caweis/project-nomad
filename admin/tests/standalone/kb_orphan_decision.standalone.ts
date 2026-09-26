@@ -20,7 +20,7 @@ function check(name: string, fn: () => void) {
 
 const KB = '/app/storage/kb_uploads'
 const ZIM = '/app/storage/zim'
-const ROOTS = { kbUploadsPath: KB, zimPath: ZIM }
+const ROOTS = [KB, ZIM]
 
 // ── The refusal cases. These are the ones worth having. ──
 check('an empty disk scan reaps nothing, and says so with null', () => {
@@ -53,10 +53,27 @@ check('the root itself, with no trailing separator, is not a candidate', () => {
 })
 
 check('empty scan roots produce no candidates rather than sweeping everything', () => {
-  assert.deepEqual(
-    filterOrphanCandidates([`${ZIM}/a.zim`], { kbUploadsPath: '', zimPath: '' }),
-    []
-  )
+  assert.deepEqual(filterOrphanCandidates([`${ZIM}/a.zim`], ['', '']), [])
+  assert.deepEqual(filterOrphanCandidates([`${ZIM}/a.zim`], []), [])
+})
+
+check('a root that was not there when the scan ran contributes no candidates', () => {
+  // Upstream f8a29693. The zim folder is missing (renamed, relocated, not yet
+  // mounted) while kb_uploads has a file, so the scan is not empty and
+  // decideOrphans' own guard passes. Only kb_uploads was walked.
+  const inQdrant = [`${ZIM}/wikipedia.zim`, `${ZIM}/medicine.zim`, `${KB}/gone.pdf`, `${KB}/notes.pdf`]
+  const onDisk = [`${KB}/notes.pdf`]
+  const orphans = decideOrphans(filterOrphanCandidates(inQdrant, [KB]), onDisk)
+  assert.deepEqual(orphans, [`${KB}/gone.pdf`], 'no ZIM may be reaped on a root nobody looked at')
+})
+
+check('a root that was walked and held nothing still gives up its orphans', () => {
+  // The legitimate purge: the zim folder is there and empty because the user
+  // deleted every ZIM. Excluding missing roots must not excuse this one.
+  const inQdrant = [`${ZIM}/wikipedia.zim`, `${KB}/notes.pdf`]
+  const onDisk = [`${KB}/notes.pdf`]
+  const orphans = decideOrphans(filterOrphanCandidates(inQdrant, [KB, ZIM]), onDisk)
+  assert.deepEqual(orphans, [`${ZIM}/wikipedia.zim`])
 })
 
 // ── The actual sweep ──
