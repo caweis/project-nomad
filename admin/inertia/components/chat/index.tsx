@@ -211,6 +211,7 @@ export default function Chat({
         role: 'assistant',
         content: data.message?.content || 'Sorry, I could not generate a response.',
         timestamp: new Date(),
+        truncated: data.done_reason === 'length',
       }
 
       setMessages((prev) => [...prev, assistantMessage])
@@ -399,7 +400,15 @@ export default function Chat({
               fullContent += chunkContent
               thinkingContent += chunkThinking
             },
-            abortController.signal
+            abortController.signal,
+            (reason) => {
+              // Once cut off, stays cut off: a later 'stop' (the oMLX proxy
+              // sends one after the real reason) must not clear it.
+              if (reason !== 'length') return
+              setMessages((prev) =>
+                prev.map((m) => (m.id === assistantMsgId ? { ...m, truncated: true } : m))
+              )
+            }
           )
         } catch (error: any) {
           if (error?.name !== 'AbortError') {

@@ -16,6 +16,11 @@ interface ChatInterfaceProps {
   chatSuggestionsLoading?: boolean
 }
 
+// Sent as an ordinary turn, so it goes through retrieval, budgeting and
+// persistence like any other message. The cut-off answer is the newest turn in
+// history, which the budget keeps first.
+const CONTINUE_PROMPT = 'Continue exactly where you left off. Do not repeat what you already wrote.'
+
 export default function ChatInterface({
   messages,
   onSendMessage,
@@ -106,7 +111,7 @@ export default function ChatInterface({
           </div>
         ) : (
           <>
-            {messages.map((message) => (
+            {messages.map((message, idx) => (
               <div
                 key={message.id}
                 className={classNames(
@@ -115,7 +120,14 @@ export default function ChatInterface({
                 )}
               >
                 {message.role === 'assistant' && <ChatAssistantAvatar />}
-                <ChatMessageBubble message={message} />
+                <ChatMessageBubble
+                  message={message}
+                  onContinue={
+                    idx === messages.length - 1 && !isLoading
+                      ? () => onSendMessage(CONTINUE_PROMPT)
+                      : undefined
+                  }
+                />
               </div>
             ))}
             {/* Loading/thinking indicator */}

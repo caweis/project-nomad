@@ -279,7 +279,8 @@ class API {
   async streamChatMessage(
     chatRequest: OllamaChatRequest,
     onChunk: (content: string, thinking: string, done: boolean) => void,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    onDoneReason?: (reason: string) => void
   ): Promise<void> {
     // Axios doesn't support ReadableStream in browser, so need to use fetch
     const response = await fetch('/api/ollama/chat', {
@@ -320,6 +321,14 @@ class API {
             data.message?.thinking ?? '',
             data.done ?? false
           )
+
+          // Only a chunk that ends generation carries it; 'length' means the
+          // answer was cut off rather than finished (upstream #1342). Reported
+          // after onChunk so an answer whose first chunk is also its last
+          // already exists to be marked.
+          if (data.done_reason) {
+            onDoneReason?.(data.done_reason)
+          }
         }
       }
     } finally {

@@ -164,8 +164,9 @@ export default class OllamaController {
       // the backend defaults to and was truncated from the middle — dropping
       // recent history and retrieved context first, which is the worst part to
       // lose. planPrompt evicts whole turns oldest-first instead, in blocks so
-      // the prefix stays stable for the KV cache, and reserves room for the
-      // answer (num_predict) so generation cannot run past the window.
+      // the prefix stays stable for the KV cache, holds back a floor of room for
+      // the answer, and caps generation (num_predict) at whatever the window
+      // has left once the prompt is in, so it cannot run past the window.
       //
       // Applied AFTER the message above is written to the session, so history
       // always stores what the user actually typed rather than a trimmed copy.
@@ -200,13 +201,24 @@ export default class OllamaController {
         // Headers already flushed above
         const stream = await this.ollamaService.chatStream({ ...budgetedRequest, think })
         let fullContent = ''
+        // Sticky rather than last-wins: the oMLX proxy reports the real stop
+        // reason on one chunk and then turns the OpenAI [DONE] sentinel into a
+        // second final chunk that always says 'stop', which would otherwise
+        // overwrite the 'length' that matters.
+        let cutOff = false
+        let completionTokens: number | undefined
         for await (const chunk of stream) {
           if (chunk.message?.content) {
             fullContent += chunk.message.content
           }
+          if (chunk.done_reason === 'length') cutOff = true
+          if (typeof chunk.eval_count === 'number') completionTokens = chunk.eval_count
           response.response.write(`data: ${JSON.stringify(chunk)}\n\n`)
         }
         response.response.end()
+        if (cutOff) {
+          this._logLengthStop(reqData.model, contextWindow, planned.numPredict, completionTokens)
+        }
 
         // Save assistant message and optionally generate title
         if (sessionId && fullContent) {
@@ -223,6 +235,9 @@ export default class OllamaController {
 
       // Non-streaming (legacy) path
       const result = await this.ollamaService.chat({ ...budgetedRequest, think })
+      if (result?.done_reason === 'length') {
+        this._logLengthStop(reqData.model, contextWindow, planned.numPredict, result.eval_count)
+      }
 
       if (sessionId && result?.message?.content) {
         await this.chatService.addMessage(sessionId, 'assistant', result.message.content)
@@ -243,6 +258,24 @@ export default class OllamaController {
       }
       throw error
     }
+  }
+
+  /**
+   * A reply that hit the generation cap reaches the user cut off. The client
+   * shows that from done_reason; this puts it in the admin log with the numbers
+   * needed to tell a small window from a cap that is set too low (upstream
+   * #1342).
+   */
+  private _logLengthStop(
+    model: string,
+    numCtx: number,
+    numPredict: number,
+    completionTokens: number | undefined
+  ): void {
+    logger.info(
+      `[OllamaController] ${model} stopped at the length limit: ` +
+        `${completionTokens ?? '?'} tokens generated, num_predict=${numPredict}, num_ctx=${numCtx}`
+    )
   }
 
   async deleteModel({ request }: HttpContext) {

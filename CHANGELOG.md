@@ -14,6 +14,15 @@ Notable changes to the macOS distribution layer of this fork. Format follows
   files at all now does nothing rather than treating everything as deleted.
 
 ### Chat
+- Long answers are no longer cut off at about 750 words. 0.2.765 set aside
+  room for each reply so it could not be squeezed out by the conversation, and
+  by mistake that room also became the most a reply could ever use: 1,024
+  tokens, however large the model's window. Longer answers stopped
+  mid-sentence with nothing to say they had. A reply can now use whatever the
+  window has left once the conversation is in. (Ports the fix for upstream
+  #1342.)
+- An answer that does run out of room now says so, and the newest one offers a
+  Continue button that picks up where it stopped.
 - Walking away from an answer now stops it. Leaving the page, switching
   conversation, or turning chat off part-way through a reply used to leave it
   generating with nobody reading it, which kept the assistant busy and made the

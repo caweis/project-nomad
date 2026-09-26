@@ -7,6 +7,8 @@ export interface ChatMessage {
   thinking?: string
   isThinking?: boolean
   thinkingDuration?: number
+  // Generation stopped at the length limit, so the answer ends mid-thought.
+  truncated?: boolean
 }
 
 export interface ChatSession {
