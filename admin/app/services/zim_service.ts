@@ -1,8 +1,10 @@
 import {
+  CatalogLanguage,
   ListRemoteZimFilesResponse,
   RawRemoteZimFileEntry,
   RemoteZimFileEntry,
 } from '../../types/zim.js'
+import { parseCatalogLanguages } from '../utils/catalog_languages.js'
 import axios from 'axios'
 import { XMLParser } from 'fast-xml-parser'
 import {
@@ -59,10 +61,18 @@ export class ZimService {
     start,
     count,
     query,
+    language = 'eng',
   }: {
     start: number
     count: number
     query?: string
+    /**
+     * ISO-639-3 code to filter the catalog by, or `all` for no filter. English
+     * is the default, which is what this browser always showed, but it was a
+     * hardcode: English is about 1,300 of the catalog's roughly 10,900 books,
+     * so the rest of the library could not be browsed at all (upstream dde8aa55).
+     */
+    language?: string
   }): Promise<ListRemoteZimFilesResponse> {
     // Kiwix moved its OPDS catalog to opds.library.kiwix.org. The previous host,
     // browse.library.kiwix.org, now returns HTTP 503 for /catalog/* (the apex
@@ -77,7 +87,8 @@ export class ZimService {
         params: {
           start: start,
           count: count,
-          lang: 'eng',
+          // `all` means no filter, which the catalog expresses by omitting `lang`.
+          ...(language && language !== 'all' ? { lang: language } : {}),
           ...(query ? { q: query } : {}),
         },
         responseType: 'text',
@@ -163,6 +174,33 @@ export class ZimService {
       items: withoutExisting,
       has_more: result.feed.totalResults > start,
       total_count: result.feed.totalResults,
+    }
+  }
+
+  /**
+   * The languages the Kiwix catalog holds books in, most books first (see
+   * parseCatalogLanguages for what is kept).
+   *
+   * Needs internet, like the rest of this browser. A failure returns an empty
+   * list rather than throwing: without the list the page falls back to English
+   * with no picker, which is what it always did, and the book list itself must
+   * not go down with it.
+   */
+  async listCatalogLanguages(): Promise<CatalogLanguage[]> {
+    const LANGUAGES_URL = 'https://opds.library.kiwix.org/catalog/v2/languages'
+    try {
+      const res = await axios.get(LANGUAGES_URL, { responseType: 'text', timeout: 15_000 })
+      const parser = new XMLParser({
+        ignoreAttributes: false,
+        attributeNamePrefix: '',
+        textNodeName: '#text',
+      })
+      return parseCatalogLanguages(parser.parse(res.data))
+    } catch (error) {
+      logger.warn(
+        `[ZimService] Catalog language list unavailable: ${error instanceof Error ? error.message : error}`
+      )
+      return []
     }
   }
 

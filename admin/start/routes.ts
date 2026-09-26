@@ -396,6 +396,7 @@ router
   .group(() => {
     router.get('/list', [ZimController, 'list'])
     router.get('/list-remote', [ZimController, 'listRemote'])
+    router.get('/catalog-languages', [ZimController, 'listCatalogLanguages'])
     router.get('/curated-categories', [ZimController, 'listCuratedCategories'])
     router.post('/download-remote', [ZimController, 'downloadRemote'])
     router.post('/download-category-tier', [ZimController, 'downloadCategoryTier'])
