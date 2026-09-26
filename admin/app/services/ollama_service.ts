@@ -6,6 +6,7 @@ import { FALLBACK_RECOMMENDED_OLLAMA_MODELS, MLX_HIGHLIGHT_MODELS, MODEL_DESCRIP
 import { withMlxPullNames } from '../../util/mlx.js'
 import { normalizeNonStreamed, ThinkTagSplitter } from '../utils/think_stream.js'
 import { abortWith } from '../utils/abortable_stream.js'
+import { canCancelGeneration, MIN_CANCEL_SAFE_OLLAMA } from '../utils/cancel_safety.js'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import logger from '@adonisjs/core/services/logger'
@@ -21,6 +22,16 @@ import { NOMAD_API_DEFAULT_BASE_URL } from '../../constants/misc.js'
 const NOMAD_MODELS_API_PATH = '/api/v1/ollama/models'
 const MODELS_CACHE_FILE = path.join(process.cwd(), 'storage', 'ollama-models-cache.json')
 const CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000 // 24 hours
+
+/**
+ * Whether native Ollama survives a cancelled reply, as last measured. Module
+ * scope because the container builds a fresh OllamaService for every request.
+ * Re-checked after the TTL so an upgraded Ollama is noticed without restarting
+ * the admin; an unreachable Ollama is never cached, so it is asked again.
+ */
+const CANCEL_SAFETY_TTL_MS = 10 * 60 * 1000
+let cancelSafety: { value: boolean; checkedAt: number } | null = null
+let warnedCancelUnsafe = false
 
 @inject()
 export class OllamaService {
@@ -323,6 +334,36 @@ export class OllamaService {
       )
       return null
     }
+  }
+
+  /**
+   * Whether a chat reply may be cancelled mid-generation on this backend. See
+   * cancel_safety.ts: Ollama builds before the fix for upstream #1321 leave the
+   * runner spinning after a cancelled request, so on those a reply nobody is
+   * reading is left to finish, as every earlier release did.
+   */
+  public async canCancelGeneration(): Promise<boolean> {
+    const backend = env.get('NOMAD_AI_BACKEND')
+    if (backend === 'omlx') return true
+
+    const now = Date.now()
+    if (cancelSafety && now - cancelSafety.checkedAt < CANCEL_SAFETY_TTL_MS) {
+      return cancelSafety.value
+    }
+    const version = await this.getNativeServerVersion()
+    const value = canCancelGeneration(backend, version)
+    if (version !== null) {
+      cancelSafety = { value, checkedAt: now }
+      if (!value && !warnedCancelUnsafe) {
+        warnedCancelUnsafe = true
+        logger.info(
+          `[OllamaService] Ollama ${version} predates ${MIN_CANCEL_SAFE_OLLAMA}, which can hang when a ` +
+            `reply is cancelled, so replies nobody is reading will run to the end. ` +
+            `\`nomad upgrade ollama\` brings it up to date.`
+        )
+      }
+    }
+    return value
   }
 
   /**

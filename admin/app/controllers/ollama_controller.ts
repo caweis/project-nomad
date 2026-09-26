@@ -221,9 +221,14 @@ export default class OllamaController {
         let cutOff = false
         let completionTokens: number | undefined
         try {
+          // Cancel only where the backend survives it (see cancel_safety.ts).
+          // Without the signal, a reader who leaves costs one wasted answer, as
+          // it did in every earlier release; with it, on an Ollama build that
+          // predates the fix, it can leave the runner spinning until restarted.
+          const cancelOnLeave = await this.ollamaService.canCancelGeneration()
           const stream = await this.ollamaService.chatStream(
             { ...budgetedRequest, think },
-            readerGone.signal
+            cancelOnLeave ? readerGone.signal : undefined
           )
           for await (const chunk of stream) {
             if (chunk.message?.content) {

@@ -31,7 +31,10 @@ Notable changes to the macOS distribution layer of this fork. Format follows
   newer one still arriving. The model itself now stops too, not just the page:
   leaving while your question is still being looked up means it never starts.
   A reply stopped this way is not kept in the conversation, since it would end
-  mid-sentence; your question is.
+  mid-sentence; your question is. Stopping the model needs Ollama 0.33.3 or
+  later, or the Apple MLX backend. Older Ollama builds can hang when a reply is
+  cancelled, so on those a reply you leave still runs to the end, as before;
+  `nomad upgrade ollama` brings Ollama up to date.
 
 ### Dark mode
 - Green text is readable in dark mode. Links in chat answers, the Continue
