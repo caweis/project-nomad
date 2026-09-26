@@ -498,6 +498,10 @@ export class ZimService {
           try {
             await deleteFileIfExists(decision.path)
             logger.info(`[ZimService] Removed superseded ${parsed.resource_id} file: ${decision.path}`)
+            // The replaced version's passages go with it, so retrieval does not
+            // mix two editions of the same archive. The new file is indexed on
+            // its own schedule, under its own path.
+            await this._purgeKnowledgeOf(decision.path)
           } catch (err) {
             logger.warn(`[ZimService] Failed to remove superseded file ${decision.path}:`, err)
           }
@@ -505,6 +509,31 @@ export class ZimService {
       } catch (error) {
         logger.error(`[ZimService] Failed to create InstalledResource for ${filename}:`, error)
       }
+    }
+  }
+
+  /**
+   * Forget what the knowledge base learned from a file that is gone: its
+   * passages in Qdrant and its ingest state row (caweis#50).
+   *
+   * Guarded on the AI Assistant being installed at all (upstream b8bb3cd7).
+   * Without Qdrant there is nothing to purge, and every delete would otherwise
+   * log a misleading "not installed" error from the client setup.
+   *
+   * Best-effort on purpose. The file is already gone, so a Qdrant outage must
+   * not turn a successful delete into an error; the reverse sweep in
+   * RagService.scanAndSyncStorage catches whatever this misses.
+   */
+  private async _purgeKnowledgeOf(filePath: string): Promise<void> {
+    try {
+      const qdrantInstalled = !!(await this.dockerService.getServiceURL(SERVICE_NAMES.QDRANT))
+      if (!qdrantInstalled) return
+      const ragService = new RagService(this.dockerService, new OllamaService())
+      await ragService.purgeOrphanedSource(filePath)
+    } catch (error) {
+      logger.error(
+        `[ZimService] Could not purge vectors for ${filePath}; the storage scan will catch it: ${error instanceof Error ? error.message : error}`
+      )
     }
   }
 
@@ -533,18 +562,7 @@ export class ZimService {
     // its embedded passages in the vector store, so the assistant kept quoting
     // content that was no longer on the box — and on a machine with no
     // internet, that answer is not something the user can check anywhere else.
-    //
-    // Best-effort on purpose. The file is already gone, so a Qdrant outage must
-    // not turn a successful delete into an error; the reverse sweep in
-    // RagService.scanAndSyncStorage catches whatever this misses.
-    try {
-      const ragService = new RagService(this.dockerService, new OllamaService())
-      await ragService.purgeOrphanedSource(fullPath)
-    } catch (error) {
-      logger.error(
-        `[ZimService] Could not purge vectors for ${fullPath}; the storage scan will catch it: ${error instanceof Error ? error.message : error}`
-      )
-    }
+    await this._purgeKnowledgeOf(fullPath)
 
     // Clean up InstalledResource entry
     const parsed = CollectionManifestService.parseZimFilename(fileName)

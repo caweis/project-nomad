@@ -1363,10 +1363,24 @@ export class RagService {
    */
   public async purgeOrphanedSource(source: string): Promise<void> {
     try {
+      // The client has to exist before it is used. ZimService.delete builds a
+      // fresh RagService for each delete, and on that instance `this.qdrant`
+      // was still null: the delete threw a TypeError, the catch below
+      // swallowed it, and deleting a ZIM never touched its passages. The
+      // sweep only worked because scanAndSyncStorage had set the client up
+      // first. Ensuring the collection, as deleteFileBySource does, also
+      // keeps a delete on a fresh install from failing on a missing one.
+      await this._ensureCollection(RagService.CONTENT_COLLECTION_NAME, RagService.EMBEDDING_DIMENSION)
+
+      // State row first, points second (upstream 565ec8ce). The sweep finds
+      // orphans by what is still in Qdrant, so if a failure lands between the
+      // two, leftover points are found and retried on the next sweep. Points
+      // first would instead risk a state row that nothing ever looks at again.
+      // Both steps are idempotent, so a retry from either state is safe.
+      await KbIngestState.remove(source)
       await this.qdrant!.delete(RagService.CONTENT_COLLECTION_NAME, {
         filter: { must: [{ key: 'source', match: { value: source } }] },
       })
-      await KbIngestState.remove(source)
       logger.info(`[RAG] Purged orphaned source with no file on disk: ${source}`)
     } catch (error) {
       logger.error(`[RAG] Failed to purge orphaned source ${source}:`, error)
