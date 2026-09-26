@@ -43,6 +43,17 @@ Notable changes to the macOS distribution layer of this fork. Format follows
   stays in the list.
 
 ### Knowledge base
+- Choose which files the assistant uses. Each file in the Knowledge Base window
+  has an In answers switch. Switch a file off and the assistant stops drawing
+  on it; nothing is deleted or indexed again, and switching it back on is
+  instant. A file switched off stays off when it is indexed again, after a
+  retry or when its content is replaced. With a collection chosen under Show,
+  Turn all on and Turn all off switch every file in it at once. With every file
+  switched off, chat skips the knowledge base search, and the step that
+  rewrites your question for it, altogether. A newer edition of a ZIM arrives
+  under a new file name, so it starts switched on. (Ports upstream #1286.)
+- Choosing a file's collection lists every collection again. The list opened
+  already filtered down to the collection the file was in.
 - Indexing a ZIM no longer stops partway through. Indexing works through an
   archive in batches and took a batch that yielded little text as the end of
   the file, which is how most reference archives open (navigation pages,

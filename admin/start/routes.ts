@@ -313,6 +313,9 @@ router
     router.get('/files', [RagController, 'getStoredFiles'])
     router.delete('/files', [RagController, 'deleteFile'])
     router.post('/files/embed', [RagController, 'embedFile'])
+    // Whether search may use a file, or every file in a collection (upstream f1624228).
+    router.post('/files/active', [RagController, 'setFileActive'])
+    router.post('/collection-active', [RagController, 'setKnowledgeCollectionActive'])
     router.post('/estimate-batch', [RagController, 'estimateBatch'])
     router.get('/active-jobs', [RagController, 'getActiveJobs'])
     router.get('/job-status', [RagController, 'getJobStatus'])

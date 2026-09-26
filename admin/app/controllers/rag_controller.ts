@@ -10,6 +10,7 @@ import KbRatioRegistry from '#models/kb_ratio_registry'
 import { basename } from 'node:path'
 import logger from '@adonisjs/core/services/logger'
 import { sanitizeCollectionName } from '../../constants/kb_collections.js'
+import { parseCollectionActiveInput, parseFileActiveInput } from '../utils/kb_active.js'
 
 @inject()
 export default class RagController {
@@ -70,6 +71,50 @@ export default class RagController {
       return response.status(500).json({ error: result.message })
     }
     return response.status(200).json({ message: result.message })
+  }
+
+  /** Switch whether search may use one file (upstream f1624228). */
+  public async setFileActive({ request, response }: HttpContext) {
+    const input = parseFileActiveInput(request.input('source', null), request.input('active', null))
+    if (!input.ok) {
+      return response.status(400).json({ error: input.error })
+    }
+
+    const result = await this.ragService.setFileActive(input.value.source, input.value.active)
+    if (!result.success) {
+      return response
+        .status(result.code === 'not_found' ? 404 : 500)
+        .json({ error: result.message })
+    }
+    return response.status(200).json({ message: result.message })
+  }
+
+  /** Switch every file in a named collection in or out of search (upstream f1624228). */
+  public async setKnowledgeCollectionActive({ request, response }: HttpContext) {
+    // Type-checked before sanitizing: sanitizeCollectionName calls .trim(), and a
+    // form-encoded collection[] arrives as an array.
+    const input = parseCollectionActiveInput(
+      request.input('collection', null),
+      request.input('active', null)
+    )
+    if (!input.ok) {
+      return response.status(400).json({ error: input.error })
+    }
+    const collection = sanitizeCollectionName(input.value.collection)
+    if (!collection) {
+      return response.status(400).json({ error: 'collection must be a collection name.' })
+    }
+
+    const result = await this.ragService.setKnowledgeCollectionActive(
+      collection,
+      input.value.active
+    )
+    if (!result.success) {
+      return response.status(500).json({ error: result.message })
+    }
+    return response
+      .status(200)
+      .json({ message: result.message, affectedCount: result.affectedCount })
   }
 
   public async renameKnowledgeCollection({ request, response }: HttpContext) {

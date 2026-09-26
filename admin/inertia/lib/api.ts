@@ -760,6 +760,28 @@ class API {
     })()
   }
 
+  // Whether search may use a file, or a named collection's files (upstream f1624228).
+  // `active` goes as a JSON boolean; the server refuses anything else.
+  async setFileActive(source: string, active: boolean) {
+    return catchInternal(async () => {
+      const response = await this.client.post<{ message: string }>('/rag/files/active', {
+        source,
+        active,
+      })
+      return response.data
+    })()
+  }
+
+  async setKnowledgeCollectionActive(collection: string, active: boolean) {
+    return catchInternal(async () => {
+      const response = await this.client.post<{ message: string; affectedCount: number }>(
+        '/rag/collection-active',
+        { collection, active }
+      )
+      return response.data
+    })()
+  }
+
   async renameCollection(oldName: string, newName: string) {
     return catchInternal(async () => {
       const response = await this.client.post<{ message: string }>('/rag/rename-collection', {

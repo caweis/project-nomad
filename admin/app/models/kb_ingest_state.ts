@@ -1,6 +1,7 @@
 import { DateTime } from 'luxon'
 import { BaseModel, column, SnakeCaseNamingStrategy } from '@adonisjs/lucid/orm'
 import type { KbIngestStateValue } from '../../types/kb_ingest_state.js'
+import { effectiveActive } from '../utils/kb_active.js'
 
 const LAST_ERROR_MAX_LEN = 1024
 
@@ -31,6 +32,14 @@ export default class KbIngestState extends BaseModel {
   @column()
   declare collection: string | null
 
+  // Whether search may use this file (upstream f1624228). Switching it off keeps
+  // the file's vectors and only leaves them out of search; see utils/kb_active.ts.
+  @column({
+    // MySQL returns tinyint(1) as 1/0, not a boolean.
+    consume: (value: unknown) => effectiveActive(value),
+  })
+  declare active: boolean
+
   @column()
   declare last_error: string | null
 
@@ -43,7 +52,7 @@ export default class KbIngestState extends BaseModel {
   static async getOrCreate(filePath: string, collection?: string): Promise<KbIngestState> {
     return this.firstOrCreate(
       { file_path: filePath },
-      { file_path: filePath, state: 'pending_decision', chunks_embedded: 0, collection: collection ?? null }
+      { file_path: filePath, state: 'pending_decision', chunks_embedded: 0, collection: collection ?? null, active: true }
     )
   }
 

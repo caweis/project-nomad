@@ -4,6 +4,7 @@ import FileUploader from '~/components/file-uploader'
 import StyledButton from '~/components/StyledButton'
 import StyledSectionHeader from '~/components/StyledSectionHeader'
 import StyledTable from '~/components/StyledTable'
+import Switch from '~/components/inputs/Switch'
 import { useNotifications } from '~/context/NotificationContext'
 import api from '~/lib/api'
 import { IconX } from '@tabler/icons-react'
@@ -89,6 +90,36 @@ export default function KnowledgeBaseModal({ aiAssistantName = "AI Assistant", o
     },
     onError: (error: any) => {
       addNotification({ type: 'error', message: error?.message || 'Failed to update collection.' })
+    },
+  })
+
+  // Whether search may use a file (upstream f1624228). Switching off deletes
+  // nothing and re-embeds nothing, so it is instant in both directions.
+  // api.ts's catchInternal reports a failure itself and hands back undefined, so
+  // only a real response counts as done here.
+  const setActiveMutation = useMutation({
+    mutationFn: async ({ source, active }: { source: string; active: boolean }) => {
+      const result = await api.setFileActive(source, active)
+      if (!result) throw new Error('reported')
+      return result
+    },
+    onSuccess: (data) => {
+      addNotification({ type: 'success', message: data.message })
+      queryClient.invalidateQueries({ queryKey: ['storedFiles'] })
+    },
+  })
+
+  // Every file in the collection the Show filter is on (upstream's per-collection
+  // switch, fitted to this panel's filter instead of its grouped rows).
+  const setCollectionActiveMutation = useMutation({
+    mutationFn: async ({ collection, active }: { collection: string; active: boolean }) => {
+      const result = await api.setKnowledgeCollectionActive(collection, active)
+      if (!result) throw new Error('reported')
+      return result
+    },
+    onSuccess: (data) => {
+      addNotification({ type: 'success', message: data.message })
+      queryClient.invalidateQueries({ queryKey: ['storedFiles'] })
     },
   })
 
@@ -363,6 +394,38 @@ export default function KnowledgeBaseModal({ aiAssistantName = "AI Assistant", o
                 </StyledButton>
               </div>
             </div>
+            <p className="mb-3 text-sm text-text-muted">
+              Switch a file off under In answers and {aiAssistantName} stops using it. Nothing is
+              deleted, and switching it back on is instant.
+            </p>
+            {/* Switch a whole collection at once when the filter shows one. Named
+                collections only: upstream's Uncategorized version reaches every
+                ZIM and NOMAD's own help pages on the server. */}
+            {collectionFilter !== 'All' && (
+              <div className="mb-3 flex flex-wrap items-center gap-2 text-sm text-text-secondary">
+                <span>Every file in “{collectionFilter}”:</span>
+                <StyledButton
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setCollectionActiveMutation.mutate({ collection: collectionFilter, active: true })
+                  }
+                  disabled={setCollectionActiveMutation.isPending}
+                >
+                  Turn all on
+                </StyledButton>
+                <StyledButton
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setCollectionActiveMutation.mutate({ collection: collectionFilter, active: false })
+                  }
+                  disabled={setCollectionActiveMutation.isPending}
+                >
+                  Turn all off
+                </StyledButton>
+              </div>
+            )}
             <StyledTable<StoredFileInfo>
               className="font-semibold"
               rowLines={true}
@@ -379,6 +442,25 @@ export default function KnowledgeBaseModal({ aiAssistantName = "AI Assistant", o
                   title: 'Status',
                   render(record) {
                     return <StatePill state={record.state} chunks={record.chunksEmbedded} />
+                  },
+                },
+                {
+                  accessor: 'active',
+                  title: 'In answers',
+                  render(record) {
+                    const isSaving =
+                      setActiveMutation.isPending &&
+                      setActiveMutation.variables?.source === record.source
+                    return (
+                      <Switch
+                        // From the source, since render's index is the column's.
+                        id={`kb-active-${record.source.replace(/[^A-Za-z0-9_-]/g, '_')}`}
+                        checked={record.active}
+                        onChange={(active) => setActiveMutation.mutate({ source: record.source, active })}
+                        disabled={isSaving || setCollectionActiveMutation.isPending}
+                        ariaLabel={`Use ${sourceToDisplayName(record.source)} in answers`}
+                      />
+                    )
                   },
                 },
                 {
