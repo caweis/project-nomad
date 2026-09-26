@@ -18,4 +18,6 @@ export type ServiceSlim = Pick<
   | 'is_custom'
   | 'custom_url'
   | 'auto_update_enabled'
+  | 'is_link_tile'
+  | 'link_color'
 > & { status?: string }

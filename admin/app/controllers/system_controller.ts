@@ -3,7 +3,11 @@ import { SystemService } from '#services/system_service'
 import { SystemUpdateService } from '#services/system_update_service'
 import { ContainerRegistryService } from '#services/container_registry_service'
 import { CheckServiceUpdatesJob } from '#jobs/check_service_updates_job'
-import { affectServiceValidator, checkLatestVersionValidator, customAppValidator, deleteCustomAppValidator, installServiceValidator, normalizeCustomUrl, preflightCustomValidator, preflightValidator, serviceLogsValidator, setServiceAutoUpdateValidator, setServiceCustomUrlValidator, subscribeToReleaseNotesValidator, updateCustomAppValidator, updateServiceValidator } from '#validators/system';
+import { affectServiceValidator, checkLatestVersionValidator, customAppValidator, deleteCustomAppValidator, installServiceValidator, preflightCustomValidator, preflightValidator, serviceLogsValidator, setServiceAutoUpdateValidator, setServiceCustomUrlValidator, subscribeToReleaseNotesValidator, updateCustomAppValidator, updateServiceValidator } from '#validators/system';
+import { createLinkTileValidator, deleteLinkTileValidator, updateLinkTileValidator } from '#validators/link_tile'
+import { CUSTOM_URL_MESSAGES, checkCustomUrl, normalizeCustomUrl } from '../../util/custom_url.js'
+import { DEFAULT_LINK_TILE_ICON, isLinkTileIcon } from '../../constants/link_tile_icons.js'
+import { DEFAULT_LINK_TILE_COLOR } from '../../constants/link_tile_colors.js'
 import Service from '#models/service'
 import { DEFAULT_CPUS, DEFAULT_MEMORY_MB, evaluateCustomApp } from '#services/custom_app_guard'
 import { resolveHostArch } from '../utils/host_arch.js'
@@ -385,6 +389,126 @@ export default class SystemController {
         await service.save()
 
         return response.send({ success: true, custom_url: service.custom_url })
+    }
+
+    /**
+     * Create a home-screen link tile: a shortcut to something the user already runs, on this
+     * Mac or anywhere on the network (upstream 2c73139b).
+     *
+     * Stored as a service row with no container behind it. `installed` is true so the home
+     * screen renders it, `custom_url` carries the destination, and `is_link_tile` marks it so
+     * reconciliation, update checks and the Supply Depot leave it alone. `is_custom` stays
+     * false: that flag means a container NOMAD installs.
+     */
+    async createLinkTile({ request, response }: HttpContext) {
+        const payload = await request.validateUsing(createLinkTileValidator)
+
+        // The form refuses the same URLs first; this is for anything that skips it.
+        const { href: normalized, problem } = checkCustomUrl(payload.url)
+        if (!normalized) {
+            return response.status(422).send({
+                success: false,
+                message: CUSTOM_URL_MESSAGES[problem === 'too_long' ? 'too_long' : 'invalid'],
+            })
+        }
+
+        if (payload.icon && !isLinkTileIcon(payload.icon)) {
+            return response.status(422).send({ success: false, message: 'Unknown icon.' })
+        }
+
+        // Namespaced so a tile can never collide with a curated catalog entry. The seeder only
+        // ever touches names in its own DEFAULT_SERVICES list and never prunes, so a
+        // `nomad_link_` row is invisible to a reseed.
+        const slug = payload.friendly_name
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '_')
+            .replace(/^_+|_+$/g, '')
+        if (!slug) {
+            return response.status(422).send({ success: false, message: 'Enter a name using letters or numbers.' })
+        }
+        const serviceName = `nomad_link_${slug}`
+
+        const existing = await Service.query().where('service_name', serviceName).first()
+        if (existing) {
+            return response.status(409).send({
+                success: false,
+                message: `A link named "${payload.friendly_name}" already exists. Choose a different name.`,
+            })
+        }
+
+        const service = await Service.create({
+            service_name: serviceName,
+            container_image: '',
+            container_config: null,
+            friendly_name: payload.friendly_name,
+            description: payload.description ?? null,
+            icon: payload.icon || DEFAULT_LINK_TILE_ICON,
+            display_order: payload.display_order ?? 90,
+            installed: true,
+            installation_status: 'idle',
+            is_dependency_service: false,
+            ui_location: null,
+            custom_url: normalized,
+            is_custom: false,
+            is_user_modified: true,
+            is_link_tile: true,
+            link_color: payload.link_color ?? DEFAULT_LINK_TILE_COLOR,
+            category: 'Links',
+        })
+
+        return response.status(201).send({ success: true, service_name: service.service_name })
+    }
+
+    /** Reconfigure an existing link tile. service_name is immutable so the tile keeps its identity. */
+    async updateLinkTile({ request, response }: HttpContext) {
+        const payload = await request.validateUsing(updateLinkTileValidator)
+
+        const service = await Service.query().where('service_name', payload.service_name).first()
+        if (!service) {
+            return response.status(404).send({ success: false, message: 'Link not found' })
+        }
+        if (!service.is_link_tile) {
+            return response.status(403).send({ success: false, message: 'That app is not a link.' })
+        }
+
+        const { href: normalized, problem } = checkCustomUrl(payload.url)
+        if (!normalized) {
+            return response.status(422).send({
+                success: false,
+                message: CUSTOM_URL_MESSAGES[problem === 'too_long' ? 'too_long' : 'invalid'],
+            })
+        }
+
+        if (payload.icon && !isLinkTileIcon(payload.icon)) {
+            return response.status(422).send({ success: false, message: 'Unknown icon.' })
+        }
+
+        service.friendly_name = payload.friendly_name
+        service.description = payload.description ?? null
+        service.icon = payload.icon || DEFAULT_LINK_TILE_ICON
+        service.display_order = payload.display_order ?? service.display_order ?? 90
+        service.custom_url = normalized
+        service.link_color = payload.link_color ?? service.link_color ?? DEFAULT_LINK_TILE_COLOR
+        await service.save()
+
+        return response.send({ success: true })
+    }
+
+    /** Remove a link tile. Nothing to uninstall: there is no container, image or volume. */
+    async deleteLinkTile({ request, response }: HttpContext) {
+        const payload = await request.validateUsing(deleteLinkTileValidator)
+
+        const service = await Service.query().where('service_name', payload.service_name).first()
+        if (!service) {
+            return response.status(404).send({ success: false, message: 'Link not found' })
+        }
+        if (!service.is_link_tile) {
+            return response.status(403).send({ success: false, message: 'That app is not a link.' })
+        }
+
+        await service.delete()
+
+        return response.send({ success: true })
     }
 
     /** Toggle per-app automatic updates (opt-in; also gated by the global master switch). */

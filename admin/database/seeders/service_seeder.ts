@@ -26,6 +26,10 @@ export default class ServiceSeeder extends BaseSeeder {
     // off the live row, and custom_url / auto_update_* are user-controlled, never catalog-driven.
     | 'is_user_modified'
     | 'custom_url'
+    // Link tiles are user rows the seeder never creates or touches (it only iterates
+    // DEFAULT_SERVICES and never prunes), so neither column belongs in a seed record.
+    | 'is_link_tile'
+    | 'link_color'
     | 'auto_update_enabled'
     | 'available_update_first_seen_at'
     | 'auto_update_consecutive_failures'

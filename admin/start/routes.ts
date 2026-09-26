@@ -379,6 +379,17 @@ router
     router
       .post('/services/auto-update', [SystemController, 'setServiceAutoUpdate'])
       .use(middleware.localNetworkOnly())
+    // Home-screen link tiles (upstream 2c73139b). No container is touched, but a tile's URL
+    // becomes a link on everyone's home screen, so writes carry the same gate as custom-url.
+    router
+      .post('/services/links', [SystemController, 'createLinkTile'])
+      .use(middleware.localNetworkOnly())
+    router
+      .put('/services/links', [SystemController, 'updateLinkTile'])
+      .use(middleware.localNetworkOnly())
+    router
+      .delete('/services/links', [SystemController, 'deleteLinkTile'])
+      .use(middleware.localNetworkOnly())
     router.get('/services/:name/logs', [SystemController, 'getServiceLogs'])
     router.get('/services/:name/stats', [SystemController, 'getServiceStats'])
 

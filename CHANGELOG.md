@@ -5,6 +5,21 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 
 ## [Unreleased]
 
+### Home
+- Put your own links on the Command Center. Add a link, beside Browse all
+  apps, makes a shortcut to anything you already run, on this Mac or elsewhere
+  on your network: a NAS, a router's settings page, a printer. Give it a name
+  and an address, and if you like a description, one of 36 icons and one of
+  six colors. A bare address such as `192.168.1.50:8080` is fine, and the form
+  shows the exact address the link will open before you save it; a link is
+  always a web address (http or https). Links are drawn with a dashed
+  outline so they are not mistaken for apps NOMAD runs, each has its own Edit
+  and Remove buttons, and removing one asks first. They always stay on the
+  home, since the Supply Depot lists apps and a link is not one; in the Decks
+  layout they sit together in a Your links deck of their own. NOMAD only opens
+  a link, in a new tab, and never starts, stops, updates or checks on whatever
+  is behind it. (Ports upstream 2c73139b and its follow-ups.)
+
 ### Knowledge base
 - Indexing a ZIM no longer stops partway through. Indexing works through an
   archive in batches and took a batch that yielded little text as the end of

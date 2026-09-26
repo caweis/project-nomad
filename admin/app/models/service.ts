@@ -93,6 +93,22 @@ export default class Service extends BaseModel {
   })
   declare is_user_modified: boolean
 
+  // True when this row is only a home-screen shortcut: a name, icon and URL with no
+  // container behind it (upstream 2c73139b). Distinct from is_custom, which is still a
+  // real container NOMAD installs and manages. A link tile has no lifecycle, so no
+  // Start/Stop/Update/Uninstall may be offered for one, and container reconciliation,
+  // update checks and the Supply Depot all leave it alone.
+  @column({
+    serialize(value) {
+      return Boolean(value)
+    },
+  })
+  declare is_link_tile: boolean
+
+  // Brand-palette color id for a link tile (constants/link_tile_colors.ts); null is the default.
+  @column()
+  declare link_color: string | null
+
   @column()
   declare available_update_version: string | null
 

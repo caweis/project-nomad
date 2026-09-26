@@ -916,6 +916,65 @@ class API {
     })()
   }
 
+  // ── Home-screen link tiles (upstream 2c73139b) ──
+  //
+  // A duplicate name (409) or an address the server refuses (422) is the user's to fix, not an
+  // internal error, so those come back as { success: false, message } in the server's own
+  // words for the form to show, instead of catchInternal's "An internal error occurred" toast.
+  // Anything else still goes through catchInternal.
+  private async linkTileRequest(
+    send: () => Promise<{ data: { success: boolean; message?: string } }>
+  ) {
+    return catchInternal(async () => {
+      try {
+        const response = await send()
+        return response.data
+      } catch (error: any) {
+        const status = error?.response?.status
+        if (status === 409 || status === 422) {
+          const body = error.response.data
+          return {
+            success: false,
+            message: (body?.message ?? body?.errors?.[0]?.message) as string | undefined,
+          }
+        }
+        throw error
+      }
+    })()
+  }
+
+  async createLinkTile(data: {
+    friendly_name: string
+    url: string
+    description?: string | null
+    icon?: string | null
+    display_order?: number
+    link_color?: string
+  }) {
+    return this.linkTileRequest(() => this.client.post('/system/services/links', data))
+  }
+
+  async updateLinkTile(data: {
+    service_name: string
+    friendly_name: string
+    url: string
+    description?: string | null
+    icon?: string | null
+    display_order?: number
+    link_color?: string
+  }) {
+    return this.linkTileRequest(() => this.client.put('/system/services/links', data))
+  }
+
+  async deleteLinkTile(service_name: string) {
+    return catchInternal(async () => {
+      const response = await this.client.delete<{ success: boolean }>('/system/services/links', {
+        data: { service_name },
+      })
+      return response.data
+    })()
+  }
+
   async deleteCustomApp(service_name: string, remove_image = false) {
     return catchInternal(async () => {
       const response = await this.client.delete<{ success: boolean; message: string }>(

@@ -6,7 +6,8 @@
  *   - the ordered deck list (DECKS),
  *   - which app maps to which deck (DECK_BY_KEY + deckForKey),
  *   - the pinned rule (isPinned — display_order <= 8, the "first on login" band),
- *   - the pure grouping (groupIntoDecks).
+ *   - the pure grouping (groupIntoDecks),
+ *   - link tiles: always pinned, always in their own last deck.
  *
  * Pure + dependency-free on purpose: it imports no React and no .tsx so the
  * standalone gate (tests/standalone/home_decks.standalone.ts) can strip-run it
@@ -21,6 +22,7 @@ export type DeckKey =
   | 'knowledge-maps'
   | 'health-supplies'
   | 'tools-workshop'
+  | 'links'
 
 export interface Deck {
   key: DeckKey
@@ -39,6 +41,9 @@ export const DECKS: readonly Deck[] = [
   { key: 'knowledge-maps', label: 'Knowledge & maps', icon: 'IconBook2' },
   { key: 'health-supplies', label: 'Health & supplies', icon: 'IconHeart' },
   { key: 'tools-workshop', label: 'Tools & workshop', icon: 'IconTool' },
+  // The user's own link tiles (upstream 2c73139b): shortcuts to things NOMAD does not
+  // manage. Last, so a link never displaces an app.
+  { key: 'links', label: 'Your links', icon: 'IconExternalLink' },
 ]
 
 /**
@@ -86,6 +91,8 @@ export function deckForKey(key: string): DeckKey {
 export interface DeckGroupable {
   deckKey: string
   displayOrder: number
+  /** A user-added link tile rather than an app; see isPinned and groupIntoDecks. */
+  isLinkTile?: boolean
 }
 
 /**
@@ -105,6 +112,12 @@ export type PinOverrides = Record<string, boolean>
  * old display_order rule applies unchanged.
  */
 export function isPinned(item: DeckGroupable, overrides?: PinOverrides): boolean {
+  // A link tile is always on the home screen. The home is the only place it lives:
+  // it is not an app, so the Supply Depot does not list it and "Browse all apps"
+  // cannot reach it. Letting the display_order band (tiles default to 90) or a
+  // stray override unpin one would lose it from every screen. Removing a tile is
+  // how it leaves.
+  if (item.isLinkTile) return true
   return overrides?.[item.deckKey] ?? item.displayOrder <= 8
 }
 
@@ -126,7 +139,8 @@ export function groupIntoDecks<T extends DeckGroupable>(
   const buckets = new Map<DeckKey, T[]>()
   for (const item of items) {
     if (!isPinned(item, overrides)) continue
-    const key = deckForKey(item.deckKey)
+    // Link tiles group together in their own deck, whatever their key would map to.
+    const key: DeckKey = item.isLinkTile ? 'links' : deckForKey(item.deckKey)
     const bucket = buckets.get(key)
     if (bucket) bucket.push(item)
     else buckets.set(key, [item])
