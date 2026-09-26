@@ -201,10 +201,10 @@ export default class OllamaController {
         // Headers already flushed above
         const stream = await this.ollamaService.chatStream({ ...budgetedRequest, think })
         let fullContent = ''
-        // Sticky rather than last-wins: the oMLX proxy reports the real stop
-        // reason on one chunk and then turns the OpenAI [DONE] sentinel into a
-        // second final chunk that always says 'stop', which would otherwise
-        // overwrite the 'length' that matters.
+        // ollama-js ends the stream at the first chunk marked done, so exactly
+        // one stop reason arrives. On oMLX the proxy stamps the token count on
+        // a later [DONE] frame that ollama-js never reads, so the length-stop
+        // log shows '?' for tokens there.
         let cutOff = false
         let completionTokens: number | undefined
         for await (const chunk of stream) {

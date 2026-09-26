@@ -402,8 +402,7 @@ export default function Chat({
             },
             abortController.signal,
             (reason) => {
-              // Once cut off, stays cut off: a later 'stop' (the oMLX proxy
-              // sends one after the real reason) must not clear it.
+              // Only a cut-off is worth marking; 'stop' is a finished answer.
               if (reason !== 'length') return
               setMessages((prev) =>
                 prev.map((m) => (m.id === assistantMsgId ? { ...m, truncated: true } : m))
