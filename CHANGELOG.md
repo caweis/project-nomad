@@ -33,6 +33,16 @@ Notable changes to the macOS distribution layer of this fork. Format follows
   A reply stopped this way is not kept in the conversation, since it would end
   mid-sentence; your question is.
 
+### Dark mode
+- Green text is readable in dark mode. Links in chat answers, the Continue
+  button, and everywhere else the app draws text in its accent green measured
+  under 2.2:1 against the dark backgrounds, and 1.6:1 inside a chat bubble:
+  hard to read in good light and close to invisible in poor light. Accent text
+  now uses a lighter shade of the same green, and buttons filled with the green
+  are unchanged. The Builder Tag fields in Settings > Benchmark, which were
+  darker still, now use the normal text color. (Ports upstream 02fe66e9 and
+  c9a1a763.)
+
 ### Maintainer tools
 - `node ace eval:retrieval` scores knowledge base search against a written-down
   set of questions and the documents that should answer them, so a change to

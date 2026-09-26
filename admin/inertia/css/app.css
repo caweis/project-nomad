@@ -63,7 +63,10 @@ body {
   --color-desert-white: #2a2918;
   --color-desert-green-darker: #f7eedc;
   --color-desert-green-dark: #e8dfc8;
+  /* Accent green stays dark enough for white text on buttons; text drawn in
+     the accent uses the lighter foreground below instead (upstream 02fe66e9). */
   --color-desert-green: #525530;
+  --color-desert-green-foreground: #babaaa;
   --color-desert-green-light: #3a3c24;
   --color-desert-green-lighter: #2d2e1c;
   --color-desert-orange-dark: #c85815;
@@ -97,6 +100,25 @@ body {
   --color-btn-green-hover: #474a28;
   --color-btn-green-active: #3a3c24;
   color-scheme: dark;
+}
+
+/* Keep foreground accents readable without lightening green button backgrounds.
+   #525530 on the dark surfaces measures 1.6-2.2:1 (WCAG AA wants 4.5:1); the
+   foreground token measures 6.4-8.8:1 on the same three. */
+[data-theme="dark"] .text-desert-green {
+  color: var(--color-desert-green-foreground);
+}
+
+[data-theme="dark"] .hover\:text-desert-green:hover {
+  color: var(--color-desert-green-foreground);
+}
+
+[data-theme="dark"] .hover\:text-desert-green\/80:hover {
+  color: color-mix(in oklab, var(--color-desert-green-foreground) 80%, transparent);
+}
+
+[data-theme="dark"] .group-hover\:text-desert-green:is(:where(.group):hover *) {
+  color: var(--color-desert-green-foreground);
 }
 
 /* MapLibre popup styling for dark mode */
