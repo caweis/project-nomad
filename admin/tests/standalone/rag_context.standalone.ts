@@ -5,7 +5,8 @@
  *   node --experimental-strip-types tests/standalone/rag_context.standalone.ts
  */
 import assert from 'node:assert/strict'
-import { computeHeadingBoost, buildContextLabel } from '../../app/utils/rag_context.ts'
+import { computeHeadingBoost, buildContextLabel, toRetrievedChunk } from '../../app/utils/rag_context.ts'
+import { toScoredChunks } from '../../app/utils/eval/retrieval_run.ts'
 
 let passed = 0
 function check(name: string, fn: () => void) {
@@ -46,6 +47,45 @@ check('falls back to article_title, then to a bare label', () => {
   assert.equal(buildContextLabel(1, { article_title: 'First Aid' }), '[Context 2 — First Aid]')
   assert.equal(buildContextLabel(2, {}), '[Context 3]')
   assert.equal(buildContextLabel(2, undefined), '[Context 3]')
+})
+
+// ── toRetrievedChunk ── (the bug: `source` was dropped on the way out of search)
+const reranked = (overrides: Record<string, any> = {}) => ({
+  text: 'Boil water for one minute.',
+  score: 0.61,
+  finalScore: 0.66,
+  chunk_index: 4,
+  created_at: 1_750_000_000,
+  source: '/app/storage/zim/wikipedia_en_medicine_maxi_2026-01.zim',
+  full_title: 'Water purification — Boiling',
+  content_type: 'zim_article',
+  ...overrides,
+})
+
+check('a retrieved chunk keeps the path it came from', () => {
+  const chunk = toRetrievedChunk(reranked())
+  assert.equal(chunk.metadata.source, '/app/storage/zim/wikipedia_en_medicine_maxi_2026-01.zim')
+})
+
+check('the retrieved score is the reranked score, with the semantic one alongside', () => {
+  const chunk = toRetrievedChunk(reranked())
+  assert.equal(chunk.score, 0.66)
+  assert.equal(chunk.metadata.semantic_score, 0.61)
+  assert.equal(chunk.metadata.full_title, 'Water purification — Boiling')
+})
+
+check('what search returns is what the retrieval eval can credit to a document', () => {
+  // End to end across the seam that broke: without `source`, every chunk
+  // search returned was unresolvable and eval:retrieval scored zero recall.
+  const { chunks, unresolved } = toScoredChunks([
+    toRetrievedChunk(reranked()),
+    toRetrievedChunk(reranked({ source: '/app/storage/kb_uploads/well-drilling.pdf' })),
+  ])
+  assert.equal(unresolved, 0)
+  assert.deepEqual(
+    chunks.map((c) => c.docId),
+    ['wikipedia_en_medicine_maxi_2026-01', 'well-drilling']
+  )
 })
 
 console.log(`\n${passed} passed`)

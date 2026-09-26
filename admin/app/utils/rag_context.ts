@@ -1,3 +1,7 @@
+// Type-only, so it uses the .js specifier tsc expects and is erased before node
+// ever tries to resolve it (the same arrangement as retrieval_run.ts).
+import type { RerankedRAGResult } from '../../types/rag.js'
+
 /**
  * Heading-match boost for a reranked RAG result.
  *
@@ -57,4 +61,34 @@ export function buildContextBlock(
   return docs
     .map((doc, idx) => `${buildContextLabel(idx, doc.metadata)}\n${doc.text}`)
     .join('\n\n')
+}
+
+/**
+ * What searchSimilarDocuments hands back for one reranked chunk.
+ *
+ * `source` is the originating file or ZIM path. Every point stores it, and it is
+ * the only field that maps a chunk back to its document: eval:retrieval credits
+ * recall by it. It used to be dropped here, which left every retrieved chunk
+ * unresolvable and would have had the retrieval eval report zero recall against
+ * any golden set. Upstream returns it (#1233); the fork's port of that harness
+ * missed the line.
+ */
+export function toRetrievedChunk(result: RerankedRAGResult) {
+  return {
+    text: result.text,
+    score: result.finalScore,
+    metadata: {
+      chunk_index: result.chunk_index,
+      created_at: result.created_at,
+      semantic_score: result.score,
+      source: result.source,
+      // Enhanced ZIM metadata (likely undefined for non-ZIM content)
+      article_title: result.article_title,
+      section_title: result.section_title,
+      full_title: result.full_title,
+      hierarchy: result.hierarchy,
+      document_id: result.document_id,
+      content_type: result.content_type,
+    },
+  }
 }

@@ -5,7 +5,7 @@ import logger from '@adonisjs/core/services/logger'
 import { TokenChunker } from '@chonkiejs/core'
 import sharp from 'sharp'
 import { deleteFileIfExists, determineFileType, getFile, getFileStatsIfExists, listDirectoryContentsRecursive, ZIM_STORAGE_PATH } from '../utils/fs.js'
-import { computeHeadingBoost } from '../utils/rag_context.js'
+import { computeHeadingBoost, toRetrievedChunk } from '../utils/rag_context.js'
 import { decideScanAction, type IngestPolicy } from '../utils/kb_ingest_decision.js'
 import { decideOrphans, filterOrphanCandidates } from '../utils/kb_orphan_decision.js'
 import KbIngestState from '#models/kb_ingest_state'
@@ -902,22 +902,7 @@ export class RagService {
       const diverseResults = this.applySourceDiversity(rerankedResults)
 
       // Return top N results with enhanced metadata
-      return diverseResults.slice(0, limit).map((result) => ({
-        text: result.text,
-        score: result.finalScore,
-        metadata: {
-          chunk_index: result.chunk_index,
-          created_at: result.created_at,
-          semantic_score: result.score,
-          // Enhanced ZIM metadata (likely be undefined for non-ZIM content)
-          article_title: result.article_title,
-          section_title: result.section_title,
-          full_title: result.full_title,
-          hierarchy: result.hierarchy,
-          document_id: result.document_id,
-          content_type: result.content_type,
-        },
-      }))
+      return diverseResults.slice(0, limit).map(toRetrievedChunk)
     } catch (error) {
       logger.error('[RAG] Error searching similar documents:', error)
       return []
