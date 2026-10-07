@@ -47,9 +47,9 @@ export default function AppLayout({
         onClick={() => (window.location.href = '/home')}
       >
         <img
-          src="/project_nomad_logo.png"
+          src="/nomad-primary.svg"
           alt="Project Nomad Logo"
-          className={compact ? 'h-12 w-12' : 'h-40 w-40'}
+          className={compact ? 'h-12 w-12 object-contain' : 'h-40 w-40 object-contain'}
         />
         <h1
           className={classNames(

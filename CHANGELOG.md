@@ -19,6 +19,9 @@ Notable changes to the macOS distribution layer of this fork. Format follows
   layout they sit together in a Your links deck of their own. NOMAD only opens
   a link, in a new tab, and never starts, stops, updates or checks on whatever
   is behind it. (Ports upstream 2c73139b and its follow-ups.)
+- Project NOMAD's new badge replaces the old logo in the Command Center header,
+  the settings and chat sidebars, the start-up screen and the README. It is a
+  vector image, so it stays sharp at any size. (Ports upstream 4c75eb51.)
 
 ### Maps
 - Pins can be looked after, not just dropped. Dropping one now asks for notes
