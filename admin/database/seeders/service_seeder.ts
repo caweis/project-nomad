@@ -12,7 +12,7 @@ export default class ServiceSeeder extends BaseSeeder {
     'NOMAD_STORAGE_PATH',
     '/opt/project-nomad/storage'
   )
-  private static DEFAULT_SERVICES: Omit<
+  private static DEFAULT_SERVICES: (Omit<
     ModelAttributes<Service>,
     | 'created_at'
     | 'updated_at'
@@ -34,7 +34,11 @@ export default class ServiceSeeder extends BaseSeeder {
     | 'available_update_first_seen_at'
     | 'auto_update_consecutive_failures'
     | 'auto_update_disabled_reason'
-  >[] = [
+  > & {
+    // The install preflight reads minMemoryMB and minDiskMB from here (see
+    // SystemController). Omitted above so most seed records need not carry it.
+    metadata?: string | null
+  })[] = [
     {
       service_name: SERVICE_NAMES.KIWIX,
       friendly_name: 'Information Library',
@@ -464,6 +468,57 @@ export default class ServiceSeeder extends BaseSeeder {
       installation_status: 'idle',
       is_dependency_service: false,
       depends_on: null,
+    },
+    {
+      service_name: SERVICE_NAMES.TRANSLATE,
+      friendly_name: 'Translated Library',
+      powered_by: 'Bergamot',
+      display_order: 13,
+      category: 'education',
+      description:
+        'Read the Information Library in another language. Machine translation that works offline, on CPU',
+      icon: 'IconWorld',
+      // Upstream's published image (#1292), not one this fork builds. 0.1.1 carries its
+      // fixes for redirects (#1379) and for languages whose model has a pre-release
+      // build (#1405); the seeder pin is how a fix reaches an install.
+      container_image: 'ghcr.io/crosstalk-solutions/project-nomad-translate:0.1.1',
+      source_repo: 'https://github.com/browsermt/bergamot-translator',
+      container_command: null,
+      container_config: JSON.stringify({
+        // Built for linux/amd64 only: Bergamot's intgemm backend is x86 and there is no
+        // aarch64 wheel. On Apple Silicon Docker has to be told to pull and create that
+        // build, and the engine's x86 emulation runs it (see utils/container_platform.ts).
+        // It is a key of the config so it survives an edit and applies to install, update
+        // and recreate alike.
+        platform: 'linux/amd64',
+        HostConfig: {
+          RestartPolicy: { Name: 'unless-stopped' },
+          PortBindings: { '8391/tcp': [{ HostPort: '8460' }] },
+          Binds: [`${ServiceSeeder.NOMAD_STORAGE_ABS_PATH}/translate/models:/models`],
+        },
+        ExposedPorts: { '8391/tcp': {} },
+        // TRANSLATE_LANGS is the language set fetched on first start, 45-140 MB per
+        // language for the pair in both directions. Editable via Manage > Edit; the
+        // container re-checks on restart and only fetches what is missing.
+        Env: [
+          // Reached by container name on the shared NOMAD network, which DockerService
+          // attaches every managed container to. Using the name rather than a host port
+          // means this survives the library being remapped.
+          'KIWIX=http://nomad_kiwix_server:8080',
+          'TRANSLATE_LANGS=fr,es,de',
+          'WORKERS=8',
+        ],
+      }),
+      ui_location: '8460',
+      installed: false,
+      installation_status: 'idle',
+      is_dependency_service: false,
+      // Translating an article it cannot fetch is meaningless, so the library has to be
+      // there first.
+      depends_on: SERVICE_NAMES.KIWIX,
+      // Upstream measured peak RSS at 729 MB with three language pairs resident; models
+      // are 45-140 MB per language on disk.
+      metadata: JSON.stringify({ minMemoryMB: 1536, minDiskMB: 1024 }),
     },
   ]
 

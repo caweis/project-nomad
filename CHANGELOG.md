@@ -139,6 +139,20 @@ Notable changes to the macOS distribution layer of this fork. Format follows
   the new edition is offered as a separate download, because the channels were
   renamed. (Ports upstream 5e1702ef.)
 
+### Supply Depot
+- Translated Library, a new app that shows the Information Library in another
+  language. Its Open button goes to port 8460, a second address for the
+  library with a Translate this page bar: French, Spanish and German, and
+  Original to switch back. The translating is done on your own computer by
+  Bergamot, the engine behind Firefox's page translation, so it works offline
+  once the models have downloaded, needs no GPU and does not use the AI
+  Assistant. Installing it also installs the Information Library if that is
+  missing, and the library at its usual address is left as it is. Tables, page
+  titles and Kiwix's own search results stay in the original language. The
+  engine is built for Intel processors, so on an Apple Silicon Mac the app
+  runs under emulation, which costs some speed. (Ports upstream #1292, with
+  the fixes #1379 and #1405.)
+
 ### Dark mode
 - Green text is readable in dark mode. Links in chat answers, the Continue
   button, and everywhere else the app draws text in its accent green measured

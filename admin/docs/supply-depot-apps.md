@@ -196,3 +196,86 @@ A reader and browser for your ebook collection. Point it at a folder of books an
 **Your data:** The app's database lives in the `calibre-web` folder and your books in `calibre-web/books`, both on your data drive.
 
 **Works offline:** Fully offline. Your library is served from your NOMAD.
+
+---
+
+## Translated Library {% #offline-translation %}
+
+Reads the Information Library in another language. Open an article and a **Translate this page** bar appears at the top with a button for each installed language, plus **Original** to switch back. Your choice sticks as you click through to other articles.
+
+**Powered by:** Bergamot, the translation engine behind Firefox's built-in page translation · **Source:** [github.com/browsermt/bergamot-translator](https://github.com/browsermt/bergamot-translator)
+
+**Why this instead of the AI Assistant:** the AI Assistant can translate, but this is a purpose-built translation engine. It runs on the processor, needs no GPU and no model to be loaded, and it is more careful with names: asked to translate a page, a chat model will happily translate "Project NOMAD" into another language, and this will not. It needs the Information Library installed first, and installs it if it is missing.
+
+**On a Mac:** the engine is built for Intel (x86) processors and has no Apple Silicon build, so on an Apple Silicon Mac it runs under emulation. That costs some speed.
+
+**Languages:** French, Spanish and German are set up. The app takes its list from a setting named `TRANSLATE_LANGS` (`fr,es,de`), and a language that is on the list is downloaded the next time the app starts. This version of NOMAD offers **Edit** in the Manage menu for the apps you add yourself, not for the apps it ships, so the list can't be changed from there yet.
+
+Each language takes between about 45 MB and 140 MB of disk, for both directions. A language that has been downloaded keeps working offline and keeps its button in the **Translate this page** bar.
+
+The engine has models for these 50 languages. Chinese is not available yet.
+
+| Language | Code |
+|---|---|
+| Afrikaans | `af` |
+| Arabic | `ar` |
+| Basque | `eu` |
+| Bengali | `bn` |
+| Bosnian | `bs` |
+| Bulgarian | `bg` |
+| Catalan | `ca` |
+| Croatian | `hr` |
+| Czech | `cs` |
+| Danish | `da` |
+| Dutch | `nl` |
+| Estonian | `et` |
+| Finnish | `fi` |
+| French | `fr` |
+| Galician | `gl` |
+| German | `de` |
+| Greek | `el` |
+| Gujarati | `gu` |
+| Hebrew | `he` |
+| Hindi | `hi` |
+| Hungarian | `hu` |
+| Icelandic | `is` |
+| Indonesian | `id` |
+| Italian | `it` |
+| Japanese | `ja` |
+| Kannada | `kn` |
+| Korean | `ko` |
+| Latvian | `lv` |
+| Lithuanian | `lt` |
+| Malay | `ms` |
+| Malayalam | `ml` |
+| Marathi | `mr` |
+| Norwegian | `nb` |
+| Persian | `fa` |
+| Polish | `pl` |
+| Portuguese | `pt` |
+| Romanian | `ro` |
+| Russian | `ru` |
+| Serbian | `sr` |
+| Slovak | `sk` |
+| Slovenian | `sl` |
+| Spanish | `es` |
+| Swedish | `sv` |
+| Tamil | `ta` |
+| Telugu | `te` |
+| Thai | `th` |
+| Turkish | `tr` |
+| Ukrainian | `uk` |
+| Urdu | `ur` |
+| Vietnamese | `vi` |
+
+**First start needs internet.** The language models download when the app first runs, the same as installing any other app. After that it is entirely offline. If you install this while disconnected the app still starts and the library still works, just without translation until it can fetch the models. The models come from Mozilla, the same source Firefox uses for its own translation, under the MPL-2.0 licence.
+
+**What it does not translate:** tables and infoboxes, the page title in your browser tab, and Kiwix's own search results. Searching also still matches the original language, so look things up in English and translate the article you land on.
+
+**A note on two language buttons:** the library's own toolbar has a globe that changes the *menus* around the page. The bar this app adds changes the *article*. They are different things and sit close together, which is unfortunate but not something we can move.
+
+**Accuracy:** this is machine translation, and it is literal. It is very good for getting the sense of an article. Be careful relying on it for exact medical or safety wording, where the correct term in another language is often not the literal one.
+
+**Your data:** language models live in `storage/translate/models`. Nothing you read is stored or sent anywhere.
+
+**Works offline:** yes, once the models have downloaded.

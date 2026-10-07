@@ -14,4 +14,5 @@ export const SERVICE_NAMES = {
   IT_TOOLS: 'nomad_it_tools',
   EXCALIDRAW: 'nomad_excalidraw',
   CALIBRE_WEB: 'nomad_calibre_web',
+  TRANSLATE: 'nomad_translate',
 }

@@ -39,6 +39,7 @@ export const SUPPLY_DEPOT_DOCS: Record<string, SupplyDepotDocEntry> = {
   [SERVICE_NAMES.IT_TOOLS]: { slug: SUPPLY_DEPOT_DOC_PAGE, anchor: 'it-tools' },
   [SERVICE_NAMES.EXCALIDRAW]: { slug: SUPPLY_DEPOT_DOC_PAGE, anchor: 'whiteboard' },
   [SERVICE_NAMES.CALIBRE_WEB]: { slug: SUPPLY_DEPOT_DOC_PAGE, anchor: 'ebook-library' },
+  [SERVICE_NAMES.TRANSLATE]: { slug: SUPPLY_DEPOT_DOC_PAGE, anchor: 'offline-translation' },
 }
 
 // Returns the in-app docs link for a service, or null if it has no documentation

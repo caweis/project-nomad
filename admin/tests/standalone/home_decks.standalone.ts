@@ -19,6 +19,11 @@ check('deckForKey maps known + falls back', () => {
   assert.equal(deckForKey('maps'), 'knowledge-maps')
   assert.equal(deckForKey('totally-unknown'), 'tools-workshop')
 })
+check('the translated library sits beside the library it translates', () => {
+  // Without an entry it would fall back to tools-workshop, away from Kiwix.
+  assert.equal(deckForKey('nomad_translate'), 'knowledge-maps')
+  assert.equal(deckForKey('nomad_translate'), deckForKey('nomad_kiwix_server'))
+})
 check('isPinned uses display_order <= 8', () => {
   assert.equal(isPinned({ displayOrder: 8 } as any), true)
   assert.equal(isPinned({ displayOrder: 9 } as any), false)
