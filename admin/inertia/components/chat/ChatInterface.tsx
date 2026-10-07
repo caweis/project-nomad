@@ -44,6 +44,7 @@ export default function ChatInterface({
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
+  const attachButtonRef = useRef<HTMLButtonElement>(null)
   // Every blob URL made for a preview, so they can all be released when the chat
   // goes away. Those of images already sent are still on screen in their message
   // bubble, which is why sending does not revoke them.
@@ -109,7 +110,8 @@ export default function ChatInterface({
     }
 
     const attachments: ChatImageAttachment[] = []
-    for (const file of selected.slice(0, availableSlots)) {
+    let leftOut = 0
+    for (const file of selected) {
       if (!(CHAT_IMAGE_MIME_TYPES as readonly string[]).includes(file.type)) {
         addNotification({
           type: 'error',
@@ -124,16 +126,22 @@ export default function ChatInterface({
         })
         continue
       }
+      // A usable picture with no slot left is counted, so the message below
+      // says how many were really attached, whatever else was turned away.
+      if (attachments.length >= availableSlots) {
+        leftOut += 1
+        continue
+      }
 
       const previewUrl = URL.createObjectURL(file)
       previewUrlsRef.current.add(previewUrl)
       attachments.push({ id: crypto.randomUUID(), name: file.name, file, previewUrl })
     }
 
-    if (selected.length > availableSlots) {
+    if (leftOut > 0) {
       addNotification({
         type: 'error',
-        message: `Only the first ${availableSlots} of the images you chose were attached.`,
+        message: `Only ${attachments.length} of the images you chose could be attached (up to ${CHAT_IMAGE_LIMITS.maxImages} go with one message).`,
       })
     }
     setImages((current) => [...current, ...attachments])
@@ -143,6 +151,13 @@ export default function ChatInterface({
     URL.revokeObjectURL(image.previewUrl)
     previewUrlsRef.current.delete(image.previewUrl)
     setImages((current) => current.filter((item) => item.id !== image.id))
+    // The button that was pressed leaves the page with its thumbnail, which
+    // would drop keyboard focus onto the page body. Put it back in the composer.
+    requestAnimationFrame(() => {
+      const attach = attachButtonRef.current
+      const target = attach && !attach.disabled ? attach : textareaRef.current
+      target?.focus()
+    })
   }
 
   const attachDisabled =
@@ -273,6 +288,7 @@ export default function ChatInterface({
           />
           <div className="mb-2 flex items-center">
             <button
+              ref={attachButtonRef}
               type="button"
               onClick={() => imageInputRef.current?.click()}
               disabled={attachDisabled}
@@ -283,12 +299,17 @@ export default function ChatInterface({
                   : 'border border-border-default text-text-secondary hover:bg-surface-secondary'
               )}
               aria-label="Attach images"
+              aria-describedby="attach-images-help"
             >
               <IconPhoto className="h-6 w-6" aria-hidden="true" />
             </button>
             {/* What this model can do with images, and what happens to them. The
-                same sentence is not repeated under the box until there is
-                something attached for it to be about. */}
+                tooltip shows it to people who hover or tab to it; the hidden copy
+                is what a screen reader reads with the button, which matters most
+                when the button is off and this is the only reason why. */}
+            <span id="attach-images-help" className="sr-only">
+              {visionAttachmentGuidance(visionCapability)}
+            </span>
             <InfoTooltip position="top" align="left" text={visionAttachmentGuidance(visionCapability)} />
           </div>
           <div className="flex-1 relative">
@@ -321,11 +342,14 @@ export default function ChatInterface({
             )}
           </button>
         </form>
-        {images.length > 0 && (
-          <p className="mt-2 text-xs text-text-muted" aria-live="polite">
-            {visionAttachmentGuidance(visionCapability)}
-          </p>
-        )}
+        {/* Always on the page, filled in once something is attached: a live region
+            that appears already holding its text is usually not announced. */}
+        <p
+          className={classNames('text-xs text-text-secondary', images.length > 0 ? 'mt-2' : undefined)}
+          role="status"
+        >
+          {images.length > 0 ? visionAttachmentGuidance(visionCapability) : ''}
+        </p>
       </div>
     </div>
   )

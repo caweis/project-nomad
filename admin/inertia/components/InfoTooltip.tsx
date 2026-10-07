@@ -46,7 +46,7 @@ export default function InfoTooltip({
           }`}
         >
           <div
-            className={`bg-desert-stone-dark text-white text-xs rounded-lg px-3 py-2 whitespace-normal shadow-lg ${
+            className={`bg-desert-stone-dark text-surface-primary text-xs rounded-lg px-3 py-2 whitespace-normal shadow-lg ${
               align === 'center' ? 'max-w-xs' : 'w-64'
             }`}
           >
