@@ -1134,6 +1134,20 @@ export default function EasySetupWizard(props: {
                               Size: {model.tags[0].size}
                             </div>
                           )}
+                          {/* The catalog describes the Ollama build. On Apple MLX the
+                              converted model may or may not keep its vision half, and
+                              NOMAD cannot tell from here, so it makes no promise. */}
+                          {props.aiBackend !== 'omlx' &&
+                            model.tags?.[0]?.input?.toLowerCase().includes('image') && (
+                              <div
+                                className={classNames(
+                                  'mt-1 text-xs font-medium',
+                                  isSelected && !installed ? 'text-green-100' : 'text-desert-green'
+                                )}
+                              >
+                                Supports images
+                              </div>
+                            )}
                           {props.aiBackend === 'omlx' && model.mlxPullName && (
                             <div
                               className={classNames(

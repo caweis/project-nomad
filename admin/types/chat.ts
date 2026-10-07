@@ -9,10 +9,25 @@ export interface ChatSource {
   source?: string
 }
 
+/**
+ * An image attached to a message in the composer. The `file` is what gets
+ * uploaded; `previewUrl` is a blob URL for showing it, which lives only in this
+ * page. Images are never saved with the conversation.
+ */
+export interface ChatImageAttachment {
+  id: string
+  name: string
+  file: File
+  previewUrl: string
+}
+
 export interface ChatMessage {
   id: string
   role: 'system' | 'user' | 'assistant'
   content: string
+  // Only on a message sent from this page; reloading or reopening the
+  // conversation shows the text alone.
+  images?: ChatImageAttachment[]
   timestamp: Date
   isStreaming?: boolean
   thinking?: string

@@ -6,7 +6,9 @@ import StyledModal from '../StyledModal'
 import api from '~/lib/api'
 import { formatBytes } from '~/lib/util'
 import { useModals } from '~/context/ModalContext'
-import { ChatMessage } from '../../../types/chat'
+import { ChatImageAttachment, ChatMessage } from '../../../types/chat'
+import type { ModelVisionCapability } from '../../../types/ollama'
+import { ChatRejectedError } from '../../lib/chat_stream'
 import classNames from '~/lib/classNames'
 import { IconMenu2, IconX } from '@tabler/icons-react'
 import { useSystemSetting } from '~/hooks/useSystemSetting'
@@ -23,6 +25,10 @@ import InfoTooltip from '~/components/InfoTooltip'
  * generic error with no hint that switching models fixes it.
  */
 function chatFailureText(error: unknown, model: string): string {
+  // The server explained this one itself (an image that is too large, a model
+  // that cannot take images). Wrapping that in advice about the model not being
+  // installed would bury it and point at the wrong cause.
+  if (error instanceof ChatRejectedError) return error.message
   const detail =
     error instanceof Error && error.message && error.message !== 'Failed to fetch'
       ? ` (${error.message.slice(0, 200)})`
@@ -149,6 +155,10 @@ export default function Chat({
 
   const selectedModelSupportsThinking =
     installedModels.find((m) => m.name === selectedModel)?.thinking === true
+  // 'unknown' until the installed-models list has loaded, and for any model whose
+  // backend does not say; image upload is only locked for a definite 'unsupported'.
+  const selectedModelVision: ModelVisionCapability =
+    installedModels.find((m) => m.name === selectedModel)?.vision ?? 'unknown'
 
   // Effective thinking preference for a model: explicit override wins, else the global default.
   const effectiveThinking = useCallback(
@@ -196,6 +206,7 @@ export default function Chat({
     mutationFn: (request: {
       model: string
       messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>
+      images?: File[]
       sessionId?: number
       think?: boolean
       collection?: string
@@ -309,7 +320,7 @@ export default function Chat({
   )
 
   const handleSendMessage = useCallback(
-    async (content: string) => {
+    async (content: string, images: ChatImageAttachment[] = []) => {
       let sessionId = activeSessionId
 
       // Create a new session if none exists
@@ -329,6 +340,7 @@ export default function Chat({
         id: `msg-${Date.now()}`,
         role: 'user',
         content,
+        images,
         timestamp: new Date(),
       }
 
@@ -356,7 +368,7 @@ export default function Chat({
 
         try {
           await api.streamChatMessage(
-            { model: selectedModel || 'llama3.2', messages: chatMessages, stream: true, sessionId: sessionId ? Number(sessionId) : undefined, think: effectiveThinking(selectedModel), collection: collectionFilter || undefined },
+            { model: selectedModel || 'llama3.2', messages: chatMessages, stream: true, sessionId: sessionId ? Number(sessionId) : undefined, think: effectiveThinking(selectedModel), collection: collectionFilter || undefined, images: images.map((image) => image.file) },
             (chunkContent, chunkThinking, done) => {
               if (chunkThinking.length > 0 && thinkingStartTime === null) {
                 thinkingStartTime = Date.now()
@@ -466,6 +478,7 @@ export default function Chat({
           sessionId: sessionId ? Number(sessionId) : undefined,
           think: effectiveThinking(selectedModel),
           collection: collectionFilter || undefined,
+          images: images.map((image) => image.file),
         })
       }
     },
@@ -597,6 +610,7 @@ export default function Chat({
         <ChatInterface
           messages={messages}
           onSendMessage={handleSendMessage}
+          visionCapability={selectedModelVision}
           isLoading={isStreamingResponse || chatMutation.isPending}
           chatSuggestions={chatSuggestions}
           chatSuggestionsEnabled={suggestionsEnabled}

@@ -11,13 +11,36 @@ import { DownloadJobWithProgress, WikipediaState } from '../../types/downloads'
 import { EmbedJobWithProgress, StoredFileInfo } from '../../types/rag'
 import type { CategoryWithStatus, CollectionWithStatus, ContentUpdateCheckResult, ResourceUpdateInfo } from '../../types/collections'
 import { catchInternal } from './util'
-import { NomadOllamaModel, OllamaChatRequest } from '../../types/ollama'
-import { ChatResponse, ModelResponse } from 'ollama'
+import { chatHttpError, chatStreamError } from './chat_stream'
+import { NomadInstalledModel, NomadOllamaModel, OllamaChatRequest } from '../../types/ollama'
+import { ChatResponse } from 'ollama'
 import BenchmarkResult from '#models/benchmark_result'
 import { BenchmarkType, RunBenchmarkResponse, SubmitBenchmarkResponse, UpdateBuilderTagResponse } from '../../types/benchmark'
 import { DrugIngestStatus } from '../../types/drug_reference'
 import type { ChatSource } from '../../types/chat'
 import type { CreateMapMarkerPayload, MapMarkerResponse, UpdateMapMarkerPayload } from '../../types/maps'
+
+type OllamaChatRequestWithImages = OllamaChatRequest & { images?: File[] }
+
+/**
+ * JSON when there is nothing to upload, multipart when there are images: the
+ * request body rides as JSON text in a `payload` field beside the files, which
+ * is what the chat endpoint expects (see chat_multipart.ts). The Content-Type
+ * is left off a multipart request so the browser can add its boundary.
+ */
+function serializeChatRequest(chatRequest: OllamaChatRequestWithImages): {
+  body: BodyInit
+  headers?: Record<string, string>
+} {
+  const { images = [], ...payload } = chatRequest
+  if (images.length === 0) {
+    return { body: JSON.stringify(payload), headers: { 'Content-Type': 'application/json' } }
+  }
+  const formData = new FormData()
+  formData.append('payload', JSON.stringify(payload))
+  images.forEach((image) => formData.append('images', image, image.name))
+  return { body: formData }
+}
 
 class API {
   private client: AxiosInstance
@@ -258,7 +281,7 @@ class API {
 
   async getInstalledModels() {
     return catchInternal(async () => {
-      const response = await this.client.get<ModelResponse[]>('/ollama/installed-models')
+      const response = await this.client.get<NomadInstalledModel[]>('/ollama/installed-models')
       return response.data
     })()
   }
@@ -275,7 +298,21 @@ class API {
     })()
   }
 
-  async sendChatMessage(chatRequest: OllamaChatRequest) {
+  async sendChatMessage(chatRequest: OllamaChatRequestWithImages) {
+    if (chatRequest.images?.length) {
+      // Deliberately outside catchInternal, which turns every failure into a
+      // generic toast and returns undefined. A refused image has an explanation
+      // the person needs to read, so it is thrown for the caller to show.
+      const serialized = serializeChatRequest({ ...chatRequest, stream: false })
+      const response = await fetch('/api/ollama/chat', {
+        method: 'POST',
+        headers: serialized.headers,
+        body: serialized.body,
+      })
+      if (!response.ok) throw await chatHttpError(response)
+      return (await response.json()) as ChatResponse & { sources?: ChatSource[] }
+    }
+
     return catchInternal(async () => {
       const response = await this.client.post<ChatResponse & { sources?: ChatSource[] }>(
         '/ollama/chat',
@@ -286,22 +323,23 @@ class API {
   }
 
   async streamChatMessage(
-    chatRequest: OllamaChatRequest,
+    chatRequest: OllamaChatRequestWithImages,
     onChunk: (content: string, thinking: string, done: boolean) => void,
     signal?: AbortSignal,
     onSources?: (sources: ChatSource[]) => void,
     onDoneReason?: (reason: string) => void
   ): Promise<void> {
     // Axios doesn't support ReadableStream in browser, so need to use fetch
+    const serialized = serializeChatRequest({ ...chatRequest, stream: true })
     const response = await fetch('/api/ollama/chat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...chatRequest, stream: true }),
+      headers: serialized.headers,
+      body: serialized.body,
       signal,
     })
 
     if (!response.ok || !response.body) {
-      throw new Error(`HTTP error: ${response.status}`)
+      throw await chatHttpError(response)
     }
 
     const reader = response.body.getReader()
@@ -324,7 +362,8 @@ class API {
             data = JSON.parse(line.slice(6))
           } catch { continue /* skip malformed chunks */ }
 
-          if (data.error) throw new Error('The model encountered an error. Please try again.')
+          const streamError = chatStreamError(data)
+          if (streamError) throw streamError
 
           // Citation metadata (upstream #1179) arrives as a distinct trailing
           // event with no `message` key; route it separately rather than

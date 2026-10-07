@@ -1,3 +1,5 @@
+import type { ModelResponse } from 'ollama'
+
 export type NomadOllamaModel = {
   id: string
   name: string
@@ -34,6 +36,16 @@ export type NomadOllamaModelAPIResponse = {
   models: NomadOllamaModel[]
 }
 
+/**
+ * A model from the installed-models endpoint: what Ollama lists, plus what the
+ * endpoint adds from /api/show so the chat picker knows which models the
+ * thinking toggle and image attachments apply to.
+ */
+export type NomadInstalledModel = ModelResponse & {
+  thinking?: boolean
+  vision?: ModelVisionCapability
+}
+
 export type OllamaChatMessage = {
   role: 'system' | 'user' | 'assistant'
   content: string
@@ -50,6 +62,15 @@ export type OllamaChatRequest = {
   // KB subject tag to scope RAG retrieval to. Omitted → whole knowledge base. #1063
   collection?: string
 }
+
+/**
+ * Whether a model accepts images. 'unknown' is an answer, not a failed lookup:
+ * the oMLX proxy fills /api/show with a placeholder capability list that never
+ * includes vision, and an Ollama older than its `capabilities` field says
+ * nothing at all. Reading either as 'unsupported' would lock image upload for
+ * models that can use it, so the attempt is allowed and the failure explained.
+ */
+export type ModelVisionCapability = 'supported' | 'unsupported' | 'unknown'
 
 export type OllamaChatResponse = {
   model: string
@@ -71,6 +92,8 @@ export type OllamaChatResponse = {
  */
 export interface NomadModelInfo {
   hasThinking: boolean
+  /** Whether the model accepts images. Absent means 'unknown'. */
+  vision?: ModelVisionCapability
   /** Trained context length from model_info, e.g. `llama.context_length`. */
   contextLength?: number
   /** num_ctx baked into the modelfile, treated as the author's ceiling hint. */

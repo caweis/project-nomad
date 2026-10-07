@@ -1,12 +1,13 @@
 import { inject } from '@adonisjs/core'
 import { ChatRequest, ChatResponse, Ollama } from 'ollama'
-import { NomadModelInfo, NomadOllamaModel } from '../../types/ollama.js'
+import { ModelVisionCapability, NomadModelInfo, NomadOllamaModel } from '../../types/ollama.js'
 import { readContextLength, readModelfileNumCtx } from '../utils/context_window.js'
 import { FALLBACK_RECOMMENDED_OLLAMA_MODELS, MLX_HIGHLIGHT_MODELS, MODEL_DESCRIPTION_OVERRIDES } from '../../constants/ollama.js'
 import { withMlxPullNames } from '../../util/mlx.js'
 import { normalizeNonStreamed, ThinkTagSplitter } from '../utils/think_stream.js'
 import { abortWith } from '../utils/abortable_stream.js'
 import { canCancelGeneration, MIN_CANCEL_SAFE_OLLAMA } from '../utils/cancel_safety.js'
+import { visionFromShow } from '../utils/model_capabilities.js'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import logger from '@adonisjs/core/services/logger'
@@ -235,10 +236,11 @@ export class OllamaService {
 
   /**
    * Everything one /api/show call can tell us about a model: whether it can
-   * think, its trained context length, any num_ctx baked into its modelfile,
-   * and its size and quantization. The context fields feed the num_ctx
-   * decision (see ContextWindowService); the thinking flag has been in use
-   * since #1079.
+   * think, whether it accepts images, its trained context length, any num_ctx
+   * baked into its modelfile, and its size and quantization. The context fields
+   * feed the num_ctx decision (see ContextWindowService); the thinking flag has
+   * been in use since #1079, and the image flag is read the same way (see
+   * model_capabilities.ts for why oMLX answers 'unknown').
    *
    * A probe must NEVER block chat. The oMLX proxy's /api/show returns no
    * `capabilities` field, so an unguarded `modelInfo.capabilities.includes(...)`
@@ -256,13 +258,14 @@ export class OllamaService {
   public async getModelInfo(modelName: string): Promise<NomadModelInfo> {
     try {
       await this._ensureDependencies()
-      if (!this.ollama) return { hasThinking: false }
+      if (!this.ollama) return { hasThinking: false, vision: 'unknown' }
 
       const cached = this.modelInfo.get(modelName)
       if (cached) return await cached
 
       const probe = this.ollama.show({ model: modelName }).then((info) => ({
         hasThinking: info.capabilities?.includes('thinking') ?? false,
+        vision: visionFromShow(info.capabilities, env.get('NOMAD_AI_BACKEND')),
         contextLength: readContextLength(info.model_info),
         modelfileNumCtx: readModelfileNumCtx(info.parameters),
         parameterSize: info.details?.parameter_size,
@@ -276,12 +279,18 @@ export class OllamaService {
       logger.warn(
         `[OllamaService] /api/show probe failed for "${modelName}" — proceeding without model metadata: ${error instanceof Error ? error.message : error}`
       )
-      return { hasThinking: false }
+      return { hasThinking: false, vision: 'unknown' }
     }
   }
 
   public async checkModelHasThinking(modelName: string): Promise<boolean> {
     return (await this.getModelInfo(modelName)).hasThinking
+  }
+
+  /** Whether a model accepts images. 'unknown' when it cannot be told. */
+  public async getModelVision(modelName: string): Promise<ModelVisionCapability> {
+    const info = await this.getModelInfo(modelName)
+    return info.vision ?? 'unknown'
   }
 
   public async deleteModel(modelName: string) {

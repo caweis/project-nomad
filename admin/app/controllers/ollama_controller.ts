@@ -17,6 +17,24 @@ import { planPrompt, splitForBudget, type BudgetMessage } from '../utils/context
 import { isRagRetrievalEnabled } from '../utils/rag_toggle.js'
 import logger from '@adonisjs/core/services/logger'
 import type { Message } from 'ollama'
+import { rm } from 'node:fs/promises'
+import { CHAT_IMAGE_EXTENSIONS, CHAT_IMAGE_LIMITS } from '../../constants/chat_images.js'
+import {
+  attachImagesToLatestUserMessage,
+  ChatImageError,
+  normalizeChatImages,
+  type NormalizedChatImage,
+} from '../utils/chat_images.js'
+import { readMultipartChatPayload } from '../utils/chat_multipart.js'
+import type { ModelVisionCapability } from '../../types/ollama.js'
+
+/**
+ * What to tell someone whose image request failed on a model that never said it
+ * could or could not see images (see model_capabilities.ts). The failure may be
+ * anything, so the wording claims no more than that.
+ */
+const unknownVisionFailureMessage = (model: string) =>
+  `NOMAD cannot confirm that "${model}" accepts images, and this image request failed. Choose a model whose Input Type includes Image in Models & Settings, or remove the image and try again.`
 
 @inject()
 export default class OllamaController {
@@ -40,7 +58,69 @@ export default class OllamaController {
   }
 
   async chat({ request, response }: HttpContext) {
-    const reqData = await request.validateUsing(chatSchema)
+    // A chat that carries images is multipart, because JSON cannot carry files:
+    // the usual request body travels as JSON text in a `payload` field beside
+    // them (see chat_multipart.ts). Images are read from disk once, below, and
+    // the uploads are deleted straight away so they do not sit in tmp for the
+    // length of a long answer.
+    const uploadedImages = request.files('images', {
+      size: CHAT_IMAGE_LIMITS.maxBytes,
+      extnames: [...CHAT_IMAGE_EXTENSIONS],
+    })
+    const cleanupUploadedImages = () =>
+      Promise.all(
+        uploadedImages
+          .filter((file) => file.tmpPath)
+          .map((file) => rm(file.tmpPath!, { force: true }).catch(() => undefined))
+      )
+
+    let reqData: Awaited<ReturnType<typeof chatSchema.validate>>
+    try {
+      if (uploadedImages.length > 0) {
+        const envelope = readMultipartChatPayload(request.input('payload'))
+        if (!envelope.ok) {
+          await cleanupUploadedImages()
+          return response.status(422).send({ message: envelope.message })
+        }
+        reqData = await chatSchema.validate(envelope.payload)
+      } else {
+        reqData = await request.validateUsing(chatSchema)
+      }
+    } catch (error) {
+      await cleanupUploadedImages()
+      throw error
+    }
+
+    let normalizedImages: NormalizedChatImage[] = []
+    try {
+      normalizedImages = await normalizeChatImages(uploadedImages, CHAT_IMAGE_LIMITS)
+    } catch (error) {
+      if (error instanceof ChatImageError) {
+        return response.status(error.status).send({ message: error.message })
+      }
+      throw error
+    } finally {
+      await cleanupUploadedImages()
+    }
+
+    // Refuse before anything is streamed, so the page gets a status and a reason
+    // instead of an event stream that opens and immediately fails.
+    let vision: ModelVisionCapability = 'unknown'
+    if (normalizedImages.length > 0) {
+      if (!reqData.messages.some((message) => message.role === 'user')) {
+        return response.status(422).send({ message: 'Images require a user message.' })
+      }
+      vision = await this.ollamaService.getModelVision(reqData.model)
+      if (vision === 'unsupported') {
+        return response.status(422).send({
+          message: `The selected model "${reqData.model}" does not support image input.`,
+        })
+      }
+    }
+    // A model that never said whether it can see, handed an image it cannot use,
+    // fails in whatever way its backend fails. This marks that case, so the
+    // failure can be explained instead of reported as a generic error.
+    let imageRequestRejected = false
 
     // Flush SSE headers immediately so the client connection is open while
     // pre-processing (query rewriting, RAG lookup) runs in the background.
@@ -196,22 +276,30 @@ export default class OllamaController {
       // the injection point, which changes what reaches the model, so it wants
       // its own measured change.
       const contextWindow = await this.contextWindowService.windowFor(reqData.model)
+      //
+      // Images are counted here, not just attached later: they cost context that
+      // no message shows, and without room held back for them the backend would
+      // cut the prompt down around them from the middle. They are attached to the
+      // question only after budgeting, so the planner never has to carry
+      // megabytes of base64 around.
       const planned = planPrompt({
         ...splitForBudget(ollamaRequest.messages as BudgetMessage[]),
         ragChunks: [],
         renderRagBlock: () => '',
         contextWindow,
+        imageCount: normalizedImages.length,
       })
       if (planned.trace.turnsDropped > 0 || planned.trace.queryTruncated) {
         logger.debug(
           `[OllamaController] Budgeted prompt for "${reqData.model}": window ${contextWindow}, ` +
-            `${planned.trace.estimatedPromptTokens}/${planned.trace.promptBudget} tokens, ` +
+            `${planned.trace.estimatedPromptTokens}/${planned.trace.promptBudget} tokens ` +
+            `(${planned.trace.imageTokens} for ${normalizedImages.length} image(s)), ` +
             `${planned.trace.turnsDropped} turn(s) dropped, truncated=${planned.trace.queryTruncated}`
         )
       }
       const budgetedRequest = {
         ...ollamaRequest,
-        messages: planned.messages as Message[],
+        messages: attachImagesToLatestUserMessage(planned.messages, normalizedImages) as Message[],
         options: { num_ctx: contextWindow, num_predict: planned.numPredict },
       }
 
@@ -258,6 +346,7 @@ export default class OllamaController {
             logger.debug('[OllamaController] Client disconnected; stopped generating')
             return
           }
+          imageRequestRejected = normalizedImages.length > 0 && vision === 'unknown'
           throw err
         }
         // Trailing citation event, written before end(). It carries no `message`
@@ -284,7 +373,13 @@ export default class OllamaController {
       }
 
       // Non-streaming (legacy) path
-      const result = await this.ollamaService.chat({ ...budgetedRequest, think })
+      let result
+      try {
+        result = await this.ollamaService.chat({ ...budgetedRequest, think })
+      } catch (err) {
+        imageRequestRejected = normalizedImages.length > 0 && vision === 'unknown'
+        throw err
+      }
       if (result?.done_reason === 'length') {
         this._logLengthStop(reqData.model, contextWindow, planned.numPredict, result.eval_count)
       }
@@ -302,9 +397,16 @@ export default class OllamaController {
       return { ...result, sources }
     } catch (error) {
       if (reqData.stream) {
-        response.response.write(`data: ${JSON.stringify({ error: true })}\n\n`)
+        // Headers are long gone, so the explanation rides in the event itself.
+        const streamError = imageRequestRejected
+          ? { error: true, message: unknownVisionFailureMessage(reqData.model) }
+          : { error: true }
+        response.response.write(`data: ${JSON.stringify(streamError)}\n\n`)
         response.response.end()
         return
+      }
+      if (imageRequestRejected) {
+        return response.status(422).send({ message: unknownVisionFailureMessage(reqData.model) })
       }
       throw error
     }
@@ -348,13 +450,17 @@ export default class OllamaController {
 
   async installedModels({ }: HttpContext) {
     const models = await this.ollamaService.getModels()
-    // Enrich each model with its thinking capability so the settings/chat UI knows
-    // which models the thinking toggle applies to. checkModelHasThinking memoizes
-    // /api/show, so this stays cheap on repeat loads. Best-effort per model. #1079.
-    const thinking = await Promise.all(
-      models.map((m) => this.ollamaService.checkModelHasThinking(m.name))
-    )
-    return models.map((m, i) => ({ ...m, thinking: thinking[i] }))
+    // Enrich each model with what one /api/show call says about it, so the
+    // settings/chat UI knows which models the thinking toggle (#1079) and image
+    // attachments (edbfe1ad) apply to. getModelInfo memoizes, so this stays cheap
+    // on repeat loads, and it is best-effort per model: a probe that fails
+    // reports nothing known rather than failing the list.
+    const infos = await Promise.all(models.map((m) => this.ollamaService.getModelInfo(m.name)))
+    return models.map((m, i) => ({
+      ...m,
+      thinking: infos[i].hasThinking,
+      vision: infos[i].vision ?? 'unknown',
+    }))
   }
 
   private async rewriteQueryWithContext(
