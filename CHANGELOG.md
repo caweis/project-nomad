@@ -112,6 +112,16 @@ Notable changes to the macOS distribution layer of this fork. Format follows
   browser. Like the rest of this section it needs an internet connection; the
   picker stays out of the way without one, and Retry brings it back.
   (Ports upstream dde8aa55.)
+- Ten curated downloads pointed at files openZIM had removed, and an eleventh
+  was about to be, so a collection tier holding one of them retried a download
+  that could not succeed. openZIM keeps only its two newest builds of each
+  title. Now pointing at current builds: TED-Ed, TED conference talks,
+  LibrePathology, Urban Prepper, the three Canadian Prepper channels,
+  freeCodeCamp, based.cooking, and the Node and Python developer docs. The list
+  is read from this repository, so the fix arrives without an upgrade. If you
+  already have one of the three older Canadian Prepper files you keep it, and
+  the new edition is offered as a separate download, because the channels were
+  renamed. (Ports upstream 5e1702ef.)
 
 ### Dark mode
 - Green text is readable in dark mode. Links in chat answers, the Continue
