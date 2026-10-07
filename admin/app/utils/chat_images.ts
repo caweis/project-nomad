@@ -41,6 +41,11 @@ const SUPPORTED_IMAGE_FORMATS = new Set(['jpeg', 'png', 'webp'])
 
 const megabytes = (bytes: number) => `${Math.round((bytes / (1024 * 1024)) * 10) / 10} MB`
 
+const megapixels = (pixels: number) => {
+  const rounded = Math.round((pixels / 1_000_000) * 10) / 10
+  return `${rounded} megapixel${rounded === 1 ? '' : 's'}`
+}
+
 export async function normalizeChatImages(
   files: MultipartFile[],
   limits: ChatImageLimits
@@ -130,6 +135,16 @@ async function normalizeChatImage(
     return { name: file.clientName, base64: normalized.toString('base64') }
   } catch (error) {
     if (error instanceof ChatImageError) throw error
+    // sharp refuses a picture with more pixels than the limit before decoding it
+    // (a guard against files that are tiny on disk and enormous once opened). A
+    // large panorama is a small file, so say what the limit is, not that the file
+    // is broken.
+    if (error instanceof Error && /exceeds pixel limit/i.test(error.message)) {
+      throw new ChatImageError(
+        `"${file.clientName}" is larger than ${megapixels(limits.maxPixels)}, the most NOMAD will open. Shrink it and try again.`,
+        422
+      )
+    }
     throw new ChatImageError(`"${file.clientName}" could not be decoded as an image.`, 422)
   }
 }

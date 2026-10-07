@@ -254,14 +254,30 @@ try {
     )
   })
 
-  await check('a picture with too many pixels is refused rather than decoded', async () => {
-    const file = await pngFile(100, 100)
-    await refused(
-      normalizeChatImages([file], { ...LIMITS, maxPixels: 5000 }),
-      422,
-      /could not be decoded/
-    )
-  })
+  await check(
+    'a picture with too many pixels is refused rather than decoded, and the limit is named',
+    async () => {
+      // 1.2 megapixels against a 1 megapixel limit: small on disk, large once opened.
+      const file = await pngFile(1200, 1000)
+      await refused(
+        normalizeChatImages([file], { ...LIMITS, maxPixels: 1_000_000 }),
+        422,
+        /"photo\.png" is larger than 1 megapixel, the most NOMAD will open/
+      )
+    }
+  )
+
+  await check(
+    'the pixel limit is named in megapixels, and in the plural when it is not one',
+    async () => {
+      const file = await pngFile(2000, 1000)
+      await refused(
+        normalizeChatImages([file], { ...LIMITS, maxPixels: 1_500_000 }),
+        422,
+        /larger than 1\.5 megapixels, the most NOMAD will open/
+      )
+    }
+  )
 
   await check(
     'an image that is still too large after shrinking is refused as too large',
