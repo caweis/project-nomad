@@ -1,7 +1,8 @@
 /**
  * Standalone checks for the knowledge base's per-file search switch
  * (upstream f1624228, #1286): the search filter, reading the stored flag, the
- * request rules, and the messages.
+ * request rules, the messages, and putting the rows back when Qdrant refuses a
+ * switch (upstream c65198c7).
  *
  *   node --experimental-strip-types tests/standalone/kb_active.standalone.ts
  *
@@ -18,11 +19,17 @@ import {
   parseCollectionActiveInput,
   parseFileActiveInput,
   searchFilter,
+  writeRowsThenPoints,
 } from '../../app/utils/kb_active.ts'
 
 let passed = 0
 function check(name: string, fn: () => void) {
   fn()
+  passed++
+  console.log(`  ok - ${name}`)
+}
+async function checkAsync(name: string, fn: () => Promise<void>) {
+  await fn()
   passed++
   console.log(`  ok - ${name}`)
 }
@@ -143,5 +150,88 @@ check('a collection switch counts only the files that changed', () => {
     'Every file in "medical" was already switched on.'
   )
 })
+
+// ── A switch Qdrant refuses ──
+// The panel reads the row, search reads Qdrant. If the rows have changed and
+// Qdrant then fails, the panel would show a setting search is not using.
+function recorder() {
+  const calls: string[] = []
+  const restoreFailures: unknown[] = []
+  const steps = (over: Partial<Parameters<typeof writeRowsThenPoints>[0]> = {}) => ({
+    writeRows: async () => void calls.push('rows'),
+    writePoints: async () => void calls.push('points'),
+    restoreRows: async () => void calls.push('restore'),
+    onRestoreFailed: (e: unknown) => void restoreFailures.push(e),
+    ...over,
+  })
+  return { calls, restoreFailures, steps }
+}
+
+await checkAsync(
+  'rows are written before points, and nothing is put back when both work',
+  async () => {
+    const r = recorder()
+    await writeRowsThenPoints(r.steps())
+    assert.deepEqual(r.calls, ['rows', 'points'])
+    assert.deepEqual(r.restoreFailures, [])
+  }
+)
+
+await checkAsync('a refused write to the points puts the rows back and rethrows', async () => {
+  const r = recorder()
+  const refused = new Error('qdrant is down')
+  await assert.rejects(
+    writeRowsThenPoints(
+      r.steps({
+        writePoints: async () => {
+          r.calls.push('points')
+          throw refused
+        },
+      })
+    ),
+    (e) => e === refused
+  )
+  assert.deepEqual(r.calls, ['rows', 'points', 'restore'])
+  assert.deepEqual(r.restoreFailures, [])
+})
+
+await checkAsync('failing to put the rows back never hides why the switch failed', async () => {
+  const r = recorder()
+  const refused = new Error('qdrant is down')
+  const stuck = new Error('mysql is down too')
+  await assert.rejects(
+    writeRowsThenPoints(
+      r.steps({
+        writePoints: async () => {
+          throw refused
+        },
+        restoreRows: async () => {
+          throw stuck
+        },
+      })
+    ),
+    (e) => e === refused
+  )
+  assert.deepEqual(r.restoreFailures, [stuck], 'the second failure is reported, not thrown')
+})
+
+await checkAsync(
+  'rows that could not be written stop the switch before Qdrant is touched',
+  async () => {
+    const r = recorder()
+    const refused = new Error('mysql is down')
+    await assert.rejects(
+      writeRowsThenPoints(
+        r.steps({
+          writeRows: async () => {
+            throw refused
+          },
+        })
+      ),
+      (e) => e === refused
+    )
+    assert.deepEqual(r.calls, [], 'no points written, and nothing to put back')
+  }
+)
 
 console.log(`\n${passed} checks passed`)

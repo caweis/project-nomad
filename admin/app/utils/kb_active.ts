@@ -35,6 +35,40 @@ export function effectiveActive(value: unknown): boolean {
   return Boolean(value)
 }
 
+/**
+ * Change the rows, then the points, and put the rows back if the points cannot
+ * be changed.
+ *
+ * Rows go first on purpose: embedAndStoreText reads the row again after it
+ * writes a batch, so a file switched while it is being indexed converges on the
+ * row whichever write lands first. That ordering leaves one bad outcome, which
+ * is Qdrant failing after the rows have changed. The panel would then show a
+ * setting that search is not using, and it reads the row, not Qdrant (upstream
+ * c65198c7). Putting the rows back keeps the panel telling the truth.
+ *
+ * The caller's error is what gets thrown. A failure to put the rows back is
+ * reported through `onRestoreFailed` and never replaces it: "the switch did not
+ * work" is the news, and the second failure is a detail of it.
+ */
+export async function writeRowsThenPoints(steps: {
+  writeRows: () => Promise<unknown>
+  writePoints: () => Promise<unknown>
+  restoreRows: () => Promise<unknown>
+  onRestoreFailed: (error: unknown) => void
+}): Promise<void> {
+  await steps.writeRows()
+  try {
+    await steps.writePoints()
+  } catch (error) {
+    try {
+      await steps.restoreRows()
+    } catch (restoreError) {
+      steps.onRestoreFailed(restoreError)
+    }
+    throw error
+  }
+}
+
 export type ToggleInput<T> = { ok: true; value: T } | { ok: false; error: string }
 
 /**

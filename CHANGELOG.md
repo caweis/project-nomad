@@ -51,7 +51,9 @@ Notable changes to the macOS distribution layer of this fork. Format follows
   Turn all on and Turn all off switch every file in it at once. With every file
   switched off, chat skips the knowledge base search, and the step that
   rewrites your question for it, altogether. A newer edition of a ZIM arrives
-  under a new file name, so it starts switched on. (Ports upstream #1286.)
+  under a new file name, so it starts switched on. If a switch cannot be
+  applied, the file is left as it was, so the window never shows a setting the
+  assistant is not following. (Ports upstream #1286 and c65198c7.)
 - Choosing a file's collection lists every collection again. The list opened
   already filtered down to the collection the file was in.
 - Indexing a ZIM no longer stops partway through. Indexing works through an

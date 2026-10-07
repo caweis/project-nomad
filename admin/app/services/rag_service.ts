@@ -17,6 +17,7 @@ import {
   effectiveActive,
   fileActiveMessage,
   searchFilter,
+  writeRowsThenPoints,
 } from '../utils/kb_active.js'
 import KbIngestState from '#models/kb_ingest_state'
 import { PDFParse } from 'pdf-parse'
@@ -1339,12 +1340,29 @@ export class RagService {
           message: 'That file is not in the knowledge base.',
         }
       }
-      row.active = active
-      await row.save()
-
-      await this.qdrant!.setPayload(RagService.CONTENT_COLLECTION_NAME, {
-        payload: { active },
-        filter: { must: [{ key: 'source', match: { value: source } }] },
+      // If Qdrant refuses the change, the row goes back (upstream c65198c7):
+      // the panel reads the row, and must not show a switch that search is not
+      // following.
+      const previousActive = effectiveActive(row.active)
+      await writeRowsThenPoints({
+        writeRows: async () => {
+          row.active = active
+          await row.save()
+        },
+        writePoints: () =>
+          this.qdrant!.setPayload(RagService.CONTENT_COLLECTION_NAME, {
+            payload: { active },
+            filter: { must: [{ key: 'source', match: { value: source } }] },
+          }),
+        restoreRows: async () => {
+          row.active = previousActive
+          await row.save()
+        },
+        onRestoreFailed: (restoreError) =>
+          logger.error(
+            '[RAG] Could not put a file switch back after search refused it:',
+            restoreError
+          ),
       })
 
       const fileName = source.split(/[/\\]/).at(-1) || source
@@ -1373,18 +1391,33 @@ export class RagService {
     try {
       await this._ensureCollection(RagService.CONTENT_COLLECTION_NAME, RagService.EMBEDDING_DIMENSION)
 
-      const countRow = await KbIngestState.query()
+      // The rows that will change, by path rather than just counted, so that a
+      // failed write to Qdrant can put back exactly those and leave the files
+      // that already held the target value alone (upstream c65198c7).
+      const changedRows = await KbIngestState.query()
         .where('collection', collection)
         .where('active', !active)
-        .count('* as total')
-        .first()
-      const affectedCount = Number((countRow as any)?.$extras?.total ?? 0)
+        .select('file_path')
+      const changedPaths = changedRows.map((row) => row.file_path)
+      const affectedCount = changedPaths.length
 
       // Rows first, as in setFileActive.
-      await KbIngestState.query().where('collection', collection).update({ active })
-      await this.qdrant!.setPayload(RagService.CONTENT_COLLECTION_NAME, {
-        payload: { active },
-        filter: { must: [{ key: 'collection', match: { value: collection } }] },
+      await writeRowsThenPoints({
+        writeRows: () => KbIngestState.query().where('collection', collection).update({ active }),
+        writePoints: () =>
+          this.qdrant!.setPayload(RagService.CONTENT_COLLECTION_NAME, {
+            payload: { active },
+            filter: { must: [{ key: 'collection', match: { value: collection } }] },
+          }),
+        restoreRows: async () => {
+          if (changedPaths.length === 0) return
+          await KbIngestState.query().whereIn('file_path', changedPaths).update({ active: !active })
+        },
+        onRestoreFailed: (restoreError) =>
+          logger.error(
+            '[RAG] Could not put a collection switch back after search refused it:',
+            restoreError
+          ),
       })
 
       return {
