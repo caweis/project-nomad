@@ -9,7 +9,11 @@
  * away from every vision model on Apple MLX.
  */
 import assert from 'node:assert/strict'
-import { visionFromShow } from '../../app/utils/model_capabilities.ts'
+import {
+  failureReason,
+  unknownVisionFailureMessage,
+  visionFromShow,
+} from '../../app/utils/model_capabilities.ts'
 
 let passed = 0
 function check(name: string, fn: () => void) {
@@ -55,6 +59,33 @@ check("on Apple MLX the proxy's placeholder list never decides", () => {
   // Even a list that does say vision is left alone: on this backend the field is
   // not a statement about the model.
   assert.equal(visionFromShow(['completion', 'vision'], 'omlx'), 'unknown')
+})
+
+// ── When a picture request fails on a model that never said whether it can see ──
+check("the failure message carries the backend's reason and names both causes", () => {
+  const text = unknownVisionFailureMessage('mystery:7b', 'model requires more system memory')
+  assert.match(text, /^The request failed \(model requires more system memory\)\./)
+  assert.match(text, /cannot tell whether "mystery:7b" can see pictures/)
+  assert.match(text, /try again without the picture/)
+  assert.match(text, /not installed or is too large to load on this Mac/)
+})
+
+check('without a reason the message still reads as a sentence', () => {
+  const text = unknownVisionFailureMessage('mystery:7b')
+  assert.ok(text.startsWith('The request failed. It included a picture'))
+  assert.ok(!text.includes('()'))
+})
+
+check('it does not tell the person to retype nothing: the box is already empty', () => {
+  assert.ok(!/remove the image/i.test(unknownVisionFailureMessage('m')))
+})
+
+check('the reason is the error text on one line, cut short, or nothing', () => {
+  assert.equal(failureReason(new Error('first line\n  second   line')), 'first line second line')
+  assert.equal(failureReason(new Error('x'.repeat(500)))?.length, 200)
+  assert.equal(failureReason(new Error('   ')), undefined)
+  assert.equal(failureReason('not an Error'), undefined)
+  assert.equal(failureReason(undefined), undefined)
 })
 
 console.log(`\n${passed} checks passed`)

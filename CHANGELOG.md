@@ -84,17 +84,18 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 
 ### Chat
 - Ask about a picture. A button beside the message box attaches up to four
-  images (JPEG, PNG or WebP, 8 MB each) to your message, for models that can
-  see them: choose one whose Input Type includes Image in Models & Settings,
-  such as `gemma3`. Easy Setup marks them too. Before the model sees
-  a picture NOMAD turns it upright, shrinks it to at most 2,048 pixels and
-  strips the camera and location details stored inside photos, and it holds
-  room for it in the model's context window by remembering less of an older
-  conversation. Pictures are not kept: they go with the message that carries
-  them and are gone when you reload, so ask about a picture in that message. A
-  model that cannot see keeps the button off and says why. On the Apple MLX
-  engine NOMAD cannot tell in advance, so it lets you try, and explains the
-  failure if the model is text-only. (Ports upstream edbfe1ad.)
+  images (JPEG, PNG or WebP, 8 MB each, up to 40 megapixels) to your message,
+  for models that can see them: choose one whose Input Type includes Image in
+  Models & Settings, such as `gemma3:4b`. Easy Setup marks them too. Before the
+  model sees a picture NOMAD turns it upright, shrinks it to at most 2,048
+  pixels on its longest side and saves a new copy without the camera and
+  location details stored inside photos, and it holds room for it in the
+  model's context window by remembering less of an older conversation.
+  Pictures are not kept: they go with the message that carries them and are
+  gone when you reload, so ask about a picture in that message. A model that
+  cannot see keeps the button off and says why. On the Apple MLX engine NOMAD
+  cannot tell in advance, so it lets you try; if the request fails, the message
+  says the model may not accept pictures. (Ports upstream edbfe1ad.)
 - Answers that drew on your knowledge base now list their sources underneath:
   the archive each passage came from, with its date where the archive records
   one, or the file name for something you uploaded. Only what the assistant

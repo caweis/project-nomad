@@ -10,14 +10,14 @@ import type { ModelVisionCapability } from '../../types/ollama'
  * nothing.
  */
 export const IMAGE_NOTICE =
-  'Images are sent only with the message they are attached to. They are not saved, so ask about them in that message; they disappear after you send them or reload this page.'
+  'Images are sent only with the message they are attached to. They are not saved, so ask about them in that message: the model cannot look at them again in a later one. They are gone when you reload this page.'
 
 export function visionAttachmentGuidance(capability: ModelVisionCapability): string {
   if (capability === 'unsupported') {
     return 'This model cannot use images. Choose a model whose Input Type includes Image in Models & Settings.'
   }
   if (capability === 'unknown') {
-    return `NOMAD cannot confirm whether this model accepts images. You can try one, but the request will fail if the model is text-only. ${IMAGE_NOTICE}`
+    return `NOMAD cannot tell whether this model accepts images. You can try one. If the model is text-only, the request may fail, or the picture may be ignored. ${IMAGE_NOTICE}`
   }
   return IMAGE_NOTICE
 }

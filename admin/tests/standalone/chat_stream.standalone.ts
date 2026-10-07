@@ -107,14 +107,22 @@ await check('a model that cannot see is pointed at where to choose another', () 
 
 await check('a model that has not said is allowed a try, with the risk named', () => {
   const text = visionAttachmentGuidance('unknown')
-  assert.match(text, /cannot confirm/)
-  assert.match(text, /will fail if the model is text-only/)
+  assert.match(text, /cannot tell whether this model accepts images/)
+  assert.match(text, /may fail, or the picture may be ignored/)
+  assert.ok(
+    !/will fail/.test(text),
+    'what a text-only model does is not known, so it is not promised'
+  )
   assert.ok(text.endsWith(IMAGE_NOTICE))
 })
 
 await check('the notice says images are not kept, so a follow-up cannot rely on them', () => {
   assert.match(IMAGE_NOTICE, /not saved/)
   assert.match(IMAGE_NOTICE, /ask about them in that message/)
+  // The pictures stay on screen in the message that carried them until a reload,
+  // so the notice must not say they vanish when sent.
+  assert.ok(!/disappear after you send/.test(IMAGE_NOTICE))
+  assert.match(IMAGE_NOTICE, /gone when you reload/)
 })
 
 console.log(`\n${passed} checks passed`)

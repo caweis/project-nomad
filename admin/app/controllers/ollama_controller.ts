@@ -26,15 +26,8 @@ import {
   type NormalizedChatImage,
 } from '../utils/chat_images.js'
 import { readMultipartChatPayload } from '../utils/chat_multipart.js'
+import { failureReason, unknownVisionFailureMessage } from '../utils/model_capabilities.js'
 import type { ModelVisionCapability } from '../../types/ollama.js'
-
-/**
- * What to tell someone whose image request failed on a model that never said it
- * could or could not see images (see model_capabilities.ts). The failure may be
- * anything, so the wording claims no more than that.
- */
-const unknownVisionFailureMessage = (model: string) =>
-  `NOMAD cannot confirm that "${model}" accepts images, and this image request failed. Choose a model whose Input Type includes Image in Models & Settings, or remove the image and try again.`
 
 @inject()
 export default class OllamaController {
@@ -396,14 +389,19 @@ export default class OllamaController {
       if (reqData.stream) {
         // Headers are long gone, so the explanation rides in the event itself.
         const streamError = imageRequestRejected
-          ? { error: true, message: unknownVisionFailureMessage(reqData.model) }
+          ? {
+              error: true,
+              message: unknownVisionFailureMessage(reqData.model, failureReason(error)),
+            }
           : { error: true }
         response.response.write(`data: ${JSON.stringify(streamError)}\n\n`)
         response.response.end()
         return
       }
       if (imageRequestRejected) {
-        return response.status(422).send({ message: unknownVisionFailureMessage(reqData.model) })
+        return response.status(422).send({
+          message: unknownVisionFailureMessage(reqData.model, failureReason(error)),
+        })
       }
       throw error
     }

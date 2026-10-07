@@ -31,3 +31,30 @@ export function visionFromShow(
   if (!capabilities.every((item) => typeof item === 'string')) return 'unknown'
   return capabilities.includes('vision') ? 'supported' : 'unsupported'
 }
+
+/**
+ * The reason to show beside a failed request: the error's own text on one line,
+ * cut short. The page already shows the same for any other failed chat.
+ */
+export function failureReason(error: unknown): string | undefined {
+  if (!(error instanceof Error)) return undefined
+  const text = error.message.replace(/\s+/g, ' ').trim().slice(0, 200)
+  return text === '' ? undefined : text
+}
+
+/**
+ * What to tell someone whose request carried a picture and failed on a model
+ * that never said whether it can see (see visionFromShow). The failure may be
+ * anything: a model that cannot see, but equally one that is not installed or
+ * too large to load, which is the commonest cause of a failed chat on a Mac. So
+ * the message gives the reason the backend gave, says what is not known, and
+ * names both causes. It does not say the message box still holds the question,
+ * because it does not: it was cleared when the message was sent.
+ */
+export function unknownVisionFailureMessage(model: string, reason?: string): string {
+  return (
+    `The request failed${reason ? ` (${reason})` : ''}. It included a picture, and NOMAD ` +
+    `cannot tell whether "${model}" can see pictures. If it cannot, try again without the ` +
+    `picture. It can also mean "${model}" is not installed or is too large to load on this Mac.`
+  )
+}
