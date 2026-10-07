@@ -688,6 +688,7 @@ class API {
         message: string
         filesScanned?: number
         filesQueued?: number
+        withheld?: { root: string; count: number; reason: 'empty_root' | 'mass_removal' }[]
       }>('/rag/sync')
       return response.data
     })()

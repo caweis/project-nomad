@@ -7,7 +7,11 @@ import sharp from 'sharp'
 import { deleteFileIfExists, determineFileType, getFile, getFileStatsIfExists, listDirectoryContentsRecursive, ZIM_STORAGE_PATH } from '../utils/fs.js'
 import { computeHeadingBoost, toRetrievedChunk } from '../utils/rag_context.js'
 import { decideScanAction, type IngestPolicy } from '../utils/kb_ingest_decision.js'
-import { decideOrphans, filterOrphanCandidates } from '../utils/kb_orphan_decision.js'
+import {
+  decideOrphans,
+  describeWithheld,
+  type WithheldOrphans,
+} from '../utils/kb_orphan_decision.js'
 import {
   collectionActiveMessage,
   effectiveActive,
@@ -23,7 +27,7 @@ import { OllamaService } from './ollama_service.js'
 import { SERVICE_NAMES } from '../../constants/service_names.js'
 import { removeStopwords } from 'stopword'
 import { randomUUID } from 'node:crypto'
-import { join, resolve, sep } from 'node:path'
+import { join, relative, resolve, sep } from 'node:path'
 import KVStore from '#models/kv_store'
 import { ZIMExtractionService } from './zim_extraction_service.js'
 import { ZIM_BATCH_SIZE } from '../../constants/zim_extraction.js'
@@ -1712,6 +1716,8 @@ export class RagService {
     message: string
     filesScanned?: number
     filesQueued?: number
+    /** Roots whose orphaned sources were left alone, for the caller to surface. */
+    withheld?: WithheldOrphans[]
   }> {
     try {
       logger.info('[RAG] Starting knowledge base sync scan')
@@ -1800,32 +1806,43 @@ export class RagService {
       // touching Qdrant, so a deleted ZIM stayed answerable in chat, and a
       // replaced file left its old points beside the new ones.
       //
-      // Candidates are narrowed to the roots this scan actually walked, which
-      // keeps NOMAD's own bundled docs (discoverNomadDocs, outside both roots)
-      // out of it, and keeps a root that was missing on this pass out of it
-      // too: a missing zim folder beside a non-empty kb_uploads would
-      // otherwise have every ZIM reaped (upstream f8a29693). A null decision
-      // means the disk scan told us nothing.
+      // Confined to the roots this scan actually walked, which keeps NOMAD's
+      // own bundled docs (discoverNomadDocs, outside both roots) out of it, and
+      // keeps a root that was missing on this pass out of it too: a missing zim
+      // folder beside a non-empty kb_uploads would otherwise have every ZIM
+      // reaped (upstream f8a29693).
       //
-      // Measured against filesInStorage rather than embeddableFiles on purpose.
-      // The question is "does a file still exist on disk", not "would we choose
-      // to embed it today" — if determineFileType ever stops recognising a type
-      // it used to accept, the narrower set would call every already-embedded
-      // file of that type an orphan and delete its vectors.
-      const orphans = decideOrphans(
-        filterOrphanCandidates([...sourcesInQdrant], scannedRoots),
-        filesInStorage
-      )
-      if (orphans === null) {
+      // Within each walked root, decideOrphans also withholds the purge when
+      // the root holds no embeddable files, or when it would remove most of
+      // the root at once (upstream #1393). A volume that failed to mount
+      // leaves an empty mountpoint behind that the scan walks without error,
+      // and a data drive that is unplugged looks exactly like that. Withheld
+      // roots are reported back rather than silently skipped.
+      //
+      // Orphanhood is measured against filesInStorage and "does this root hold
+      // anything" against embeddableFiles, on purpose. A file that is still on
+      // disk is not an orphan even if determineFileType no longer recognises
+      // its type, so a future change there cannot delete vectors; but
+      // kiwix-library.xml is regenerated into an empty mountpoint and must not
+      // count as content.
+      const { orphans, withheld } = decideOrphans({
+        sourcesInQdrant: [...sourcesInQdrant],
+        filesOnDisk: filesInStorage,
+        embeddableFiles,
+        scannedRoots,
+      })
+      for (const w of withheld) {
         logger.warn(
-          '[RAG] Storage scan returned no files; skipping the orphan sweep rather than treating every indexed source as deleted.'
+          `[RAG] Withheld purge of ${w.count} indexed source(s) under ${w.root} (${w.reason}); the directory may be unmounted or pointing at the wrong location`
         )
-      } else if (orphans.length > 0) {
+      }
+      if (orphans.length > 0) {
         logger.info(`[RAG] Purging ${orphans.length} orphaned source(s) from the vector store`)
         for (const source of orphans) {
           await this.purgeOrphanedSource(source)
         }
       }
+      const withheldNote = describeWithheld(withheld, (root) => relative(process.cwd(), root))
 
       // Global ingest policy. Unset is treated as 'Always' so existing installs
       // keep their behavior until the user opts into Manual from the KB panel.
@@ -1889,9 +1906,10 @@ export class RagService {
       if (filesToEmbed.length === 0) {
         return {
           success: true,
-          message: 'Knowledge base is already in sync',
+          message: `Knowledge base is already in sync${withheldNote}`,
           filesScanned: filesInStorage.length,
           filesQueued: 0,
+          withheld,
         }
       }
 
@@ -1926,9 +1944,10 @@ export class RagService {
 
       return {
         success: true,
-        message: `Scanned ${filesInStorage.length} files, queued ${queuedCount} for embedding`,
+        message: `Scanned ${filesInStorage.length} files, queued ${queuedCount} for embedding${withheldNote}`,
         filesScanned: filesInStorage.length,
         filesQueued: queuedCount,
+        withheld,
       }
     } catch (error) {
       logger.error('[RAG] Error scanning and syncing knowledge base:', error)
