@@ -145,15 +145,17 @@ Notable changes to the macOS distribution layer of this fork. Format follows
   renamed. (Ports upstream 5e1702ef.)
 
 ### Supply Depot
-- Edit is now in the Manage menu of every installed app, not only the ones you
-  added yourself. It opens the app's image, name, ports, volume mounts,
+- Edit is now in the ⋯ menu of every installed app that runs in a container,
+  not only the ones you added yourself; the AI Assistant runs on the Mac itself
+  and has none. It opens the app's image, name, ports, volume mounts,
   environment variables and resource limits, and Save & Recreate applies them.
   On an app NOMAD ships, your changes are merged into the setup it came with,
-  so settings the form does not show are kept. The catalog stops re-syncing an
-  app you have edited, which a new modified tag next to its name shows; a later
-  change to that app's catalog entry will not reach it. This is how you add
-  languages to the Translated Library. (Ports the menu half of upstream
-  02c33b27; this fork already had the rest.)
+  so settings the form does not show are kept, and a mount that is read-only,
+  such as MeshCore Web's config and certificates, stays read-only. The catalog
+  stops re-syncing an app you have edited, which a new modified tag next to its
+  name shows; a later change to that app's catalog entry will not reach it.
+  This is how you add languages to the Translated Library. (Ports the menu half
+  of upstream 02c33b27; this fork already had the rest.)
 - Translated Library, a new app that shows the Information Library in another
   language. Its Open button goes to port 8460, a second address for the
   library with a Translate this page bar: French, Spanish and German, and

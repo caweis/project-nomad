@@ -10,7 +10,7 @@ A note on logins: a couple of these apps have their own accounts, separate from 
 
 ## Editing an app {% #editing-apps %}
 
-**Manage › Edit** is on every installed app, whether NOMAD ships it or you added it. It shows the app's image, display name, port mappings, volume mounts, environment variables and resource limits. **Save & Recreate** applies your changes by recreating the app's container. Anything the app keeps in a folder under NOMAD's storage is left as it is.
+**Edit** is in the ⋯ menu (More actions) of every installed app that runs in a container, whether NOMAD ships it or you added it. The AI Assistant runs on the Mac itself, so it has no Edit. The dialog shows the app's image, display name, port mappings, volume mounts, environment variables and resource limits. **Save & Recreate** applies your changes by recreating the app's container. Anything the app keeps in a folder under NOMAD's storage is left as it is.
 
 For an app NOMAD ships, your changes are merged into the setup it came with, so settings the form does not show are kept. The catalog also stops re-syncing an app you have edited, and a **modified** tag appears next to its name to show which ones. A later change to the app's catalog entry, such as a new port, will not reach an app with that tag.
 
@@ -219,7 +219,7 @@ Reads the Information Library in another language. Open an article and a **Trans
 
 **Choosing languages:** French, Spanish and German are set up by default. To add or remove languages:
 
-1. In the **Supply Depot**, open the Translated Library's **Manage** menu and choose **Edit**.
+1. In the **Supply Depot**, open the ⋯ menu on the Translated Library and choose **Edit**.
 2. Under **Environment Variables**, find `TRANSLATE_LANGS=fr,es,de`.
 3. Change the list of language codes, separated by commas. For example, `TRANSLATE_LANGS=fr,es,de,sv` adds Swedish.
 4. Click **Save & Recreate**. The app restarts, downloads any new languages, and adds a button for each one to the **Translate this page** bar.
