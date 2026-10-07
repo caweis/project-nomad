@@ -8,6 +8,14 @@ A note on logins: a couple of these apps have their own accounts, separate from 
 
 ---
 
+## Editing an app {% #editing-apps %}
+
+**Manage › Edit** is on every installed app, whether NOMAD ships it or you added it. It shows the app's image, display name, port mappings, volume mounts, environment variables and resource limits. **Save & Recreate** applies your changes by recreating the app's container. Anything the app keeps in a folder under NOMAD's storage is left as it is.
+
+For an app NOMAD ships, your changes are merged into the setup it came with, so settings the form does not show are kept. The catalog also stops re-syncing an app you have edited, and a **modified** tag appears next to its name to show which ones. A later change to the app's catalog entry, such as a new port, will not reach an app with that tag.
+
+---
+
 ## Information Library {% #information-library %}
 
 Offline copies of Wikipedia, medical references, how-to guides, and full encyclopedias, all readable in your browser with no internet. This is the reading side of NOMAD: you download content libraries (called ZIM files) and browse them here.
@@ -209,11 +217,16 @@ Reads the Information Library in another language. Open an article and a **Trans
 
 **On a Mac:** the engine is built for Intel (x86) processors and has no Apple Silicon build, so on an Apple Silicon Mac it runs under emulation. That costs some speed.
 
-**Languages:** French, Spanish and German are set up. The app takes its list from a setting named `TRANSLATE_LANGS` (`fr,es,de`), and a language that is on the list is downloaded the next time the app starts. This version of NOMAD offers **Edit** in the Manage menu for the apps you add yourself, not for the apps it ships, so the list can't be changed from there yet.
+**Choosing languages:** French, Spanish and German are set up by default. To add or remove languages:
 
-Each language takes between about 45 MB and 140 MB of disk, for both directions. A language that has been downloaded keeps working offline and keeps its button in the **Translate this page** bar.
+1. In the **Supply Depot**, open the Translated Library's **Manage** menu and choose **Edit**.
+2. Under **Environment Variables**, find `TRANSLATE_LANGS=fr,es,de`.
+3. Change the list of language codes, separated by commas. For example, `TRANSLATE_LANGS=fr,es,de,sv` adds Swedish.
+4. Click **Save & Recreate**. The app restarts, downloads any new languages, and adds a button for each one to the **Translate this page** bar.
 
-The engine has models for these 50 languages. Chinese is not available yet.
+Adding a language needs an internet connection, and each one takes between about 45 MB and 140 MB of disk. Languages you already have keep working offline. Removing a code from the list does not remove a language you have already downloaded; it stays in `storage/translate/models` and keeps its button. Like any edit, this marks the app as modified (see Editing an app, above).
+
+These 50 languages are available. Chinese is not available yet.
 
 | Language | Code |
 |---|---|

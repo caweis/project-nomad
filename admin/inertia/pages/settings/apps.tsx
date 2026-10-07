@@ -24,6 +24,7 @@ import { SERVICE_NAMES } from '../../../constants/service_names'
 import { SERVICE_CREDENTIAL_NOTES } from '../../../constants/service_credential_notes'
 import CustomAppModal, { CustomAppInitial } from '~/components/CustomAppModal'
 import AppManageMenu, { AppMenuItem } from '~/components/AppManageMenu'
+import ModifiedTag from '~/components/ModifiedTag'
 import { isPinned } from '~/util/home_decks'
 
 
@@ -450,9 +451,9 @@ export default function SettingsPage(props: {
 
     // Everything past Open (and a conditional Update) collapses into one "⋯"
     // overflow menu so a table row stays on a single line instead of wrapping
-    // into a ragged stack: lifecycle (Stop/Start, Restart), then the custom-app
-    // cluster (Edit / Pull latest / Logs / Auto-update), then a divider and the
-    // destructive zone (Delete for custom apps, then Wipe & reinstall). Wipe keeps
+    // into a ragged stack: lifecycle (Stop/Start, Restart), Edit (every app), then
+    // the custom-app cluster (Pull latest / Logs / Auto-update), then a divider and
+    // the destructive zone (Delete for custom apps, then Wipe & reinstall). Wipe keeps
     // its prior visibility (installed + known status) and sits last, isolated in red.
     const buildInstalledMenu = (): AppMenuItem[] => {
       const items: AppMenuItem[] = []
@@ -477,15 +478,19 @@ export default function SettingsPage(props: {
         onClick: () => handleTogglePin(record, !pinned),
       })
 
+      // Edit is on every installed app. On a shipped app the changes are merged
+      // into the setup it came with, and the catalog stops re-syncing it (the
+      // "modified" tag beside its name says so).
+      items.push({
+        kind: 'action',
+        icon: 'IconPencil',
+        label: 'Edit',
+        onClick: () => handleEditCustomApp(record),
+        disabled: loading,
+      })
+
       if (record.is_custom) {
         items.push(
-          {
-            kind: 'action',
-            icon: 'IconPencil',
-            label: 'Edit',
-            onClick: () => handleEditCustomApp(record),
-            disabled: loading,
-          },
           {
             kind: 'action',
             icon: 'IconArrowUp',
@@ -711,7 +716,10 @@ export default function SettingsPage(props: {
                   render(record) {
                     return (
                       <div className="flex flex-col">
-                        <p>{record.friendly_name || record.service_name}</p>
+                        <p className="flex items-center gap-2">
+                          {record.friendly_name || record.service_name}
+                          {!!record.is_user_modified && !record.is_custom && <ModifiedTag />}
+                        </p>
                         <p className="text-sm text-text-muted">{record.description}</p>
                         {record.installed && SERVICE_CREDENTIAL_NOTES[record.service_name] && (
                           <p className="text-xs text-desert-green-dark mt-1 font-medium">
