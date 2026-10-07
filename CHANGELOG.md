@@ -54,9 +54,9 @@ Notable changes to the macOS distribution layer of this fork. Format follows
   Turn all on and Turn all off switch every file in it at once. With every file
   switched off, chat skips the knowledge base search, and the step that
   rewrites your question for it, altogether. A newer edition of a ZIM arrives
-  under a new file name, so it starts switched on. If a switch cannot be
-  applied, the file is left as it was, so the window never shows a setting the
-  assistant is not following. (Ports upstream #1286 and c65198c7.)
+  under a new file name, so it starts switched on. If search refuses a switch,
+  NOMAD puts the file's switch back where it was, so the window does not claim
+  a setting the assistant is not following. (Ports upstream #1286 and c65198c7.)
 - Choosing a file's collection lists every collection again. The list opened
   already filtered down to the collection the file was in.
 - Indexing a ZIM no longer stops partway through. Indexing works through an
@@ -71,14 +71,16 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 - Deleting a file now removes what the assistant learned from it. Deleting a
   ZIM removed the file and left everything indexed from it in place, so the
   assistant carried on quoting content that was no longer on the server, and a
-  replaced file left its old text sitting beside the new. Storage scans also
-  clear out anything left behind by an earlier version. A scan leaves a folder
+  replaced file left its old text sitting beside the new. Replacing a ZIM with
+  a newer edition now removes the old edition's text as well. Storage scans
+  also clear out what an earlier version left behind. A scan leaves a folder
   alone when it cannot find it, when it finds nothing in it, or when clearing
-  it would remove most of what was learned from it, so a missing or unmounted
-  `zim` folder cannot empty the knowledge base of every ZIM at once. A drive
-  that is not mounted looks exactly like a folder someone emptied, and
-  re-learning a library takes hours. When Sync leaves a folder alone, its
-  message says which one and why. (Ports upstream f8a29693 and #1393.)
+  it would remove at least five files and more than half of those it learned
+  from. A drive that is not mounted looks exactly like a folder someone
+  emptied, and re-learning a library takes hours. A folder with fewer than five
+  files indexed gets only the first two protections. When Sync leaves a folder
+  alone, its message says which one and why, and where to delete the files by
+  hand if they really are gone. (Ports upstream f8a29693 and #1393.)
 
 ### Chat
 - Ask about a picture. A button beside the message box attaches up to four

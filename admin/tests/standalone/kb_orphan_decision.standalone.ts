@@ -206,6 +206,33 @@ check('removing exactly half of a root is still purged', () => {
   })
 })
 
+check('a little over half is withheld, however many sources there are', () => {
+  // 6 of 10 is 60% and 6 of 11 is 55%: both are past the line, and neither is
+  // far enough past it for a looser threshold to be mistaken for this one.
+  for (const total of [10, 11]) {
+    const indexed = zims(total)
+    assert.deepEqual(decide(indexed, indexed.slice(6)), {
+      orphans: [],
+      withheld: [{ root: ZIM, count: 6, reason: 'mass_removal' }],
+    })
+  }
+  // 5 of 11 is 45%: purged.
+  const eleven = zims(11)
+  assert.deepEqual(decide(eleven, eleven.slice(5)), { orphans: eleven.slice(0, 5), withheld: [] })
+})
+
+check('an empty root is reported as empty even when most of its sources are missing too', () => {
+  // The unmounted-drive case: every one of 8 sources is gone AND nothing is
+  // there. Both guards would withhold it; the person should be told the folder
+  // is empty (check the mount), not that it is "pointing at the wrong drive".
+  const indexed = zims(8)
+  const result = decide([...indexed, `${KB}/a.pdf`], [`${KB}/a.pdf`])
+  assert.deepEqual(result, {
+    orphans: [],
+    withheld: [{ root: ZIM, count: 8, reason: 'empty_root' }],
+  })
+})
+
 check('the mass-removal guard waits until there are enough sources to mean something', () => {
   assert.equal(ORPHAN_PURGE_MIN_GUARDED, 5)
   // 4 of 5 missing is 80%, but 4 is below the minimum: cheap to re-embed.
@@ -259,7 +286,7 @@ check('the note names the folder, counts the sources, and says why', () => {
   )
   assert.equal(
     describeWithheld([{ root: ZIM, count: 8, reason: 'mass_removal' }], label),
-    '; left 8 indexed sources under storage/zim untouched because removing them would clear most of that folder (is it pointing at the right drive?)'
+    '; left 8 indexed sources under storage/zim untouched because removing them would clear most of that folder (is it pointing at the right drive? If the files were removed on purpose, delete them under Stored Knowledge Base Files)'
   )
 })
 

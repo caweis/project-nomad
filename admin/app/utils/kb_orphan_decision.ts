@@ -28,9 +28,10 @@ import { sep } from 'node:path'
  * that root at all. Losing most of a root at once is far likelier to mean the
  * root points somewhere wrong (a different disk, a stale copy, a half-finished
  * data-path move per #1050) than that the user deleted most of their library
- * by hand. Real deletions through the UI purge their own vectors immediately
- * (ZimService.delete, deleteFileBySource), so the sweep only ever mops up
- * stragglers and has no business removing the bulk of a root.
+ * by hand. Deletions and content updates purge their own vectors as they happen
+ * (ZimService.delete, deleteFileBySource, and RunDownloadJob for a replaced
+ * ZIM), so the sweep only ever mops up stragglers and has no business removing
+ * the bulk of a root.
  */
 export const ORPHAN_PURGE_MAX_FRACTION = 0.5
 
@@ -157,7 +158,7 @@ export function describeWithheld(
         `; left ${w.count} indexed source${w.count !== 1 ? 's' : ''} under ${label(w.root)} untouched because ${
           w.reason === 'empty_root'
             ? 'that folder has no files (is the drive mounted?)'
-            : 'removing them would clear most of that folder (is it pointing at the right drive?)'
+            : 'removing them would clear most of that folder (is it pointing at the right drive? If the files were removed on purpose, delete them under Stored Knowledge Base Files)'
         }`
     )
     .join('')
@@ -189,7 +190,10 @@ export function describeWithheld(
  * future embedding source added outside these roots is left alone by default
  * instead of being reaped the first time it appears.
  */
-export function filterOrphanCandidates(sourcesInQdrant: string[], scannedRoots: string[]): string[] {
+export function filterOrphanCandidates(
+  sourcesInQdrant: string[],
+  scannedRoots: string[]
+): string[] {
   const prefixes = scannedRoots
     // A trailing separator matters: without it "/storage/zim-backup" shares a
     // string prefix with "/storage/zim" and would be swept.

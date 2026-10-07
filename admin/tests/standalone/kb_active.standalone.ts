@@ -234,4 +234,50 @@ await checkAsync(
   }
 )
 
+await checkAsync('the rows are back before the failure is reported, not after', async () => {
+  const r = recorder()
+  const refused = new Error('qdrant is down')
+  await assert.rejects(
+    writeRowsThenPoints(
+      r.steps({
+        writePoints: async () => {
+          throw refused
+        },
+        // A restore that takes a moment. If it were not awaited, the caller would
+        // hear that the switch failed while the panel's row was still wrong.
+        restoreRows: async () => {
+          await new Promise((resolve) => setTimeout(resolve, 20))
+          r.calls.push('restored')
+        },
+      })
+    ),
+    (e) => e === refused
+  )
+  assert.deepEqual(r.calls, ['rows', 'restored'])
+})
+
+await checkAsync(
+  'a slow failure to put the rows back is reported before the switch fails',
+  async () => {
+    const r = recorder()
+    const refused = new Error('qdrant is down')
+    const stuck = new Error('mysql is down too')
+    await assert.rejects(
+      writeRowsThenPoints(
+        r.steps({
+          writePoints: async () => {
+            throw refused
+          },
+          restoreRows: async () => {
+            await new Promise((resolve) => setTimeout(resolve, 20))
+            throw stuck
+          },
+        })
+      ),
+      (e) => e === refused
+    )
+    assert.deepEqual(r.restoreFailures, [stuck])
+  }
+)
+
 console.log(`\n${passed} checks passed`)

@@ -539,7 +539,7 @@ export class ZimService {
             // The replaced version's passages go with it, so retrieval does not
             // mix two editions of the same archive. The new file is indexed on
             // its own schedule, under its own path.
-            await this._purgeKnowledgeOf(decision.path)
+            await this.purgeKnowledgeOf(decision.path)
           } catch (err) {
             logger.warn(`[ZimService] Failed to remove superseded file ${decision.path}:`, err)
           }
@@ -562,7 +562,7 @@ export class ZimService {
    * not turn a successful delete into an error; the reverse sweep in
    * RagService.scanAndSyncStorage catches whatever this misses.
    */
-  private async _purgeKnowledgeOf(filePath: string): Promise<void> {
+  async purgeKnowledgeOf(filePath: string): Promise<void> {
     try {
       const qdrantInstalled = !!(await this.dockerService.getServiceURL(SERVICE_NAMES.QDRANT))
       if (!qdrantInstalled) return
@@ -600,7 +600,7 @@ export class ZimService {
     // its embedded passages in the vector store, so the assistant kept quoting
     // content that was no longer on the box — and on a machine with no
     // internet, that answer is not something the user can check anywhere else.
-    await this._purgeKnowledgeOf(fullPath)
+    await this.purgeKnowledgeOf(fullPath)
 
     // Clean up InstalledResource entry
     const parsed = CollectionManifestService.parseZimFilename(fileName)

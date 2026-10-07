@@ -7,6 +7,7 @@ import { DockerService } from '#services/docker_service'
 import { ZimService } from '#services/zim_service'
 import { MapService } from '#services/map_service'
 import { EmbedFileJob } from './embed_file_job.js'
+import { replacedFileToForget } from '../utils/kb_replaced_file.js'
 
 export class RunDownloadJob {
   static get queue() {
@@ -47,6 +48,11 @@ export class RunDownloadJob {
         job.updateProgress(Math.floor(progressPercent))
       },
       async onComplete(url) {
+        // The file this download replaced, once it is deleted. Kept outside the
+        // try so the ZIM branch below can forget what the knowledge base learned
+        // from it.
+        let oldFilePath: string | null = null
+        let oldFileDeleted = false
         try {
           // Create InstalledResource entry if metadata was provided
           if (resourceMetadata) {
@@ -60,7 +66,7 @@ export class RunDownloadJob {
               .where('resource_id', resourceMetadata.resource_id)
               .where('resource_type', filetype as 'zim' | 'map')
               .first()
-            const oldFilePath = oldEntry?.file_path ?? null
+            oldFilePath = oldEntry?.file_path ?? null
 
             const installed = await InstalledResource.updateOrCreate(
               { resource_id: resourceMetadata.resource_id, resource_type: filetype as 'zim' | 'map' },
@@ -78,6 +84,7 @@ export class RunDownloadJob {
             if (oldFilePath && oldFilePath !== filepath) {
               try {
                 await deleteFileIfExists(oldFilePath)
+                oldFileDeleted = true
                 console.log(`[RunDownloadJob] Deleted old file: ${oldFilePath}`)
               } catch (deleteError) {
                 console.warn(
@@ -109,6 +116,19 @@ export class RunDownloadJob {
             // counts the just-finished job as "still pending" and never
             // restarts Kiwix.
             await zimService.downloadRemoteSuccessCallback([url], true, job.id)
+
+            // The replaced edition's passages go with its file. Left in place they
+            // are retrieved beside the new edition's, and an update that replaces
+            // many files at once leaves more stale sources than the orphan sweep
+            // will clear in one go (ORPHAN_PURGE_MAX_FRACTION). Best-effort, like
+            // the other deletes: a Qdrant outage must not fail a finished download.
+            const forget = replacedFileToForget({
+              filetype,
+              oldFilePath,
+              newFilePath: filepath,
+              oldFileDeleted,
+            })
+            if (forget) await zimService.purgeKnowledgeOf(forget)
 
             // Dispatch an embedding job for the downloaded ZIM file
             try {
