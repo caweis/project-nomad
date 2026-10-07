@@ -18,7 +18,7 @@ import { isRagRetrievalEnabled } from '../utils/rag_toggle.js'
 import logger from '@adonisjs/core/services/logger'
 import type { Message } from 'ollama'
 import { rm } from 'node:fs/promises'
-import { CHAT_IMAGE_EXTENSIONS, CHAT_IMAGE_LIMITS } from '../../constants/chat_images.js'
+import { CHAT_IMAGE_LIMITS, CHAT_IMAGE_UPLOAD_OPTIONS } from '../../constants/chat_images.js'
 import {
   attachImagesToLatestUserMessage,
   ChatImageError,
@@ -63,10 +63,7 @@ export default class OllamaController {
     // them (see chat_multipart.ts). Images are read from disk once, below, and
     // the uploads are deleted straight away so they do not sit in tmp for the
     // length of a long answer.
-    const uploadedImages = request.files('images', {
-      size: CHAT_IMAGE_LIMITS.maxBytes,
-      extnames: [...CHAT_IMAGE_EXTENSIONS],
-    })
+    const uploadedImages = request.files('images', CHAT_IMAGE_UPLOAD_OPTIONS)
     const cleanupUploadedImages = () =>
       Promise.all(
         uploadedImages
