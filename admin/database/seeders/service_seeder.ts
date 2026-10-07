@@ -480,14 +480,16 @@ export default class ServiceSeeder extends BaseSeeder {
       icon: 'IconWorld',
       // Upstream's published image (#1292), not one this fork builds. 0.1.1 carries its
       // fixes for redirects (#1379) and for languages whose model has a pre-release
-      // build (#1405); the seeder pin is how a fix reaches an install.
+      // build (#1405). A new pin here reaches installs made after it; one that is
+      // already running keeps its image until it is updated or reinstalled.
       container_image: 'ghcr.io/crosstalk-solutions/project-nomad-translate:0.1.1',
       source_repo: 'https://github.com/browsermt/bergamot-translator',
       container_command: null,
       container_config: JSON.stringify({
         // Built for linux/amd64 only: Bergamot's intgemm backend is x86 and there is no
         // aarch64 wheel. On Apple Silicon Docker has to be told to pull and create that
-        // build, and the engine's x86 emulation runs it (see utils/container_platform.ts).
+        // build, and the engine's x86 emulation has to run it (see utils/container_platform.ts,
+        // and install/nomad-translate/FORK_NOTES.md for what is not yet known about that).
         // It is a key of the config so it survives an edit and applies to install, update
         // and recreate alike.
         platform: 'linux/amd64',

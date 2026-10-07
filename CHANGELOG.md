@@ -165,9 +165,10 @@ Notable changes to the macOS distribution layer of this fork. Format follows
   Assistant. Installing it also installs the Information Library if that is
   missing, and the library at its usual address is left as it is. Tables, page
   titles and Kiwix's own search results stay in the original language. The
-  engine is built for Intel processors, so on an Apple Silicon Mac the app
-  runs under emulation, which costs some speed. (Ports upstream #1292, with
-  the fixes #1379 and #1405.)
+  engine is built for Intel processors and uses AVX instructions, which the
+  emulation on an Apple Silicon Mac may not run. This has not been tried on a
+  Mac yet; the docs give a check to run first. (Ports upstream #1292, with the
+  fixes #1379 and #1405.)
 
 ### Dark mode
 - Green text is readable in dark mode. Links in chat answers, the Continue

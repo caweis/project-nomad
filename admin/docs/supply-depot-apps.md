@@ -213,9 +213,15 @@ Reads the Information Library in another language. Open an article and a **Trans
 
 **Powered by:** Bergamot, the translation engine behind Firefox's built-in page translation · **Source:** [github.com/browsermt/bergamot-translator](https://github.com/browsermt/bergamot-translator)
 
-**Why this instead of the AI Assistant:** the AI Assistant can translate, but this is a purpose-built translation engine. It runs on the processor, needs no GPU and no model to be loaded, and it is more careful with names: asked to translate a page, a chat model will happily translate "Project NOMAD" into another language, and this will not. It needs the Information Library installed first, and installs it if it is missing.
+**Why this instead of the AI Assistant:** the AI Assistant can translate, but this is a purpose-built translation engine. It runs on the processor, needs no GPU and does not use the AI Assistant's models. It is also more careful with names: in upstream's comparison, a chat model translated the product name "Project NOMAD" and this engine left it alone. It needs the Information Library installed first, and installs it if it is missing.
 
-**On a Mac:** the engine is built for Intel (x86) processors and has no Apple Silicon build, so on an Apple Silicon Mac it runs under emulation. That costs some speed.
+**On a Mac:** the engine is built for Intel (x86) processors and has no Apple Silicon build, so a Mac has to run it under emulation. This has not been tried on a Mac yet, and one part is uncertain: the engine uses AVX instructions, and the emulation Docker uses may not run them. If it does not, choosing a language stops the app and it restarts. To check before you rely on it, run this in Terminal:
+
+```
+docker run --rm --platform linux/amd64 --entrypoint python ghcr.io/crosstalk-solutions/project-nomad-translate:0.1.1 -c "import bergamot; print('ok')"
+```
+
+If it prints `ok`, the engine runs. If it reports an illegal instruction, it does not run on your setup; the Information Library is not affected. If the app keeps stopping after you choose a language, open `http://localhost:8460/nomad-lang?set=` to go back to the original language.
 
 **Choosing languages:** French, Spanish and German are set up by default. To add or remove languages:
 
@@ -281,7 +287,7 @@ These 50 languages are available. Chinese is not available yet.
 | Urdu | `ur` |
 | Vietnamese | `vi` |
 
-**First start needs internet.** The language models download when the app first runs, the same as installing any other app. After that it is entirely offline. If you install this while disconnected the app still starts and the library still works, just without translation until it can fetch the models. The models come from Mozilla, the same source Firefox uses for its own translation, under the MPL-2.0 licence.
+**First start needs internet.** Installing the app downloads its image, and the language models download when the app first runs. After that it is entirely offline. If the models cannot be downloaded (the connection drops after the app is installed, for example), the app still starts and the library still works, just without translation until the models arrive. The models come from Mozilla, the same source Firefox uses for its own translation, under the MPL-2.0 licence.
 
 **What it does not translate:** tables and infoboxes, the page title in your browser tab, and Kiwix's own search results. Searching also still matches the original language, so look things up in English and translate the article you land on.
 

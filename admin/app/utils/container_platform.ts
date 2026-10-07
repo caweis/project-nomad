@@ -10,7 +10,7 @@
  * image was published and which image store Docker uses, that can end in a
  * refused pull or in an amd64 container started with only a warning. Naming
  * the platform takes the guess out: Docker pulls and creates the amd64 image,
- * and the engine's x86 emulation (Rosetta, where it is switched on) runs it.
+ * and the engine's x86 emulation is what has to run it.
  *
  * The platform is declared by the app's own container config (a top-level
  * `platform` key, beside HostConfig and Env) so it travels with the app: it
