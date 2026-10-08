@@ -1,6 +1,6 @@
 # The `nomad` command
 
-When you install N.O.M.A.D. on your Mac, the installer puts a `nomad` command on your PATH (symlinked into Homebrew's `bin` directory). That command is the host-side companion to the Command Center — it handles everything that has to happen outside the browser: installing, upgrading, repairing, diagnosing, managing.
+When you install NOMAD on your Mac, the installer puts a `nomad` command on your PATH (symlinked into Homebrew's `bin` directory). That command is the host-side companion to the Command Center — it handles everything that has to happen outside the browser: installing, upgrading, repairing, diagnosing, managing.
 
 You don't have to use any of these commands for normal operation. Everything also works from the Command Center in your browser. But if you live in Terminal, this is the faster path.
 
@@ -13,7 +13,7 @@ man nomad           Full manual page.
 
 ## Lifecycle
 
-These commands start, stop, and restart the N.O.M.A.D. stack.
+These commands start, stop, and restart the NOMAD stack.
 
 ```
 nomad install [opts]     Full install. Idempotent — also fixes broken state.
@@ -119,6 +119,6 @@ nomad reinstall             Full wipe + reinstall in one shot. One confirmation 
 
 `nomad reinstall` is the nuclear option — wipes everything (containers, mysql data, ollama models, ZIM library, everything) and runs a fresh install. Use it when something is so broken that an idempotent re-install of `nomad install` can't fix it.
 
-`nomad uninstall` is more surgical — removes the N.O.M.A.D. state but lets you decide what to do with the data drive contents separately.
+`nomad uninstall` is more surgical — removes the NOMAD state but lets you decide what to do with the data drive contents separately.
 
 Brew tools (Ollama, OrbStack, jq) and your bundle directory are never removed by either command — those are user-level installs that other things on your Mac might depend on.

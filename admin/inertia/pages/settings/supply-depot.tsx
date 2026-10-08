@@ -112,7 +112,7 @@ export default function SupplyDepotPage(props: {
       >
         <p className="text-text-secondary">
           Are you sure you want to install {service.friendly_name || service.service_name}? This
-          will start the service and make it available in your Project N.O.M.A.D. instance. It may
+          will start the service and make it available in your Project NOMAD instance. It may
           take some time to complete.
         </p>
       </StyledModal>,
@@ -414,7 +414,7 @@ export default function SupplyDepotPage(props: {
             <div>
               <h1 className="text-4xl font-semibold">Supply Depot</h1>
               <p className="text-text-muted mt-1">
-                Browse and install apps for your Project N.O.M.A.D. instance, organized by category.
+                Browse and install apps for your Project NOMAD instance, organized by category.
                 Nightly update checks automatically detect when new versions are available.
               </p>
             </div>

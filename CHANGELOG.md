@@ -22,6 +22,9 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 - Project NOMAD's new badge replaces the old logo in the Command Center header,
   the settings and chat sidebars, the start-up screen and the README. It is a
   vector image, so it stays sharp at any size. (Ports upstream 4c75eb51.)
+- The name is written Project NOMAD, without periods, in the Command Center,
+  its help pages and the README, to match the new badge. The help pages no
+  longer spell it out as an acronym. (Ports upstream 957e79bb.)
 
 ### Maps
 - Pins can be looked after, not just dropped. Dropping one now asks for notes

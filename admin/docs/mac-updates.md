@@ -1,4 +1,4 @@
-# Updating your N.O.M.A.D.
+# Updating your NOMAD
 
 Updates are split into two surfaces — the `nomad` CLI script itself, and the things it manages (container images, Ollama, content services). Different commands keep each current.
 

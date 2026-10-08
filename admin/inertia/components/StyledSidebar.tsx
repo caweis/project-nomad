@@ -87,7 +87,7 @@ const StyledSidebar: React.FC<StyledSidebarProps> = ({ title, items, hideBackToH
           <ThemeToggle />
         </div>
         <div className="mb-4 text-center text-sm text-text-secondary">
-          <p>Project N.O.M.A.D. Command Center v{appVersion}</p>
+          <p>Project NOMAD Command Center v{appVersion}</p>
           <button
             onClick={() => setDebugModalOpen(true)}
             className="mt-1 text-gray-500 hover:text-desert-green inline-flex items-center gap-1 cursor-pointer"

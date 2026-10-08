@@ -1,16 +1,16 @@
-# Getting Started with N.O.M.A.D.
+# Getting Started with NOMAD
 
-This guide will help you get the most out of your N.O.M.A.D. server.
+This guide will help you get the most out of your NOMAD server.
 
 <!-- MAC-EDITION-LINK — remove this block to sever the macOS-edition additions -->
-> **On macOS?** Before working through this guide, see [Installing N.O.M.A.D. on your Mac](/docs/mac-install) for the macOS-specific install path. Once that's done, everything below still applies.
+> **On macOS?** Before working through this guide, see [Installing NOMAD on your Mac](/docs/mac-install) for the macOS-specific install path. Once that's done, everything below still applies.
 <!-- /MAC-EDITION-LINK -->
 
 ---
 
 ## Easy Setup Wizard
 
-If this is your first time using N.O.M.A.D., the Easy Setup wizard will help you get everything configured.
+If this is your first time using NOMAD, the Easy Setup wizard will help you get everything configured.
 
 **[Launch Easy Setup →](/easy-setup)**
 
@@ -70,7 +70,7 @@ The Education Platform provides complete educational courses that work offline.
 
 ![AI Chat interface](/docs/ai-chat.png)
 
-N.O.M.A.D. includes a built-in AI chat interface powered by Ollama. It runs entirely on your server — no internet needed, no data sent anywhere.
+NOMAD includes a built-in AI chat interface powered by Ollama. It runs entirely on your server — no internet needed, no data sent anywhere.
 
 **What can it do:**
 - Answer questions on any topic
@@ -88,7 +88,7 @@ N.O.M.A.D. includes a built-in AI chat interface powered by Ollama. It runs enti
 
 **Note:** The AI Assistant must be installed first. Enable it during Easy Setup or install it from the [Apps](/settings/apps) page.
 
-**GPU Acceleration:** If your server has an NVIDIA GPU with the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) installed, N.O.M.A.D. will automatically use it for AI — dramatically faster responses (10-20x improvement). If you add a GPU later, go to [Apps](/settings/apps) and **Force Reinstall** the AI Assistant to enable it.
+**GPU Acceleration:** If your server has an NVIDIA GPU with the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) installed, NOMAD will automatically use it for AI — dramatically faster responses (10-20x improvement). If you add a GPU later, go to [Apps](/settings/apps) and **Force Reinstall** the AI Assistant to enable it.
 
 ---
 
@@ -154,7 +154,7 @@ As your needs change, you can add more content anytime:
 
 ![Content Explorer — browse and download Wikipedia packages and curated collections](/docs/content-explorer.png)
 
-N.O.M.A.D. includes a dedicated Wikipedia content management tool for browsing and downloading Wikipedia packages.
+NOMAD includes a dedicated Wikipedia content management tool for browsing and downloading Wikipedia packages.
 
 **How to use it:**
 1. Go to **[Content Explorer →](/settings/zim/remote-explorer)**
@@ -228,7 +228,7 @@ Check storage usage in **Settings → System**.
 
 ## Next Steps
 
-You're ready to use N.O.M.A.D. Here are some things to try:
+You're ready to use NOMAD. Here are some things to try:
 
 1. **Look something up** — Search for a topic in the Information Library
 2. **Learn something** — Start a Khan Academy course in the Education Platform

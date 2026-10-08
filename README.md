@@ -1,7 +1,7 @@
 <div align="center">
 <img src="admin/public/nomad-primary.svg" width="200" alt="Project NOMAD"/>
 
-# Project N.O.M.A.D. — Mac edition
+# Project NOMAD — Mac edition
 
 </div>
 

@@ -423,7 +423,7 @@ export default function Home(props: {
       {updateInfo?.updateAvailable && (
         <div className="flex justify-center items-center p-4 w-full">
           <Alert
-            title="An update is available for Project N.O.M.A.D.!"
+            title="An update is available for Project NOMAD!"
             type="info-inverted"
             variant="solid"
             className="w-full"
