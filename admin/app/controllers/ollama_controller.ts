@@ -26,6 +26,7 @@ import {
   type NormalizedChatImage,
 } from '../utils/chat_images.js'
 import { readMultipartChatPayload } from '../utils/chat_multipart.js'
+import { clientHasLeft } from '../utils/client_gone.js'
 import { failureReason, unknownVisionFailureMessage } from '../utils/model_capabilities.js'
 import type { ModelVisionCapability } from '../../types/ollama.js'
 
@@ -111,6 +112,14 @@ export default class OllamaController {
     // fails in whatever way its backend fails. This marks that case, so the
     // failure can be explained instead of reported as a generic error.
     let imageRequestRejected = false
+
+    // Someone who left while their pictures were being processed, or while the
+    // model's abilities were looked up, has left all the same, and the listener
+    // below would never hear about it (client_gone.ts). Look before starting.
+    if (clientHasLeft(response.response)) {
+      logger.debug('[OllamaController] Client left before generation started')
+      return
+    }
 
     // Flush SSE headers immediately so the client connection is open while
     // pre-processing (query rewriting, RAG lookup) runs in the background.
