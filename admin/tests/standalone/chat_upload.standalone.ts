@@ -16,6 +16,7 @@ import http from 'node:http'
 import { createRequire } from 'node:module'
 import { CHAT_IMAGE_LIMITS, CHAT_IMAGE_UPLOAD_OPTIONS } from '../../constants/chat_images.ts'
 import { normalizeChatImages, ChatImageError } from '../../app/utils/chat_images.ts'
+import { UPLOAD_TMP_PREFIX, uploadTmpFileName } from '../../app/utils/stale_uploads.ts'
 
 const require = createRequire(import.meta.url)
 const sharp = require('sharp')
@@ -28,7 +29,14 @@ const { RequestFactory, ResponseFactory, HttpContextFactory } = await import(
 
 // The same multipart settings as config/bodyparser.ts.
 const middleware = new BodyParserMiddlewareFactory()
-  .merge({ multipart: { autoProcess: true, limit: '250mb', convertEmptyStringsToNull: true } })
+  .merge({
+    multipart: {
+      autoProcess: true,
+      limit: '250mb',
+      convertEmptyStringsToNull: true,
+      tmpFileName: uploadTmpFileName,
+    },
+  })
   .create()
 
 type Answer = { status: number; body: any }
@@ -47,7 +55,14 @@ const server = http.createServer(async (rq, rs) => {
       const files = ctx.request.files('images', CHAT_IMAGE_UPLOAD_OPTIONS)
       try {
         const images = await normalizeChatImages(files, CHAT_IMAGE_LIMITS)
-        send(200, { count: images.length, names: images.map((i) => i.name) })
+        send(200, {
+          count: images.length,
+          names: images.map((i) => i.name),
+          // The sweep finds abandoned uploads by this name.
+          namedForSweep: files.every((f: any) =>
+            String(f.tmpPath).split('/').pop()?.startsWith(UPLOAD_TMP_PREFIX)
+          ),
+        })
       } catch (error) {
         if (error instanceof ChatImageError) return send(error.status, { message: error.message })
         throw error
@@ -167,6 +182,15 @@ await check(
     }
   }
 )
+
+await check('every uploaded file is named so the abandoned-upload sweep can find it', async () => {
+  const answer = await upload([
+    { name: 'a.jpg', bytes: jpeg, type: 'image/jpeg' },
+    { name: 'b.PNG', bytes: png, type: 'image/png' },
+  ])
+  assert.equal(answer.status, 200)
+  assert.equal(answer.body.namedForSweep, true)
+})
 
 await check('several files arrive together, in order', async () => {
   const answer = await upload([

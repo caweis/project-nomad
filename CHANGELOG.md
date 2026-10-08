@@ -96,6 +96,12 @@ Notable changes to the macOS distribution layer of this fork. Format follows
   cannot see keeps the button off and says why. On the Apple MLX engine NOMAD
   cannot tell in advance, so it lets you try; if the request fails, the message
   says the model may not accept pictures. (Ports upstream edbfe1ad.)
+- Pictures from an upload that was cut off, because the tab closed or the
+  connection dropped, are no longer left in the server's temporary folder.
+  Those files are the untouched originals, camera and location details
+  included, and the same happened to any interrupted upload, the Workshop's
+  200 MB files too. NOMAD now names its upload files, and clears the ones that
+  nothing has written to for six hours, at startup and then every hour.
 - Answers that drew on your knowledge base now list their sources underneath:
   the archive each passage came from, with its date where the archive records
   one, or the file name for something you uploaded. Only what the assistant
