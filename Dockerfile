@@ -60,8 +60,8 @@ ARG BUILD_DATE
 ARG VCS_REF
 
 # Labels
-LABEL org.opencontainers.image.title="Project N.O.M.A.D" \
-      org.opencontainers.image.description="The Project N.O.M.A.D Official Docker image" \
+LABEL org.opencontainers.image.title="Project NOMAD" \
+      org.opencontainers.image.description="The Project NOMAD Official Docker image" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.revision="${VCS_REF}" \

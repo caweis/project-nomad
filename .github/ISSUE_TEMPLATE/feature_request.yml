@@ -1,18 +1,18 @@
 name: Feature Request
-description: Suggest a new feature or enhancement for Project N.O.M.A.D.
+description: Suggest a new feature or enhancement for Project NOMAD
 title: "[Feature]: "
 labels: ["enhancement", "needs-discussion"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for your interest in improving Project N.O.M.A.D.! 
+        Thanks for your interest in improving Project NOMAD! 
         
         **Please note:** Feature requests are not guaranteed to be implemented. All requests are evaluated based on alignment with the project's goals, feasibility, and community demand.
         
         **Before submitting:**
         - Search existing feature requests to avoid duplicates
-        - Consider if this aligns with N.O.M.A.D.'s mission: offline-first knowledge and education
+        - Consider if this aligns with NOMAD's mission: offline-first knowledge and education
 
   - type: dropdown
     id: feature-category
@@ -91,7 +91,7 @@ body:
     attributes:
       label: How important is this feature to you?
       options:
-        - Critical - Blocking my use of N.O.M.A.D.
+        - Critical - Blocking my use of NOMAD
         - High - Would significantly improve my experience
         - Medium - Would be nice to have
         - Low - Minor convenience
@@ -140,7 +140,7 @@ body:
       options:
         - label: I have searched for existing feature requests that might be similar
           required: true
-        - label: This feature aligns with N.O.M.A.D.'s mission of offline-first knowledge and education
+        - label: This feature aligns with NOMAD's mission of offline-first knowledge and education
           required: true
         - label: I understand that feature requests are not guaranteed to be implemented
           required: true

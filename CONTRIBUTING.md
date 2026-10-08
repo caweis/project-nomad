@@ -1,8 +1,8 @@
-# Contributing to Project N.O.M.A.D.
+# Contributing to Project NOMAD
 
-Thank you for your interest in contributing to Project N.O.M.A.D.! Community contributions are what keep this project growing and improving. Please read this guide fully before getting started — it will save you (and the maintainers) a lot of time.
+Thank you for your interest in contributing to Project NOMAD! Community contributions are what keep this project growing and improving. Please read this guide fully before getting started — it will save you (and the maintainers) a lot of time.
 
-> **Note:** Acceptance of contributions is not guaranteed. All pull requests are evaluated based on quality, relevance, and alignment with the project's goals. The maintainers of Project N.O.M.A.D. ("Nomad") reserve the right accept, deny, or modify any pull request at their sole discretion.
+> **Note:** Acceptance of contributions is not guaranteed. All pull requests are evaluated based on quality, relevance, and alignment with the project's goals. The maintainers of Project NOMAD ("NOMAD") reserve the right accept, deny, or modify any pull request at their sole discretion.
 
 ---
 
@@ -86,7 +86,7 @@ Because Nomad relies heavily on Docker, we actually recommend against installing
    git checkout -b feature/add-new-tool
    ```
 
-3. **Make your changes.** Follow existing code style and conventions. Test your changes locally against a running N.O.M.A.D. instance before submitting.
+3. **Make your changes.** Follow existing code style and conventions. Test your changes locally against a running NOMAD instance before submitting.
 
 4. **Add release notes** (see [Release Notes](#release-notes) below).
 
@@ -98,7 +98,7 @@ Because Nomad relies heavily on Docker, we actually recommend against installing
 
 ## UI Consistency
 
-N.O.M.A.D.'s guiding principle is that **user-friendliness is paramount**: a control that looks or behaves differently from the rest of the app reads as broken to a non-technical user. New frontend (inertia/React) work should be visually and behaviorally uniform with what is already there. Before adding a UI element, look at its neighbors and reuse the shared building blocks rather than hand-rolling a one-off.
+NOMAD's guiding principle is that **user-friendliness is paramount**: a control that looks or behaves differently from the rest of the app reads as broken to a non-technical user. New frontend (inertia/React) work should be visually and behaviorally uniform with what is already there. Before adding a UI element, look at its neighbors and reuse the shared building blocks rather than hand-rolling a one-off.
 
 **Reuse the shared components** in `admin/inertia/components/` (and `.../components/inputs/`):
 
@@ -207,10 +207,10 @@ This project uses [Semantic Versioning](https://semver.org/). Versions are manag
 
 Have questions or want to discuss ideas before opening an issue? Join the community:
 
-- **Discord:** [Join the Crosstalk Solutions server](https://discord.com/invite/crosstalksolutions) — the best place to get help, share your builds, and talk with other N.O.M.A.D. users
+- **Discord:** [Join the Crosstalk Solutions server](https://discord.com/invite/crosstalksolutions) — the best place to get help, share your builds, and talk with other NOMAD users
 - **Website:** [www.projectnomad.us](https://www.projectnomad.us)
 - **Benchmark Leaderboard:** [benchmark.projectnomad.us](https://benchmark.projectnomad.us)
 
 ---
 
-*Project N.O.M.A.D. is licensed under the [Apache License 2.0](LICENSE).*
+*Project NOMAD is licensed under the [Apache License 2.0](LICENSE).*

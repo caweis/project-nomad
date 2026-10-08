@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Project N.O.M.A.D. - Disk Info Collector Sidecar (macOS-compatible)
+# Project NOMAD - Disk Info Collector Sidecar (macOS-compatible)
 #
 # On macOS with Docker Desktop, the container cannot directly access host disk info
 # via /proc or lsblk. Instead, this collector provides basic filesystem info using
