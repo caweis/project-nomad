@@ -75,8 +75,17 @@ rm -rf "$PHD"
 
 echo "== resolve drive models =="
 load
-# No .env yet → empty.
-check "no .env → empty" "$(_resolve_drive_models)" ""
+# With no .env, the resolver still scans mounted NOMAD drives.
+if compgen -G "/Volumes/*/project-nomad/ollama-models" >/dev/null; then
+  resolved="$(_resolve_drive_models)"
+  if [[ -n "$resolved" && -d "$resolved" ]]; then
+    ok "no .env → mounted drive"
+  else
+    bad "no .env → mounted drive — got '$resolved'"
+  fi
+else
+  check "no .env → empty without mounted drive" "$(_resolve_drive_models)" ""
+fi
 # .env points at a dir that HAS ollama-models → returns that path.
 mkdir -p "$TMP/data/ollama-models"
 printf 'NOMAD_DATA_ROOT=%s\n' "$TMP/data" > "$ENV_FILE"

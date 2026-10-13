@@ -6451,7 +6451,7 @@ cmd_benchmark() {
   log "pulling $model into container Ollama (~5 GB, slow under Rosetta)..."
   docker exec "$cname" ollama pull "$model"
   local container_log; container_log="$(mktemp)"
-  docker exec -i "$cname" sh -c "echo '$prompt' | ollama run --verbose $model" >"$container_log" 2>&1
+  printf '%s\n' "$prompt" | docker exec -i "$cname" ollama run --verbose "$model" >"$container_log" 2>&1
   local cont_eval_rate cont_total_dur
   cont_eval_rate="$(grep -E "eval rate" "$container_log" | tail -1 | grep -oE '[0-9.]+ tokens/s' || echo "?")"
   cont_total_dur="$(grep -E "total duration" "$container_log" | tail -1 | awk '{print $NF}' || echo "?")"

@@ -504,7 +504,7 @@ Compose health gates; its Linux entrypoint script does not run here.
       behavior without touching the installed Redis service.
 - [x] Typecheck, build, run the focused and full relevant suites, and inspect
       the dependency audit for regressions.
-- [ ] Review, commit, push, update PR #62, and record the live-install limit.
+- [x] Review, commit, push, update PR #62, and record the live-install limit.
 
 ### Review
 
@@ -514,5 +514,26 @@ discovers 25 spec files and passes 305 tests. Prettier passes on the changed
 queue files. The npm audit remains at 29 advisories (14 high, 15 moderate,
 none critical). An isolated Redis container confirmed that the compiled
 connection starts in `wait`, returns PONG when used, and enqueues a readable
-BullMQ job. The container was removed after the smoke test. The installed
-NOMAD service was not changed.
+BullMQ job. The container was removed after the smoke test. Commit 1a672248
+is pushed and described in draft PR #62. The installed NOMAD service was not
+changed.
+
+## Remove a shell hop from the Mac benchmark
+
+**Scope:** Pass the fixed benchmark prompt through stdin and send the chosen
+model as one argument to the container command.
+
+- [x] Reproduce the old argument shape with a Docker/Ollama stub.
+- [x] Remove the shell call without changing the native or container benchmark.
+- [x] Run the regression, Bash syntax, and existing Mac CLI checks.
+- [ ] Review, commit, push, and update draft PR #62 without publishing an
+      exploit recipe.
+
+### Review
+
+The new benchmark regression failed on the old command shape and passes after
+the change. It uses Docker and Ollama stubs; no model was pulled or run. Bash
+syntax passes. The existing reset-Ollama CLI suite initially failed one
+environment-dependent expectation because a real NOMAD drive is mounted; its
+no-config case now checks the documented drive fallback. The rerun passes 35
+checks. The installed CLI was not changed.
