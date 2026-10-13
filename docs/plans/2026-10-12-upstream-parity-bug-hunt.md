@@ -38,4 +38,34 @@ Chris chose to keep the admin page password-free. This plan does not add admin a
 
 ### Review
 
-The new standalone test reproduced the same-size retry gap before the fix, then passed all four cases afterward. The admin build and TypeScript compile passed in the isolated Node 24 checkout. The ingest-decision suite passed 11 cases; targeted lint passed for the changed download job, download utility, types, and decision helper. Repository-wide lint and the Adonis runner still need their existing baseline and Redis prerequisites resolved; no live macOS download was run. Commit `cfaeef89` is pushed and draft PR #62 describes the result.
+The new standalone test reproduced the same-size retry gap before the fix, then passed all four cases afterward. The admin build and TypeScript compile passed in the isolated Node 24 checkout. The ingest-decision suite passed 11 cases; targeted lint passed for the changed download job, download utility, types, and decision helper. Repository-wide lint remained red; the Adonis test gate was repaired in the follow-up below. No live macOS download was run. Commit `cfaeef89` is pushed and draft PR #62 describes the result.
+
+## Follow-up: restore the Adonis test gate (2026-10-13)
+
+The installed Node 24 runtime matches zero files for the existing `*.spec(.ts|.js)`
+patterns. `npm test` can consequently exit successfully after running no tests.
+With corrected patterns in an isolated copy, 282 unit assertions ran: 280 passed,
+one exposed a comparison-ID parser defect, and one assertion contradicted the
+documented section-trimming behavior. The Redis-backed Transmit transport also
+raises a connection-close error during test teardown.
+
+- [x] Correct spec discovery and add a guard against an empty test run.
+- [x] Reject decimal/scientific ID syntax while preserving valid positive IDs.
+- [x] Align the drug-label whitespace assertion with the documented behavior.
+- [x] Keep Transmit's Redis transport out of the single-process test environment.
+- [x] Run the full unit suite, standalone regressions, build, typecheck, and targeted lint.
+- [x] Review and commit the verified fixes, then update draft PR #62.
+
+### Review
+
+`npm test -- --no-assets` now discovers 17 spec files and runs 283 unit
+assertions with 283 passing. The pretest guard fails if the unit glob matches
+no files. Node 22.23.3 supports the guard's brace glob, checked against the
+installed app's runtime. TypeScript typecheck, the admin production build,
+targeted ESLint, and Prettier checks pass. The production Transmit transport
+remains Redis-backed; only the test environment uses no cross-process bus.
+The five focused standalone suites pass (4 download completion, 11 ingest
+decisions, 7 image references, 6 path checks, and the video catalog). The
+configured Adonis run also passes after the temporary Redis container was
+removed; this checkout has no functional spec files. Commit
+`9a8b6844` contains the test-gate and parser changes.
