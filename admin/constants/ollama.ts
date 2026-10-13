@@ -245,13 +245,12 @@ Do NOT use:
 - Statements that are not suggestions themselves, such as praise for asking the question
 - Direct questions or commands to the user
 
-Return ONLY the 3 suggestions as a comma-separated list with no additional text, formatting, numbering, or quotation marks.
 The suggestions should be in title case.
-Ensure that your suggestions are comma-seperated with no conjunctions like "and" or "or".
-Do not use line breaks, new lines, or extra spacing to separate the suggestions.
-Format: suggestion1, suggestion2, suggestion3
+Respond with JSON: {"suggestions": ["...", "...", "..."]}
 `,
-  title_generation: `You are a title generator. Given the start of a conversation, generate a concise, descriptive title under 50 characters. Return ONLY the title text with no quotes, punctuation wrapping, or extra formatting.`,
+  title_generation: `You are a title generator. Given the start of a conversation, generate a concise, descriptive title under 50 characters.
+
+Respond with JSON: {"title": "..."}`,
   query_rewrite: `
 You are a query rewriting assistant. Your task is to reformulate the user's latest question to include relevant context from the conversation history.
 
@@ -262,7 +261,7 @@ Rules:
 2. Include key entities, topics, and context from previous messages
 3. Make it a clear, searchable query
 4. Do NOT answer the question - only rewrite the user's query to be more effective for retrieval
-5. Output ONLY the rewritten query, nothing else
+5. Respond with JSON: {"queries": ["..."]} — a single rewritten query in the array
 
 Examples:
 
@@ -271,7 +270,7 @@ User: "How do I install Gentoo?"
 Assistant: [detailed installation guide]
 User: "Is an internet connection required to install?"
 
-Rewritten Query: "Is an internet connection required to install Gentoo Linux?"
+Rewritten Query: {"queries": ["Is an internet connection required to install Gentoo Linux?"]}
 
 ---
 
@@ -280,6 +279,6 @@ User: "What's the best way to preserve meat?"
 Assistant: [preservation methods]
 User: "How long does it last?"
 
-Rewritten Query: "How long does preserved meat last using curing or smoking methods?"
+Rewritten Query: {"queries": ["How long does preserved meat last using curing or smoking methods?"]}
 `,
 }

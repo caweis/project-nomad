@@ -13,6 +13,12 @@ import { buildContextBlock } from '../utils/rag_context.js'
 import { buildCitations } from '../utils/citations.js'
 import type { ChatSource } from '../../types/chat.js'
 import { getContextLimitsForModel, trimToContextBudget } from '../utils/rag_prompt.js'
+import {
+  QUERIES_SCHEMA,
+  isStructuredFragment,
+  pickQueries,
+  resolveStructured,
+} from '../utils/structured_output.js'
 import { planPrompt, splitForBudget, type BudgetMessage } from '../utils/context_budget.js'
 import { isRagRetrievalEnabled } from '../utils/rag_toggle.js'
 import logger from '@adonisjs/core/services/logger'
@@ -196,7 +202,7 @@ export default class OllamaController {
           reqData.collection || undefined // Scope RAG search to a KB collection (#1063)
         )
 
-        logger.debug(`[RAG] Retrieved ${relevantDocs.length} relevant documents for query: "${rewrittenQuery}"`)
+        logger.debug(`[RAG] Retrieved ${relevantDocs.length} relevant documents`)
 
         // If relevant context is found, inject as a system message with adaptive limits
         if (relevantDocs.length > 0) {
@@ -526,10 +532,18 @@ export default class OllamaController {
           },
         ],
         think: false,
+        format: QUERIES_SCHEMA,
+        options: { temperature: 0, num_predict: 160 },
       })
 
-      const rewrittenQuery = response.message.content.trim()
-      logger.info(`[RAG] Query rewritten: "${rewrittenQuery}"`)
+      const content = response.message.content.trim()
+      const structured = resolveStructured(content, pickQueries, response.structured)
+      const rewrittenQuery = structured.ok
+        ? structured.value[0]
+        : structured.reason === 'constrained-parse-failed' || isStructuredFragment(content)
+          ? lastUserMessage?.content || null
+          : content || lastUserMessage?.content || null
+      logger.info('[RAG] Query rewritten')
       return rewrittenQuery
     } catch (error) {
       logger.error(

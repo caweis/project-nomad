@@ -1,5 +1,6 @@
 import { test } from '@japa/runner'
 import { OllamaService } from '../../app/services/ollama_service.js'
+import env from '#start/env'
 import {
   QUERIES_SCHEMA,
   SUGGESTIONS_SCHEMA,
@@ -89,4 +90,31 @@ test('native ancillary chat forwards the schema and marks the response constrain
 
   assert.deepEqual(forwarded.format, TITLE_SCHEMA)
   assert.isTrue((response as any).structured)
+})
+
+test('Mac oMLX ancillary chat omits the unsupported schema', async ({ assert }) => {
+  const originalGet = env.get
+  ;(env as any).get = (key: string) => (key === 'NOMAD_AI_BACKEND' ? 'omlx' : undefined)
+  const service = new OllamaService()
+  let forwarded: any
+  ;(service as any)._ensureDependencies = async () => {}
+  ;(service as any).ollama = {
+    chat: async (request: any) => {
+      forwarded = request
+      return { message: { content: 'Water storage' }, done: true, model: request.model }
+    },
+  }
+
+  try {
+    const response = await service.chat({
+      model: 'test:latest',
+      messages: [{ role: 'user', content: 'title' }],
+      format: TITLE_SCHEMA,
+    })
+
+    assert.notProperty(forwarded, 'format')
+    assert.isFalse(response.structured)
+  } finally {
+    ;(env as any).get = originalGet
+  }
 })

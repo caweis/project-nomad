@@ -68,6 +68,11 @@ export function resolveStructured<T>(
   return { ok: false, reason: constrained ? 'constrained-parse-failed' : 'unconstrained' }
 }
 
+/** An incomplete JSON reply must not become a visible title or search query. */
+export function isStructuredFragment(raw: string): boolean {
+  return /^\s*(?:\{|```(?:json)?\s*\{)/i.test(raw)
+}
+
 function cleanString(value: unknown): string | null {
   if (typeof value !== 'string') return null
   const trimmed = value.trim()
