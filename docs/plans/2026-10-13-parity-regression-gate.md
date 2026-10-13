@@ -31,7 +31,7 @@ Files: `.github/workflows/admin-validation.yml` and any needed test command wiri
 
 - [x] Add a PR and `main` check using Node 24, `npm ci`, typecheck, production build, Adonis tests, and the standalone gate.
 - [x] Validate workflow syntax and run the equivalent commands locally. Confirm a deliberately failing standalone fixture makes the runner return nonzero.
-- [ ] Push the branch and check the real GitHub Actions result.
+- [x] Push the branch and check the real GitHub Actions result.
 
 ## 4. Behavior regressions
 
@@ -42,8 +42,8 @@ Files: `.github/workflows/admin-validation.yml` and any needed test command wiri
 ## 5. Review and delivery
 
 - [x] Inspect the diff, run `git diff --check`, and verify test output and counts.
-- [ ] Commit by scope with Co-Authored-By trailers, push, and open a PR linked to issue #64.
-- [ ] Add a review section with shipped tests, deferred checks, and exact results.
+- [x] Commit by scope with Co-Authored-By trailers, push, and open a PR linked to issue #64.
+- [x] Add a review section with shipped tests, deferred checks, and exact results.
 
 ## Review
 
@@ -62,3 +62,9 @@ files; it is tracked in #66 separately from this test gate.
 
 `main` and `origin/main` were `7f00104f` at the final fetch. Upstream `main` and
 `dev` were both `54ee30a4`.
+
+PR #67 ran the new workflow on GitHub. Admin, Python, and shell jobs passed.
+The CI logs confirm 327 Adonis cases, 4 runner checks, 79 standalone suites,
+19 translation tests, 75 mesh tests, and 69 oMLX proxy tests. The existing
+macOS shell job also passed. CI reported the same source coverage percentages
+as the local runs and uploaded both HTML coverage artifacts.
