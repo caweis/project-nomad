@@ -74,7 +74,7 @@ export default function HomeLayout({ children }: { children: React.ReactNode }) 
   ]
 
   return (
-    <div className="min-h-screen flex flex-row bg-stone-50/90">
+    <div className="min-h-screen flex flex-row bg-surface-secondary/90">
       <StyledSidebar title="Command Center" items={navigation} hideBackToHome />
       <div className="flex-1 flex flex-col min-w-0">
         <CandidateDriveBanner />

@@ -467,3 +467,26 @@ across 24 spec files. Focused lint, formatting, shell syntax, and the video
 ZIM catalog check pass. A GitHub Actions run on the new workflow remains to
 be observed after the push. Issue #65 tracks a future DC map source.
 Publication is pending.
+
+## Finish Night Ops theme colors in shared shells
+
+**Scope:** Close caweis#57 with the existing semantic palette. Settings and
+Home wrappers use the secondary surface; the shared sidebar uses primary
+text on its sand surface. Keep the light theme's appearance.
+
+- [x] Replace the hard-coded light wrapper and sidebar foreground classes.
+- [x] Measure the existing semantic tokens' contrast in both themes and verify
+      the generated styles for the changed classes.
+- [x] Build, typecheck, and run the relevant dark-mode contrast suite.
+- [ ] Inspect light and dark rendering on a running Command Center.
+- [ ] Review, commit, push, update PR #62, and record the device-check limit.
+
+### Review
+
+The changed wrapper and sidebar classes compile into the production CSS.
+Measured text contrast against the existing tokens is 16.84:1 (light) and
+11.30:1 (dark) on the wrapper, 15.39:1 and 14.96:1 for sidebar title and
+links, and 5.85:1 and 7.80:1 for Debug Info. The admin build and TypeScript
+typecheck pass; the existing dark-mode contrast suite passes five checks.
+Prettier still reports the three touched TSX files, and it reports their
+unchanged HEAD versions too. A running Command Center has not been checked.

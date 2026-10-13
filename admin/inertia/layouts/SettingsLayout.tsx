@@ -52,7 +52,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
   ]
 
   return (
-    <div className="min-h-screen flex flex-row bg-stone-50/90">
+    <div className="min-h-screen flex flex-row bg-surface-secondary/90">
       <StyledSidebar title="Settings" items={navigation} />
       <div className="flex-1 flex flex-col min-w-0">
         <CandidateDriveBanner />

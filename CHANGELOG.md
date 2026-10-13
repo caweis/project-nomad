@@ -190,6 +190,8 @@ Notable changes to the macOS distribution layer of this fork. Format follows
   native Apple Silicon translation service.)
 
 ### Dark mode
+- Settings and Home now use the dark page background in Night Ops. The shared
+  sidebar title, links, and Debug Info control use theme-aware text colors.
 - Green text is readable in dark mode. Links in chat answers, the Continue
   button, and everywhere else the app draws text in its accent green measured
   under 2.2:1 against the dark backgrounds, and 1.6:1 inside a chat bubble:
