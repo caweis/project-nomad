@@ -1,5 +1,21 @@
 import { test } from '@japa/runner'
-import { mapEmbedJob, isContinuationBatch } from '../../util/embed_jobs.js'
+import { mapEmbedJob, isContinuationBatch, safeEmbedFailureReason } from '../../util/embed_jobs.js'
+
+test.group('safeEmbedFailureReason', () => {
+  test('preserves a known service outage reason', ({ assert }) => {
+    assert.equal(
+      safeEmbedFailureReason(new Error('Qdrant service not ready yet')),
+      'Qdrant service not ready yet'
+    )
+  })
+
+  test('redacts arbitrary exception text', ({ assert }) => {
+    assert.equal(
+      safeEmbedFailureReason(new Error('Could not open /Users/alice/private.pdf?token=secret')),
+      'Embedding failed. Check service availability and file integrity.'
+    )
+  })
+})
 
 test.group('mapEmbedJob', () => {
   test('maps an in-flight job, preserving its data status', ({ assert }) => {
@@ -33,6 +49,19 @@ test.group('mapEmbedJob', () => {
     })
     assert.equal(dto.status, 'failed')
     assert.equal(dto.failedReason, 'Qdrant service not ready yet')
+  })
+
+  test('redacts an old failure reason that contains a local path', ({ assert }) => {
+    const dto = mapEmbedJob({
+      id: 'private',
+      data: { fileName: 'private.pdf', filePath: '/Users/alice/private.pdf' },
+      failedReason: 'Could not open /Users/alice/private.pdf',
+    })
+    assert.equal(dto.status, 'failed')
+    assert.equal(
+      dto.failedReason,
+      'Embedding failed. Check service availability and file integrity.'
+    )
   })
 
   test('failed status wins even if data.status says completed', ({ assert }) => {

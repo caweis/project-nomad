@@ -613,7 +613,7 @@ messages while keeping the success and failure signals.
 - [x] Trace the remaining console messages in the completion job and catalog.
 - [x] Replace path and filename values with operation and outcome text.
 - [x] Run the affected tests, typecheck, production build, and source review.
-- [ ] Commit, push, and update draft PR #62.
+- [x] Commit, push, and update draft PR #62.
 
 ### Review
 
@@ -621,4 +621,29 @@ The completion job and catalog now log status without local paths or file
 names. The full Adonis suite passes 324 tests; the standalone download
 completion script passes four checks. Typecheck and production build pass,
 with the existing Vite large-chunk warning. Focused lint counts are unchanged
-for the touched files. The installed download service was not changed.
+for the touched files.
+
+## Keep ingestion content out of worker logs
+
+**Scope:** The embedding job and ZIM extractor log uploaded filenames, local
+paths, article paths, and a sample of extracted text. The worker also stores
+arbitrary exception messages as a user-visible failure reason.
+
+- [x] Trace the ingestion call path and identify the messages users still need.
+- [x] Remove content-derived values from worker and extractor logs.
+- [x] Bound the failure reason saved to the job and ingest state.
+- [x] Add a failure-reason regression and run the affected tests, typecheck, build, and diff review.
+- [ ] Commit, push, and update draft PR #62.
+
+### Review
+
+The new regression first showed a local path in an old BullMQ failure reason.
+The mapper now replaces arbitrary failure text with a fixed message and keeps
+known service readiness failures readable. New failures use that same bounded
+reason in the job record and ingest state. The embedding and ZIM extraction
+logs no longer print filenames, article paths, or text samples. The full Adonis
+suite passes 327 tests. Typecheck and production build pass; Vite reports its
+existing large-chunk warning. The test file passes focused lint; the mapper
+retains one existing lint finding. Existing lint findings in the job and RAG
+service did not increase, and the extractor has fewer. A live embedding job
+was not run.

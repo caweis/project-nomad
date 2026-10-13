@@ -20,8 +20,8 @@ export class ZIMExtractionService {
                 language: archive.getMetadata('Language') || 'Unknown',
                 description: archive.getMetadata('Description') || '',
             }
-        } catch (error) {
-            logger.warn('[ZIMExtractionService]: Could not extract all metadata, using defaults', error)
+        } catch {
+            logger.warn('[ZIMExtractionService]: Could not extract all metadata, using defaults')
             return {
                 title: 'Unknown',
                 creator: 'Unknown',
@@ -46,15 +46,15 @@ export class ZIMExtractionService {
         opts: ExtractZIMContentOptions = {}
     ): Promise<{ chunks: ZIMContentChunk[]; articlesProcessed: number }> {
         try {
-            logger.info(`[ZIMExtractionService]: Processing ZIM file at path: ${filePath}`)
+            logger.info('[ZIMExtractionService]: Processing ZIM file')
             
             // defensive - check if file still exists before opening
             // could have been deleted by another process or batch
             try {
                 await access(filePath)
-            } catch (error) {
-                logger.error(`[ZIMExtractionService]: ZIM file not accessible: ${filePath}`)
-                throw new Error(`ZIM file not found or not accessible: ${filePath}`)
+            } catch {
+                logger.error('[ZIMExtractionService]: ZIM file not accessible')
+                throw new Error('ZIM file not found or not accessible')
             }
 
             // Validate ZIM magic number before opening with native @openzim/libzim.
@@ -64,15 +64,15 @@ export class ZIMExtractionService {
             // and reject anything that isn't "ZIM\x04" before handing it to the
             // native library. Ports upstream c8cb79a (ZIM piece only).
             if (!(await isValidZimFile(filePath))) {
-                logger.error(`[ZIMExtractionService]: ZIM file failed magic-number validation: ${filePath}`)
-                throw new Error(`ZIM file is invalid or corrupted: ${filePath}`)
+                logger.error('[ZIMExtractionService]: ZIM file failed magic-number validation')
+                throw new Error('ZIM file is invalid or corrupted')
             }
 
             const archive = new Archive(filePath)
 
             // Extract archive-level metadata once
             const archiveMetadata = this.extractArchiveMetadata(archive)
-            logger.info(`[ZIMExtractionService]: Archive metadata - Title: ${archiveMetadata.title}, Language: ${archiveMetadata.language}`)
+            logger.info('[ZIMExtractionService]: Archive metadata extracted')
 
             let articlesProcessed = 0
             let articlesSkipped = 0
@@ -97,12 +97,12 @@ export class ZIMExtractionService {
                 }
 
                 if (!this.isArticleEntry(entry)) {
-                    logger.debug(`[ZIMExtractionService]: Skipping non-article entry at path: ${entry.path}`)
+                    logger.debug('[ZIMExtractionService]: Skipping non-article entry')
                     continue
                 }
 
                 if (processedPaths.has(entry.path)) {
-                    logger.debug(`[ZIMExtractionService]: Skipping duplicate entry at path: ${entry.path}`)
+                    logger.debug('[ZIMExtractionService]: Skipping duplicate entry')
                     continue
                 }
                 processedPaths.add(entry.path)
@@ -112,7 +112,7 @@ export class ZIMExtractionService {
                 const html = this.getCleanedHTMLString(blob.data)
 
                 const strategy = opts.strategy || this.chooseChunkingStrategy(html);
-                logger.debug(`[ZIMExtractionService]: Chosen chunking strategy for path ${entry.path}: ${strategy}`)
+                logger.debug(`[ZIMExtractionService]: Chosen chunking strategy: ${strategy}`)
 
                 // Generate a unique document ID. All chunks from same article will share it
                 const documentId = randomUUID()
@@ -150,10 +150,10 @@ export class ZIMExtractionService {
                     }]
                 }
 
-                logger.debug(`Extracted ${chunks.length} chunks from article at path: ${entry.path} using strategy: ${strategy}`)
+                logger.debug(`Extracted ${chunks.length} chunks from article using strategy: ${strategy}`)
 
                 const nonEmptyChunks = chunks.filter(c => c.text.trim().length > 0)
-                logger.debug(`After filtering empty chunks, ${nonEmptyChunks.length} chunks remain for article at path: ${entry.path}`)
+                logger.debug(`After filtering empty chunks, ${nonEmptyChunks.length} chunks remain for article`)
                 toReturn.push(...nonEmptyChunks)
                 articlesProcessed++
 
@@ -163,19 +163,13 @@ export class ZIMExtractionService {
             }
 
             logger.info(`[ZIMExtractionService]: Completed processing ZIM file. Total articles processed: ${articlesProcessed}`)
-            logger.debug("Final structured content sample:", toReturn.slice(0, 3).map(c => ({
-                articleTitle: c.articleTitle,
-                sectionTitle: c.sectionTitle,
-                hierarchy: c.hierarchy,
-                textPreview: c.text.substring(0, 100)
-            })))
             logger.debug("Total structured sections extracted:", toReturn.length)
             // articlesProcessed is what the batch loop has to gate and advance
             // on; see zim_batch_decision.ts. It was counted and logged all
             // along, then thrown away here.
             return { chunks: toReturn, articlesProcessed }
         } catch (error) {
-            logger.error('Error processing ZIM file:', error)
+            logger.error('Error processing ZIM file')
             throw error
         }
     }
@@ -213,8 +207,8 @@ export class ZIMExtractionService {
             const text = $('body').length ? $('body').text() : $.root().text()
 
             return text.replace(/\s+/g, ' ').replace(/\n\s*\n/g, '\n').trim()
-        } catch (error) {
-            logger.error('Error extracting text from HTML:', error)
+        } catch {
+            logger.error('Error extracting text from HTML')
             return null
         }
     }

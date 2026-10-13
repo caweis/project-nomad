@@ -1,5 +1,24 @@
 import type { EmbedJobWithProgress } from '../types/rag.js'
 
+const GENERIC_EMBED_FAILURE = 'Embedding failed. Check service availability and file integrity.'
+const SAFE_EMBED_FAILURES = new Set([
+  'Ollama service not ready yet',
+  'Qdrant service not ready yet',
+  'Unsupported file type.',
+  'Failed to read the uploaded file.',
+  'Process completed successfully, but no text was found to embed.',
+  'Failed to embed and store the extracted text.',
+  'Error processing and embedding file.',
+])
+
+/** Keep arbitrary library and filesystem errors out of job state and responses. */
+export function safeEmbedFailureReason(error: unknown): string {
+  const message = error instanceof Error ? error.message : error
+  return typeof message === 'string' && SAFE_EMBED_FAILURES.has(message)
+    ? message
+    : GENERIC_EMBED_FAILURE
+}
+
 /**
  * Structural shape of the parts of a BullMQ Job the embed-job list cares about.
  * Declared locally (not importing bullmq's Job) so this mapper stays pure and
@@ -40,7 +59,7 @@ export function mapEmbedJob(job: EmbedJobLike): EmbedJobWithProgress {
     status: failed ? 'failed' : (job.data?.status ?? 'waiting'),
   }
   if (failed) {
-    dto.failedReason = job.failedReason
+    dto.failedReason = safeEmbedFailureReason(job.failedReason)
   }
   return dto
 }

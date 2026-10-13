@@ -168,7 +168,7 @@ export class RagService {
       // Only memoize after every step succeeded, so a partial failure is retried
       this.ensuredCollections.add(collectionName)
     } catch (error) {
-      logger.error('Error ensuring Qdrant collection:', error)
+      logger.error('Error ensuring Qdrant collection')
       throw error
     }
   }
@@ -416,16 +416,13 @@ export class RagService {
           for (let j = 0; j < batch.length; j++) {
             successfulChunkIndices.push(batchStart + j)
           }
-        } catch (embedError: any) {
+        } catch {
           // Specific 400 "input length exceeds context length" is the common
           // case here; also handle network errors, model-not-loaded, etc.
           // gracefully so a single problematic batch doesn't blow up ingest.
           failedBatches++
-          const errMsg = embedError?.error || embedError?.message || String(embedError)
-          const sampleChunk = batch[0]?.slice(0, 120) ?? ''
           logger.warn(
-            `[RAG] Embedding batch ${batchIdx + 1}/${totalBatches} FAILED (${errMsg}). ` +
-              `Skipping ${batch.length} chunks starting with: "${sampleChunk}..."`
+            `[RAG] Embedding batch ${batchIdx + 1}/${totalBatches} failed; skipping ${batch.length} chunks`
           )
         }
 
@@ -527,8 +524,8 @@ export class RagService {
 
       logger.debug(`[RAG] Successfully embedded and stored ${points.length}/${chunks.length} chunks`)
       return { chunks: points.length }
-    } catch (error) {
-      logger.error('[RAG] Error embedding text:', error)
+    } catch {
+      logger.error('[RAG] Error embedding text')
       return null
     }
   }
@@ -737,7 +734,7 @@ export class RagService {
     collection?: string
   ): Promise<{ success: boolean; message: string; chunks?: number }> {
     if (!extractedText || extractedText.trim().length === 0) {
-      return { success: false, message: 'Process completed succesfully, but no text was found to embed.' }
+      return { success: false, message: 'Process completed successfully, but no text was found to embed.' }
     }
 
     const embedResult = await this.embedAndStoreText(extractedText, {
@@ -834,8 +831,8 @@ export class RagService {
 
       // Embed extracted text and cleanup
       return await this.embedTextAndCleanup(extractedText, filepath, deleteAfterEmbedding, scaledProgress, collection)
-    } catch (error) {
-      logger.error('[RAG] Error processing and embedding file:', error)
+    } catch {
+      logger.error('[RAG] Error processing and embedding file')
       return { success: false, message: 'Error processing and embedding file.' }
     }
   }
@@ -970,8 +967,8 @@ export class RagService {
 
       // Return top N results with enhanced metadata
       return diverseResults.slice(0, limit).map(toRetrievedChunk)
-    } catch (error) {
-      logger.error('[RAG] Error searching similar documents:', error)
+    } catch {
+      logger.error('[RAG] Error searching similar documents')
       return []
     }
   }
@@ -1254,8 +1251,8 @@ export class RagService {
           }
         })
       )
-    } catch (error) {
-      logger.error('Error retrieving stored files:', error)
+    } catch {
+      logger.error('Error retrieving stored files')
       return []
     }
   }
@@ -1309,8 +1306,8 @@ export class RagService {
       await row.save()
 
       return { success: true, message: collection ? `Moved to "${collection}".` : 'Moved to Uncategorized.' }
-    } catch (error) {
-      logger.error('[RAG] Error updating file collection:', error)
+    } catch {
+      logger.error('[RAG] Error updating file collection')
       return { success: false, message: 'Error updating file collection.' }
     }
   }
@@ -1362,8 +1359,8 @@ export class RagService {
 
       const fileName = source.split(/[/\\]/).at(-1) || source
       return { success: true, message: fileActiveMessage(fileName, active) }
-    } catch (error) {
-      logger.error('[RAG] Error switching a file in or out of search:', error)
+    } catch {
+      logger.error('[RAG] Error switching a file in or out of search')
       return { success: false, message: 'Could not change whether this file is used in answers.' }
     }
   }
@@ -1415,8 +1412,8 @@ export class RagService {
         message: collectionActiveMessage(collection, active, affectedCount),
         affectedCount,
       }
-    } catch (error) {
-      logger.error('[RAG] Error switching a collection in or out of search:', error)
+    } catch {
+      logger.error('[RAG] Error switching a collection in or out of search')
       return {
         success: false,
         message: 'Could not change whether this collection is used in answers.',
@@ -1448,8 +1445,8 @@ export class RagService {
       await KbIngestState.query().where('collection', oldName).update({ collection: newName })
 
       return { success: true, message: `Renamed "${oldName}" to "${newName}".` }
-    } catch (error) {
-      logger.error('[RAG] Error renaming knowledge collection:', error)
+    } catch {
+      logger.error('[RAG] Error renaming knowledge collection')
       return { success: false, message: 'Error renaming collection.' }
     }
   }
@@ -1477,8 +1474,8 @@ export class RagService {
       await KbIngestState.query().where('collection', name).update({ collection: null })
 
       return { success: true, message: `"${name}" removed. Files moved to Uncategorized.` }
-    } catch (error) {
-      logger.error('[RAG] Error deleting knowledge collection:', error)
+    } catch {
+      logger.error('[RAG] Error deleting knowledge collection')
       return { success: false, message: 'Error deleting collection.' }
     }
   }
@@ -1660,8 +1657,8 @@ export class RagService {
       })
       logger.info(`[RAG] Purged ${sources.length} orphaned source(s) with no file on disk`)
       return sources.length
-    } catch (error) {
-      logger.error(`[RAG] Failed to purge orphaned source batch:`, error)
+    } catch {
+      logger.error('[RAG] Failed to purge orphaned source batch')
       return 0
     }
   }
@@ -1701,8 +1698,8 @@ export class RagService {
       await KbIngestState.remove(source)
 
       return { success: true, message: 'File removed from knowledge base.' }
-    } catch (error) {
-      logger.error('[RAG] Error deleting file from knowledge base:', error)
+    } catch {
+      logger.error('[RAG] Error deleting file from knowledge base')
       return { success: false, message: 'Error deleting file from knowledge base.' }
     }
   }
@@ -1758,8 +1755,8 @@ export class RagService {
       await KVStore.setValue('rag.docsEmbedded', true)
 
       return { success: true, message: `Nomad docs discovery completed. Dispatched ${filesToEmbed.length} embedding jobs.` }
-    } catch (error) {
-      logger.error('Error discovering Nomad docs:', error)
+    } catch {
+      logger.error('Error discovering Nomad docs')
       return { success: false, message: 'Error discovering Nomad docs.' }
     }
   }
@@ -1790,8 +1787,8 @@ export class RagService {
       const scannedRoots: string[] = []
 
       // Force resync of Nomad docs
-      await this.discoverNomadDocs(true).catch((error) => {
-        logger.error('[RAG] Error during Nomad docs discovery in sync process:', error)
+      await this.discoverNomadDocs(true).catch(() => {
+        logger.error('[RAG] Error during Nomad docs discovery in sync process')
       })
 
       // Scan kb_uploads directory
@@ -2004,8 +2001,8 @@ export class RagService {
         filesScanned: filesInStorage.length,
         filesQueued: queuedCount,
       }
-    } catch (error) {
-      logger.error('[RAG] Error scanning and syncing knowledge base:', error)
+    } catch {
+      logger.error('[RAG] Error scanning and syncing knowledge base')
       return {
         success: false,
         message: 'Error scanning and syncing knowledge base',

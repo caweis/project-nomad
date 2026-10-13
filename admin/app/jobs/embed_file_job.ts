@@ -1,7 +1,7 @@
 import { Job } from 'bullmq'
 import { QueueService } from '#services/queue_service'
 import { EmbedJobWithProgress } from '../../types/rag.js'
-import { mapEmbedJob, isContinuationBatch } from '../../util/embed_jobs.js'
+import { mapEmbedJob, isContinuationBatch, safeEmbedFailureReason } from '../../util/embed_jobs.js'
 import { RagService } from '#services/rag_service'
 import { DockerService } from '#services/docker_service'
 import { OllamaService } from '#services/ollama_service'
@@ -54,7 +54,7 @@ export class EmbedFileJob {
 
     const isZimBatch = batchOffset !== undefined
     const batchInfo = isZimBatch ? ` (batch offset: ${batchOffset})` : ''
-    logger.info(`[EmbedFileJob] Starting embedding process for: ${fileName}${batchInfo}`)
+    logger.info(`[EmbedFileJob] Starting embedding process${batchInfo}`)
 
     const dockerService = new DockerService()
     const ollamaService = new OllamaService()
@@ -74,7 +74,7 @@ export class EmbedFileJob {
         throw new Error('Qdrant service not ready yet')
       }
 
-      logger.info(`[EmbedFileJob] Services ready. Processing file: ${fileName}`)
+      logger.info('[EmbedFileJob] Services ready. Processing file')
 
       // Update progress starting
       await job.updateProgress(5)
@@ -84,7 +84,7 @@ export class EmbedFileJob {
         startedAt: job.data.startedAt || Date.now(),
       })
 
-      logger.info(`[EmbedFileJob] Processing file: ${filePath}`)
+      logger.info('[EmbedFileJob] Processing file')
 
       // Progress callback: maps service-reported 0-100% into the 5-95% job range
       const onProgress = async (percent: number) => {
@@ -103,7 +103,6 @@ export class EmbedFileJob {
       )
 
       if (!result.success) {
-        logger.error(`[EmbedFileJob] Failed to process file ${fileName}: ${result.message}`)
         throw new Error(result.message)
       }
 
@@ -171,17 +170,12 @@ export class EmbedFileJob {
       // truly-indexed file (RFC #883). Non-fatal: the embed itself succeeded.
       try {
         await KbIngestState.markIndexed(filePath, totalChunks, effectiveCollection)
-      } catch (stateErr) {
-        logger.warn(
-          `[EmbedFileJob] Failed to persist indexed state for ${fileName}: %s`,
-          stateErr instanceof Error ? stateErr.message : String(stateErr)
-        )
+      } catch {
+        logger.warn('[EmbedFileJob] Failed to persist indexed state')
       }
 
       const batchMsg = isZimBatch ? ` (final batch, total chunks: ${totalChunks})` : ''
-      logger.info(
-        `[EmbedFileJob] Successfully embedded ${result.chunks} chunks from file: ${fileName}${batchMsg}`
-      )
+      logger.info(`[EmbedFileJob] Successfully embedded ${result.chunks} chunks${batchMsg}`)
 
       return {
         success: true,
@@ -191,13 +185,14 @@ export class EmbedFileJob {
         message: `Successfully embedded ${result.chunks} chunks`,
       }
     } catch (error) {
-      logger.error(`[EmbedFileJob] Error embedding file ${fileName}:`, error)
+      const failureReason = safeEmbedFailureReason(error)
+      logger.error(`[EmbedFileJob] ${failureReason}`)
 
       await job.updateData({
         ...job.data,
         status: 'failed',
         failedAt: Date.now(),
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: failureReason,
       })
 
       // Persist `failed` only when retries are exhausted — marking on every
@@ -205,19 +200,13 @@ export class EmbedFileJob {
       // gates this on UnrecoverableError; we gate on the final attempt).
       if (job.attemptsMade + 1 >= (job.opts?.attempts ?? 1)) {
         try {
-          await KbIngestState.markFailed(
-            filePath,
-            error instanceof Error ? error.message : 'Unknown error'
-          )
-        } catch (stateErr) {
-          logger.warn(
-            `[EmbedFileJob] Failed to persist failed state for ${fileName}: %s`,
-            stateErr instanceof Error ? stateErr.message : String(stateErr)
-          )
+          await KbIngestState.markFailed(filePath, failureReason)
+        } catch {
+          logger.warn('[EmbedFileJob] Failed to persist failed state')
         }
       }
 
-      throw error
+      throw new Error(failureReason)
     }
   }
 
@@ -272,7 +261,7 @@ export class EmbedFileJob {
         const state = await existing.getState()
         if (state === 'active' || state === 'waiting' || state === 'delayed') {
           // Genuinely in-flight — leave it alone.
-          logger.info(`[EmbedFileJob] Job already exists for file: ${params.fileName}`)
+          logger.info('[EmbedFileJob] Job already exists for file')
           return {
             job: existing,
             created: false,
@@ -282,9 +271,7 @@ export class EmbedFileJob {
         }
         try {
           await existing.remove()
-          logger.info(
-            `[EmbedFileJob] Removed stale ${state} embedding job for: ${params.fileName} before re-dispatch`
-          )
+          logger.info(`[EmbedFileJob] Removed stale ${state} embedding job before re-dispatch`)
         } catch {
           // Best-effort: fall through to add, which dedupes onto whatever remains.
         }
@@ -296,9 +283,7 @@ export class EmbedFileJob {
     const continuationLabel = isContinuation
       ? ` (continuation @ offset ${params.batchOffset})`
       : ''
-    logger.info(
-      `[EmbedFileJob] Dispatched embedding job for file: ${params.fileName}${continuationLabel}`
-    )
+    logger.info(`[EmbedFileJob] Dispatched embedding job${continuationLabel}`)
 
     return {
       job,
@@ -329,7 +314,7 @@ export class EmbedFileJob {
       status: data.status || state,
       progress: typeof job.progress === 'number' ? job.progress : undefined,
       chunks: data.chunks,
-      error: data.error,
+      error: data.error ? safeEmbedFailureReason(data.error) : undefined,
     }
   }
 }
