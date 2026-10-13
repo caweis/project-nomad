@@ -88,9 +88,7 @@ export class RunDownloadJob {
                 !storageRoot ||
                 !isSafeOldContentPath(oldFilePath, resourceMetadata.resource_id, storageRoot)
               ) {
-                console.warn(
-                  `[RunDownloadJob] Refusing unexpected old file path for ${resourceMetadata.resource_id}: ${oldFilePath}`
-                )
+                console.warn('[RunDownloadJob] Refusing unexpected old file path')
                 oldFilePath = null
               }
             }
@@ -153,11 +151,10 @@ export class RunDownloadJob {
             if (oldFilePath && oldFilePath !== filepath) {
               try {
                 await deleteFileIfExists(oldFilePath)
-                console.log(`[RunDownloadJob] Deleted old file: ${oldFilePath}`)
+                console.log('[RunDownloadJob] Deleted old file')
               } catch (deleteError) {
                 console.error(
-                  `[RunDownloadJob] Failed to delete old file ${oldFilePath}:`,
-                  deleteError
+                  `[RunDownloadJob] Failed to delete old file (${deleteError instanceof Error ? deleteError.name : 'unknown error'})`
                 )
                 throw deleteError
               }
@@ -191,7 +188,7 @@ export class RunDownloadJob {
                 fileName: basename(filepath),
                 oldFileWasIndexed: context.oldFileWasIndexed,
               })
-              console.log(`[RunDownloadJob] KB reconciliation for ${filepath}: ${outcome}`)
+              console.log(`[RunDownloadJob] KB reconciliation: ${outcome}`)
             } else if (decision === 'pending') {
               const { default: KbIngestState } = await import('#models/kb_ingest_state')
               await KbIngestState.firstOrCreate(

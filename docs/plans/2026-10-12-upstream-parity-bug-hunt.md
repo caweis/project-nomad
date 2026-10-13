@@ -593,7 +593,7 @@ retrieval diagnostics without copying that text into application logs.
 - [x] Trace the log statements from chat rewrite through retrieval and ingest.
 - [x] Remove direct query, passage, keyword, and source-path interpolation.
 - [x] Typecheck, build, run the full Adonis suite, and review remaining RAG logs.
-- [ ] Commit, push, and update draft PR #62.
+- [x] Commit, push, and update draft PR #62.
 
 ### Review
 
@@ -603,3 +603,22 @@ failure logs use error type rather than error message. Typecheck and production
 build pass. The full Adonis run discovers 29 spec files and passes 324 tests.
 The existing Vite large-chunk warning remains. This was verified against the
 source log calls and build, without a running Qdrant service.
+
+## Remove remaining download path logs
+
+**Scope:** The completed download job and catalog reconciliation still print
+local paths and filenames after the URL status fix. Remove those values from
+messages while keeping the success and failure signals.
+
+- [x] Trace the remaining console messages in the completion job and catalog.
+- [x] Replace path and filename values with operation and outcome text.
+- [x] Run the affected tests, typecheck, production build, and source review.
+- [ ] Commit, push, and update draft PR #62.
+
+### Review
+
+The completion job and catalog now log status without local paths or file
+names. The full Adonis suite passes 324 tests; the standalone download
+completion script passes four checks. Typecheck and production build pass,
+with the existing Vite large-chunk warning. Focused lint counts are unchanged
+for the touched files. The installed download service was not changed.

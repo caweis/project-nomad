@@ -27,7 +27,7 @@ fallback instead of displaying or searching a JSON fragment.
 - [x] Run the focused tests, full Adonis suite, typecheck, production build,
       and call-path review. Run an actual native model check if a suitable
       local model is available; otherwise record the limit.
-- [ ] Commit and push each verified step, update the parity ledger and draft
+- [x] Commit and push each verified step, update the parity ledger and draft
       PR #62, and check CI.
 
 ## Review
