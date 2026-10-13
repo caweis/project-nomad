@@ -19,8 +19,10 @@ cmds="$(awk '/^case "\$CMD" in/{c++} c==2&&/^[[:space:]]*\*\)/{exit} c==2{print}
   | grep -vE '^(--help|-h)$' | grep -E '^[a-z]' | sort -u)"
 
 # 2. Pages present (strip nomad- prefix and .1 suffix; ignore the overview).
-pages="$(ls "$MANDIR"/nomad-*.1 2>/dev/null | xargs -n1 basename \
-  | sed -E 's/^nomad-//; s/\.1$//' | sort -u)"
+pages="$(for mp in "$MANDIR"/nomad-*.1; do
+  [[ -f "$mp" ]] || continue
+  basename "$mp"
+done | sed -E 's/^nomad-//; s/\.1$//' | sort -u)"
 
 if [[ -z "$cmds" ]];  then echo "FAIL extracted 0 commands — dispatcher parse drift?" >&2; exit 1; fi
 if [[ -z "$pages" ]]; then echo "FAIL no nomad-*.1 pages found in $MANDIR" >&2; exit 1; fi

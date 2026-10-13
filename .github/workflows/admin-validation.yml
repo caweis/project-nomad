@@ -1,0 +1,104 @@
+name: Regression validation
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    paths:
+      - 'admin/**'
+      - 'install/**'
+      - '.github/workflows/admin-validation.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'admin/**'
+      - 'install/**'
+      - '.github/workflows/admin-validation.yml'
+
+jobs:
+  admin-validation:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: admin
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: admin/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - name: All admin tests with coverage
+        run: npm run test:coverage
+        env:
+          NODE_ENV: test
+          PORT: '3333'
+          HOST: 127.0.0.1
+          URL: http://127.0.0.1:3333
+          LOG_LEVEL: error
+          APP_KEY: 12345678901234567890123456789012
+          DB_HOST: 127.0.0.1
+          DB_PORT: '3306'
+          DB_USER: nomad
+          DB_DATABASE: nomad
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: '6379'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: admin-coverage
+          path: admin/coverage/
+
+  python-validation:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install coverage==7.10.7
+      - name: Translation tests and coverage
+        run: |
+          coverage run --source=install/nomad-translate --omit='*/test_*.py' -m unittest discover -s install/nomad-translate -p 'test_*.py' -v
+          coverage report -m
+          coverage html -d coverage/translation
+      - run: python -m pip install -r install/macos/mesh-service/requirements.txt
+      - name: Mesh tests and coverage
+        env:
+          PYTHONPATH: install/macos/mesh-service
+        run: |
+          coverage run --source=install/macos/mesh-service/mesh_service -m unittest discover -s install/macos/mesh-service/tests -p 'test_*.py' -v
+          coverage report -m
+          coverage html -d coverage/mesh
+      - run: python -m pip install -r install/macos/omlx-proxy/vendor/requirements.txt -r install/macos/omlx-proxy/tests/requirements.txt
+      - name: oMLX proxy tests and coverage
+        run: |
+          coverage run --source=install/macos/omlx-proxy/vendor/src -m pytest -q install/macos/omlx-proxy/tests
+          coverage report -m
+          coverage html -d coverage/omlx
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-coverage
+          path: coverage/
+
+  shell-validation:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: All shell regressions
+        run: |
+          set -euo pipefail
+          bash -n install/macos/nomad
+          for test_file in install/scripts/test-bootstrap.sh install/macos/scripts/test-*.sh; do
+            bash "$test_file"
+          done
+          bash .github/scripts/test-check-collection-urls.sh
