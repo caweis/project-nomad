@@ -259,10 +259,10 @@ export class ZimService {
   /**
    * Best-effort lookup of the current catalog entry for each curated resource
    * id (curated ids ARE Kiwix book names, e.g. `wikipedia_en_medicine_maxi`),
-   * via the OPDS `name` exact filter. Any failure — offline appliance, a book
-   * missing from the catalog, an unparseable entry — simply yields no map
-   * entry, so the caller falls back to the static manifest URL exactly as
-   * before this lookup existed.
+   * via the OPDS `name` filter. Flavoured books may be indexed under their
+   * base name, with the flavour stored separately in OPDS. Any failure — an
+   * offline appliance, a missing book, an unparseable entry — leaves no map
+   * entry, so the caller falls back to the static manifest URL.
    */
   private async getLatestCatalogEntries(
     resourceIds: string[]
@@ -273,50 +273,60 @@ export class ZimService {
     await Promise.all(
       resourceIds.map(async (id) => {
         try {
-          const res = await axios.get(OPDS_ENTRIES_URL, {
-            params: { name: id },
-            responseType: 'text',
-            timeout: 10_000,
-          })
-
           const parser = new XMLParser({
             ignoreAttributes: false,
             attributeNamePrefix: '',
             textNodeName: '#text',
           })
-          const parsed = parser.parse(res.data)
-          if (!isRawListRemoteZimFilesResponse(parsed)) return
+          const cut = id.lastIndexOf('_')
+          const names = cut > 0 ? [id, id.slice(0, cut)] : [id]
 
-          const entries = parsed.feed.entry
-            ? Array.isArray(parsed.feed.entry)
-              ? parsed.feed.entry
-              : [parsed.feed.entry]
-            : []
-          const entry = entries.find((e: unknown) => isRawRemoteZimFileEntry(e))
-          if (!entry) return
+          for (const name of names) {
+            const res = await axios.get(OPDS_ENTRIES_URL, {
+              params: { name },
+              responseType: 'text',
+              timeout: 10_000,
+            })
+            const parsed = parser.parse(res.data)
+            if (!isRawListRemoteZimFilesResponse(parsed)) continue
 
-          const downloadLink = entry.link.find((link: any) => {
-            return (
-              typeof link === 'object' &&
-              'rel' in link &&
-              'href' in link &&
-              'type' in link &&
-              link.type === 'application/x-zim'
-            )
-          })
-          if (!downloadLink) return
+            const entries = parsed.feed.entry
+              ? Array.isArray(parsed.feed.entry)
+                ? parsed.feed.entry
+                : [parsed.feed.entry]
+              : []
+            let newest: ZimCatalogResult | null = null
 
-          // href ends with .meta4; strip it to get the actual download URL.
-          const download_url = downloadLink.href.substring(0, downloadLink.href.length - 6)
-          const filename = download_url.split('/').pop()
-          if (!filename) return
+            for (const entry of entries) {
+              if (!isRawRemoteZimFileEntry(entry)) continue
+              const links = Array.isArray(entry.link) ? entry.link : entry.link ? [entry.link] : []
+              const downloadLink = links.find(
+                (link: any) =>
+                  link &&
+                  typeof link.href === 'string' &&
+                  link.href.endsWith('.zim.meta4') &&
+                  link.type === 'application/x-zim'
+              )
+              if (!downloadLink) continue
 
-          // The dated filename is the catalog's version of record. Also guards
-          // against the name filter returning a different book than requested.
-          const parsedName = CollectionManifestService.parseZimFilename(filename)
-          if (!parsedName || parsedName.resource_id !== id) return
+              const downloadUrl = downloadLink.href.slice(0, -6)
+              const filename = downloadUrl.split('/').pop()
+              if (!filename) continue
 
-          results.set(id, { version: parsedName.version, download_url })
+              // A base-name query can return other flavours. Only the full
+              // filename stem identifies the requested curated resource.
+              const parsedName = CollectionManifestService.parseZimFilename(filename)
+              if (!parsedName || parsedName.resource_id !== id) continue
+              if (!newest || parsedName.version > newest.version) {
+                newest = { version: parsedName.version, download_url: downloadUrl }
+              }
+            }
+
+            if (newest) {
+              results.set(id, newest)
+              break
+            }
+          }
         } catch (error) {
           logger.warn(
             `[ZimService] Catalog lookup failed for ${id} (${error instanceof Error ? error.message : 'unknown error'}); using manifest URL`
