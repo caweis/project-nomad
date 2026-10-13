@@ -42,9 +42,7 @@ export class RunDownloadJob {
     const previousData = job.data as RunDownloadJobParams
     const completionStarted = previousData.completionContext !== undefined
     const resumingCompletion =
-      job.attemptsMade > 0 ||
-      previousData.resumeCompletion === true ||
-      completionStarted
+      job.attemptsMade > 0 || previousData.resumeCompletion === true || completionStarted
 
     await doResumableDownload({
       url,
