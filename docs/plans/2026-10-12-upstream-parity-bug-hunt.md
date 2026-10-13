@@ -280,3 +280,37 @@ standalone files, TypeScript typecheck, and the admin production build pass.
 The new test file passes ESLint; the changed service and job retain 19 older
 lint findings outside the new logic. No live model pull was run. Commit
 `37af3ca0` holds the code and tests.
+
+## Follow-up: patch the image decoder dependency (2026-10-13)
+
+At the start of this follow-up, the admin lockfile carried `sharp` 0.34.5.
+The dependency audit flagged its bundled image libraries as high severity.
+Chat uploads, RAG image preprocessing, and STL thumbnails all call this
+decoder. The upgrade must
+preserve the Apple Silicon image path and the current JPEG/PNG/WebP limits.
+
+- [x] Confirm the patched release and inspect each production `sharp` call for
+      changed APIs or defaults.
+- [x] Update only `sharp` and its lockfile dependencies in an isolated checkout.
+- [x] Decode real image fixtures, run the affected tests, typecheck, build, and
+      a fresh dependency audit. Check Linux ARM64 packages in the lockfile.
+- [x] Review the exact diff, commit the verified change, and update draft PR
+      #62 and issue #63 with the remaining advisory count.
+
+### Review
+
+The update changes `sharp` 0.34.5 to 0.35.5 and its optional native packages;
+the lockfile includes macOS and Linux ARM64 builds. A clean `npm ci` succeeds
+on Node 24. The chat image tests pass 24 cases, the upload checks pass nine,
+and a direct RAG and thumbnail image conversion succeeds. The full Adonis
+suite passes 297 tests, all 78 standalone files pass, and the production
+build and TypeScript typecheck pass. The build retains its existing large
+chunk warning. The audit now reports 31 advisories (15 high, 16 moderate,
+none critical) and no `sharp` advisory; 30 are present with `--omit=dev`.
+The first install attempt used this host's unsupported Node 26 and failed in
+`better-sqlite3`; retrying with Node 24 succeeded. The first local upload
+test attempt hit the sandbox's bind restriction; it passed outside that
+sandbox. No live Docker image or Mac installation was exercised.
+Commit `73d934a2` is pushed. Draft PR #62 and issue #63 carry the current
+audit count. The PR's validate and shell checks pass; publish is skipped on
+the draft PR.
