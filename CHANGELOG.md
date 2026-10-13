@@ -341,9 +341,10 @@ machine this fork is for.
 ### Security
 - Dependency fixes: undici 6.28, ip-address 10.4, tar 7.5.22 (fixes a critical
   crash advisory), protobufjs 7.6.5 (critical), form-data, brace-expansion,
-  postcss, yaml, and bullmq updated within their current majors. Production
-  advisories drop from 34 (2 critical) to 16, all remaining ones tied to major
-  upgrades tracked separately (sharp, dockerode, AdonisJS line).
+  postcss, yaml, and bullmq updated within their current majors.
+- The `sharp` image decoder is updated to 0.35.5. Chat upload and thumbnail
+  image checks pass with the new version. The current admin dependency audit
+  reports 31 remaining advisories, none critical. Issue #63 tracks them.
 
 ## [0.2.757-macos] - 2026-08-05
 
