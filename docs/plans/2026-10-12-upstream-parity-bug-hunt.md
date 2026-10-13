@@ -314,3 +314,40 @@ sandbox. No live Docker image or Mac installation was exercised.
 Commit `73d934a2` is pushed. Draft PR #62 and issue #63 carry the current
 audit count. The PR's validate and shell checks pass; publish is skipped on
 the draft PR.
+
+## Follow-up: update the drug import JSON parser (2026-10-13)
+
+At the start of this follow-up, `stream-json` was 1.9.1. Its Pick filter
+handles records from the downloaded drug reference archive, and the dependency
+audit reports three advisories on this version. Version 3 uses ESM exports and
+different subpaths. This job previously stalled when an import returned an
+undefined factory, so test the real parser chain rather than the package name.
+
+- [x] Write a focused streaming fixture that uses the production parser,
+      Pick, and array streamer and confirms record values and error delivery.
+- [x] Install a patched version and adapt only the import path needed by the
+      existing pipeline.
+- [x] Run the focused fixture, full standalone and Adonis suites, typecheck,
+      build, and fresh audit; inspect the lockfile diff for unrelated churn.
+- [x] Review, commit, push, and update PR #62 and issue #63 with the result.
+
+### Review
+
+The new fixture passed with `stream-json` 1.9.1. After the 3.7.0 install, it
+failed because the old `StreamArray.js` subpath no longer exists. The job now
+loads v3's ESM factories and uses their Node stream wrappers. The fixture
+passes three cases: records split across input chunks, malformed JSON errors,
+and a `__proto__` key that does not change the record prototype. The obsolete
+v1 type package is removed. A clean `npm ci` succeeds on Node 24.
+
+The Adonis suite passes 297 tests. The first standalone gate failed because
+the concurrent build removed a compiled fixture while it ran; all 79 files
+passed when the build finished before the sweep. TypeScript typecheck and the
+production build pass. The new helper and fixture pass ESLint and Prettier.
+The drug ingest job still reports 246 ESLint errors; its two unused suppression
+warnings were removed. The audit reports 30 remaining advisories (15 high,
+15 moderate, none critical) and no `stream-json`
+advisory. No live drug import or Mac installation was run.
+Commit `1a6f8fba` is pushed. Draft PR #62 and issue #63 reflect the 30-advisory
+count, and the PR's validate and shell checks pass. The production-only audit
+reports 29 advisories (14 high, 15 moderate).
