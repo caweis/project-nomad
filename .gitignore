@@ -16,6 +16,26 @@ node_modules/
 
 # dotenv environment variables file
 .env
+.env.*
+!.env.example
+
+# Local credentials and machine-specific Compose overrides
+*.pem
+*.key
+*.p12
+*.pfx
+*.ppk
+id_rsa
+id_ed25519
+.npmrc
+.netrc
+.htpasswd
+/compose.yml
+/compose.yaml
+/docker-compose.yml
+/docker-compose.yaml
+/management_compose.local.yaml
+/install/management_compose.local.yaml
 
 # Build / Dist
 dist

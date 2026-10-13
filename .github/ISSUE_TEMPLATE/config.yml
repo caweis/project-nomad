@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: 🔒 Report a security vulnerability
+    url: https://github.com/caweis/project-nomad/security/advisories/new
+    about: Send security reports privately to the maintainers of this fork
   - name: 💬 Discord Community
     url: https://discord.com/invite/crosstalksolutions
     about: Join our Discord community for general questions, support, and discussions

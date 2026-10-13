@@ -375,3 +375,29 @@ No live Mac installation was run.
 Commit `bc5c049d` is pushed, and draft PR #62 and issue #63 show the updated
 audit count. The shell check passes; validation is still pending at this
 recorded point.
+
+## Security reporting and local credential files
+
+**Scope:** Adapt upstream `fb919690` for this fork. The Command Center stays
+password-free as Chris requested, and the tracked macOS Compose file remains
+visible to Git.
+
+- [x] Enable and verify private vulnerability reporting on the fork.
+- [x] Add a fork-specific security policy, issue chooser link, and README
+      explanation of the local-network trust boundary.
+- [x] Ignore local credential and root Compose overrides without hiding
+      `install/macos/compose.yaml` or `admin/.env.example`.
+- [ ] Verify ignore behavior, Markdown links, build and tests, then review,
+      commit, push, and update draft PR #62.
+
+### Review
+
+The fork's private vulnerability reporting API returns `enabled: true` after
+the setting change. Git ignore assertions pass for six sample credential or
+override paths and three preserved paths; the macOS Compose file and admin
+environment example remain tracked. The issue chooser YAML parses, and the
+README and security-policy links match the fork's private reporting URL.
+The earlier code gate on this same tree passed the Node 24 typecheck and
+production build, 297 Adonis tests, and 79 standalone files. This action
+changes documentation and ignore rules, not runtime code or dependencies.
+Repository-wide lint remains red from existing errors. Publication is pending.

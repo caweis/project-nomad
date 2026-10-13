@@ -25,6 +25,10 @@ Homebrew, Xcode Command Line Tools, Rosetta, OrbStack, native Ollama, the contai
 
 Admin lands at `http://localhost:8080`, or `http://nomad.local:8080` from any device on the same network. Full command reference: `man nomad` (and per-command pages, e.g. `man nomad-update`).
 
+## About security
+
+The Command Center has no login. Anyone who can reach it on your local network can use its administration features. Keep it on a trusted network and do not forward its port to the internet. To report a vulnerability in this fork, use the [private reporting form](SECURITY.md).
+
 ## What's in it
 
 The admin home page has tiles for:
