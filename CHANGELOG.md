@@ -344,7 +344,11 @@ machine this fork is for.
   postcss, yaml, and bullmq updated within their current majors.
 - The `sharp` image decoder is updated to 0.35.5. Chat upload and thumbnail
   image checks pass with the new version. The current admin dependency audit
-  reports 31 remaining advisories, none critical. Issue #63 tracks them.
+  no longer flags `sharp`.
+- The drug reference importer uses `stream-json` 3.7.0. A streaming test checks
+  that it reads every result, rejects malformed JSON, and treats a `__proto__`
+  field as data. The admin dependency audit reports 30 remaining advisories,
+  none critical. Issue #63 tracks them.
 
 ## [0.2.757-macos] - 2026-08-05
 
