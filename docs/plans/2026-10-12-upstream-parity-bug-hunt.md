@@ -558,3 +558,26 @@ ZIM and PMTiles URLs. The full Adonis suite passes 308 tests. Typecheck and
 production build pass, and the new helper and test pass ESLint. The build still
 reports Vite's bundle-size warning. The call-path review found no remaining
 full-URL filename splits in download services or jobs.
+
+## Limit URL detail in download messages
+
+**Scope:** Download logs and status text need a stable origin for diagnostics
+without echoing user-provided URL credentials. Keep transport and stored job
+parameters intact.
+
+- [x] Add a URL-origin formatter with credential and malformed-URL cases.
+- [x] Use it in download log, error, and status messages.
+- [x] Run focused and full tests, typecheck, build, and review the call paths.
+- [ ] Commit, push, and update draft PR #62.
+
+### Review
+
+The focused visibility suite passes 3 tests. A separate signed-URL service
+test shows the map log printing the origin and no query string. The full
+Adonis suite passes 311 tests, and the standalone download-completion test
+passes 4 checks. Typecheck and production build pass; Vite still reports its
+bundle-size warning. The new helper and test, download job, and download
+utility pass ESLint. The touched services have the same or fewer ESLint
+errors than the prior commit. The download-status response exposes only the
+origin and a safe filename, and the retry retains the original URL in its
+job parameters.

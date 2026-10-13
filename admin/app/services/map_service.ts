@@ -5,6 +5,7 @@ import {
 } from '../../types/files.js'
 import { doResumableDownloadWithRetry } from '../utils/downloads.js'
 import { filenameFromDownloadUrl } from '../utils/download_filename.js'
+import { downloadUrlOriginForLog } from '../utils/download_url_log.js'
 import { extract } from 'tar'
 import env from '#start/env'
 import {
@@ -73,7 +74,7 @@ export class MapService implements IMapService {
       max_retries: 2,
       allowedMimeTypes: BASE_ASSETS_MIME_TYPES,
       onAttemptError(error, attempt) {
-        console.error(`Attempt ${attempt} to download tar file failed: ${error.message}`)
+        console.error(`Attempt ${attempt} to download tar file failed (${error.name})`)
       },
     })
     const tarFileBuffer = await getFileStatsIfExists(tempTarPath)
@@ -118,19 +119,25 @@ export class MapService implements IMapService {
       try {
         assertNotPrivateUrl(resource.url)
       } catch {
-        logger.warn(`[MapService] Blocked download from private/loopback URL: ${resource.url}`)
+        logger.warn(
+          `[MapService] Blocked download from private/loopback origin: ${downloadUrlOriginForLog(resource.url)}`
+        )
         continue
       }
 
       const existing = await RunDownloadJob.getActiveByUrl(resource.url)
       if (existing) {
-        logger.warn(`[MapService] Download already in progress for URL ${resource.url}, skipping.`)
+        logger.warn(
+          `[MapService] Download already in progress from ${downloadUrlOriginForLog(resource.url)}, skipping.`
+        )
         continue
       }
 
       const filename = filenameFromDownloadUrl(resource.url)
       if (!filename) {
-        logger.warn(`[MapService] Could not determine filename from URL ${resource.url}, skipping.`)
+        logger.warn(
+          `[MapService] Could not determine filename from ${downloadUrlOriginForLog(resource.url)}, skipping.`
+        )
         continue
       }
 
@@ -217,7 +224,9 @@ export class MapService implements IMapService {
   async downloadRemote(url: string): Promise<{ filename: string; jobId?: string }> {
     const parsed = new URL(url)
     if (!parsed.pathname.endsWith('.pmtiles')) {
-      throw new Error(`Invalid PMTiles file URL: ${url}. URL must end with .pmtiles`)
+      throw new Error(
+        `Invalid PMTiles file URL from ${downloadUrlOriginForLog(url)}. URL must end with .pmtiles`
+      )
     }
 
     const filename = filenameFromDownloadUrl(url)
@@ -241,7 +250,7 @@ export class MapService implements IMapService {
     // without dispatching a replacement.
     const existing = await RunDownloadJob.getActiveByUrl(url)
     if (existing) {
-      throw new Error(`Download already in progress for URL ${url}`)
+      throw new Error(`Download already in progress from ${downloadUrlOriginForLog(url)}`)
     }
 
     // Parse resource metadata
@@ -265,7 +274,9 @@ export class MapService implements IMapService {
       throw new Error('Failed to dispatch download job')
     }
 
-    logger.info(`[MapService] Dispatched download job ${result.job.id} for URL ${url}`)
+    logger.info(
+      `[MapService] Dispatched download job ${result.job.id} from ${downloadUrlOriginForLog(url)}`
+    )
 
     return {
       filename,
@@ -280,7 +291,9 @@ export class MapService implements IMapService {
       assertNotPrivateUrl(url)
       const parsed = new URL(url)
       if (!parsed.pathname.endsWith('.pmtiles')) {
-        throw new Error(`Invalid PMTiles file URL: ${url}. URL must end with .pmtiles`)
+        throw new Error(
+          `Invalid PMTiles file URL from ${downloadUrlOriginForLog(url)}. URL must end with .pmtiles`
+        )
       }
 
       const filename = filenameFromDownloadUrl(url)
@@ -303,8 +316,8 @@ export class MapService implements IMapService {
       const size = contentLength ? parseInt(String(contentLength), 10) : 0
 
       return { filename, size }
-    } catch (error: any) {
-      logger.error({ err: error }, '[MapService] Preflight check failed for URL')
+    } catch {
+      logger.error('[MapService] Preflight check failed for URL')
       return { message: 'Preflight check failed. Please verify the URL is valid and accessible.' }
     }
   }

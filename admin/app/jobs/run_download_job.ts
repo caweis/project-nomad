@@ -14,6 +14,7 @@ import { decideDownloadIngest } from '../utils/content_reindex_decision.js'
 import { ZIM_STORAGE_PATH } from '../utils/fs.js'
 import { SERVICE_NAMES } from '../../constants/service_names.js'
 import { basename, join } from 'node:path'
+import { downloadUrlOriginForLog } from '../utils/download_url_log.js'
 
 export class RunDownloadJob {
   static get queue() {
@@ -220,8 +221,7 @@ export class RunDownloadJob {
           await job.updateData({ ...job.data, completionDone: true })
         } catch (error) {
           console.error(
-            `[RunDownloadJob] Error in download success callback for URL ${completedUrl}:`,
-            error
+            `[RunDownloadJob] Error in download success callback from ${downloadUrlOriginForLog(completedUrl)} (${error instanceof Error ? error.name : 'unknown error'})`
           )
           throw error
         }
@@ -298,7 +298,7 @@ export class RunDownloadJob {
     return {
       job,
       created: true,
-      message: `Dispatched download job for URL ${params.url}`,
+      message: `Dispatched download job from ${downloadUrlOriginForLog(params.url)}`,
     }
   }
 }

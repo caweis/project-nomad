@@ -6,6 +6,7 @@ import {
 } from '../../types/zim.js'
 import { parseCatalogLanguages } from '../utils/catalog_languages.js'
 import { filenameFromDownloadUrl } from '../utils/download_filename.js'
+import { downloadUrlOriginForLog } from '../utils/download_url_log.js'
 import axios from 'axios'
 import { XMLParser } from 'fast-xml-parser'
 import {
@@ -208,7 +209,9 @@ export class ZimService {
   async downloadRemote(url: string): Promise<{ filename: string; jobId?: string }> {
     const parsed = new URL(url)
     if (!parsed.pathname.endsWith('.zim')) {
-      throw new Error(`Invalid ZIM file URL: ${url}. URL must end with .zim`)
+      throw new Error(
+        `Invalid ZIM file URL from ${downloadUrlOriginForLog(url)}. URL must end with .zim`
+      )
     }
 
     const existing = await RunDownloadJob.getActiveByUrl(url)
@@ -390,7 +393,9 @@ export class ZimService {
 
       const existingJob = await RunDownloadJob.getActiveByUrl(resolved.url)
       if (existingJob) {
-        logger.warn(`[ZimService] Download already in progress for ${resolved.url}, skipping.`)
+        logger.warn(
+          `[ZimService] Download already in progress from ${downloadUrlOriginForLog(resolved.url)}, skipping.`
+        )
         continue
       }
 
@@ -793,7 +798,9 @@ export class ZimService {
     const selection = await this.getWikipediaSelection()
 
     if (!selection || selection.url !== url) {
-      logger.warn(`[ZimService] Wikipedia download complete callback for unknown URL: ${url}`)
+      logger.warn(
+        `[ZimService] Wikipedia download complete callback for unknown URL from ${downloadUrlOriginForLog(url)}`
+      )
       return
     }
 

@@ -9,6 +9,7 @@ import { createWriteStream } from 'node:fs'
 import { rename } from 'node:fs/promises'
 import path from 'node:path'
 import { assertNotPrivateUrl, assertSafeRedirectTarget } from '../validators/common.js'
+import { downloadUrlOriginForLog } from './download_url_log.js'
 
 /**
  * A gated source rejected this install's credentials (401/403).
@@ -89,8 +90,8 @@ export async function doResumableDownload({
     // A 401/403 here is not a network problem, and the raw axios message
     // ("Request failed with status code 401") reads like the server is broken.
     // Translate it: the practical cause is an install without the entitlement
-    // key the gated source requires. failedReason is surfaced verbatim on the
-    // downloads UI, and RunDownloadJob converts this error to an
+    // key the gated source requires. The downloads UI shows a fixed explanation
+    // for this error, and RunDownloadJob converts it to an
     // UnrecoverableError so the rejection is never retried (upstream #1205).
     const status = error?.response?.status
     if (status === 401 || status === 403) {
@@ -340,7 +341,7 @@ export async function doResumableDownloadWithRetry({
 
       onAttemptError?.(error, attempt)
       if (isAborted) {
-        throw new Error(`Download aborted for URL: ${url}`)
+        throw new Error(`Download aborted from ${downloadUrlOriginForLog(url)}`)
       }
 
       if (attempt < max_retries && isNetworkError) {
