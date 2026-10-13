@@ -155,3 +155,25 @@ tests. `bash -n install/macos/nomad` passes, and the update helper suite passes
 ESLint still reports nine pre-existing Prettier errors in the seeder's
 reseed block; the added lines produce none. The image has not been published,
 and the live NOMAD stack was not changed.
+
+## Follow-up: keep knowledge-base toggles consistent on Qdrant failure (2026-10-13)
+
+The fork writes the ingest-state active flag before updating Qdrant. If the
+Qdrant update fails, the API reports an error but the saved flag still changes.
+The next panel read can therefore disagree with retrieval. Adapt upstream
+`c65198c7` to the fork's file and named-collection behavior.
+
+- [x] Reproduce file and collection failure paths with service-level tests.
+- [x] Restore only flags changed by the failed operation; preserve a later
+      concurrent change when restoring.
+- [x] Run affected tests, typecheck, build, review the diff, and commit.
+
+### Review
+
+Both regression tests failed against the prior service code with the saved
+flag still changed after a simulated Qdrant failure. They pass with the fix.
+The full Adonis unit suite passes 289 tests across 19 spec files. TypeScript
+typecheck and the production build pass. The new test file passes ESLint and
+Prettier; `rag_service.ts` retains existing style errors outside the changed
+logic. The Qdrant failure was simulated in a service-level test; no live
+knowledge-base data was changed.

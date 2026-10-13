@@ -516,7 +516,7 @@ export class RagService {
       // switch's own update can only reach points that already existed. Read it
       // again and correct these few if so. setFileActive writes the row before
       // the points, so whichever order the two land in, the file ends up as the
-      // row says. Upstream reads it once, before the write, and leaves this gap.
+      // row says.
       if (points.length > 0) {
         const activeNow = await this.sourceActive(sanitizedSource)
         if (activeNow !== active) {
@@ -1328,7 +1328,7 @@ export class RagService {
    * nothing is deleted or re-embedded; only searchSimilarDocuments's filter sees
    * it.
    *
-   * The row is written before the points, unlike upstream: embedAndStoreText
+   * The row is written before the points: embedAndStoreText
    * reads the row again after writing a batch, so a file switched while it is
    * being indexed converges on the row whichever write lands first.
    */
@@ -1339,8 +1339,7 @@ export class RagService {
     try {
       await this._ensureCollection(RagService.CONTENT_COLLECTION_NAME, RagService.EMBEDDING_DIMENSION)
 
-      // Upstream updates the row only when one exists. A file without one kept
-      // showing as on while search had dropped it.
+      // A file with points but no state row still needs a durable switch.
       const row = await this.ensureStateRowForSource(source)
       if (!row) {
         return {
@@ -1349,13 +1348,24 @@ export class RagService {
           message: 'That file is not in the knowledge base.',
         }
       }
+      const previousActive = effectiveActive(row.active)
       row.active = active
       await row.save()
 
-      await this.qdrant!.setPayload(RagService.CONTENT_COLLECTION_NAME, {
-        payload: { active },
-        filter: { must: [{ key: 'source', match: { value: source } }] },
-      })
+      try {
+        await this.qdrant!.setPayload(RagService.CONTENT_COLLECTION_NAME, {
+          payload: { active },
+          filter: { must: [{ key: 'source', match: { value: source } }] },
+        })
+      } catch (error) {
+        // The switch is reported as failed. Put the panel's saved value back,
+        // unless another request has changed it since this one wrote it.
+        await KbIngestState.query()
+          .where('file_path', source)
+          .where('active', active)
+          .update({ active: previousActive })
+        throw error
+      }
 
       const fileName = source.split(/[/\\]/).at(-1) || source
       return { success: true, message: fileActiveMessage(fileName, active) }
@@ -1383,19 +1393,29 @@ export class RagService {
     try {
       await this._ensureCollection(RagService.CONTENT_COLLECTION_NAME, RagService.EMBEDDING_DIMENSION)
 
-      const countRow = await KbIngestState.query()
+      const changedRows = await KbIngestState.query()
         .where('collection', collection)
         .where('active', !active)
-        .count('* as total')
-        .first()
-      const affectedCount = Number((countRow as any)?.$extras?.total ?? 0)
+        .select('file_path')
+      const changedPaths = changedRows.map((row) => row.file_path)
+      const affectedCount = changedPaths.length
 
       // Rows first, as in setFileActive.
       await KbIngestState.query().where('collection', collection).update({ active })
-      await this.qdrant!.setPayload(RagService.CONTENT_COLLECTION_NAME, {
-        payload: { active },
-        filter: { must: [{ key: 'collection', match: { value: collection } }] },
-      })
+      try {
+        await this.qdrant!.setPayload(RagService.CONTENT_COLLECTION_NAME, {
+          payload: { active },
+          filter: { must: [{ key: 'collection', match: { value: collection } }] },
+        })
+      } catch (error) {
+        if (changedPaths.length > 0) {
+          await KbIngestState.query()
+            .whereIn('file_path', changedPaths)
+            .where('active', active)
+            .update({ active: !active })
+        }
+        throw error
+      }
 
       return {
         success: true,
