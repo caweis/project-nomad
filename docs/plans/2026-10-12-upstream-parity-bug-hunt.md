@@ -526,7 +526,7 @@ model as one argument to the container command.
 - [x] Reproduce the old argument shape with a Docker/Ollama stub.
 - [x] Remove the shell call without changing the native or container benchmark.
 - [x] Run the regression, Bash syntax, and existing Mac CLI checks.
-- [ ] Review, commit, push, and update draft PR #62 without publishing an
+- [x] Review, commit, push, and update draft PR #62 without publishing an
       exploit recipe.
 
 ### Review
@@ -549,7 +549,7 @@ filepath inside the completed download job.
 - [x] Replace the full-URL string splits in ZIM and map download flows and the
       completed download job.
 - [x] Typecheck, build, run the affected tests, and review changed call paths.
-- [ ] Commit, push, and update draft PR #62.
+- [x] Commit, push, and update draft PR #62.
 
 ### Review
 
@@ -568,7 +568,7 @@ parameters intact.
 - [x] Add a URL-origin formatter with credential and malformed-URL cases.
 - [x] Use it in download log, error, and status messages.
 - [x] Run focused and full tests, typecheck, build, and review the call paths.
-- [ ] Commit, push, and update draft PR #62.
+- [x] Commit, push, and update draft PR #62.
 
 ### Review
 
