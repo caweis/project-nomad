@@ -1651,17 +1651,25 @@ export class RagService {
    * caught by the next, and it must not take down the whole storage scan.
    */
   public async purgeOrphanedSource(source: string): Promise<void> {
+    await this.purgeOrphanedSources([source])
+  }
+
+  /** Purge an orphan batch with one state query and one Qdrant delete call. */
+  public async purgeOrphanedSources(sources: string[]): Promise<number> {
+    if (sources.length === 0) return 0
     try {
       // Keep state-first ordering here: the orphan sweep discovers leftover
       // Qdrant points and retries them if the vector delete fails.
       await this._ensureCollection(RagService.CONTENT_COLLECTION_NAME, RagService.EMBEDDING_DIMENSION)
-      await KbIngestState.remove(source)
+      await KbIngestState.query().whereIn('file_path', sources).delete()
       await this.qdrant!.delete(RagService.CONTENT_COLLECTION_NAME, {
-        filter: { must: [{ key: 'source', match: { value: source } }] },
+        filter: { must: [{ key: 'source', match: { any: sources } }] },
       })
-      logger.info(`[RAG] Purged orphaned source with no file on disk: ${source}`)
+      logger.info(`[RAG] Purged ${sources.length} orphaned source(s) with no file on disk`)
+      return sources.length
     } catch (error) {
-      logger.error(`[RAG] Failed to purge orphaned source ${source}:`, error)
+      logger.error(`[RAG] Failed to purge orphaned source batch:`, error)
+      return 0
     }
   }
 
@@ -1885,9 +1893,8 @@ export class RagService {
       }
       if (orphans.length > 0) {
         logger.info(`[RAG] Purging ${orphans.length} orphaned source(s) from the vector store`)
-        for (const source of orphans) {
-          await this.purgeOrphanedSource(source)
-        }
+        const purged = await this.purgeOrphanedSources(orphans)
+        logger.info(`[RAG] Purged ${purged}/${orphans.length} orphaned source(s)`)
       }
 
       const withheldNote = withheld

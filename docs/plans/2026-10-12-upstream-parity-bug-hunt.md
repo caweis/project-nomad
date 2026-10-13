@@ -387,7 +387,7 @@ visible to Git.
       explanation of the local-network trust boundary.
 - [x] Ignore local credential and root Compose overrides without hiding
       `install/macos/compose.yaml` or `admin/.env.example`.
-- [ ] Verify ignore behavior, Markdown links, build and tests, then review,
+- [x] Verify ignore behavior, Markdown links, build and tests, then review,
       commit, push, and update draft PR #62.
 
 ### Review
@@ -400,4 +400,33 @@ README and security-policy links match the fork's private reporting URL.
 The earlier code gate on this same tree passed the Node 24 typecheck and
 production build, 297 Adonis tests, and 79 standalone files. This action
 changes documentation and ignore rules, not runtime code or dependencies.
-Repository-wide lint remains red from existing errors. Publication is pending.
+Repository-wide lint remains red from existing errors. Commit `4b56d038`
+is pushed, draft PR #62 reflects the change, and its validation and shell
+checks pass.
+
+## Batch orphan cleanup without losing retries
+
+**Scope:** Adapt upstream `2cc3ce9b`. The fork's orphan sweep removes state
+before vectors so a failed Qdrant deletion remains discoverable on the next
+scan. Keep the replacement and user-requested delete paths separate.
+
+- [x] Batch orphan state deletion into one query and vector deletion into one
+      `match.any` request, with an empty-input guard.
+- [x] Make the single-source caller use the same orphan path; keep failures
+      logged and retryable.
+- [x] Test call count, filter shape, ordering, failure retry, and empty input.
+- [ ] Run targeted and full gates, inspect the diff, then commit, push, and
+      update draft PR #62 and the parity ledger.
+
+### Review
+
+The first targeted Adonis run could not bind its local test port in the
+sandbox. It printed `EPERM` while returning exit code zero, so no tests from
+that attempt count. The rerun with socket access passed four new cases; a
+fifth case then covered a failed state query. Node 24 typecheck and production
+build pass, followed by 302 Adonis tests
+across 23 spec files and all 12 standalone orphan-decision checks. Focused
+lint and formatting for the new test pass. The code keeps the prior
+state-first ordering for orphans and leaves user-requested and replacement
+deletes unchanged. No live Qdrant or installed Mac stack was exercised.
+Publication is pending.
