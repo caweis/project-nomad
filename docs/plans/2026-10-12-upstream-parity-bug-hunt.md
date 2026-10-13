@@ -537,3 +537,24 @@ syntax passes. The existing reset-Ollama CLI suite initially failed one
 environment-dependent expectation because a real NOMAD drive is mounted; its
 no-config case now checks the documented drive fallback. The rerun passes 35
 checks. The installed CLI was not changed.
+
+## Keep URL query strings out of download filenames
+
+**Scope:** Signed ZIM and PMTiles URLs pass the extension checks, but several
+download paths take the last piece of the full URL as the filename. Use the
+URL pathname where a local filename is derived, and use the actual destination
+filepath inside the completed download job.
+
+- [x] Add a filename helper and a regression for query and fragment URLs.
+- [x] Replace the full-URL string splits in ZIM and map download flows and the
+      completed download job.
+- [x] Typecheck, build, run the affected tests, and review changed call paths.
+- [ ] Commit, push, and update draft PR #62.
+
+### Review
+
+The focused filename suite passes 3 tests, including dispatch checks for signed
+ZIM and PMTiles URLs. The full Adonis suite passes 308 tests. Typecheck and
+production build pass, and the new helper and test pass ESLint. The build still
+reports Vite's bundle-size warning. The call-path review found no remaining
+full-URL filename splits in download services or jobs.

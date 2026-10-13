@@ -5,6 +5,7 @@ import {
   RemoteZimFileEntry,
 } from '../../types/zim.js'
 import { parseCatalogLanguages } from '../utils/catalog_languages.js'
+import { filenameFromDownloadUrl } from '../utils/download_filename.js'
 import axios from 'axios'
 import { XMLParser } from 'fast-xml-parser'
 import {
@@ -147,7 +148,7 @@ export class ZimService {
 
       // downloadLink['href'] will end with .meta4, we need to remove that to get the actual download URL
       const download_url = downloadLink['href'].substring(0, downloadLink['href'].length - 6)
-      const file_name = download_url.split('/').pop() || `${entry.title}.zim`
+      const file_name = filenameFromDownloadUrl(download_url) || `${entry.title}.zim`
       const sizeBytes = parseInt(downloadLink['length'], 10)
 
       return {
@@ -216,7 +217,7 @@ export class ZimService {
     }
 
     // Extract the filename from the URL
-    const filename = url.split('/').pop()
+    const filename = filenameFromDownloadUrl(url)
     if (!filename) {
       throw new Error('Could not determine filename from URL')
     }
@@ -310,7 +311,7 @@ export class ZimService {
               if (!downloadLink) continue
 
               const downloadUrl = downloadLink.href.slice(0, -6)
-              const filename = downloadUrl.split('/').pop()
+              const filename = filenameFromDownloadUrl(downloadUrl)
               if (!filename) continue
 
               // A base-name query can return other flavours. Only the full
@@ -393,7 +394,7 @@ export class ZimService {
         continue
       }
 
-      const filename = resolved.url.split('/').pop()
+      const filename = filenameFromDownloadUrl(resolved.url)
       if (!filename) continue
 
       downloadFilenames.push(filename)
@@ -496,7 +497,7 @@ export class ZimService {
       // Skip Wikipedia files (managed separately)
       if (url.includes('wikipedia_en_')) continue
 
-      const filename = url.split('/').pop()
+      const filename = filenameFromDownloadUrl(url)
       if (!filename) continue
 
       const parsed = CollectionManifestService.parseZimFilename(filename)
@@ -735,7 +736,7 @@ export class ZimService {
     }
 
     // Extract filename from URL
-    const filename = selectedOption.url.split('/').pop()
+    const filename = filenameFromDownloadUrl(selectedOption.url)
     if (!filename) {
       throw new Error('Could not determine filename from URL')
     }

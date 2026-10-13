@@ -13,7 +13,7 @@ import { isSafeOldContentPath } from '../utils/content_path.js'
 import { decideDownloadIngest } from '../utils/content_reindex_decision.js'
 import { ZIM_STORAGE_PATH } from '../utils/fs.js'
 import { SERVICE_NAMES } from '../../constants/service_names.js'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 
 export class RunDownloadJob {
   static get queue() {
@@ -187,7 +187,7 @@ export class RunDownloadJob {
               ).reconcileReplacedContentFile({
                 oldFilePath,
                 newFilePath: filepath,
-                fileName: completedUrl.split('/').pop() || '',
+                fileName: basename(filepath),
                 oldFileWasIndexed: context.oldFileWasIndexed,
               })
               console.log(`[RunDownloadJob] KB reconciliation for ${filepath}: ${outcome}`)
@@ -199,7 +199,7 @@ export class RunDownloadJob {
               )
             } else if (decision === 'embed') {
               await EmbedFileJob.dispatch({
-                fileName: completedUrl.split('/').pop() || '',
+                fileName: basename(filepath),
                 filePath: filepath,
               })
             }

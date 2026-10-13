@@ -4,6 +4,7 @@ import {
   FileEntry,
 } from '../../types/files.js'
 import { doResumableDownloadWithRetry } from '../utils/downloads.js'
+import { filenameFromDownloadUrl } from '../utils/download_filename.js'
 import { extract } from 'tar'
 import env from '#start/env'
 import {
@@ -127,7 +128,7 @@ export class MapService implements IMapService {
         continue
       }
 
-      const filename = resource.url.split('/').pop()
+      const filename = filenameFromDownloadUrl(resource.url)
       if (!filename) {
         logger.warn(`[MapService] Could not determine filename from URL ${resource.url}, skipping.`)
         continue
@@ -157,7 +158,7 @@ export class MapService implements IMapService {
   async downloadRemoteSuccessCallback(urls: string[], _: boolean) {
     // Create InstalledResource entries for downloaded map files
     for (const url of urls) {
-      const filename = url.split('/').pop()
+      const filename = filenameFromDownloadUrl(url)
       if (!filename) continue
 
       const parsed = CollectionManifestService.parseMapFilename(filename)
@@ -219,7 +220,7 @@ export class MapService implements IMapService {
       throw new Error(`Invalid PMTiles file URL: ${url}. URL must end with .pmtiles`)
     }
 
-    const filename = url.split('/').pop()
+    const filename = filenameFromDownloadUrl(url)
     if (!filename) {
       throw new Error('Could not determine filename from URL')
     }
@@ -282,7 +283,7 @@ export class MapService implements IMapService {
         throw new Error(`Invalid PMTiles file URL: ${url}. URL must end with .pmtiles`)
       }
 
-      const filename = url.split('/').pop()
+      const filename = filenameFromDownloadUrl(url)
       if (!filename) {
         throw new Error('Could not determine filename from URL')
       }
