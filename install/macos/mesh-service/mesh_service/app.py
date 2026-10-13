@@ -9,6 +9,7 @@ radio; P1+ swaps in MeshtasticAdapter / MeshCoreAdapter behind the same interfac
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import queue
 import threading
@@ -110,17 +111,20 @@ _state = {"connected": False}
 async def lifespan(_: FastAPI):
     worker = threading.Thread(target=_worker, name="mesh-responder", daemon=True)
     worker.start()
-    adapter.connect()
-    _state["connected"] = True
-    logger.info(
-        "mesh bridge up: adapter=%s model=%s ai=%s",
-        config.adapter_kind,
-        config.model,
-        config.ollama_url,
-    )
-    yield
-    _state["connected"] = False
-    _inbox.put(None)
+    try:
+        adapter.connect()
+        _state["connected"] = True
+        logger.info(
+            "mesh bridge up: adapter=%s model=%s ai=%s",
+            config.adapter_kind,
+            config.model,
+            config.ollama_url,
+        )
+        yield
+    finally:
+        _state["connected"] = False
+        _inbox.put(None)
+        await asyncio.to_thread(worker.join)
 
 
 app = FastAPI(title="NOMAD Mesh Bridge", lifespan=lifespan)

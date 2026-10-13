@@ -6,7 +6,11 @@ reports adapter kind / model / ai_url / connected and a recent-message ring buff
 through adapter.send_text (the one metered outbound path) and records to mock.sent.
 """
 
+import asyncio
+import threading
+import time
 import unittest
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -14,8 +18,60 @@ import mesh_service.app as appmod
 from mesh_service.adapter import Identity, IncomingMessage
 
 
+class TestLifespanShutdown(unittest.TestCase):
+    def test_shutdown_waits_for_responder_worker(self):
+        exited = threading.Event()
+        original_worker = appmod._worker
+
+        def delayed_worker():
+            try:
+                original_worker()
+            finally:
+                time.sleep(0.1)
+                exited.set()
+
+        with patch.object(appmod, "_worker", delayed_worker):
+            with TestClient(appmod.app):
+                pass
+
+        self.assertTrue(exited.is_set(), "lifespan returned before its responder worker exited")
+
+    def test_failed_adapter_startup_stops_responder_worker(self):
+        exited = threading.Event()
+        worker_started = threading.Event()
+        workers = []
+        original_worker = appmod._worker
+
+        def observed_worker():
+            workers.append(threading.current_thread())
+            worker_started.set()
+            try:
+                original_worker()
+            finally:
+                exited.set()
+
+        try:
+            with patch.object(appmod, "_worker", observed_worker):
+                with patch.object(appmod.adapter, "connect", side_effect=RuntimeError("radio unavailable")):
+                    with self.assertRaisesRegex(RuntimeError, "radio unavailable"):
+                        async def start_app():
+                            async with appmod.lifespan(appmod.app):
+                                pass
+
+                        asyncio.run(start_app())
+            self.assertTrue(worker_started.is_set())
+            self.assertTrue(exited.is_set(), "startup failure left the responder worker running")
+        finally:
+            if worker_started.is_set() and not exited.is_set():
+                appmod._inbox.put(None)
+                workers[0].join(timeout=1)
+
+
 class TestStatusAndMessages(unittest.TestCase):
     def setUp(self):
+        ai_patch = patch.object(appmod.ai, "ask", return_value="test answer")
+        ai_patch.start()
+        self.addCleanup(ai_patch.stop)
         # TestClient's context manager runs lifespan (starts the worker, connects).
         self.client = TestClient(appmod.app)
         self.client.__enter__()
