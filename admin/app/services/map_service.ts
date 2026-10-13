@@ -17,7 +17,7 @@ import { join, resolve, sep } from 'path'
 import urlJoin from 'url-join'
 import { RunDownloadJob } from '#jobs/run_download_job'
 import logger from '@adonisjs/core/services/logger'
-import { assertNotPrivateUrl } from '#validators/common'
+import { assertNotPrivateUrl, assertSafeRedirectTarget } from '#validators/common'
 import InstalledResource from '#models/installed_resource'
 import { CollectionManifestService } from './collection_manifest_service.js'
 import { pickNewestPerRegion, type MapRegionEntry } from '../utils/map_region_dedup.js'
@@ -289,7 +289,10 @@ export class MapService implements IMapService {
 
       // Perform a HEAD request to get the content length
       const { default: axios } = await import('axios')
-      const response = await axios.head(url)
+      const response = await axios.head(url, {
+        timeout: 30_000,
+        beforeRedirect: assertSafeRedirectTarget,
+      })
 
       if (response.status !== 200) {
         throw new Error(`Failed to fetch file info: ${response.status} ${response.statusText}`)

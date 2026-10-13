@@ -177,3 +177,22 @@ typecheck and the production build pass. The new test file passes ESLint and
 Prettier; `rag_service.ts` retains existing style errors outside the changed
 logic. The Qdrant failure was simulated in a service-level test; no live
 knowledge-base data was changed.
+
+## Follow-up: validate map preflight redirects (2026-10-13)
+
+The map preflight checks its starting URL, then sends a HEAD request through
+Axios without the redirect callback used by the download path. A redirect
+therefore bypasses the destination check before the download job begins.
+
+- [x] Test the preflight request's redirect callback and timeout.
+- [x] Reuse the existing redirect guard for preflight.
+- [x] Run the unit suite, typecheck, build, inspect the diff, and commit.
+
+### Review
+
+The new preflight test fails against the prior request and passes when the
+request uses the existing redirect guard. The production build and TypeScript
+typecheck pass. The full Adonis suite passes 290 tests from 20 spec files.
+The test file passes ESLint; the map service has existing lint findings outside
+the changed request. The test uses a mocked HEAD request and did not fetch a
+remote map or change the live stack.
