@@ -19,6 +19,12 @@ Notable changes to the macOS distribution layer of this fork. Format follows
   layout they sit together in a Your links deck of their own. NOMAD only opens
   a link, in a new tab, and never starts, stops, updates or checks on whatever
   is behind it. (Ports upstream 2c73139b and its follow-ups.)
+- Project NOMAD's new badge replaces the old logo in the Command Center header,
+  the settings and chat sidebars, the start-up screen and the README. It is a
+  vector image, so it stays sharp at any size. (Ports upstream 4c75eb51.)
+- The name is written Project NOMAD, without periods, in the Command Center,
+  its help pages and the README, to match the new badge. The help pages no
+  longer spell it out as an acronym. (Ports upstream 957e79bb.)
 
 ### Maps
 - Pins can be looked after, not just dropped. Dropping one now asks for notes
@@ -51,7 +57,9 @@ Notable changes to the macOS distribution layer of this fork. Format follows
   Turn all on and Turn all off switch every file in it at once. With every file
   switched off, chat skips the knowledge base search, and the step that
   rewrites your question for it, altogether. A newer edition of a ZIM arrives
-  under a new file name, so it starts switched on. (Ports upstream #1286.)
+  under a new file name, so it starts switched on. If search refuses a switch,
+  NOMAD puts the file's switch back where it was, so the window does not claim
+  a setting the assistant is not following. (Ports upstream #1286 and c65198c7.)
 - Choosing a file's collection lists every collection again. The list opened
   already filtered down to the collection the file was in.
 - Indexing a ZIM no longer stops partway through. Indexing works through an
@@ -66,14 +74,37 @@ Notable changes to the macOS distribution layer of this fork. Format follows
 - Deleting a file now removes what the assistant learned from it. Deleting a
   ZIM removed the file and left everything indexed from it in place, so the
   assistant carried on quoting content that was no longer on the server, and a
-  replaced file left its old text sitting beside the new. Storage scans also
-  clear out anything left behind by an earlier version. A scan that finds no
-  files at all now does nothing rather than treating everything as deleted,
-  and a scan that cannot find one of its folders leaves everything learned
-  from that folder alone, so a missing `zim` folder cannot empty the knowledge
-  base of every ZIM at once. (Ports upstream f8a29693.)
+  replaced file left its old text sitting beside the new. Replacing a ZIM with
+  a newer edition now removes the old edition's text as well. Storage scans
+  also clear out what an earlier version left behind. A scan leaves a folder
+  alone when it cannot find it, when it finds nothing in it, or when clearing
+  it would remove at least five files and more than half of those it learned
+  from. A drive that is not mounted looks exactly like a folder someone
+  emptied, and re-learning a library takes hours. A folder with fewer than five
+  files indexed gets only the first two protections. When Sync leaves a folder
+  alone, its message says which one and why, and where to delete the files by
+  hand if they really are gone. (Ports upstream f8a29693 and #1393.)
 
 ### Chat
+- Ask about a picture. A button beside the message box attaches up to four
+  images (JPEG, PNG or WebP, 8 MB each, up to 40 megapixels) to your message,
+  for models that can see them: choose one whose Input Type includes Image in
+  Models & Settings, such as `gemma3:4b`. Easy Setup marks them too. Before the
+  model sees a picture NOMAD turns it upright, shrinks it to at most 2,048
+  pixels on its longest side and saves a new copy without the camera and
+  location details stored inside photos, and it holds room for it in the
+  model's context window by remembering less of an older conversation.
+  Pictures are not kept: they go with the message that carries them and are
+  gone when you reload, so ask about a picture in that message. A model that
+  cannot see keeps the button off and says why. On the Apple MLX engine NOMAD
+  cannot tell in advance, so it lets you try; if the request fails, the message
+  says the model may not accept pictures. (Ports upstream edbfe1ad.)
+- Pictures from an upload that was cut off, because the tab closed or the
+  connection dropped, are no longer left in the server's temporary folder.
+  Those files are the untouched originals, camera and location details
+  included, and the same happened to any interrupted upload, the Workshop's
+  200 MB files too. NOMAD now names its upload files, and clears the ones that
+  nothing has written to for six hours, at startup and then every hour.
 - Answers that drew on your knowledge base now list their sources underneath:
   the archive each passage came from, with its date where the archive records
   one, or the file name for something you uploaded. Only what the assistant
@@ -112,6 +143,39 @@ Notable changes to the macOS distribution layer of this fork. Format follows
   browser. Like the rest of this section it needs an internet connection; the
   picker stays out of the way without one, and Retry brings it back.
   (Ports upstream dde8aa55.)
+- Ten curated downloads pointed at files openZIM had removed, and an eleventh
+  was about to be, so a collection tier holding one of them retried a download
+  that could not succeed. openZIM keeps only its two newest builds of each
+  title. Now pointing at current builds: TED-Ed, TED conference talks,
+  LibrePathology, Urban Prepper, the three Canadian Prepper channels,
+  freeCodeCamp, based.cooking, and the Node and Python developer docs. The list
+  is read from this repository, so the fix arrives without an upgrade. If you
+  already have one of the three older Canadian Prepper files you keep it, and
+  the new edition is offered as a separate download, because the channels were
+  renamed. (Ports upstream 5e1702ef.)
+
+### Supply Depot
+- Edit is now in the ⋯ menu of every installed app that runs in a container,
+  not only the ones you added yourself; the AI Assistant runs on the Mac itself
+  and has none. It opens the app's image, name, ports, volume mounts,
+  environment variables and resource limits, and Save & Recreate applies them.
+  On an app NOMAD ships, your changes are merged into the setup it came with,
+  so settings the form does not show are kept, and a mount that is read-only,
+  such as MeshCore Web's config and certificates, stays read-only. The catalog
+  stops re-syncing an app you have edited, which a new modified tag next to its
+  name shows; a later change to that app's catalog entry will not reach it.
+  This is how you add languages to the Translated Library. (Ports the menu half
+  of upstream 02c33b27; this fork already had the rest.)
+- Translated Library, a new app that shows the Information Library in another
+  language. Its Open button goes to port 8460, a second address for the
+  library with a Translate this page bar: French, Spanish and German, and
+  Original to switch back. It translates English article text locally with
+  CTranslate2 and Argos models after the selected languages have downloaded.
+  The container image targets Apple Silicon, needs no GPU, and does not use the
+  AI Assistant. Installing it also installs the Information Library if needed;
+  the library at its usual address is unchanged. Search results and some page
+  elements remain in the original language. (Ports upstream #1292 with a
+  native Apple Silicon translation service.)
 
 ### Dark mode
 - Green text is readable in dark mode. Links in chat answers, the Continue

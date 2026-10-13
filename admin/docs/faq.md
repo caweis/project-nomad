@@ -1,22 +1,22 @@
 # Frequently Asked Questions
 
 <!-- MAC-EDITION-LINK — remove this block to sever the macOS-edition pointers throughout this FAQ -->
-> **On macOS?** Several sections below apply differently on the Mac edition — particularly the GPU acceleration sections (Mac uses Apple's Metal GPU automatically; no NVIDIA toolkit), the command-line maintenance section (Mac has its own `nomad` CLI), and the update section (`nomad upgrade` instead of the in-Command-Center button). See [N.O.M.A.D. on Mac](/docs/mac-overview) for the macOS-specific overview. Inline pointers throughout call out the Mac path where the answer differs.
+> **On macOS?** Several sections below apply differently on the Mac edition — particularly the GPU acceleration sections (Mac uses Apple's Metal GPU automatically; no NVIDIA toolkit), the command-line maintenance section (Mac has its own `nomad` CLI), and the update section (`nomad upgrade` instead of the in-Command-Center button). See [NOMAD on Mac](/docs/mac-overview) for the macOS-specific overview. Inline pointers throughout call out the Mac path where the answer differs.
 <!-- /MAC-EDITION-LINK -->
 
 ## General Questions
 
-### What is N.O.M.A.D.?
-N.O.M.A.D. (Node for Offline Media, Archives, and Data) is a personal server that gives you access to knowledge, education, and AI assistance without requiring an internet connection. It runs on your own hardware, keeping your data private and accessible anytime.
+### What is NOMAD?
+NOMAD is a personal server that gives you access to knowledge, education, and AI assistance without requiring an internet connection. It runs on your own hardware, keeping your data private and accessible anytime.
 
-### Do I need internet to use N.O.M.A.D.?
+### Do I need internet to use NOMAD?
 No — that's the whole point. Once your content is downloaded, everything works offline. You only need internet to:
 - Download new content
 - Update the software
 - Sync the latest versions of Wikipedia, maps, etc.
 
 ### What hardware do I need?
-N.O.M.A.D. needs capable hardware, especially for AI features. General targets:
+NOMAD needs capable hardware, especially for AI features. General targets:
 - Modern multi-core CPU
 - 16GB+ RAM (32GB+ helps with larger AI models)
 - SSD storage. 500GB covers a minimal install; more if you want full Wikipedia, larger AI models, or extensive map regions.
@@ -25,7 +25,7 @@ N.O.M.A.D. needs capable hardware, especially for AI features. General targets:
 **For detailed build recommendations at three price points ($150–$1,000+) for Linux installs, see the upstream [Hardware Guide](https://www.projectnomad.us/hardware).**
 
 <!-- MAC-EDITION-LINK — remove this block to sever the macOS hardware note -->
-> **On Mac:** The Mac edition runs on Apple Silicon (M1 / M2 / M3 / M4 or later) with macOS 14 (Sonoma) or newer. The Apple Silicon GPU is used automatically — no NVIDIA Container Toolkit, no driver install. See [Installing N.O.M.A.D. on your Mac](/docs/mac-install) for the Mac-specific prerequisites.
+> **On Mac:** The Mac edition runs on Apple Silicon (M1 / M2 / M3 / M4 or later) with macOS 14 (Sonoma) or newer. The Apple Silicon GPU is used automatically — no NVIDIA Container Toolkit, no driver install. See [Installing NOMAD on your Mac](/docs/mac-install) for the Mac-specific prerequisites.
 <!-- /MAC-EDITION-LINK -->
 
 ### How much storage do I need?
@@ -62,7 +62,7 @@ Content is as current as when it was last downloaded. Wikipedia snapshots are ty
 ### Can I add my own files?
 Yes — with the Knowledge Base. Upload PDFs, text files, and other documents to the [Knowledge Base](/knowledge-base), and the AI can reference them when answering your questions. This uses semantic search to find relevant information from your uploaded files.
 
-For Kiwix content, N.O.M.A.D. uses standard ZIM files. For educational content, Kolibri uses its own channel format.
+For Kiwix content, NOMAD uses standard ZIM files. For educational content, Kolibri uses its own channel format.
 
 ### What are curated collection tiers?
 When selecting content in the Easy Setup wizard or Content Explorer, collections are organized into three tiers:
@@ -140,19 +140,19 @@ Local AI requires significant computing power. To improve speed:
 > **On Mac:** GPU acceleration is automatic on Apple Silicon — there are no setup steps. The NVIDIA-specific instructions below are for Linux installs. See [AI Assistant on Mac](/docs/mac-ai-assistant) for what Metal GPU access gives you (and what to expect tier-by-tier).
 <!-- /MAC-EDITION-LINK -->
 
-N.O.M.A.D. automatically detects NVIDIA GPUs when the NVIDIA Container Toolkit is installed on the host system. To set up GPU acceleration:
+NOMAD automatically detects NVIDIA GPUs when the NVIDIA Container Toolkit is installed on the host system. To set up GPU acceleration:
 
 1. **Install an NVIDIA GPU** in your server (if not already present)
 2. **Install the NVIDIA Container Toolkit** on the host — follow the [official installation guide](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
 3. **Reinstall the AI Assistant** — Go to [Apps](/settings/apps), find AI Assistant, and click **Force Reinstall**
 
-N.O.M.A.D. will detect the GPU during installation and configure the AI to use it automatically. You'll see "NVIDIA container runtime detected" in the installation progress.
+NOMAD will detect the GPU during installation and configure the AI to use it automatically. You'll see "NVIDIA container runtime detected" in the installation progress.
 
 **Tip:** Run a [System Benchmark](/settings/benchmark) before and after to see the difference. GPU-accelerated systems typically see 100+ tokens per second vs 10-15 on CPU only.
 
 ### I added/changed my GPU but AI is still slow
 
-When you add or swap a GPU, N.O.M.A.D. needs to reconfigure the AI container to use it:
+When you add or swap a GPU, NOMAD needs to reconfigure the AI container to use it:
 
 1. Make sure the **NVIDIA Container Toolkit** is installed on the host
 2. Go to **[Apps](/settings/apps)**
@@ -162,7 +162,7 @@ Force Reinstall recreates the AI container with GPU support enabled. Without thi
 
 ### I see a "GPU passthrough not working" warning
 
-N.O.M.A.D. checks whether your GPU is actually accessible inside the AI container. If a GPU is detected on the host but isn't working inside the container, you'll see a warning banner on the System Information and AI Settings pages. Click the **"Fix: Reinstall AI Assistant"** button to recreate the container with proper GPU access. This preserves your downloaded AI models.
+NOMAD checks whether your GPU is actually accessible inside the AI container. If a GPU is detected on the host but isn't working inside the container, you'll see a warning banner on the System Information and AI Settings pages. Click the **"Fix: Reinstall AI Assistant"** button to recreate the container with proper GPU access. This preserves your downloaded AI models.
 
 ### AI Chat not available
 
@@ -224,7 +224,7 @@ Kolibri passwords are managed separately:
 
 ## Updates and Maintenance
 
-### How do I update N.O.M.A.D.?
+### How do I update NOMAD?
 1. Go to **Settings → Check for Updates**
 2. If an update is available, click to install
 3. The system will download updates and restart automatically
@@ -261,7 +261,7 @@ The system is designed to recover gracefully. If an update fails:
 > **On Mac:** The Mac edition uses its own `nomad` CLI installed at `$(brew --prefix)/bin/nomad` — `nomad up`, `nomad down`, `nomad restart`, `nomad upgrade`, `nomad uninstall`, `nomad check`, `nomad self-update`, and more. The `/opt/project-nomad/*.sh` scripts described below are for upstream Linux installs and don't exist on the Mac edition. See [The `nomad` command](/docs/mac-nomad-cli) for the full reference.
 <!-- /MAC-EDITION-LINK -->
 
-For advanced troubleshooting or when you can't access the web interface, N.O.M.A.D. includes helper scripts in `/opt/project-nomad`:
+For advanced troubleshooting or when you can't access the web interface, NOMAD includes helper scripts in `/opt/project-nomad`:
 
 **Start all services:**
 ```bash
@@ -279,7 +279,7 @@ sudo bash /opt/project-nomad/update_nomad.sh
 ```
 *Note: This updates the Command Center only, not individual apps. Update apps through the web interface.*
 
-**Uninstall N.O.M.A.D.:**
+**Uninstall NOMAD:**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Crosstalk-Solutions/project-nomad/refs/heads/main/install/uninstall_nomad.sh -o uninstall_nomad.sh
 sudo bash uninstall_nomad.sh
@@ -291,10 +291,10 @@ sudo bash uninstall_nomad.sh
 ## Privacy and Security
 
 ### Is my data private?
-Yes. N.O.M.A.D. runs entirely on your hardware. Your searches, AI conversations, and usage data never leave your server.
+Yes. NOMAD runs entirely on your hardware. Your searches, AI conversations, and usage data never leave your server.
 
 ### Can others access my server?
-By default, N.O.M.A.D. is accessible on your local network. Anyone on the same network can access it. For public networks, consider additional security measures.
+By default, NOMAD is accessible on your local network. Anyone on the same network can access it. For public networks, consider additional security measures.
 
 ### Does the AI send data anywhere?
 No. The AI runs completely locally. Your conversations are not sent to any external service. The AI chat is built into the Command Center — there's no separate service to configure.

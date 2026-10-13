@@ -8,6 +8,14 @@ A note on logins: some apps have their own accounts. Where one asks you to sign 
 
 ---
 
+## Editing an app {% #editing-apps %}
+
+**Edit** is in the ⋯ menu (More actions) of every installed app that runs in a container, whether NOMAD ships it or you added it. The AI Assistant runs on the Mac itself, so it has no Edit. The dialog shows the app's image, display name, port mappings, volume mounts, environment variables and resource limits. **Save & Recreate** applies your changes by recreating the app's container. Anything the app keeps in a folder under NOMAD's storage is left as it is.
+
+For an app NOMAD ships, your changes are merged into the setup it came with, so settings the form does not show are kept. The catalog also stops re-syncing an app you have edited, and a **modified** tag appears next to its name to show which ones. A later change to the app's catalog entry, such as a new port, will not reach an app with that tag.
+
+---
+
 ## Information Library {% #information-library %}
 
 Offline copies of Wikipedia, medical references, how-to guides, and full encyclopedias, all readable in your browser with no internet. This is the reading side of NOMAD: you download content libraries (called ZIM files) and browse them here.
@@ -208,3 +216,5 @@ A reader and browser for your ebook collection. Point it at a folder of books an
 **Your data:** The app's database lives in the `calibre-web` folder and your books in `calibre-web/books`, both on your data drive.
 
 **Works offline:** Fully offline. Your library is served from your NOMAD.
+
+---

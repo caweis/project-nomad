@@ -56,6 +56,7 @@ export default defineConfig({
     () => import('#providers/map_static_provider'),
     () => import('#providers/kiwix_migration_provider'),
     () => import('#providers/calibre_web_provision_provider'),
+    () => import('#providers/upload_tmp_sweep_provider'),
   ],
 
   /*

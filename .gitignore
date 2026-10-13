@@ -42,6 +42,6 @@ admin/public/assets
 # Admin specific development files
 admin/storage
 
-# Translation helper bytecode
-/install/nomad-translate/__pycache__/
-/install/nomad-translate/*.pyc
+# Python bytecode (install/nomad-translate helper scripts)
+__pycache__/
+*.pyc

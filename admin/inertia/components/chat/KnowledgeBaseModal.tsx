@@ -187,9 +187,14 @@ export default function KnowledgeBaseModal({ aiAssistantName = "AI Assistant", o
   const syncMutation = useMutation({
     mutationFn: () => api.syncRAGStorage(),
     onSuccess: (data) => {
+      // A folder the sync left alone usually means a drive that is not mounted.
+      // That is not a failure, but it is not plain success either, and the
+      // message is long enough to need more than the default five seconds.
+      const leftAlone = !!data?.withheld?.length
       addNotification({
-        type: 'success',
+        type: leftAlone ? 'info' : 'success',
         message: data?.message || 'Storage synced successfully. If new files were found, they have been queued for processing.',
+        duration: leftAlone ? 15000 : undefined,
       })
     },
     onError: (error: any) => {

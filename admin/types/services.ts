@@ -16,6 +16,7 @@ export type ServiceSlim = Pick<
   | 'available_update_version'
   | 'category'
   | 'is_custom'
+  | 'is_user_modified'
   | 'custom_url'
   | 'auto_update_enabled'
   | 'is_link_tile'

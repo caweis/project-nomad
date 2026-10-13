@@ -282,6 +282,12 @@ export type BudgetInputs = {
   /** Overrides for the response reserve and RAG share; mostly for tests. */
   responseReserve?: number
   ragShare?: number
+  /**
+   * Images riding with the current question. Their cost does not show in any
+   * message, so the planner holds room back for them (see IMAGE_TOKEN_RESERVE)
+   * instead of leaving the backend to cut the prompt down around them.
+   */
+  imageCount?: number
 }
 
 export type BudgetTrace = {
@@ -301,6 +307,8 @@ export type BudgetTrace = {
   queryTruncated: boolean
   ragPlacement: RagPlacement
   numPredict: number
+  /** Tokens held back for attached images; 0 when there are none. */
+  imageTokens: number
 }
 
 export type BudgetResult = {
@@ -334,6 +342,26 @@ export const NUM_PREDICT_SAFETY_FRACTION = 0.05
 export const NUM_PREDICT_SAFETY_MIN = 64
 /** Share of the remaining budget the retrieved context may claim. */
 export const DEFAULT_RAG_SHARE = 0.35
+
+/**
+ * Tokens held back for each attached image.
+ *
+ * What an image costs depends on the model and cannot be read from here: a
+ * fixed 256 for gemma3, 576 for llava 1.5 and up to five times that for
+ * llava 1.6, and about one per 28x28 pixels for the Qwen vision models, which
+ * Ollama caps near 1,280 after resizing. 1,280 covers all of those except
+ * llava 1.6's largest case, so this is a conservative estimate and not a
+ * measurement. Unreserved, a few photos would push the prompt past the window
+ * and the backend would cut it from the middle, which is the failure budgeting
+ * exists to prevent. Reserved, they cost older history instead.
+ */
+export const IMAGE_TOKEN_RESERVE = 1280
+/**
+ * The most of the prompt budget images may claim. Past this the question and
+ * the system prompts would be squeezed out by the pictures meant to illustrate
+ * them, so a small window gets a smaller reserve rather than no room to ask.
+ */
+export const MAX_IMAGE_SHARE = 0.5
 
 /**
  * Marker inserted where turns were dropped.
@@ -402,7 +430,17 @@ export function planPrompt(inputs: BudgetInputs): BudgetResult {
   const responseReserve =
     inputs.responseReserve ??
     Math.max(256, Math.min(MAX_RESPONSE_RESERVE, Math.floor(contextWindow * RESPONSE_RESERVE_FRACTION)))
-  const promptBudget = Math.max(0, contextWindow - responseReserve)
+  const windowForPrompt = Math.max(0, contextWindow - responseReserve)
+  // A count that is not a whole number of images is treated as none: NaN would
+  // otherwise run through every budget below and take the plan with it.
+  const imageCount = Number.isFinite(inputs.imageCount)
+    ? Math.max(0, Math.floor(inputs.imageCount as number))
+    : 0
+  const imageTokens = Math.min(
+    imageCount * IMAGE_TOKEN_RESERVE,
+    Math.floor(windowForPrompt * MAX_IMAGE_SHARE)
+  )
+  const promptBudget = windowForPrompt - imageTokens
 
   const cost = (messages: BudgetMessage[]) => estimateMessagesTokens(messages, ratio)
 
@@ -541,7 +579,7 @@ export function planPrompt(inputs: BudgetInputs): BudgetResult {
   }
   messages.push(query)
 
-  const estimatedPromptTokens = cost(messages)
+  const estimatedPromptTokens = cost(messages) + imageTokens
 
   // The planner already kept the prompt within `contextWindow - responseReserve`,
   // so the reserve floor can never push generation past the window.
@@ -557,7 +595,9 @@ export function planPrompt(inputs: BudgetInputs): BudgetResult {
     trace: {
       contextWindow,
       responseReserve,
-      promptBudget,
+      // The whole prompt budget, images included, so that
+      // estimatedPromptTokens <= promptBudget stays the meaning of "it fits".
+      promptBudget: windowForPrompt,
       estimatedPromptTokens,
       systemTokens,
       queryTokens,
@@ -571,6 +611,7 @@ export function planPrompt(inputs: BudgetInputs): BudgetResult {
       queryTruncated,
       ragPlacement: placement,
       numPredict,
+      imageTokens,
     },
   }
 }

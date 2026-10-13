@@ -1,4 +1,5 @@
 import { defineConfig } from '@adonisjs/core/bodyparser'
+import { uploadTmpFileName } from '../app/utils/stale_uploads.js'
 
 const bodyParserConfig = defineConfig({
   /**
@@ -42,6 +43,15 @@ const bodyParserConfig = defineConfig({
     autoProcess: true,
     convertEmptyStringsToNull: true,
     processManually: [],
+
+    /**
+     * Name every temporary upload file so an abandoned one can be told from
+     * anything else in the temp folder. A request that fails inside the parser
+     * (the tab closed, the connection dropped) never reaches a controller, so
+     * nothing deletes the files the parser had already finished; the sweep in
+     * providers/upload_tmp_sweep_provider.ts removes them by this prefix.
+     */
+    tmpFileName: uploadTmpFileName,
 
     /**
      * Maximum limit of data to parse including all files and fields.

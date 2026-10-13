@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Project N.O.M.A.D. Update Script (macOS)
+# Project NOMAD Update Script (macOS)
 
 RESET='\033[0m'
 YELLOW='\033[1;33m'
@@ -26,7 +26,7 @@ check_is_macos() {
 }
 
 get_update_confirmation() {
-  read -p "This script will update Project N.O.M.A.D. No data loss is expected, but you should always back up your data before proceeding. Continue? (y/N): " choice
+  read -p "This script will update Project NOMAD. No data loss is expected, but you should always back up your data before proceeding. Continue? (y/N): " choice
   case "$choice" in
     y|Y ) echo -e "${GREEN}#${RESET} Proceeding with update." ;;
     * ) echo "Update cancelled."; exit 0 ;;
@@ -91,7 +91,7 @@ get_local_ip() {
 }
 
 success_message() {
-  echo -e "${GREEN}#${RESET} Project N.O.M.A.D update completed successfully!\\n"
+  echo -e "${GREEN}#${RESET} Project NOMAD update completed successfully!\\n"
   echo -e "${GREEN}#${RESET} Access the management interface at http://localhost:8080 or http://${local_ip_address}:8080\\n"
 }
 

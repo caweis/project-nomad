@@ -506,7 +506,7 @@
 
 ### ⚠️ Breaking Changes
 
-- **Container Naming**: As a result of standardized container naming, it is recommend that you do a fresh install of Project N.O.M.A.D. and any apps to avoid potential conflicts/duplication of containers
+- **Container Naming**: As a result of standardized container naming, it is recommend that you do a fresh install of Project NOMAD and any apps to avoid potential conflicts/duplication of containers
 
 ### 📚 Documentation
 

@@ -27,6 +27,7 @@ import os from 'node:os'
 import { humanizeDockerError } from './docker_errors.js'
 import { rewriteStorageBinds } from './storage_binds.js'
 import { followPullProgress, pullableImageRef } from './docker_pull.js'
+import { platformFromContainerConfig } from '../utils/container_platform.js'
 import { vaultwardenNeedsTlsMigration } from './vaultwarden_tls.js'
 
 @inject()
@@ -688,6 +689,10 @@ export class DockerService {
       // lives on the host (covers dependency installs too — they recurse here).
       await this._applyHostStorageRoot(containerConfig)
 
+      // An app whose image is built for one architecture names it in its config,
+      // and both the pull and the create must ask for it (container_platform.ts).
+      const platform = platformFromContainerConfig(containerConfig)
+
       let dependencies = []
       if (service.depends_on) {
         const dependency = await Service.query().where('service_name', service.depends_on).first()
@@ -738,7 +743,7 @@ export class DockerService {
           'pulling',
           `Pulling Docker image ${service.container_image}...`
         )
-        await this.pullImage(service.container_image)
+        await this.pullImage(service.container_image, platform)
       }
 
       if (service.service_name === SERVICE_NAMES.KIWIX) {
@@ -888,6 +893,7 @@ export class DockerService {
       const container = await this.docker.createContainer({
         Image: finalImage,
         name: service.service_name,
+        ...(platform && { platform }),
         ...(containerConfig?.User && { User: containerConfig.User }),
         HostConfig: gpuHostConfig,
         ...(containerConfig?.WorkingDir && { WorkingDir: containerConfig.WorkingDir }),
@@ -1535,9 +1541,15 @@ export class DockerService {
       // so both size/pull the identical ref).
       const newImage = buildUpdatedImageRef(service.container_image, targetVersion)
 
+      // An app built for one architecture keeps asking for it through an update,
+      // or the pull would fail on a host of the other kind (container_platform.ts).
+      const platform = platformFromContainerConfig(
+        this._parseContainerConfig(service.container_config)
+      )
+
       // Step 1: Pull new image
       this._broadcast(serviceName, 'update-pulling', `Pulling image ${newImage}...`)
-      await this.pullImage(newImage)
+      await this.pullImage(newImage, platform)
 
       // Step 2: Find and stop existing container
       this._broadcast(serviceName, 'update-stopping', `Stopping current container...`)
@@ -1597,6 +1609,7 @@ export class DockerService {
       const newContainerConfig: any = {
         Image: newImage,
         name: serviceName,
+        ...(platform && { platform }),
         Env: inspectData.Config?.Env || undefined,
         Cmd: inspectData.Config?.Cmd || undefined,
         ExposedPorts: inspectData.Config?.ExposedPorts || undefined,
@@ -1769,10 +1782,17 @@ export class DockerService {
    *
    * Public so BenchmarkService can route its sysbench pull through it too.
    */
-  async pullImage(imageName: string): Promise<void> {
+  async pullImage(imageName: string, platform?: string): Promise<void> {
     // Normalize a digest-pinned ref (repo:tag@sha256:...) to digest-only so
     // dockerode's pull parses it correctly (see pullableImageRef).
-    const pullStream = await this.docker.pull(pullableImageRef(imageName))
+    //
+    // `platform` is only given for an app whose image is built for one
+    // architecture (see container_platform.ts); everything else leaves Docker to
+    // pick the build that matches the host.
+    const pullStream = await this.docker.pull(
+      pullableImageRef(imageName),
+      platform ? { platform } : {}
+    )
     await followPullProgress(this.docker.modem, pullStream)
   }
 
@@ -2018,13 +2038,15 @@ export class DockerService {
       }
 
       // Pull the image if it's missing locally, or always when forcePull (e.g. :latest updates).
+      const platform = platformFromContainerConfig(containerConfig)
       if (opts.forcePull || !(await this._checkImageExists(service.container_image))) {
-        await this.pullImage(service.container_image)
+        await this.pullImage(service.container_image, platform)
       }
 
       const newContainer = await this.docker.createContainer({
         Image: service.container_image,
         name: serviceName,
+        ...(platform && { platform }),
         Labels: {
           ...(containerConfig?.Labels ?? {}),
           'com.docker.compose.project': 'project-nomad-managed',
