@@ -153,6 +153,9 @@ Notable changes to the macOS distribution layer of this fork. Format follows
   already have one of the three older Canadian Prepper files you keep it, and
   the new edition is offered as a separate download, because the channels were
   renamed. (Ports upstream 5e1702ef.)
+- Curated downloads now find current editions when the catalog stores a book's
+  flavour separately from its name. The lookup keeps the requested flavour
+  and chooses the newest matching dated filename. (Ports upstream f63adb8a.)
 
 ### Supply Depot
 - Edit is now in the ⋯ menu of every installed app that runs in a container,

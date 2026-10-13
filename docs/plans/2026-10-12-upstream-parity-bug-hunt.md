@@ -227,3 +227,29 @@ prints an existing Node deprecation warning and a Vite chunk-size warning.
 The native translation container and a real Kiwix article were tested locally
 before the merge. The registry image has not been published, and the merged
 admin UI and installer have not been exercised on a live Mac installation.
+
+## Follow-up: resolve flavoured ZIM catalog entries (2026-10-13)
+
+Upstream `f63adb8a` retries a catalog lookup with the book name before its
+flavour suffix. The fork's curated downloader queries only the full resource
+ID, so a catalog that indexes `wikipedia_en_medicine_maxi` under
+`wikipedia_en_medicine` can leave the pinned URL stale.
+
+- [x] Reproduce the missed lookup and an unrelated first catalog entry in a
+      service-level test.
+- [x] Retry with the base name and select the newest filename that matches the
+      original resource ID.
+- [x] Run the full unit suite, standalone suite, typecheck, build, and relevant
+      lint; review the diff and update draft PR #62.
+
+### Review
+
+The focused test first failed because the service requested only the full
+flavoured ID. It now retries with the base name, accepts a single or repeated
+OPDS link, and chooses the newest dated filename that still matches the full
+ID. Both focused cases pass. The full Adonis suite passes 292 tests from 21
+spec files. All 78 standalone files, TypeScript typecheck, and the admin
+production build pass. The new test file passes ESLint; `zim_service.ts` still
+has 19 lint findings outside this change. The test used a local catalog
+fixture; it did not fetch a live catalog or change installed libraries.
+Commit `6b5ec700` holds the code and test.
