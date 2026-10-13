@@ -69,3 +69,28 @@ decisions, 7 image references, 6 path checks, and the video catalog). The
 configured Adonis run also passes after the temporary Redis container was
 removed; this checkout has no functional spec files. Commit
 `9a8b6844` contains the test-gate and parser changes.
+
+## Follow-up: protect empty knowledge-base roots (2026-10-13)
+
+Upstream `ae1eae78` identified a mount failure that leaves a present but empty
+ZIM directory. The fork's current whole-scan guard allows a non-empty uploads
+root to make every indexed ZIM under that empty directory look deleted.
+
+- [x] Test empty, missing, partial, and healthy roots as separate decisions.
+- [x] Withhold deletion for a root with no embeddable files or a mass-removal signal.
+- [x] Keep file-presence checks against all files found, including types no longer recognized for embedding.
+- [x] Report withheld roots in the sync result while preserving valid orphan cleanup.
+- [x] Run standalone tests, Adonis tests, typecheck, build, targeted lint, and inspect the diff.
+- [x] Commit and update draft PR #62.
+
+### Review
+
+The old helper passed a test that expected an empty but present ZIM root to
+lose its vectors; a new regression first failed with that exact result. The
+per-root decision now withholds that purge, and also withholds a removal of
+more than half a root's indexed sources when at least five are missing. The
+standalone sweep suite passes 12 cases. The configured Adonis run passes 287
+tests from 18 spec files after the production build. Typecheck passes, and
+targeted lint passes for the new helper and tests; `rag_service.ts` and the
+repository still have pre-existing lint errors. Commit `be9750a1` is pushed
+to draft PR #62. No live knowledge-base sweep was run.
