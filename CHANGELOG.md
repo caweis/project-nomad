@@ -347,8 +347,9 @@ machine this fork is for.
   no longer flags `sharp`.
 - The drug reference importer uses `stream-json` 3.7.0. A streaming test checks
   that it reads every result, rejects malformed JSON, and treats a `__proto__`
-  field as data. The admin dependency audit reports 30 remaining advisories,
-  none critical. Issue #63 tracks them.
+  field as data.
+- An unused `hot-hook` development package is removed. The admin dependency
+  audit reports 29 remaining advisories, none critical. Issue #63 tracks them.
 
 ## [0.2.757-macos] - 2026-08-05
 
