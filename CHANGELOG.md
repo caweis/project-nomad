@@ -27,6 +27,9 @@ Notable changes to the macOS distribution layer of this fork. Format follows
   longer spell it out as an acronym. (Ports upstream 957e79bb.)
 
 ### Maps
+- The regional map list now has separate downloads for Indiana and Michigan.
+  Its former combined entry pointed to a missing file. The District of
+  Columbia entry also pointed to a missing file and has been removed.
 - Pins can be looked after, not just dropped. Dropping one now asks for notes
   as well as a name (up to 500 characters, and a link in them can be followed),
   and clicking a pin shows them with an Edit button. A pin can carry one of 36
@@ -139,6 +142,8 @@ Notable changes to the macOS distribution layer of this fork. Format follows
   `nomad upgrade ollama` brings Ollama up to date.
 
 ### Content Explorer
+- The curated Bash documentation and Wikipedia Medicine links now point to
+  available Kiwix editions. Their earlier links returned 404.
 - Browse the Kiwix Library in any language. It only ever showed English, which
   is about 1,300 of the library's roughly 10,900 books. A Language picker next
   to the search box lists every language the library holds books in, by its own

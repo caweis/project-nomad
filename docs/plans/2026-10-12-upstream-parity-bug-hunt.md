@@ -415,7 +415,7 @@ scan. Keep the replacement and user-requested delete paths separate.
 - [x] Make the single-source caller use the same orphan path; keep failures
       logged and retryable.
 - [x] Test call count, filter shape, ordering, failure retry, and empty input.
-- [ ] Run targeted and full gates, inspect the diff, then commit, push, and
+- [x] Run targeted and full gates, inspect the diff, then commit, push, and
       update draft PR #62 and the parity ledger.
 
 ### Review
@@ -424,9 +424,46 @@ The first targeted Adonis run could not bind its local test port in the
 sandbox. It printed `EPERM` while returning exit code zero, so no tests from
 that attempt count. The rerun with socket access passed four new cases; a
 fifth case then covered a failed state query. Node 24 typecheck and production
-build pass, followed by 302 Adonis tests
-across 23 spec files and all 12 standalone orphan-decision checks. Focused
+build pass, followed by 302 Adonis tests across 23 spec files and all 12
+standalone orphan-decision checks. Focused
 lint and formatting for the new test pass. The code keeps the prior
 state-first ordering for orphans and leaves user-requested and replacement
 deletes unchanged. No live Qdrant or installed Mac stack was exercised.
+Commit `ed26570f` is pushed, draft PR #62 reflects the change, and its
+validation and shell checks pass.
+
+## Check curated download links weekly
+
+**Scope:** Adapt upstream collection URL validation and its weekly trigger
+to the fork's six catalog files. The catalog currently has 117 unique URLs.
+
+- [x] Add a weekly workflow that also runs when catalog or validation code
+      changes, and keep its token permissions read-only.
+- [x] Check every non-null URL without downloading a large file. A 200 or
+      206 status counts only when curl exits successfully.
+- [x] Repair four retired or nonexistent catalog URLs using the current Kiwix
+      directory listing and upstream map repository tree; bump both manifest
+      spec versions and decode them through the app validators.
+- [x] Verify URL extraction, successful and failed probes, workflow syntax,
+      and every live catalog link.
+- [ ] Review, commit, push, and update the parity ledger and draft PR #62.
+
+### Review
+
+The first full run checked 117 unique URLs and failed four. The Kiwix directory
+lists October 2026 editions for Bash documentation and Wikipedia Medicine;
+both replacement files return HTTP 200. The upstream map repository contains
+separate Indiana and Michigan PMTiles files, but no District of Columbia file.
+The former combined map link and the DC link returned 404. The catalog now
+lists Indiana and Michigan separately and omits the unavailable DC option.
+Their reported sizes are rounded from the files' HTTP `Content-Length` values
+(258,859,848 and 442,043,575 bytes). The second full run checked 117 URLs with
+zero failures. The validator's local fixtures cover successful links, a HEAD
+fallback, HTTP 404, a failed transfer with HTTP 200, unsupported schemes,
+empty catalogs, and malformed JSON. The workflow YAML parses. Two new Adonis
+tests decode the changed catalogs with the app's Vine schemas. Node 24
+typecheck and production build pass; the full Adonis suite passes 304 tests
+across 24 spec files. Focused lint, formatting, shell syntax, and the video
+ZIM catalog check pass. A GitHub Actions run on the new workflow remains to
+be observed after the push. Issue #65 tracks a future DC map source.
 Publication is pending.
