@@ -351,3 +351,27 @@ advisory. No live drug import or Mac installation was run.
 Commit `1a6f8fba` is pushed. Draft PR #62 and issue #63 reflect the 30-advisory
 count, and the PR's validate and shell checks pass. The production-only audit
 reports 29 advisories (14 high, 15 moderate).
+
+## Follow-up: remove an unused development dependency (2026-10-13)
+
+The admin package declares `hot-hook` as a direct development dependency.
+No source, script, or config file references it. Its `fast-glob` path is
+flagged in the dependency audit. Remove the unused direct dependency and
+check whether the lockfile and audit lose that path.
+
+- [x] Remove `hot-hook` from the development dependencies and lockfile.
+- [x] Run a clean install, typecheck, production build, affected test suites,
+      and fresh audit. Compare the lockfile against the prior tree.
+- [x] Review, commit, push, and update draft PR #62 and issue #63.
+
+### Review
+
+The removal deletes `hot-hook` and packages used only by it; it does not
+change versions of other dependencies. A clean Node 24 `npm ci`, TypeScript
+typecheck, and production build pass. The Adonis suite passes 297 tests and
+all 79 standalone files pass. The audit reports 29 remaining advisories
+(14 high, 15 moderate, none critical); `hot-hook` is no longer flagged.
+No live Mac installation was run.
+Commit `bc5c049d` is pushed, and draft PR #62 and issue #63 show the updated
+audit count. The shell check passes; validation is still pending at this
+recorded point.
