@@ -33,8 +33,8 @@
 
 - [x] Run admin typecheck, build, all Adonis and standalone tests with coverage, Python suites, and shell regressions.
 - [x] Inspect lint status, security audit, diff, and any untested hardware paths; report the actual counts.
-- [ ] Commit by scope after fetching the branch tip, push, open a PR, check CI, and merge after the gate passes.
-- [ ] Record shipped work and deferred blockers in this plan and the relevant GitHub issues.
+- [x] Commit by scope after fetching the branch tip, push, open a PR, check CI, and merge after the gate passes.
+- [x] Record shipped work and deferred blockers in this plan and the relevant GitHub issues.
 
 ## Review
 
@@ -64,4 +64,12 @@ shell regressions pass. Focused ESLint on changed admin source and tests passes;
 repository-wide lint still fails with 3,335 pre-existing errors and 5 warnings
 (issue #66). Installed Mac and hardware checks remain in issue #56.
 
-PR and CI review are pending.
+PR #69 passed all four checks and merged as `6c6d0953`. CI reported 330
+Adonis cases, 79 standalone suites, 19 translation tests, 75 mesh tests, and
+75 oMLX tests with the coverage values above. The first postmerge mesh job
+reported all 75 tests `OK`, then its coverage process exited 139. A failed-job
+rerun on the same SHA passed the full Python job. Issue #70 tracks that
+intermittent process crash. The postmerge admin and shell jobs passed. The
+macOS-distribution image workflow passed; the published `sha-6c6d095` manifest
+contains both `linux/arm64` and `linux/amd64`. Installed-device checks remain
+in issue #56.
