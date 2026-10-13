@@ -16,6 +16,7 @@ export const specResourceValidator = vine.object({
   // Authorization header and 401. An unrecognised value is rejected, not
   // ignored.
   auth: vine.enum(['nomad_app_key']).optional(),
+  skip_embedding: vine.boolean().optional(),
 })
 
 // ---- ZIM Categories spec (versioned) ----

@@ -14,6 +14,14 @@ import { OllamaService } from './ollama_service.js'
 import { SYSTEM_PROMPTS } from '../../constants/ollama.js'
 import { toTitleCase } from '../utils/misc.js'
 import { parseStoredSources } from '../utils/citations.js'
+import {
+  SUGGESTIONS_SCHEMA,
+  TITLE_SCHEMA,
+  isStructuredFragment,
+  pickSuggestions,
+  pickTitle,
+  resolveStructured,
+} from '../utils/structured_output.js'
 import type { ChatSource } from '../../types/chat.js'
 
 @inject()
@@ -139,10 +147,18 @@ export class ChatService {
         ],
         stream: false,
         think: false,
+        format: SUGGESTIONS_SCHEMA,
+        options: { temperature: 0 },
       })
 
       if (response && response.message && response.message.content) {
         const content = response.message.content.trim()
+        const structured = resolveStructured(content, pickSuggestions, response.structured)
+        if (structured.ok) return structured.value.map((s) => toTitleCase(s))
+        if (structured.reason === 'constrained-parse-failed' || isStructuredFragment(content)) {
+          logger.warn(`[ChatService] Model "${model}" returned incomplete suggestion JSON`)
+          return []
+        }
         
         // Handle both comma-separated and newline-separated formats
         let suggestions: string[] = []
@@ -355,18 +371,24 @@ export class ChatService {
           { role: 'assistant', content: assistantMessage },
         ],
         think: false,
+        format: TITLE_SCHEMA,
+        options: { temperature: 0 },
       })
 
-      title = response?.message?.content?.trim()
-      if (!title) {
-        title = userMessage.slice(0, 57) + (userMessage.length > 57 ? '...' : '')
-      }
+      const content = response?.message?.content?.trim() ?? ''
+      const structured = resolveStructured(content, pickTitle, response?.structured === true)
+      title = structured.ok
+        ? structured.value
+        : structured.reason === 'constrained-parse-failed' || isStructuredFragment(content)
+          ? userMessage
+          : content || userMessage
+      title = title.slice(0, 57) + (title.length > 57 ? '...' : '')
 
       await this.updateSession(sessionId, { title })
-      logger.info(`[ChatService] Generated title for session ${sessionId}: "${title}"`)
+      logger.info(`[ChatService] Generated title for session ${sessionId}`)
     } catch (error) {
       logger.error(
-        `[ChatService] Failed to generate title for session ${sessionId}: ${error instanceof Error ? error.message : error}`
+        `[ChatService] Failed to generate title for session ${sessionId}: ${error instanceof Error ? error.name : 'unknown error'}`
       )
       // Fall back to truncated user message
       try {

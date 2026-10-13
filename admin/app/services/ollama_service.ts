@@ -1,12 +1,14 @@
 import { inject } from '@adonisjs/core'
 import { ChatRequest, ChatResponse, Ollama } from 'ollama'
-import { NomadModelInfo, NomadOllamaModel } from '../../types/ollama.js'
+import { ModelVisionCapability, NomadModelInfo, NomadOllamaModel } from '../../types/ollama.js'
 import { readContextLength, readModelfileNumCtx } from '../utils/context_window.js'
 import { FALLBACK_RECOMMENDED_OLLAMA_MODELS, MLX_HIGHLIGHT_MODELS, MODEL_DESCRIPTION_OVERRIDES } from '../../constants/ollama.js'
 import { withMlxPullNames } from '../../util/mlx.js'
 import { normalizeNonStreamed, ThinkTagSplitter } from '../utils/think_stream.js'
+import { shouldConstrainStructuredOutput } from '../utils/structured_output.js'
 import { abortWith } from '../utils/abortable_stream.js'
 import { canCancelGeneration, MIN_CANCEL_SAFE_OLLAMA } from '../utils/cancel_safety.js'
+import { visionFromShow } from '../utils/model_capabilities.js'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import logger from '@adonisjs/core/services/logger'
@@ -22,6 +24,8 @@ import { NOMAD_API_DEFAULT_BASE_URL } from '../../constants/misc.js'
 const NOMAD_MODELS_API_PATH = '/api/v1/ollama/models'
 const MODELS_CACHE_FILE = path.join(process.cwd(), 'storage', 'ollama-models-cache.json')
 const CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000 // 24 hours
+const PERMANENT_MODEL_PULL_ERROR =
+  /(?:model|manifest).*?(?:not found|does not exist)|refusing to pull unmapped model|unauthorized|newer version of Ollama/i
 
 /**
  * Whether native Ollama survives a cancelled reply, as last measured. Module
@@ -67,7 +71,10 @@ export class OllamaService {
    * @param model Model name to download
    * @returns Success status and message
    */
-  async downloadModel(model: string, progressCallback?: (percent: number) => void): Promise<{ success: boolean; message: string }> {
+  async downloadModel(
+    model: string,
+    progressCallback?: (percent: number) => void
+  ): Promise<{ success: boolean; message: string; retryable?: boolean }> {
     try {
       await this._ensureDependencies()
       if (!this.ollama) {
@@ -75,8 +82,9 @@ export class OllamaService {
       }
 
       // See if model is already installed
-      const installedModels = await this.getModels()
-      if (installedModels && installedModels.some((m) => m.name === model)) {
+      const installedModels = await this.getModels(true)
+      const normalizedName = (name: string) => (name.includes(':') ? name : `${name}:latest`)
+      if (installedModels?.some((m) => normalizedName(m.name) === normalizedName(model))) {
         logger.info(`[OllamaService] Model "${model}" is already installed.`)
         return { success: true, message: 'Model is already installed.' }
       }
@@ -99,6 +107,13 @@ export class OllamaService {
         }
       }
 
+      // A finished stream alone does not prove that the model landed. Include
+      // embedding models and account for Ollama's implicit :latest tag.
+      const installedAfter = await this.getModels(true)
+      if (!installedAfter?.some((m) => normalizedName(m.name) === normalizedName(model))) {
+        throw new Error('Ollama ended the pull, but the model is not installed.')
+      }
+
       logger.info(`[OllamaService] Model "${model}" downloaded successfully.`)
       return { success: true, message: 'Model downloaded successfully.' }
     } catch (error) {
@@ -110,7 +125,8 @@ export class OllamaService {
       const message =
         error instanceof Error && error.message ? error.message : 'Failed to download model.'
       logger.error(`[OllamaService] Failed to download model "${model}": ${message}`)
-      return { success: false, message }
+      const permanent = PERMANENT_MODEL_PULL_ERROR.test(message)
+      return { success: false, message, retryable: !permanent }
     }
   }
 
@@ -156,15 +172,18 @@ export class OllamaService {
     if (!this.ollama) {
       throw new Error('Ollama client is not initialized.')
     }
+    const { format, ...request } = chatRequest
+    const structured = shouldConstrainStructuredOutput(env.get('NOMAD_AI_BACKEND'), format)
     const response = await this.ollama.chat({
-      ...chatRequest,
+      ...request,
+      ...(structured ? { format } : {}),
       stream: false,
     })
     const { content, thinking } = normalizeNonStreamed(
       response.message.content,
       response.message.thinking
     )
-    return { ...response, message: { ...response.message, content, thinking } }
+    return { ...response, message: { ...response.message, content, thinking }, structured }
   }
 
   /**
@@ -235,10 +254,11 @@ export class OllamaService {
 
   /**
    * Everything one /api/show call can tell us about a model: whether it can
-   * think, its trained context length, any num_ctx baked into its modelfile,
-   * and its size and quantization. The context fields feed the num_ctx
-   * decision (see ContextWindowService); the thinking flag has been in use
-   * since #1079.
+   * think, whether it accepts images, its trained context length, any num_ctx
+   * baked into its modelfile, and its size and quantization. The context fields
+   * feed the num_ctx decision (see ContextWindowService); the thinking flag has
+   * been in use since #1079, and the image flag is read the same way (see
+   * model_capabilities.ts for why oMLX answers 'unknown').
    *
    * A probe must NEVER block chat. The oMLX proxy's /api/show returns no
    * `capabilities` field, so an unguarded `modelInfo.capabilities.includes(...)`
@@ -256,13 +276,14 @@ export class OllamaService {
   public async getModelInfo(modelName: string): Promise<NomadModelInfo> {
     try {
       await this._ensureDependencies()
-      if (!this.ollama) return { hasThinking: false }
+      if (!this.ollama) return { hasThinking: false, vision: 'unknown' }
 
       const cached = this.modelInfo.get(modelName)
       if (cached) return await cached
 
       const probe = this.ollama.show({ model: modelName }).then((info) => ({
         hasThinking: info.capabilities?.includes('thinking') ?? false,
+        vision: visionFromShow(info.capabilities, env.get('NOMAD_AI_BACKEND')),
         contextLength: readContextLength(info.model_info),
         modelfileNumCtx: readModelfileNumCtx(info.parameters),
         parameterSize: info.details?.parameter_size,
@@ -276,12 +297,18 @@ export class OllamaService {
       logger.warn(
         `[OllamaService] /api/show probe failed for "${modelName}" — proceeding without model metadata: ${error instanceof Error ? error.message : error}`
       )
-      return { hasThinking: false }
+      return { hasThinking: false, vision: 'unknown' }
     }
   }
 
   public async checkModelHasThinking(modelName: string): Promise<boolean> {
     return (await this.getModelInfo(modelName)).hasThinking
+  }
+
+  /** Whether a model accepts images. 'unknown' when it cannot be told. */
+  public async getModelVision(modelName: string): Promise<ModelVisionCapability> {
+    const info = await this.getModelInfo(modelName)
+    return info.vision ?? 'unknown'
   }
 
   public async deleteModel(modelName: string) {

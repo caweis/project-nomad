@@ -56,6 +56,7 @@ export default defineConfig({
     () => import('#providers/map_static_provider'),
     () => import('#providers/kiwix_migration_provider'),
     () => import('#providers/calibre_web_provision_provider'),
+    () => import('#providers/upload_tmp_sweep_provider'),
   ],
 
   /*
@@ -80,12 +81,12 @@ export default defineConfig({
   tests: {
     suites: [
       {
-        files: ['tests/unit/**/*.spec(.ts|.js)'],
+        files: ['tests/unit/**/*.spec.{ts,js}'],
         name: 'unit',
         timeout: 2000,
       },
       {
-        files: ['tests/functional/**/*.spec(.ts|.js)'],
+        files: ['tests/functional/**/*.spec.{ts,js}'],
         name: 'functional',
         timeout: 30000,
       },

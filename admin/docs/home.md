@@ -1,14 +1,14 @@
-# Welcome to Project N.O.M.A.D.
+# Welcome to Project NOMAD
 
 Your personal offline knowledge server is ready to use.
 
 <!-- MAC-EDITION-LINK — remove this block to sever the macOS-edition additions -->
-> **Running on a Mac?** This installation is the Mac edition. See [N.O.M.A.D. on Mac](/docs/mac-overview) for the macOS-specific setup, the `nomad` command, native AI Assistant, and your portable data drive.
+> **Running on a Mac?** This installation is the Mac edition. See [NOMAD on Mac](/docs/mac-overview) for the macOS-specific setup, the `nomad` command, native AI Assistant, and your portable data drive.
 <!-- /MAC-EDITION-LINK -->
 
-## What is N.O.M.A.D.?
+## What is NOMAD?
 
-**N.O.M.A.D.** stands for **Node for Offline Media, Archives, and Data**. It's your personal server for accessing knowledge, education, and AI assistance — even when you have no internet connection.
+**NOMAD** is an offline-first knowledge and education server. It's your personal server for accessing knowledge, education, and AI assistance — even when you have no internet connection.
 
 Think of it as having Wikipedia, Khan Academy, an AI assistant, and offline maps all in one place, running on hardware you control.
 
@@ -50,7 +50,7 @@ Run a System Benchmark to see how your hardware performs and compare your NOMAD 
 
 ## Getting Started
 
-**New to N.O.M.A.D.?** Use the Easy Setup wizard to configure your server and download content collections.
+**New to NOMAD?** Use the Easy Setup wizard to configure your server and download content collections.
 
 **[Run Easy Setup →](/easy-setup)**
 
@@ -76,7 +76,7 @@ Or explore the **[Getting Started Guide](/docs/getting-started)** for a walkthro
 
 ## Keeping Your Server Updated
 
-N.O.M.A.D. works best when kept up to date while you have internet access. This ensures you have the latest:
+NOMAD works best when kept up to date while you have internet access. This ensures you have the latest:
 - Software features and bug fixes
 - Wikipedia and reference content
 - Educational materials

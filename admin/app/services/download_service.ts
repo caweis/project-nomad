@@ -3,7 +3,8 @@ import { QueueService } from './queue_service.js'
 import { RunDownloadJob } from '#jobs/run_download_job'
 import { DownloadModelJob } from '#jobs/download_model_job'
 import { DownloadJobWithProgress, RunDownloadJobParams } from '../../types/downloads.js'
-import { normalize } from 'path'
+import { basename } from 'node:path'
+import { downloadFailureForDisplay, downloadUrlOriginForLog } from '../utils/download_url_log.js'
 
 @inject()
 export class DownloadService {
@@ -16,19 +17,19 @@ export class DownloadService {
 
     // A job id can outlive its payload — BullMQ still returns an entry for it,
     // with `data` empty. One of those in the failed set used to throw on every
-    // poll of this endpoint (normalize(undefined)), and because failed jobs are
+    // poll of this endpoint (a missing filepath), and because failed jobs are
     // never evicted the endpoint stayed broken until Redis was cleared by hand.
     // Drop them: with no payload there is nothing to show anyway. (Upstream #1191.)
     const fileDownloads = fileJobs
       .filter((job) => job?.id != null && job.data != null)
       .map((job) => ({
         jobId: job.id!.toString(),
-        url: job.data.url,
+        url: downloadUrlOriginForLog(job.data.url),
         progress: parseInt(job.progress.toString(), 10),
-        filepath: job.data.filepath ? normalize(job.data.filepath) : '',
+        filepath: job.data.filepath ? basename(job.data.filepath).split(/[?#]/, 1)[0] : '',
         filetype: job.data.filetype,
         status: (job.failedReason ? 'failed' : 'active') as 'active' | 'failed',
-        failedReason: job.failedReason || undefined,
+        failedReason: job.failedReason ? downloadFailureForDisplay(job.failedReason) : undefined,
       }))
 
     // Get Ollama model download jobs
@@ -91,8 +92,11 @@ export class DownloadService {
         return { success: false, message: 'Cannot retry: missing URL or filepath in job data' }
       }
       await job.remove().catch(() => {})
-      await RunDownloadJob.dispatch(params)
-      return { success: true, message: `Retrying download for ${params.url}` }
+      await RunDownloadJob.dispatch({ ...params, resumeCompletion: true })
+      return {
+        success: true,
+        message: `Retrying download from ${downloadUrlOriginForLog(params.url)}`,
+      }
     }
 
     return { success: false, message: 'Failed job not found. It may have already been dismissed.' }

@@ -1,115 +1,120 @@
 /**
- * Standalone tests for the knowledge base orphan sweep (caweis#50).
+ * Standalone checks for the knowledge-base orphan sweep. A wrong decision
+ * deletes Qdrant vectors, so the refusal and cleanup cases both matter.
  *
- *   node --experimental-strip-types tests/standalone/kb_orphan_decision.standalone.ts
- *
- * This code deletes vectors. The two tests that matter most are the ones that
- * prove it declines to: an empty disk scan must reap nothing, and NOMAD's own
- * bundled docs must never be candidates. Either one getting this wrong empties
- * a knowledge base that took hours to build on a box with no internet.
+ *   node tests/standalone/kb_orphan_decision.standalone.ts
  */
 import assert from 'node:assert/strict'
 import { decideOrphans, filterOrphanCandidates } from '../../app/utils/kb_orphan_decision.ts'
 
+const KB = '/app/storage/kb_uploads'
+const ZIM = '/app/storage/zim'
+const ROOTS = [KB, ZIM]
 let passed = 0
+
 function check(name: string, fn: () => void) {
   fn()
   passed++
   console.log(`  ok - ${name}`)
 }
 
-const KB = '/app/storage/kb_uploads'
-const ZIM = '/app/storage/zim'
-const ROOTS = [KB, ZIM]
+function decide(
+  sourcesInQdrant: string[],
+  filesOnDisk: string[],
+  scannedRoots = ROOTS,
+  embeddableFiles = filesOnDisk
+) {
+  return decideOrphans({ sourcesInQdrant, filesOnDisk, embeddableFiles, scannedRoots })
+}
 
-// ── The refusal cases. These are the ones worth having. ──
-check('an empty disk scan reaps nothing, and says so with null', () => {
-  // Indistinguishable from a filesystem hiccup or a mount that has not come up.
-  // null means "no information", and the caller must not read it as "no orphans".
-  assert.equal(decideOrphans([`${ZIM}/medicine.zim`], []), null)
+check('no scanned roots cannot authorize a purge', () => {
+  assert.deepEqual(decide([`${ZIM}/old.zim`], [], []), { orphans: [], withheld: [] })
 })
 
-check("NOMAD's own bundled docs are never orphan candidates", () => {
-  // discoverNomadDocs embeds these, and they live outside both scan roots, so a
-  // sweep that did not filter would purge the product's own documentation.
+check('bundled docs and sibling directories are outside the scan roots', () => {
   const candidates = filterOrphanCandidates(
-    ['/app/docs/getting-started.md', '/app/README.md', `${ZIM}/medicine.zim`],
+    ['/app/docs/faq.md', `${ZIM}-backup/old.zim`, `${KB}-archive/old.pdf`, `${ZIM}/a.zim`],
     ROOTS
   )
-  assert.deepEqual(candidates, [`${ZIM}/medicine.zim`])
+  assert.deepEqual(candidates, [`${ZIM}/a.zim`])
+  assert.deepEqual(filterOrphanCandidates([KB, ZIM], ROOTS), [])
 })
 
-check('a sibling directory sharing a name prefix is not swept', () => {
-  // "/app/storage/zim-backup" starts with "/app/storage/zim" as a string.
-  const candidates = filterOrphanCandidates(
-    [`${ZIM}-backup/old.zim`, `${KB}-archive/old.pdf`, `${ZIM}/live.zim`],
-    ROOTS
+check('a missing ZIM root is excluded while a healthy uploads root is swept', () => {
+  const indexed = [`${ZIM}/old.zim`, `${KB}/old.pdf`, `${KB}/here.pdf`]
+  const result = decide(indexed, [`${KB}/here.pdf`], [KB])
+  assert.deepEqual(result, { orphans: [`${KB}/old.pdf`], withheld: [] })
+})
+
+check('an empty but present ZIM root with an upload keeps its vectors', () => {
+  const indexed = [`${ZIM}/one.zim`, `${ZIM}/two.zim`, `${KB}/here.pdf`]
+  const result = decide(indexed, [`${KB}/here.pdf`])
+  assert.deepEqual(result, {
+    orphans: [],
+    withheld: [{ root: ZIM, count: 2, reason: 'empty_root' }],
+  })
+})
+
+check('a ZIM root containing only a generated catalog is still withheld', () => {
+  const result = decide([`${ZIM}/old.zim`], [`${ZIM}/kiwix-library.xml`], [ZIM], [])
+  assert.deepEqual(result, {
+    orphans: [],
+    withheld: [{ root: ZIM, count: 1, reason: 'empty_root' }],
+  })
+})
+
+check('a small orphan under a populated root is purged', () => {
+  const result = decide([`${ZIM}/gone.zim`, `${ZIM}/here.zim`], [`${ZIM}/here.zim`], [ZIM])
+  assert.deepEqual(result, { orphans: [`${ZIM}/gone.zim`], withheld: [] })
+})
+
+check('an unrecognized but present file is never called missing', () => {
+  const result = decide(
+    [`${ZIM}/legacy.bin`, `${ZIM}/gone.zim`, `${ZIM}/here.zim`],
+    [`${ZIM}/legacy.bin`, `${ZIM}/here.zim`],
+    [ZIM],
+    [`${ZIM}/here.zim`]
   )
-  assert.deepEqual(candidates, [`${ZIM}/live.zim`])
+  assert.deepEqual(result, { orphans: [`${ZIM}/gone.zim`], withheld: [] })
 })
 
-check('the root itself, with no trailing separator, is not a candidate', () => {
-  assert.deepEqual(filterOrphanCandidates([ZIM, KB], ROOTS), [])
-})
-
-check('empty scan roots produce no candidates rather than sweeping everything', () => {
-  assert.deepEqual(filterOrphanCandidates([`${ZIM}/a.zim`], ['', '']), [])
-  assert.deepEqual(filterOrphanCandidates([`${ZIM}/a.zim`], []), [])
-})
-
-check('a root that was not there when the scan ran contributes no candidates', () => {
-  // Upstream f8a29693. The zim folder is missing (renamed, relocated, not yet
-  // mounted) while kb_uploads has a file, so the scan is not empty and
-  // decideOrphans' own guard passes. Only kb_uploads was walked.
-  const inQdrant = [`${ZIM}/wikipedia.zim`, `${ZIM}/medicine.zim`, `${KB}/gone.pdf`, `${KB}/notes.pdf`]
-  const onDisk = [`${KB}/notes.pdf`]
-  const orphans = decideOrphans(filterOrphanCandidates(inQdrant, [KB]), onDisk)
-  assert.deepEqual(orphans, [`${KB}/gone.pdf`], 'no ZIM may be reaped on a root nobody looked at')
-})
-
-check('a root that was walked and held nothing still gives up its orphans', () => {
-  // The legitimate purge: the zim folder is there and empty because the user
-  // deleted every ZIM. Excluding missing roots must not excuse this one.
-  const inQdrant = [`${ZIM}/wikipedia.zim`, `${KB}/notes.pdf`]
-  const onDisk = [`${KB}/notes.pdf`]
-  const orphans = decideOrphans(filterOrphanCandidates(inQdrant, [KB, ZIM]), onDisk)
-  assert.deepEqual(orphans, [`${ZIM}/wikipedia.zim`])
-})
-
-// ── The actual sweep ──
-check('a source with no file behind it is an orphan', () => {
-  const orphans = decideOrphans(
-    [`${ZIM}/deleted.zim`, `${ZIM}/present.zim`],
-    [`${ZIM}/present.zim`]
-  )
-  assert.deepEqual(orphans, [`${ZIM}/deleted.zim`])
-})
-
-check('a healthy library reports no orphans', () => {
+check('a healthy library and an unindexed new file have no orphans', () => {
   const files = [`${ZIM}/a.zim`, `${KB}/b.pdf`]
-  assert.deepEqual(decideOrphans(files, files), [])
+  assert.deepEqual(decide(files, files), { orphans: [], withheld: [] })
+  assert.deepEqual(decide([], files), { orphans: [], withheld: [] })
 })
 
-check('a file on disk that was never embedded is not an orphan', () => {
-  // The forward direction is decideScanAction's job, not this one's.
-  assert.deepEqual(decideOrphans([], [`${ZIM}/new.zim`]), [])
+check('most indexed files missing under one root withholds that root', () => {
+  const indexed = Array.from({ length: 10 }, (_, i) => `${ZIM}/${i}.zim`)
+  const result = decide(indexed, indexed.slice(0, 4), [ZIM])
+  assert.deepEqual(result, {
+    orphans: [],
+    withheld: [{ root: ZIM, count: 6, reason: 'mass_removal' }],
+  })
 })
 
-check('every orphan is reported, not just the first', () => {
-  const orphans = decideOrphans(
-    [`${ZIM}/x.zim`, `${ZIM}/y.zim`, `${KB}/z.pdf`, `${KB}/keep.pdf`],
-    [`${KB}/keep.pdf`]
-  )
-  assert.deepEqual(orphans, [`${ZIM}/x.zim`, `${ZIM}/y.zim`, `${KB}/z.pdf`])
+check('exactly half missing stays below the mass-removal threshold', () => {
+  const indexed = Array.from({ length: 10 }, (_, i) => `${ZIM}/${i}.zim`)
+  assert.deepEqual(decide(indexed, indexed.slice(0, 5), [ZIM]), {
+    orphans: indexed.slice(5),
+    withheld: [],
+  })
 })
 
-check('the two helpers compose the way the caller uses them', () => {
-  // filter first, then decide — so docs are excluded before anything is reaped.
-  const inQdrant = ['/app/docs/faq.md', `${ZIM}/gone.zim`, `${ZIM}/here.zim`]
-  const onDisk = [`${ZIM}/here.zim`]
-  const orphans = decideOrphans(filterOrphanCandidates(inQdrant, ROOTS), onDisk)
-  assert.deepEqual(orphans, [`${ZIM}/gone.zim`])
-  assert.ok(!orphans!.includes('/app/docs/faq.md'))
+check('fewer than five missing remain a small cleanup', () => {
+  const indexed = Array.from({ length: 5 }, (_, i) => `${ZIM}/${i}.zim`)
+  assert.deepEqual(decide(indexed, indexed.slice(0, 1), [ZIM]), {
+    orphans: indexed.slice(1),
+    withheld: [],
+  })
+})
+
+check('a withheld ZIM root does not block valid cleanup in uploads', () => {
+  const result = decide([`${ZIM}/lost.zim`, `${KB}/lost.pdf`, `${KB}/here.pdf`], [`${KB}/here.pdf`])
+  assert.deepEqual(result, {
+    orphans: [`${KB}/lost.pdf`],
+    withheld: [{ root: ZIM, count: 1, reason: 'empty_root' }],
+  })
 })
 
 console.log(`\n${passed} passed`)

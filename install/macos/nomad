@@ -3243,7 +3243,7 @@ step_run_admin_migrations() {
 step_seed_admin_services() {
   section "Admin services seed"
   if dc exec -T admin node ace db:seed 2>&1 | tee /tmp/nomad-seed.log; then
-    ok "services catalog seeded (Kiwix, Kolibri, FlatNotes, CyberChef, Qdrant)"
+    ok "services catalog seeded"
   else
     warn "db:seed exited non-zero — Apps catalog may be empty in admin"
     warn "tail: $(tail -5 /tmp/nomad-seed.log | tr '\n' ' | ')"
@@ -5018,6 +5018,10 @@ _upgrade_compose_one() {
   dc pull "$svc" || { warn "pull failed for $svc"; return 1; }
   log "recreating $svc with new image..."
   dc up -d --force-recreate "$svc"
+  if [[ "$svc" == "admin" ]]; then
+    step_run_admin_migrations
+    step_seed_admin_services
+  fi
   ok "$svc upgraded"
 }
 
@@ -5121,6 +5125,8 @@ _upgrade_compose_stack() {
   dc pull || { warn "compose pull failed"; return 1; }
   log "recreating containers with new images..."
   dc up -d
+  step_run_admin_migrations
+  step_seed_admin_services
   ok "compose stack upgraded"
   _print_admin_image_build
 }
@@ -6445,7 +6451,7 @@ cmd_benchmark() {
   log "pulling $model into container Ollama (~5 GB, slow under Rosetta)..."
   docker exec "$cname" ollama pull "$model"
   local container_log; container_log="$(mktemp)"
-  docker exec -i "$cname" sh -c "echo '$prompt' | ollama run --verbose $model" >"$container_log" 2>&1
+  printf '%s\n' "$prompt" | docker exec -i "$cname" ollama run --verbose "$model" >"$container_log" 2>&1
   local cont_eval_rate cont_total_dur
   cont_eval_rate="$(grep -E "eval rate" "$container_log" | tail -1 | grep -oE '[0-9.]+ tokens/s' || echo "?")"
   cont_total_dur="$(grep -E "total duration" "$container_log" | tail -1 | awk '{print $NF}' || echo "?")"

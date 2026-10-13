@@ -14,6 +14,7 @@
 import assert from 'node:assert/strict'
 import {
   ELISION_MARKER,
+  IMAGE_TOKEN_RESERVE,
   TRUNCATION_NOTICE,
   MAX_RESPONSE_RESERVE,
   estimateMessagesTokens,
@@ -205,6 +206,69 @@ check('retrieved context and history do not starve each other', () => {
   )
   assert.ok(r.trace.ragTokens > 0, 'RAG got some budget')
   assert.ok(r.trace.historyTokens > 0, 'history got some budget')
+})
+
+// ── Attached images ──
+// An image costs context that no message shows. The planner holds room back for
+// it, so the prompt is cut down around the history, not by the backend from the
+// middle.
+check('with no images the plan is exactly what it was before the option existed', () => {
+  const base = makeInputs({ history: history(30), contextWindow: 8192 })
+  assert.deepEqual(planPrompt({ ...base, imageCount: 0 }), planPrompt(base))
+  assert.equal(planPrompt(base).trace.imageTokens, 0)
+})
+
+check('each image takes room from older history, and is counted in the estimate', () => {
+  // Long enough to fit whole in an 8k window without images, and not with two.
+  const base = makeInputs({ history: history(60), contextWindow: 8192 })
+  const plain = planPrompt(base)
+  const withImages = planPrompt({ ...base, imageCount: 2 })
+  assert.equal(plain.trace.historyElided, false, 'this fixture must fit whole without images')
+  assert.equal(withImages.trace.imageTokens, 2 * IMAGE_TOKEN_RESERVE)
+  assert.ok(
+    withImages.trace.turnsKept < plain.trace.turnsKept,
+    `history kept: ${withImages.trace.turnsKept} with images, ${plain.trace.turnsKept} without`
+  )
+  // The estimate includes them, and so "it fits" still means estimate <= budget.
+  assert.ok(withImages.trace.estimatedPromptTokens <= withImages.trace.promptBudget)
+  assert.equal(withImages.trace.promptBudget, plain.trace.promptBudget)
+})
+
+check('images shorten the answer allowance by what they take of the window', () => {
+  const base = makeInputs({ contextWindow: 65536 })
+  const plain = planPrompt(base)
+  const withImages = planPrompt({ ...base, imageCount: 3 })
+  assert.equal(
+    withImages.trace.estimatedPromptTokens,
+    plain.trace.estimatedPromptTokens + 3 * IMAGE_TOKEN_RESERVE
+  )
+  assert.ok(withImages.numPredict < plain.numPredict)
+  assert.ok(
+    withImages.trace.estimatedPromptTokens + withImages.numPredict <= 65536,
+    'prompt, images and answer must still fit the window'
+  )
+})
+
+check('images never claim more than half the prompt budget, so the question keeps its room', () => {
+  // 4,096 window: 1,024 held for the answer, 3,072 for the prompt. Ten images
+  // would ask for 12,800 tokens; they get at most half of the 3,072.
+  const r = planPrompt(makeInputs({ contextWindow: 4096, imageCount: 10 }))
+  assert.equal(r.trace.imageTokens, Math.floor(3072 * 0.5))
+  assert.equal(r.trace.queryTruncated, false)
+  assert.equal(r.messages[r.messages.length - 1].content, 'How do I purify water?')
+  assert.ok(r.trace.estimatedPromptTokens <= r.trace.promptBudget)
+})
+
+check('a count that is not a whole number of images cannot upset the arithmetic', () => {
+  const base = makeInputs({ history: history(10) })
+  const plain = planPrompt(base)
+  for (const imageCount of [Number.NaN, -3, Infinity, undefined]) {
+    const r = planPrompt({ ...base, imageCount })
+    assert.equal(r.trace.imageTokens, 0, String(imageCount))
+    assert.ok(Number.isFinite(r.numPredict), `numPredict for ${imageCount}`)
+  }
+  assert.equal(planPrompt({ ...base, imageCount: 1.9 }).trace.imageTokens, IMAGE_TOKEN_RESERVE)
+  assert.deepEqual(planPrompt({ ...base, imageCount: Number.NaN }), plain)
 })
 
 // ── Degenerate input ──

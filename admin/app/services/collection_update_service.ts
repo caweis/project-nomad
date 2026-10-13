@@ -10,6 +10,7 @@ import type {
   ResourceUpdateCheckRequest,
   ResourceUpdateInfo,
   ContentUpdateCheckResult,
+  ZimCategoriesSpec,
 } from '../../types/collections.js'
 import { NOMAD_API_DEFAULT_BASE_URL } from '../../constants/misc.js'
 
@@ -110,6 +111,14 @@ export class CollectionUpdateService {
 
     const filename = this.buildFilename(update)
     const filepath = this.buildFilepath(update, filename)
+    const zimSpec = update.resource_type === 'zim'
+      ? await new CollectionManifestService().getCachedSpec<ZimCategoriesSpec>('zim_categories')
+      : null
+    const skipEmbedding = zimSpec?.categories.some((category) =>
+      category.tiers.some((tier) =>
+        tier.resources.some((resource) => resource.id === update.resource_id && resource.skip_embedding)
+      )
+    ) ?? false
 
     const result = await RunDownloadJob.dispatch({
       url: update.download_url,
@@ -123,6 +132,7 @@ export class CollectionUpdateService {
         version: update.latest_version,
         collection_ref: null,
         auto: options?.auto ?? false,
+        skip_embedding: skipEmbedding,
       },
     })
 

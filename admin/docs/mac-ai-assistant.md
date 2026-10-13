@@ -55,6 +55,17 @@ nomad models pull llama3.1:8b
 
 ---
 
+## Pictures in chat
+
+The Command Center's chat can look at pictures. Use the picture button beside the message box to attach up to four images (JPEG, PNG or WebP, 8 MB each, up to 40 megapixels), then ask your question in the same message.
+
+- **Pick a model that can see.** In **Models & Settings** (the button in the chat sidebar), a model whose **Input Type** includes *Image* accepts pictures. `gemma3:4b` is one; the smaller `gemma3:1b` is text-only. On a model that can't, the button stays off and says why.
+- **Apple MLX engine.** NOMAD can't tell in advance whether an MLX model accepts images, so it lets you try one. A text-only model may fail the request or may ignore the picture; if the request fails, the message says the model may not accept pictures. The Models page installs the smallest MLX build of each family, which for gemma3 is the text-only 1b, so on this engine a model that can see has to be installed another way.
+- **Pictures aren't kept.** They go with the message that carries them. They stay on screen in that message until you reload the page, but the model can't look at them again, so a later question can't refer back to them. Ask about a picture in the message you attach it to.
+- **What happens to a picture.** Before the model sees it, NOMAD turns it upright, shrinks it to at most 2,048 pixels on its longest side and saves a new JPEG, which leaves out the camera and location details stored inside photos. The original is uploaded to NOMAD unchanged and held in a temporary file only while it is processed.
+
+---
+
 ## Tier presets
 
 When you installed NOMAD, the installer offered a tier — a curated model set sized to your RAM:

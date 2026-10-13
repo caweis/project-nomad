@@ -4,6 +4,8 @@ import {
   FileEntry,
 } from '../../types/files.js'
 import { doResumableDownloadWithRetry } from '../utils/downloads.js'
+import { filenameFromDownloadUrl } from '../utils/download_filename.js'
+import { downloadUrlOriginForLog } from '../utils/download_url_log.js'
 import { extract } from 'tar'
 import env from '#start/env'
 import {
@@ -17,7 +19,7 @@ import { join, resolve, sep } from 'path'
 import urlJoin from 'url-join'
 import { RunDownloadJob } from '#jobs/run_download_job'
 import logger from '@adonisjs/core/services/logger'
-import { assertNotPrivateUrl } from '#validators/common'
+import { assertNotPrivateUrl, assertSafeRedirectTarget } from '#validators/common'
 import InstalledResource from '#models/installed_resource'
 import { CollectionManifestService } from './collection_manifest_service.js'
 import { pickNewestPerRegion, type MapRegionEntry } from '../utils/map_region_dedup.js'
@@ -72,7 +74,7 @@ export class MapService implements IMapService {
       max_retries: 2,
       allowedMimeTypes: BASE_ASSETS_MIME_TYPES,
       onAttemptError(error, attempt) {
-        console.error(`Attempt ${attempt} to download tar file failed: ${error.message}`)
+        console.error(`Attempt ${attempt} to download tar file failed (${error.name})`)
       },
     })
     const tarFileBuffer = await getFileStatsIfExists(tempTarPath)
@@ -117,19 +119,25 @@ export class MapService implements IMapService {
       try {
         assertNotPrivateUrl(resource.url)
       } catch {
-        logger.warn(`[MapService] Blocked download from private/loopback URL: ${resource.url}`)
+        logger.warn(
+          `[MapService] Blocked download from private/loopback origin: ${downloadUrlOriginForLog(resource.url)}`
+        )
         continue
       }
 
       const existing = await RunDownloadJob.getActiveByUrl(resource.url)
       if (existing) {
-        logger.warn(`[MapService] Download already in progress for URL ${resource.url}, skipping.`)
+        logger.warn(
+          `[MapService] Download already in progress from ${downloadUrlOriginForLog(resource.url)}, skipping.`
+        )
         continue
       }
 
-      const filename = resource.url.split('/').pop()
+      const filename = filenameFromDownloadUrl(resource.url)
       if (!filename) {
-        logger.warn(`[MapService] Could not determine filename from URL ${resource.url}, skipping.`)
+        logger.warn(
+          `[MapService] Could not determine filename from ${downloadUrlOriginForLog(resource.url)}, skipping.`
+        )
         continue
       }
 
@@ -157,7 +165,7 @@ export class MapService implements IMapService {
   async downloadRemoteSuccessCallback(urls: string[], _: boolean) {
     // Create InstalledResource entries for downloaded map files
     for (const url of urls) {
-      const filename = url.split('/').pop()
+      const filename = filenameFromDownloadUrl(url)
       if (!filename) continue
 
       const parsed = CollectionManifestService.parseMapFilename(filename)
@@ -186,7 +194,7 @@ export class MapService implements IMapService {
             installed_at: DateTime.now(),
           }
         )
-        logger.info(`[MapService] Created InstalledResource entry for: ${parsed.resource_id}`)
+        logger.info('[MapService] Created InstalledResource entry')
 
         // Remove the superseded prior version's file if every safety rail passes.
         // Maps have no library index, so deleting the recorded old file is enough.
@@ -200,13 +208,15 @@ export class MapService implements IMapService {
         if (decision.delete && decision.path) {
           try {
             await deleteFileIfExists(decision.path)
-            logger.info(`[MapService] Removed superseded ${parsed.resource_id} file: ${decision.path}`)
+            logger.info('[MapService] Removed superseded file')
           } catch (err) {
-            logger.warn(`[MapService] Failed to remove superseded file ${decision.path}:`, err)
+            logger.error('[MapService] Failed to remove superseded file')
+            throw err
           }
         }
       } catch (error) {
-        logger.error(`[MapService] Failed to create InstalledResource for ${filename}:`, error)
+        logger.error('[MapService] Failed to create InstalledResource')
+        throw error
       }
     }
   }
@@ -214,10 +224,12 @@ export class MapService implements IMapService {
   async downloadRemote(url: string): Promise<{ filename: string; jobId?: string }> {
     const parsed = new URL(url)
     if (!parsed.pathname.endsWith('.pmtiles')) {
-      throw new Error(`Invalid PMTiles file URL: ${url}. URL must end with .pmtiles`)
+      throw new Error(
+        `Invalid PMTiles file URL from ${downloadUrlOriginForLog(url)}. URL must end with .pmtiles`
+      )
     }
 
-    const filename = url.split('/').pop()
+    const filename = filenameFromDownloadUrl(url)
     if (!filename) {
       throw new Error('Could not determine filename from URL')
     }
@@ -238,7 +250,7 @@ export class MapService implements IMapService {
     // without dispatching a replacement.
     const existing = await RunDownloadJob.getActiveByUrl(url)
     if (existing) {
-      throw new Error(`Download already in progress for URL ${url}`)
+      throw new Error(`Download already in progress from ${downloadUrlOriginForLog(url)}`)
     }
 
     // Parse resource metadata
@@ -262,7 +274,9 @@ export class MapService implements IMapService {
       throw new Error('Failed to dispatch download job')
     }
 
-    logger.info(`[MapService] Dispatched download job ${result.job.id} for URL ${url}`)
+    logger.info(
+      `[MapService] Dispatched download job ${result.job.id} from ${downloadUrlOriginForLog(url)}`
+    )
 
     return {
       filename,
@@ -277,28 +291,33 @@ export class MapService implements IMapService {
       assertNotPrivateUrl(url)
       const parsed = new URL(url)
       if (!parsed.pathname.endsWith('.pmtiles')) {
-        throw new Error(`Invalid PMTiles file URL: ${url}. URL must end with .pmtiles`)
+        throw new Error(
+          `Invalid PMTiles file URL from ${downloadUrlOriginForLog(url)}. URL must end with .pmtiles`
+        )
       }
 
-      const filename = url.split('/').pop()
+      const filename = filenameFromDownloadUrl(url)
       if (!filename) {
         throw new Error('Could not determine filename from URL')
       }
 
       // Perform a HEAD request to get the content length
       const { default: axios } = await import('axios')
-      const response = await axios.head(url)
+      const response = await axios.head(url, {
+        timeout: 30_000,
+        beforeRedirect: assertSafeRedirectTarget,
+      })
 
       if (response.status !== 200) {
-        throw new Error(`Failed to fetch file info: ${response.status} ${response.statusText}`)
+        throw new Error(`Failed to fetch file info: HTTP ${response.status}`)
       }
 
       const contentLength = response.headers['content-length']
       const size = contentLength ? parseInt(String(contentLength), 10) : 0
 
       return { filename, size }
-    } catch (error: any) {
-      logger.error({ err: error }, '[MapService] Preflight check failed for URL')
+    } catch {
+      logger.error('[MapService] Preflight check failed for URL')
       return { message: 'Preflight check failed. Please verify the URL is valid and accessible.' }
     }
   }
@@ -406,10 +425,8 @@ export class MapService implements IMapService {
         }
       })
 
-    const deduped = pickNewestPerRegion(entries, (kept, dropped) => {
-      logger.warn(
-        `[MapService] Duplicate map region "${kept.regionName}": using "${kept.name}" over "${dropped.name}" (keeping newest)`
-      )
+    const deduped = pickNewestPerRegion(entries, () => {
+      logger.warn('[MapService] Duplicate map region; keeping newest file')
     })
 
     for (const entry of deduped) {
@@ -487,7 +504,7 @@ export class MapService implements IMapService {
         .where('resource_id', parsed.resource_id)
         .where('resource_type', 'map')
         .delete()
-      logger.info(`[MapService] Deleted InstalledResource entry for: ${parsed.resource_id}`)
+      logger.info('[MapService] Deleted InstalledResource entry')
     }
   }
 

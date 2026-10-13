@@ -57,7 +57,7 @@ export class KiwixLibraryService {
   private async _readZimMetadata(zimFilePath: string): Promise<Partial<KiwixBook> | null> {
     try {
       if (!(await isValidZimFile(zimFilePath))) {
-        logger.warn(`[KiwixLibraryService] Skipping invalid/corrupted ZIM file: ${zimFilePath}`)
+        logger.warn('[KiwixLibraryService] Skipping invalid/corrupted ZIM file')
         return null
       }
       const archive = new Archive(zimFilePath)
@@ -269,7 +269,7 @@ export class KiwixLibraryService {
     for (const filename of zimFiles) {
       const meta = await this._readZimMetadata(join(dirPath, filename))
       if (meta === null) {
-        logger.warn(`[KiwixLibraryService] Skipping unreadable ZIM file: ${filename}`)
+        logger.warn('[KiwixLibraryService] Skipping unreadable ZIM file')
         continue
       }
       const containerPath = `${CONTAINER_DATA_PATH}/${filename}`
@@ -308,7 +308,7 @@ export class KiwixLibraryService {
     }
 
     if (existingBooks.some((b) => b.path === containerPath)) {
-      logger.info(`[KiwixLibraryService] ${zimFilename} already in library, skipping.`)
+      logger.info('[KiwixLibraryService] ZIM file already in library, skipping')
       return
     }
 
@@ -316,7 +316,7 @@ export class KiwixLibraryService {
     const meta = await this._readZimMetadata(fullPath)
 
     if (meta === null) {
-      logger.error(`[KiwixLibraryService] Cannot add ${zimFilename}: file is invalid or corrupted.`)
+      logger.error('[KiwixLibraryService] Cannot add ZIM file: invalid or corrupted')
       return
     }
 
@@ -329,7 +329,7 @@ export class KiwixLibraryService {
 
     const xml = this._buildXml(existingBooks)
     await this._atomicWrite(xml)
-    logger.info(`[KiwixLibraryService] Added ${zimFilename} to library XML.`)
+    logger.info('[KiwixLibraryService] Added ZIM file to library XML')
   }
 
   async removeBook(filename: string): Promise<void> {
@@ -353,12 +353,12 @@ export class KiwixLibraryService {
     const filtered = existingBooks.filter((b) => b.path !== containerPath)
 
     if (filtered.length === existingBooks.length) {
-      logger.info(`[KiwixLibraryService] ${zimFilename} not found in library, nothing to remove.`)
+      logger.info('[KiwixLibraryService] ZIM file not found in library, nothing to remove')
       return
     }
 
     const xml = this._buildXml(filtered)
     await this._atomicWrite(xml)
-    logger.info(`[KiwixLibraryService] Removed ${zimFilename} from library XML.`)
+    logger.info('[KiwixLibraryService] Removed ZIM file from library XML')
   }
 }

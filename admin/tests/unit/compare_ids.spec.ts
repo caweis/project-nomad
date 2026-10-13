@@ -65,6 +65,11 @@ test.group('parseCompareIds — invalid values dropped', () => {
     assert.deepEqual(parseCompareIds('2.0'), [])
   })
 
+  test('alternate numeric syntax and unsafe integers are dropped', ({ assert }) => {
+    assert.deepEqual(parseCompareIds('1e2,0x10,+3,9007199254740992'), [])
+    assert.deepEqual(parseCompareIds('0003'), [3])
+  })
+
   test('zero is dropped', ({ assert }) => {
     assert.deepEqual(parseCompareIds('0'), [])
   })

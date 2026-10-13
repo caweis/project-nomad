@@ -21,6 +21,7 @@ export type SpecResource = {
    * another schema change.
    */
   auth?: 'nomad_app_key'
+  skip_embedding?: boolean
 }
 
 export type SpecTier = {

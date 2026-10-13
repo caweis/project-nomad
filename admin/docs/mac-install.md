@@ -1,6 +1,6 @@
-# Installing N.O.M.A.D. on your Mac
+# Installing NOMAD on your Mac
 
-This guide walks you through installing N.O.M.A.D. on a Mac with Apple Silicon. The whole install is one command, takes 10-30 minutes (most of which is downloading AI models), and is safe to re-run if anything goes wrong.
+This guide walks you through installing NOMAD on a Mac with Apple Silicon. The whole install is one command, takes 10-30 minutes (most of which is downloading AI models), and is safe to re-run if anything goes wrong.
 
 ---
 
@@ -9,10 +9,10 @@ This guide walks you through installing N.O.M.A.D. on a Mac with Apple Silicon. 
 You'll want:
 
 - **An Apple Silicon Mac** (M1, M2, M3, M4, or later). macOS 14 (Sonoma) or newer.
-- **At least 16 GB of RAM.** N.O.M.A.D. works on 8 GB but you'll be limited to the smallest AI models. 32 GB or more lets you run the larger, more capable models.
+- **At least 16 GB of RAM.** NOMAD works on 8 GB but you'll be limited to the smallest AI models. 32 GB or more lets you run the larger, more capable models.
 - **A few hundred GB of free disk space.** AI models alone can run 10–200 GB depending on which ones you pick. Wikipedia is another 50 MB to 96 GB depending on the size you choose.
 - **(Optional) An external drive.** The installer supports putting your data on an external drive (SSD or HDD) instead of your Mac's internal disk. Picks vary — some users want AI models and ZIM libraries off internal storage, some want the drive to travel between Macs, others install entirely on internal disk and never touch this option. If you do use one, a 1 TB drive holds most install tiers; 2 TB covers the largest. APFS-formatted. See [Your data drive](/docs/mac-drive-portability) for the differences between the two paths.
-- **An internet connection for the install.** Once everything's downloaded, N.O.M.A.D. works offline.
+- **An internet connection for the install.** Once everything's downloaded, NOMAD works offline.
 
 You don't need to install Docker, Homebrew, Ollama, or anything else first. The installer handles all of it.
 

@@ -1,5 +1,5 @@
 {
-  "spec_version": "2026-02-11",
+  "spec_version": "2026-10-13",
   "collections": [
     {
       "name": "Pacific Region",
@@ -221,14 +221,6 @@
           "size_mb": 400
         },
         {
-          "id": "district_of_columbia",
-          "version": "2025-12",
-          "title": "District_Of_Columbia",
-          "description": "Topographic maps for the state of District_Of_Columbia",
-          "url": "https://github.com/Crosstalk-Solutions/project-nomad-maps/raw/refs/heads/master/pmtiles/district_of_columbia_2025-12.pmtiles",
-          "size_mb": 400
-        },
-        {
           "id": "florida",
           "version": "2025-12",
           "title": "Florida",
@@ -367,12 +359,20 @@
           "size_mb": 400
         },
         {
-          "id": "indianamichigan",
+          "id": "indiana",
           "version": "2025-12",
-          "title": "Indianamichigan",
-          "description": "Topographic maps for the state of Indianamichigan",
-          "url": "https://github.com/Crosstalk-Solutions/project-nomad-maps/raw/refs/heads/master/pmtiles/indianamichigan_2025-12.pmtiles",
-          "size_mb": 400
+          "title": "Indiana",
+          "description": "Offline map for Indiana",
+          "url": "https://github.com/Crosstalk-Solutions/project-nomad-maps/raw/refs/heads/master/pmtiles/indiana_2025-12.pmtiles",
+          "size_mb": 259
+        },
+        {
+          "id": "michigan",
+          "version": "2025-12",
+          "title": "Michigan",
+          "description": "Offline map for Michigan",
+          "url": "https://github.com/Crosstalk-Solutions/project-nomad-maps/raw/refs/heads/master/pmtiles/michigan_2025-12.pmtiles",
+          "size_mb": 442
         },
         {
           "id": "ohio",

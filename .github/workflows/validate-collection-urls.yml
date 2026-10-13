@@ -1,0 +1,32 @@
+name: Validate collection URLs
+
+on:
+  push:
+    paths:
+      - 'collections/**.json'
+      - '.github/scripts/check-collection-urls.sh'
+      - '.github/scripts/test-check-collection-urls.sh'
+      - '.github/workflows/validate-collection-urls.yml'
+  pull_request:
+    paths:
+      - 'collections/**.json'
+      - '.github/scripts/check-collection-urls.sh'
+      - '.github/scripts/test-check-collection-urls.sh'
+      - '.github/workflows/validate-collection-urls.yml'
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-urls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check validator behavior
+        run: bash .github/scripts/test-check-collection-urls.sh
+      - name: Check catalog links
+        run: bash .github/scripts/check-collection-urls.sh collections

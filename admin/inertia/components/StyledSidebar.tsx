@@ -43,7 +43,7 @@ const StyledSidebar: React.FC<StyledSidebarProps> = ({ title, items, hideBackToH
           className={classNames(
             item.current
               ? 'bg-desert-green text-white'
-              : 'text-black hover:bg-desert-green-light hover:text-white',
+              : 'text-text-primary hover:bg-desert-green-light hover:text-white',
             'group flex gap-x-3 rounded-md p-2 text-sm/6 font-semibold'
           )}
         >
@@ -58,8 +58,8 @@ const StyledSidebar: React.FC<StyledSidebarProps> = ({ title, items, hideBackToH
     return (
       <div className="flex grow flex-col gap-y-5 overflow-y-auto bg-desert-sand px-6 ring-1 ring-white/5 pt-4 shadow-md">
         <div className="flex h-16 shrink-0 items-center">
-          <img src="/project_nomad_logo.png" alt="Project Nomad Logo" className="h-16 w-16" />
-          <h1 className="ml-3 text-xl font-semibold text-black">{title}</h1>
+          <img src="/nomad-primary.svg" alt="Project Nomad Logo" className="h-16 w-16 object-contain" />
+          <h1 className="ml-3 text-xl font-semibold text-text-primary">{title}</h1>
         </div>
         <nav className="flex flex-1 flex-col">
           <ul role="list" className="flex flex-1 flex-col gap-y-7">
@@ -87,10 +87,10 @@ const StyledSidebar: React.FC<StyledSidebarProps> = ({ title, items, hideBackToH
           <ThemeToggle />
         </div>
         <div className="mb-4 text-center text-sm text-text-secondary">
-          <p>Project N.O.M.A.D. Command Center v{appVersion}</p>
+          <p>Project NOMAD Command Center v{appVersion}</p>
           <button
             onClick={() => setDebugModalOpen(true)}
-            className="mt-1 text-gray-500 hover:text-desert-green inline-flex items-center gap-1 cursor-pointer"
+            className="mt-1 text-desert-stone-dark hover:text-desert-green inline-flex items-center gap-1 cursor-pointer"
           >
             <IconBug className="size-3.5" />
             Debug Info

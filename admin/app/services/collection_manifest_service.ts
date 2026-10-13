@@ -271,11 +271,11 @@ export class CollectionManifestService {
       const managedWikipediaFilename = wikipediaSelection?.filename ?? null
 
       for (const file of zimFiles) {
-        console.log(`Processing ZIM file: ${file.name}`)
+        console.log('Processing ZIM file')
         if (isManagedWikipediaFile(file.name, managedWikipediaFilename)) continue
 
         const parsed = CollectionManifestService.parseZimFilename(file.name)
-        console.log(`Parsed ZIM filename:`, parsed)
+        console.log(`Parsed ZIM filename: ${parsed ? 'recognized' : 'unrecognized'}`)
         if (!parsed) continue
 
         seenZimIds.add(parsed.resource_id)

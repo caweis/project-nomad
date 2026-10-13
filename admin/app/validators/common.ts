@@ -21,14 +21,20 @@ import ipaddr from 'ipaddr.js'
  */
 export function assertNotPrivateUrl(urlString: string): void {
   const parsed = new URL(urlString)
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('Download URL must use HTTP or HTTPS')
+  }
   // WHATWG URL keeps brackets on IPv6 literals (`http://[::1]/` → `[::1]`); strip them.
-  const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '')
+  const hostname = parsed.hostname
+    .toLowerCase()
+    .replace(/^\[|\]$/g, '')
+    .replace(/\.$/, '')
 
   // Not an IP literal → a DNS name. Block the obvious `localhost` alias; allow
   // everything else (LAN names like `my-nas` stay usable). DNS rebinding is out
   // of scope — it would need a resolve-and-recheck at fetch time.
   if (!ipaddr.isValid(hostname)) {
-    if (hostname === 'localhost') {
+    if (hostname === 'localhost' || hostname.endsWith('.localhost')) {
       throw new Error(`Download URL must not point to localhost: ${hostname}`)
     }
     return
@@ -55,9 +61,26 @@ export function assertNotPrivateUrl(urlString: string): void {
   if (addr.kind() === 'ipv6') {
     const IMDS_V6 = ipaddr.parse('fd00:ec2::254').toNormalizedString()
     if ((addr as ipaddr.IPv6).toNormalizedString() === IMDS_V6) {
-      throw new Error(`Download URL must not point to the cloud instance metadata endpoint: ${hostname}`)
+      throw new Error(
+        `Download URL must not point to the cloud instance metadata endpoint: ${hostname}`
+      )
     }
   }
+}
+
+/** Axios calls this before each followed redirect, after resolving Location. */
+export function assertSafeRedirectTarget(options: {
+  protocol?: string
+  hostname?: string
+  port?: string | number
+}): void {
+  if ((options.protocol !== 'http:' && options.protocol !== 'https:') || !options.hostname) {
+    throw new Error('Download redirect must use HTTP or HTTPS with a hostname')
+  }
+  const host = options.hostname.replace(/^\[|\]$/g, '')
+  const authority = host.includes(':') ? `[${host}]` : host
+  const port = options.port ? `:${options.port}` : ''
+  assertNotPrivateUrl(`${options.protocol}//${authority}${port}/`)
 }
 
 export const remoteDownloadValidator = vine.compile(
@@ -135,8 +158,6 @@ export const applyContentUpdateValidator = vine.compile(resourceUpdateInfoBase)
 
 export const applyAllContentUpdatesValidator = vine.compile(
   vine.object({
-    updates: vine
-      .array(resourceUpdateInfoBase)
-      .minLength(1),
+    updates: vine.array(resourceUpdateInfoBase).minLength(1),
   })
 )

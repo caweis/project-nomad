@@ -11,6 +11,7 @@ import { DEFAULT_LINK_TILE_COLOR } from '../../constants/link_tile_colors.js'
 import Service from '#models/service'
 import { DEFAULT_CPUS, DEFAULT_MEMORY_MB, evaluateCustomApp } from '#services/custom_app_guard'
 import { resolveHostArch } from '../utils/host_arch.js'
+import { bindsFromVolumes, volumesFromBinds } from '../utils/container_binds.js'
 import { inject } from '@adonisjs/core'
 import type { HttpContext } from '@adonisjs/core/http'
 import logger from '@adonisjs/core/services/logger'
@@ -754,9 +755,9 @@ export default class SystemController {
         containerConfig.HostConfig.PortBindings = portBindings
         containerConfig.ExposedPorts = exposedPorts
 
-        const binds = (payload.volumes ?? []).map(
-            ({ host_path, container_path }) => `${host_path}:${container_path}`
-        )
+        // A mount keeps the options it had (`:ro` on MeshCore Web's config and certs) when its
+        // paths are unchanged; the dialog never shows them (see container_binds.ts).
+        const binds = bindsFromVolumes(payload.volumes ?? [], containerConfig.HostConfig.Binds ?? [])
         if (binds.length) containerConfig.HostConfig.Binds = binds
         else delete containerConfig.HostConfig.Binds
 
@@ -787,10 +788,7 @@ export default class SystemController {
             host: Number.parseInt(val?.[0]?.HostPort, 10),
         }))
 
-        const volumes = (hostConfig.Binds ?? []).map((bind: string) => {
-            const idx = bind.indexOf(':')
-            return { host_path: bind.slice(0, idx), container_path: bind.slice(idx + 1) }
-        })
+        const volumes = volumesFromBinds(hostConfig.Binds ?? [])
 
         return {
             service_name: service.service_name,

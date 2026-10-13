@@ -7,7 +7,7 @@ import sharp from 'sharp'
 import { deleteFileIfExists, determineFileType, getFile, getFileStatsIfExists, listDirectoryContentsRecursive, ZIM_STORAGE_PATH } from '../utils/fs.js'
 import { computeHeadingBoost, toRetrievedChunk } from '../utils/rag_context.js'
 import { decideScanAction, type IngestPolicy } from '../utils/kb_ingest_decision.js'
-import { decideOrphans, filterOrphanCandidates } from '../utils/kb_orphan_decision.js'
+import { decideOrphans } from '../utils/kb_orphan_decision.js'
 import {
   collectionActiveMessage,
   effectiveActive,
@@ -23,11 +23,12 @@ import { OllamaService } from './ollama_service.js'
 import { SERVICE_NAMES } from '../../constants/service_names.js'
 import { removeStopwords } from 'stopword'
 import { randomUUID } from 'node:crypto'
-import { join, resolve, sep } from 'node:path'
+import { join, relative, resolve, sep } from 'node:path'
 import KVStore from '#models/kv_store'
 import { ZIMExtractionService } from './zim_extraction_service.js'
 import { ZIM_BATCH_SIZE } from '../../constants/zim_extraction.js'
 import { hasMoreArticleBatches } from '../utils/zim_batch_decision.js'
+import { decideContentReindex, type ReindexOutcome } from '../utils/content_reindex_decision.js'
 import { ProcessAndEmbedFileResponse, ProcessZIMFileResponse, RAGResult, RerankedRAGResult, StoredFileInfo } from '../../types/rag.js'
 import type { KbIngestStateValue } from '../../types/kb_ingest_state.js'
 
@@ -94,6 +95,19 @@ export class RagService {
     }
   }
 
+  public async checkQdrantHealth(): Promise<boolean> {
+    try {
+      await this._ensureDependencies()
+      await this.qdrant!.getCollections()
+      return true
+    } catch {
+      this.qdrant = null
+      this.qdrantInitPromise = null
+      this.ensuredCollections.clear()
+      return false
+    }
+  }
+
   private async _ensureCollection(
     collectionName: string,
     dimensions: number = RagService.EMBEDDING_DIMENSION
@@ -154,7 +168,7 @@ export class RagService {
       // Only memoize after every step succeeded, so a partial failure is retried
       this.ensuredCollections.add(collectionName)
     } catch (error) {
-      logger.error('Error ensuring Qdrant collection:', error)
+      logger.error('Error ensuring Qdrant collection')
       throw error
     }
   }
@@ -274,11 +288,9 @@ export class RagService {
 
     if (expansions.length > 0) {
       expanded = `${expanded} ${expansions.join(' ')}`
-      logger.debug(`[RAG] Query expanded with domain terms: "${expanded}"`)
+      logger.debug('[RAG] Query expanded with domain terms')
     }
 
-    logger.debug(`[RAG] Original query: "${query}"`)
-    logger.debug(`[RAG] Preprocessed query: "${expanded}"`)
     return expanded
   }
 
@@ -404,16 +416,13 @@ export class RagService {
           for (let j = 0; j < batch.length; j++) {
             successfulChunkIndices.push(batchStart + j)
           }
-        } catch (embedError: any) {
+        } catch {
           // Specific 400 "input length exceeds context length" is the common
           // case here; also handle network errors, model-not-loaded, etc.
           // gracefully so a single problematic batch doesn't blow up ingest.
           failedBatches++
-          const errMsg = embedError?.error || embedError?.message || String(embedError)
-          const sampleChunk = batch[0]?.slice(0, 120) ?? ''
           logger.warn(
-            `[RAG] Embedding batch ${batchIdx + 1}/${totalBatches} FAILED (${errMsg}). ` +
-              `Skipping ${batch.length} chunks starting with: "${sampleChunk}..."`
+            `[RAG] Embedding batch ${batchIdx + 1}/${totalBatches} failed; skipping ${batch.length} chunks`
           )
         }
 
@@ -474,9 +483,9 @@ export class RagService {
         // Combine and dedup keywords
         const allKeywords = [...new Set([...structuralKeywords, ...contentKeywords])]
 
-        logger.debug(`[RAG] Extracted keywords for chunk ${origIndex}: [${allKeywords.join(', ')}]`)
+        logger.debug(`[RAG] Extracted ${allKeywords.length} keywords for chunk ${origIndex}`)
         if (structuralKeywords.length > 0) {
-          logger.debug(`[RAG]   - Structural: [${structuralKeywords.join(', ')}], Content: [${contentKeywords.join(', ')}]`)
+          logger.debug(`[RAG]   - Structural: ${structuralKeywords.length}, content: ${contentKeywords.length}`)
         }
 
         return {
@@ -502,7 +511,7 @@ export class RagService {
       // switch's own update can only reach points that already existed. Read it
       // again and correct these few if so. setFileActive writes the row before
       // the points, so whichever order the two land in, the file ends up as the
-      // row says. Upstream reads it once, before the write, and leaves this gap.
+      // row says.
       if (points.length > 0) {
         const activeNow = await this.sourceActive(sanitizedSource)
         if (activeNow !== active) {
@@ -514,14 +523,9 @@ export class RagService {
       }
 
       logger.debug(`[RAG] Successfully embedded and stored ${points.length}/${chunks.length} chunks`)
-      if (points.length > 0) {
-        logger.debug(`[RAG] First successful chunk preview: "${chunks[successfulChunkIndices[0]].substring(0, 100)}..."`)
-      }
-
       return { chunks: points.length }
-    } catch (error) {
-      console.error(error)
-      logger.error('[RAG] Error embedding text:', error)
+    } catch {
+      logger.error('[RAG] Error embedding text')
       return null
     }
   }
@@ -697,7 +701,7 @@ export class RagService {
     // This prevents race conditions where early batches complete after later ones
     const shouldDelete = deleteAfterEmbedding && !hasMoreBatches
     if (shouldDelete) {
-      logger.info(`[RAG] Final batch complete, deleting ZIM file: ${filepath}`)
+      logger.info('[RAG] Final batch complete, deleting ZIM file')
       await deleteFileIfExists(filepath)
     } else if (!hasMoreBatches) {
       logger.info(`[RAG] Final batch complete, but file deletion was not requested`)
@@ -730,7 +734,7 @@ export class RagService {
     collection?: string
   ): Promise<{ success: boolean; message: string; chunks?: number }> {
     if (!extractedText || extractedText.trim().length === 0) {
-      return { success: false, message: 'Process completed succesfully, but no text was found to embed.' }
+      return { success: false, message: 'Process completed successfully, but no text was found to embed.' }
     }
 
     const embedResult = await this.embedAndStoreText(extractedText, {
@@ -743,7 +747,7 @@ export class RagService {
     }
 
     if (deleteAfterEmbedding) {
-      logger.info(`[RAG] Embedding complete, deleting uploaded file: ${filepath}`)
+      logger.info('[RAG] Embedding complete, deleting uploaded file')
       await deleteFileIfExists(filepath)
     }
 
@@ -776,12 +780,12 @@ export class RagService {
       // sync. Return before any processing or deletion so the in-progress download
       // is left untouched; the completed `.zim` is picked up on the next pass.
       if (filepath.endsWith('.tmp')) {
-        logger.debug(`[RAG] Skipping partial download (not yet complete): ${filepath}`)
+        logger.debug('[RAG] Skipping partial download (not yet complete)')
         return { success: true, message: 'Skipped partial download (still in progress).' }
       }
 
       const fileType = determineFileType(filepath)
-      logger.debug(`[RAG] Processing file: ${filepath} (detected type: ${fileType})`)
+      logger.debug(`[RAG] Processing file (detected type: ${fileType})`)
 
       if (fileType === 'unknown') {
         return { success: false, message: 'Unsupported file type.' }
@@ -827,8 +831,8 @@ export class RagService {
 
       // Embed extracted text and cleanup
       return await this.embedTextAndCleanup(extractedText, filepath, deleteAfterEmbedding, scaledProgress, collection)
-    } catch (error) {
-      logger.error('[RAG] Error processing and embedding file:', error)
+    } catch {
+      logger.error('[RAG] Error processing and embedding file')
       return { success: false, message: 'Error processing and embedding file.' }
     }
   }
@@ -849,7 +853,7 @@ export class RagService {
     collection?: string
   ): Promise<Array<{ text: string; score: number; metadata?: Record<string, any> }>> {
     try {
-      logger.debug(`[RAG] Starting similarity search for query: "${query}"`)
+      logger.debug('[RAG] Starting similarity search')
 
       await this._ensureCollection(
         RagService.CONTENT_COLLECTION_NAME,
@@ -883,7 +887,7 @@ export class RagService {
       // Preprocess query for better matching
       const processedQuery = this.preprocessQuery(query)
       const keywords = this.extractKeywords(processedQuery)
-      logger.debug(`[RAG] Extracted keywords: [${keywords.join(', ')}]`)
+      logger.debug(`[RAG] Extracted ${keywords.length} query keywords`)
 
       // Generate embedding for the query with search_query prefix
       const ollamaClient = await this.ollamaService.getClient()
@@ -951,10 +955,10 @@ export class RagService {
 
       const rerankedResults = this.rerankResults(resultsWithMetadata, keywords, query)
 
-      logger.debug(`[RAG] Top 3 results after reranking:`)
+      logger.debug('[RAG] Top 3 scores after reranking:')
       rerankedResults.slice(0, 3).forEach((result, idx) => {
         logger.debug(
-          `[RAG]   ${idx + 1}. Score: ${result.finalScore.toFixed(4)} (semantic: ${result.score.toFixed(4)}) - "${result.text.substring(0, 100)}..."`
+          `[RAG]   ${idx + 1}. Score: ${result.finalScore.toFixed(4)} (semantic: ${result.score.toFixed(4)})`
         )
       })
 
@@ -963,8 +967,8 @@ export class RagService {
 
       // Return top N results with enhanced metadata
       return diverseResults.slice(0, limit).map(toRetrievedChunk)
-    } catch (error) {
-      logger.error('[RAG] Error searching similar documents:', error)
+    } catch {
+      logger.error('[RAG] Error searching similar documents')
       return []
     }
   }
@@ -1098,7 +1102,7 @@ export class RagService {
 
         if (count > 0) {
           logger.debug(
-            `[RAG] Source diversity penalty for "${sourceKey}": ${result.finalScore.toFixed(4)} → ${diverseScore.toFixed(4)} (seen ${count}x)`
+            `[RAG] Source diversity penalty: ${result.finalScore.toFixed(4)} → ${diverseScore.toFixed(4)} (seen ${count}x)`
           )
         }
 
@@ -1247,8 +1251,8 @@ export class RagService {
           }
         })
       )
-    } catch (error) {
-      logger.error('Error retrieving stored files:', error)
+    } catch {
+      logger.error('Error retrieving stored files')
       return []
     }
   }
@@ -1302,8 +1306,8 @@ export class RagService {
       await row.save()
 
       return { success: true, message: collection ? `Moved to "${collection}".` : 'Moved to Uncategorized.' }
-    } catch (error) {
-      logger.error('[RAG] Error updating file collection:', error)
+    } catch {
+      logger.error('[RAG] Error updating file collection')
       return { success: false, message: 'Error updating file collection.' }
     }
   }
@@ -1314,7 +1318,7 @@ export class RagService {
    * nothing is deleted or re-embedded; only searchSimilarDocuments's filter sees
    * it.
    *
-   * The row is written before the points, unlike upstream: embedAndStoreText
+   * The row is written before the points: embedAndStoreText
    * reads the row again after writing a batch, so a file switched while it is
    * being indexed converges on the row whichever write lands first.
    */
@@ -1325,8 +1329,7 @@ export class RagService {
     try {
       await this._ensureCollection(RagService.CONTENT_COLLECTION_NAME, RagService.EMBEDDING_DIMENSION)
 
-      // Upstream updates the row only when one exists. A file without one kept
-      // showing as on while search had dropped it.
+      // A file with points but no state row still needs a durable switch.
       const row = await this.ensureStateRowForSource(source)
       if (!row) {
         return {
@@ -1335,18 +1338,29 @@ export class RagService {
           message: 'That file is not in the knowledge base.',
         }
       }
+      const previousActive = effectiveActive(row.active)
       row.active = active
       await row.save()
 
-      await this.qdrant!.setPayload(RagService.CONTENT_COLLECTION_NAME, {
-        payload: { active },
-        filter: { must: [{ key: 'source', match: { value: source } }] },
-      })
+      try {
+        await this.qdrant!.setPayload(RagService.CONTENT_COLLECTION_NAME, {
+          payload: { active },
+          filter: { must: [{ key: 'source', match: { value: source } }] },
+        })
+      } catch (error) {
+        // The switch is reported as failed. Put the panel's saved value back,
+        // unless another request has changed it since this one wrote it.
+        await KbIngestState.query()
+          .where('file_path', source)
+          .where('active', active)
+          .update({ active: previousActive })
+        throw error
+      }
 
       const fileName = source.split(/[/\\]/).at(-1) || source
       return { success: true, message: fileActiveMessage(fileName, active) }
-    } catch (error) {
-      logger.error('[RAG] Error switching a file in or out of search:', error)
+    } catch {
+      logger.error('[RAG] Error switching a file in or out of search')
       return { success: false, message: 'Could not change whether this file is used in answers.' }
     }
   }
@@ -1369,27 +1383,37 @@ export class RagService {
     try {
       await this._ensureCollection(RagService.CONTENT_COLLECTION_NAME, RagService.EMBEDDING_DIMENSION)
 
-      const countRow = await KbIngestState.query()
+      const changedRows = await KbIngestState.query()
         .where('collection', collection)
         .where('active', !active)
-        .count('* as total')
-        .first()
-      const affectedCount = Number((countRow as any)?.$extras?.total ?? 0)
+        .select('file_path')
+      const changedPaths = changedRows.map((row) => row.file_path)
+      const affectedCount = changedPaths.length
 
       // Rows first, as in setFileActive.
       await KbIngestState.query().where('collection', collection).update({ active })
-      await this.qdrant!.setPayload(RagService.CONTENT_COLLECTION_NAME, {
-        payload: { active },
-        filter: { must: [{ key: 'collection', match: { value: collection } }] },
-      })
+      try {
+        await this.qdrant!.setPayload(RagService.CONTENT_COLLECTION_NAME, {
+          payload: { active },
+          filter: { must: [{ key: 'collection', match: { value: collection } }] },
+        })
+      } catch (error) {
+        if (changedPaths.length > 0) {
+          await KbIngestState.query()
+            .whereIn('file_path', changedPaths)
+            .where('active', active)
+            .update({ active: !active })
+        }
+        throw error
+      }
 
       return {
         success: true,
         message: collectionActiveMessage(collection, active, affectedCount),
         affectedCount,
       }
-    } catch (error) {
-      logger.error('[RAG] Error switching a collection in or out of search:', error)
+    } catch {
+      logger.error('[RAG] Error switching a collection in or out of search')
       return {
         success: false,
         message: 'Could not change whether this collection is used in answers.',
@@ -1421,8 +1445,8 @@ export class RagService {
       await KbIngestState.query().where('collection', oldName).update({ collection: newName })
 
       return { success: true, message: `Renamed "${oldName}" to "${newName}".` }
-    } catch (error) {
-      logger.error('[RAG] Error renaming knowledge collection:', error)
+    } catch {
+      logger.error('[RAG] Error renaming knowledge collection')
       return { success: false, message: 'Error renaming collection.' }
     }
   }
@@ -1450,8 +1474,8 @@ export class RagService {
       await KbIngestState.query().where('collection', name).update({ collection: null })
 
       return { success: true, message: `"${name}" removed. Files moved to Uncategorized.` }
-    } catch (error) {
-      logger.error('[RAG] Error deleting knowledge collection:', error)
+    } catch {
+      logger.error('[RAG] Error deleting knowledge collection')
       return { success: false, message: 'Error deleting collection.' }
     }
   }
@@ -1498,7 +1522,7 @@ export class RagService {
           filter: { must: [{ key: 'source', match: { value: source } }] },
         })
       } catch (err) {
-        logger.error(`[RAG] Failed to delete prior points for ${source}; aborting re-embed:`, err)
+        logger.error('[RAG] Failed to delete prior points; aborting re-embed:', err)
         return {
           success: false,
           code: 'delete_failed',
@@ -1528,7 +1552,7 @@ export class RagService {
         message: force ? 'Re-embed queued for this file.' : 'Indexing queued for this file.',
       }
     } catch (err) {
-      logger.error(`[RAG] Failed to dispatch embed job for ${source}:`, err)
+      logger.error('[RAG] Failed to dispatch embed job:', err)
       return {
         success: false,
         code: 'dispatch_failed',
@@ -1558,11 +1582,51 @@ export class RagService {
     return sources
   }
 
-  /**
-   * Delete all Qdrant points associated with a given source path and remove
-   * the corresponding file from disk if it lives under the uploads directory.
-   * @param source - Full source path as stored in Qdrant payloads
-   */
+  /** Preserve the old file's indexing choice when a downloaded ZIM replaces it. */
+  public async reconcileReplacedContentFile(params: {
+    oldFilePath: string
+    newFilePath: string
+    fileName: string
+    oldFileWasIndexed?: boolean
+  }): Promise<ReindexOutcome> {
+    const { oldFilePath, newFilePath, fileName } = params
+    const isReplacement = !!oldFilePath && oldFilePath !== newFilePath
+    const qdrantInstalled = isReplacement
+      ? !!(await this.dockerService.getServiceURL(SERVICE_NAMES.QDRANT))
+      : false
+    const oldState = isReplacement && qdrantInstalled
+      ? await KbIngestState.query().where('file_path', oldFilePath).first()
+      : null
+    const oldFileWasIndexed = params.oldFileWasIndexed ?? oldState?.state === 'indexed'
+    const qdrantRunning = oldFileWasIndexed ? await this.checkQdrantHealth() : false
+    const outcome = decideContentReindex({
+      isReplacement,
+      qdrantInstalled,
+      oldFileWasIndexed,
+      qdrantRunning,
+    })
+
+    if (outcome === 'reindex') {
+      await this.purgeIndexedSource(oldFilePath)
+      // A retry can follow a finished embed job before the download job marks
+      // completion. Keep the replacement's indexed vectors in that case.
+      const newState = await KbIngestState.query().where('file_path', newFilePath).first()
+      if (newState?.state === 'indexed') return 'already_indexed'
+      const { EmbedFileJob } = await import('#jobs/embed_file_job')
+      await EmbedFileJob.dispatch({ fileName, filePath: newFilePath })
+    }
+    return outcome
+  }
+
+  /** Remove a source's state and vectors without touching its file on disk. */
+  public async purgeIndexedSource(source: string): Promise<void> {
+    await this._ensureCollection(RagService.CONTENT_COLLECTION_NAME, RagService.EMBEDDING_DIMENSION)
+    await this.qdrant!.delete(RagService.CONTENT_COLLECTION_NAME, {
+      filter: { must: [{ key: 'source', match: { value: source } }] },
+    })
+    await KbIngestState.remove(source)
+  }
+
   /**
    * Drop every point for a source whose file is already gone, and forget its
    * ingest state (caweis#50).
@@ -1577,28 +1641,25 @@ export class RagService {
    * caught by the next, and it must not take down the whole storage scan.
    */
   public async purgeOrphanedSource(source: string): Promise<void> {
-    try {
-      // The client has to exist before it is used. ZimService.delete builds a
-      // fresh RagService for each delete, and on that instance `this.qdrant`
-      // was still null: the delete threw a TypeError, the catch below
-      // swallowed it, and deleting a ZIM never touched its passages. The
-      // sweep only worked because scanAndSyncStorage had set the client up
-      // first. Ensuring the collection, as deleteFileBySource does, also
-      // keeps a delete on a fresh install from failing on a missing one.
-      await this._ensureCollection(RagService.CONTENT_COLLECTION_NAME, RagService.EMBEDDING_DIMENSION)
+    await this.purgeOrphanedSources([source])
+  }
 
-      // State row first, points second (upstream 565ec8ce). The sweep finds
-      // orphans by what is still in Qdrant, so if a failure lands between the
-      // two, leftover points are found and retried on the next sweep. Points
-      // first would instead risk a state row that nothing ever looks at again.
-      // Both steps are idempotent, so a retry from either state is safe.
-      await KbIngestState.remove(source)
+  /** Purge an orphan batch with one state query and one Qdrant delete call. */
+  public async purgeOrphanedSources(sources: string[]): Promise<number> {
+    if (sources.length === 0) return 0
+    try {
+      // Keep state-first ordering here: the orphan sweep discovers leftover
+      // Qdrant points and retries them if the vector delete fails.
+      await this._ensureCollection(RagService.CONTENT_COLLECTION_NAME, RagService.EMBEDDING_DIMENSION)
+      await KbIngestState.query().whereIn('file_path', sources).delete()
       await this.qdrant!.delete(RagService.CONTENT_COLLECTION_NAME, {
-        filter: { must: [{ key: 'source', match: { value: source } }] },
+        filter: { must: [{ key: 'source', match: { any: sources } }] },
       })
-      logger.info(`[RAG] Purged orphaned source with no file on disk: ${source}`)
-    } catch (error) {
-      logger.error(`[RAG] Failed to purge orphaned source ${source}:`, error)
+      logger.info(`[RAG] Purged ${sources.length} orphaned source(s) with no file on disk`)
+      return sources.length
+    } catch {
+      logger.error('[RAG] Failed to purge orphaned source batch')
+      return 0
     }
   }
 
@@ -1615,7 +1676,7 @@ export class RagService {
         },
       })
 
-      logger.info(`[RAG] Deleted all points for source: ${source}`)
+      logger.info('[RAG] Deleted all points for source')
 
       /** Delete the physical file only if it lives inside the uploads directory.
       * resolve() normalises path traversal sequences (e.g. "/../..") before the
@@ -1626,7 +1687,7 @@ export class RagService {
       const resolvedSource = resolve(source)
       if (resolvedSource.startsWith(uploadsAbsPath + sep)) {
         await deleteFileIfExists(resolvedSource)
-        logger.info(`[RAG] Deleted uploaded file from disk: ${resolvedSource}`)
+        logger.info('[RAG] Deleted uploaded file from disk')
       } else {
         logger.warn(`[RAG] File was removed from knowledge base but doesn't live in Nomad's uploads directory, so it can't be safely removed. Skipping deletion of physical file...`)
       }
@@ -1637,8 +1698,8 @@ export class RagService {
       await KbIngestState.remove(source)
 
       return { success: true, message: 'File removed from knowledge base.' }
-    } catch (error) {
-      logger.error('[RAG] Error deleting file from knowledge base:', error)
+    } catch {
+      logger.error('[RAG] Error deleting file from knowledge base')
       return { success: false, message: 'Error deleting file from knowledge base.' }
     }
   }
@@ -1676,15 +1737,15 @@ export class RagService {
       // Dispatch an EmbedFileJob for each discovered file
       for (const fileInfo of filesToEmbed) {
         try {
-          logger.info(`[RAG] Dispatching embed job for: ${fileInfo.source}`)
+          logger.info('[RAG] Dispatching embed job for Nomad doc')
           await EmbedFileJob.dispatch({
             filePath: fileInfo.path,
             fileName: fileInfo.source,
           })
-          logger.info(`[RAG] Successfully dispatched job for ${fileInfo.source}`)
+          logger.info('[RAG] Successfully dispatched Nomad doc embed job')
         } catch (fileError) {
           logger.error(
-            `[RAG] Error dispatching job for file ${fileInfo.source}:`,
+            '[RAG] Error dispatching Nomad doc embed job:',
             fileError
           )
         }
@@ -1694,8 +1755,8 @@ export class RagService {
       await KVStore.setValue('rag.docsEmbedded', true)
 
       return { success: true, message: `Nomad docs discovery completed. Dispatched ${filesToEmbed.length} embedding jobs.` }
-    } catch (error) {
-      logger.error('Error discovering Nomad docs:', error)
+    } catch {
+      logger.error('Error discovering Nomad docs')
       return { success: false, message: 'Error discovering Nomad docs.' }
     }
   }
@@ -1726,8 +1787,8 @@ export class RagService {
       const scannedRoots: string[] = []
 
       // Force resync of Nomad docs
-      await this.discoverNomadDocs(true).catch((error) => {
-        logger.error('[RAG] Error during Nomad docs discovery in sync process:', error)
+      await this.discoverNomadDocs(true).catch(() => {
+        logger.error('[RAG] Error during Nomad docs discovery in sync process')
       })
 
       // Scan kb_uploads directory
@@ -1800,32 +1861,42 @@ export class RagService {
       // touching Qdrant, so a deleted ZIM stayed answerable in chat, and a
       // replaced file left its old points beside the new ones.
       //
-      // Candidates are narrowed to the roots this scan actually walked, which
-      // keeps NOMAD's own bundled docs (discoverNomadDocs, outside both roots)
-      // out of it, and keeps a root that was missing on this pass out of it
-      // too: a missing zim folder beside a non-empty kb_uploads would
-      // otherwise have every ZIM reaped (upstream f8a29693). A null decision
-      // means the disk scan told us nothing.
+      // Candidates are narrowed to roots this scan actually walked. A
+      // present-but-empty ZIM directory can still mean its drive failed to
+      // mount, so the decision also checks each root independently.
       //
       // Measured against filesInStorage rather than embeddableFiles on purpose.
       // The question is "does a file still exist on disk", not "would we choose
       // to embed it today" — if determineFileType ever stops recognising a type
       // it used to accept, the narrower set would call every already-embedded
       // file of that type an orphan and delete its vectors.
-      const orphans = decideOrphans(
-        filterOrphanCandidates([...sourcesInQdrant], scannedRoots),
-        filesInStorage
-      )
-      if (orphans === null) {
+      const { orphans, withheld } = decideOrphans({
+        sourcesInQdrant: [...sourcesInQdrant],
+        filesOnDisk: filesInStorage,
+        embeddableFiles,
+        scannedRoots,
+      })
+      for (const entry of withheld) {
         logger.warn(
-          '[RAG] Storage scan returned no files; skipping the orphan sweep rather than treating every indexed source as deleted.'
+          `[RAG] Withheld purge of ${entry.count} indexed source(s) under ${entry.root} (${entry.reason}); check the storage mount`
         )
-      } else if (orphans.length > 0) {
-        logger.info(`[RAG] Purging ${orphans.length} orphaned source(s) from the vector store`)
-        for (const source of orphans) {
-          await this.purgeOrphanedSource(source)
-        }
       }
+      if (orphans.length > 0) {
+        logger.info(`[RAG] Purging ${orphans.length} orphaned source(s) from the vector store`)
+        const purged = await this.purgeOrphanedSources(orphans)
+        logger.info(`[RAG] Purged ${purged}/${orphans.length} orphaned source(s)`)
+      }
+
+      const withheldNote = withheld
+        .map((entry) => {
+          const folder = relative(process.cwd(), entry.root)
+          const reason =
+            entry.reason === 'empty_root'
+              ? 'that folder has no indexable files; check its mount'
+              : 'the missing files would clear most of that folder; check its mount'
+          return `; left ${entry.count} indexed source${entry.count === 1 ? '' : 's'} under ${folder} untouched because ${reason}`
+        })
+        .join('')
 
       // Global ingest policy. Unset is treated as 'Always' so existing installs
       // keep their behavior until the user opts into Manual from the KB panel.
@@ -1889,7 +1960,7 @@ export class RagService {
       if (filesToEmbed.length === 0) {
         return {
           success: true,
-          message: 'Knowledge base is already in sync',
+          message: `Knowledge base is already in sync${withheldNote}`,
           filesScanned: filesInStorage.length,
           filesQueued: 0,
         }
@@ -1905,7 +1976,7 @@ export class RagService {
           const fileName = filePath.split(/[/\\]/).pop() || filePath
           const stats = await getFileStatsIfExists(filePath)
 
-          logger.info(`[RAG] Dispatching embed job for: ${fileName}`)
+          logger.info('[RAG] Dispatching embed job for stored file')
           const result = await EmbedFileJob.dispatch({
             filePath: filePath,
             fileName: fileName,
@@ -1915,23 +1986,23 @@ export class RagService {
           // in-flight dispatches (created:false) must not inflate the toast.
           if (result.created) {
             queuedCount++
-            logger.debug(`[RAG] Successfully dispatched job for ${fileName}`)
+            logger.debug('[RAG] Successfully dispatched stored-file embed job')
           } else {
-            logger.debug(`[RAG] Embed job already in-flight for ${fileName}, not counted`)
+            logger.debug('[RAG] Stored-file embed job already in-flight, not counted')
           }
         } catch (fileError) {
-          logger.error(`[RAG] Error dispatching job for file ${filePath}:`, fileError)
+          logger.error('[RAG] Error dispatching stored-file embed job:', fileError)
         }
       }
 
       return {
         success: true,
-        message: `Scanned ${filesInStorage.length} files, queued ${queuedCount} for embedding`,
+        message: `Scanned ${filesInStorage.length} files, queued ${queuedCount} for embedding${withheldNote}`,
         filesScanned: filesInStorage.length,
         filesQueued: queuedCount,
       }
-    } catch (error) {
-      logger.error('[RAG] Error scanning and syncing knowledge base:', error)
+    } catch {
+      logger.error('[RAG] Error scanning and syncing knowledge base')
       return {
         success: false,
         message: 'Error scanning and syncing knowledge base',

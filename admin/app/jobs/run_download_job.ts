@@ -2,11 +2,19 @@ import { Job, UnrecoverableError } from 'bullmq'
 import { RunDownloadJobParams } from '../../types/downloads.js'
 import { QueueService } from '#services/queue_service'
 import { doResumableDownload, GatedContentAuthError } from '../utils/downloads.js'
-import { createHash } from 'crypto'
+import { createHash } from 'node:crypto'
 import { DockerService } from '#services/docker_service'
 import { ZimService } from '#services/zim_service'
 import { MapService } from '#services/map_service'
 import { EmbedFileJob } from './embed_file_job.js'
+import { RagService } from '#services/rag_service'
+import { OllamaService } from '#services/ollama_service'
+import { isSafeOldContentPath } from '../utils/content_path.js'
+import { decideDownloadIngest } from '../utils/content_reindex_decision.js'
+import { ZIM_STORAGE_PATH } from '../utils/fs.js'
+import { SERVICE_NAMES } from '../../constants/service_names.js'
+import { basename, join } from 'node:path'
+import { downloadUrlOriginForLog } from '../utils/download_url_log.js'
 
 export class RunDownloadJob {
   static get queue() {
@@ -32,13 +40,20 @@ export class RunDownloadJob {
       resourceMetadata,
       requestHeaders,
     } = job.data as RunDownloadJobParams
+    const previousData = job.data as RunDownloadJobParams
+    const completionStarted = previousData.completionContext !== undefined
+    const resumingCompletion =
+      job.attemptsMade > 0 || previousData.resumeCompletion === true || completionStarted
 
     await doResumableDownload({
       url,
       filepath,
       timeout,
       allowedMimeTypes,
-      forceNew,
+      // A transport failure must still honor forceNew. Reuse the final file
+      // only after the callback saved its completion snapshot.
+      forceNew: forceNew && !completionStarted,
+      resumeCompletion: resumingCompletion,
       // Present only for gated self-hosted resources (upstream #1172): carries
       // the Authorization header the entitlement server requires.
       requestHeaders,
@@ -46,7 +61,69 @@ export class RunDownloadJob {
         const progressPercent = (progress.downloadedBytes / (progress.totalBytes || 1)) * 100
         job.updateProgress(Math.floor(progressPercent))
       },
-      async onComplete(url) {
+      async onComplete(completedUrl) {
+        if (previousData.completionDone) {
+          await job.updateProgress(100)
+          return
+        }
+
+        let context = (job.data as RunDownloadJobParams).completionContext
+        if (!context) {
+          let oldFilePath: string | null = null
+          if (resourceMetadata) {
+            const { default: InstalledResource } = await import('#models/installed_resource')
+            const oldEntry = await InstalledResource.query()
+              .where('resource_id', resourceMetadata.resource_id)
+              .where('resource_type', filetype as 'zim' | 'map')
+              .first()
+            oldFilePath = oldEntry?.file_path ?? null
+            if (oldFilePath && oldFilePath !== filepath) {
+              const storageRoot =
+                filetype === 'zim'
+                  ? join(process.cwd(), ZIM_STORAGE_PATH)
+                  : filetype === 'map'
+                    ? join(process.cwd(), 'storage/maps/pmtiles')
+                    : null
+              if (
+                !storageRoot ||
+                !isSafeOldContentPath(oldFilePath, resourceMetadata.resource_id, storageRoot)
+              ) {
+                console.warn('[RunDownloadJob] Refusing unexpected old file path')
+                oldFilePath = null
+              }
+            }
+          }
+
+          const isReplacement = !!oldFilePath && oldFilePath !== filepath
+          const qdrantInstalled =
+            filetype === 'zim' && !!(await new DockerService().getServiceURL(SERVICE_NAMES.QDRANT))
+          const { default: KVStore } = await import('#models/kv_store')
+          const policyRaw =
+            qdrantInstalled && !resourceMetadata?.skip_embedding && !isReplacement
+              ? await KVStore.getValue('rag.defaultIngestPolicy')
+              : null
+          let oldFileWasIndexed = false
+          if (isReplacement && qdrantInstalled && oldFilePath) {
+            const { default: KbIngestState } = await import('#models/kb_ingest_state')
+            const oldState = await KbIngestState.query().where('file_path', oldFilePath).first()
+            oldFileWasIndexed = oldState?.state === 'indexed'
+          }
+          context = {
+            oldFilePath,
+            oldFileWasIndexed,
+            ingestDecision: decideDownloadIngest(
+              qdrantInstalled,
+              resourceMetadata?.skip_embedding === true,
+              isReplacement,
+              policyRaw === 'Manual' ? 'Manual' : 'Always'
+            ),
+          }
+          // Persist before repointing the DB row or deleting the old file.
+          // Both automatic retries and the manual retry path reuse this snapshot.
+          await job.updateData({ ...job.data, completionContext: context })
+        }
+
+        const oldFilePath = context.oldFilePath
         try {
           // Create InstalledResource entry if metadata was provided
           if (resourceMetadata) {
@@ -55,15 +132,11 @@ export class RunDownloadJob {
             const { getFileStatsIfExists, deleteFileIfExists } = await import('../utils/fs.js')
             const stats = await getFileStatsIfExists(filepath)
 
-            // Look up the old entry so we can clean up the previous file after updating
-            const oldEntry = await InstalledResource.query()
-              .where('resource_id', resourceMetadata.resource_id)
-              .where('resource_type', filetype as 'zim' | 'map')
-              .first()
-            const oldFilePath = oldEntry?.file_path ?? null
-
-            const installed = await InstalledResource.updateOrCreate(
-              { resource_id: resourceMetadata.resource_id, resource_type: filetype as 'zim' | 'map' },
+            await InstalledResource.updateOrCreate(
+              {
+                resource_id: resourceMetadata.resource_id,
+                resource_type: filetype as 'zim' | 'map',
+              },
               {
                 version: resourceMetadata.version,
                 collection_ref: resourceMetadata.collection_ref,
@@ -78,27 +151,15 @@ export class RunDownloadJob {
             if (oldFilePath && oldFilePath !== filepath) {
               try {
                 await deleteFileIfExists(oldFilePath)
-                console.log(`[RunDownloadJob] Deleted old file: ${oldFilePath}`)
+                console.log('[RunDownloadJob] Deleted old file')
               } catch (deleteError) {
-                console.warn(
-                  `[RunDownloadJob] Failed to delete old file ${oldFilePath}:`,
-                  deleteError
+                console.error(
+                  `[RunDownloadJob] Failed to delete old file (${deleteError instanceof Error ? deleteError.name : 'unknown error'})`
                 )
+                throw deleteError
               }
             }
-
-            // Content auto-update: a successful auto-triggered download clears
-            // this resource's failure backoff (the worker records failures).
-            if (resourceMetadata.auto) {
-              try {
-                const { recordResourceUpdateSuccess } = await import(
-                  '../utils/content_auto_update_backoff.js'
-                )
-                await recordResourceUpdateSuccess(installed)
-              } catch (e: any) {
-                console.warn(`[RunDownloadJob] Failed to clear auto-update backoff:`, e)
-              }
-            }
+            // Backoff clears only after every completion step succeeds below.
           }
 
           if (filetype === 'zim') {
@@ -108,28 +169,60 @@ export class RunDownloadJob {
             // can deterministically exclude us. Without this, the check
             // counts the just-finished job as "still pending" and never
             // restarts Kiwix.
-            await zimService.downloadRemoteSuccessCallback([url], true, job.id)
+            await zimService.downloadRemoteSuccessCallback([completedUrl], true, job.id)
 
-            // Dispatch an embedding job for the downloaded ZIM file
-            try {
+            // Only an installed knowledge base can consume embeddings. The
+            // macOS Ollama URL exists even when the AI tile is not installed.
+            const decision = context.ingestDecision
+            if (decision === 'purge_old' && oldFilePath) {
+              await new RagService(dockerService, new OllamaService()).purgeIndexedSource(
+                oldFilePath
+              )
+            } else if (decision === 'reconcile' && oldFilePath) {
+              const outcome = await new RagService(
+                dockerService,
+                new OllamaService()
+              ).reconcileReplacedContentFile({
+                oldFilePath,
+                newFilePath: filepath,
+                fileName: basename(filepath),
+                oldFileWasIndexed: context.oldFileWasIndexed,
+              })
+              console.log(`[RunDownloadJob] KB reconciliation: ${outcome}`)
+            } else if (decision === 'pending') {
+              const { default: KbIngestState } = await import('#models/kb_ingest_state')
+              await KbIngestState.firstOrCreate(
+                { file_path: filepath },
+                { file_path: filepath, state: 'pending_decision', chunks_embedded: 0 }
+              )
+            } else if (decision === 'embed') {
               await EmbedFileJob.dispatch({
-                fileName: url.split('/').pop() || '',
+                fileName: basename(filepath),
                 filePath: filepath,
               })
-            } catch (error) {
-              console.error(`[RunDownloadJob] Error dispatching EmbedFileJob for URL ${url}:`, error)
             }
           } else if (filetype === 'map') {
             const mapsService = new MapService()
-            await mapsService.downloadRemoteSuccessCallback([url], false)
+            await mapsService.downloadRemoteSuccessCallback([completedUrl], false)
           }
+          if (resourceMetadata?.auto) {
+            const { default: InstalledResource } = await import('#models/installed_resource')
+            const installed = await InstalledResource.query()
+              .where('resource_id', resourceMetadata.resource_id)
+              .where('resource_type', filetype as 'zim' | 'map')
+              .firstOrFail()
+            const { recordResourceUpdateSuccess } =
+              await import('../utils/content_auto_update_backoff.js')
+            await recordResourceUpdateSuccess(installed)
+          }
+          await job.updateData({ ...job.data, completionDone: true })
         } catch (error) {
           console.error(
-            `[RunDownloadJob] Error in download success callback for URL ${url}:`,
-            error
+            `[RunDownloadJob] Error in download success callback from ${downloadUrlOriginForLog(completedUrl)} (${error instanceof Error ? error.name : 'unknown error'})`
           )
+          throw error
         }
-        job.updateProgress(100)
+        await job.updateProgress(100)
       },
     }).catch((error) => {
       // A rejected entitlement is permanent — this install either has the key
@@ -202,7 +295,7 @@ export class RunDownloadJob {
     return {
       job,
       created: true,
-      message: `Dispatched download job for URL ${params.url}`,
+      message: `Dispatched download job from ${downloadUrlOriginForLog(params.url)}`,
     }
   }
 }

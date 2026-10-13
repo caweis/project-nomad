@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: 🔒 Report a security vulnerability
+    url: https://github.com/caweis/project-nomad/security/advisories/new
+    about: Send security reports privately to the maintainers of this fork
   - name: 💬 Discord Community
     url: https://discord.com/invite/crosstalksolutions
     about: Join our Discord community for general questions, support, and discussions
@@ -8,7 +11,7 @@ contact_links:
     about: Check the official documentation and guides
   - name: 🏆 Community Leaderboard
     url: https://benchmark.projectnomad.us
-    about: View the N.O.M.A.D. benchmark leaderboard
+    about: View the NOMAD benchmark leaderboard
   - name: 🤝 Contributing Guide
     url: https://github.com/Crosstalk-Solutions/project-nomad/blob/main/CONTRIBUTING.md
-    about: Learn how to contribute to Project N.O.M.A.D.
+    about: Learn how to contribute to Project NOMAD

@@ -1,14 +1,15 @@
-import {
+import type {
   DoResumableDownloadParams,
   DoResumableDownloadWithRetryParams,
 } from '../../types/downloads.js'
 import axios from 'axios'
-import { Transform } from 'stream'
+import { Transform } from 'node:stream'
 import { deleteFileIfExists, ensureDirectoryExists, getFileStatsIfExists } from './fs.js'
-import { createWriteStream } from 'fs'
-import { rename } from 'fs/promises'
-import path from 'path'
-import logger from '@adonisjs/core/services/logger'
+import { createWriteStream } from 'node:fs'
+import { rename } from 'node:fs/promises'
+import path from 'node:path'
+import { assertNotPrivateUrl, assertSafeRedirectTarget } from '../validators/common.js'
+import { downloadUrlOriginForLog } from './download_url_log.js'
 
 /**
  * A gated source rejected this install's credentials (401/403).
@@ -50,9 +51,11 @@ export async function doResumableDownload({
   onProgress,
   onComplete,
   forceNew = false,
+  resumeCompletion = false,
   allowedMimeTypes,
   requestHeaders,
 }: DoResumableDownloadParams): Promise<string> {
+  assertNotPrivateUrl(url)
   const dirname = path.dirname(filepath)
   await ensureDirectoryExists(dirname)
 
@@ -81,13 +84,14 @@ export async function doResumableDownload({
       signal,
       timeout,
       headers: baseHeaders,
+      beforeRedirect: assertSafeRedirectTarget,
     })
   } catch (error: any) {
     // A 401/403 here is not a network problem, and the raw axios message
     // ("Request failed with status code 401") reads like the server is broken.
     // Translate it: the practical cause is an install without the entitlement
-    // key the gated source requires. failedReason is surfaced verbatim on the
-    // downloads UI, and RunDownloadJob converts this error to an
+    // key the gated source requires. The downloads UI shows a fixed explanation
+    // for this error, and RunDownloadJob converts it to an
     // UnrecoverableError so the rejection is never retried (upstream #1205).
     const status = error?.response?.status
     if (status === 401 || status === 403) {
@@ -101,7 +105,7 @@ export async function doResumableDownload({
   }
 
   const contentType = String(headResponse.headers['content-type'] || '')
-  const totalBytes = parseInt(String(headResponse.headers['content-length'] || '0'))
+  const totalBytes = Number.parseInt(String(headResponse.headers['content-length'] || '0'))
   const supportsRangeRequests = headResponse.headers['accept-ranges'] === 'bytes'
 
   // If allowedMimeTypes is provided, check content type
@@ -115,6 +119,9 @@ export async function doResumableDownload({
   // If final file already exists at correct size, return early (idempotent)
   const finalFileStats = await getFileStatsIfExists(filepath)
   if (finalFileStats && Number(finalFileStats.size) === totalBytes && totalBytes > 0 && !forceNew) {
+    if (resumeCompletion && onComplete) {
+      await onComplete(url, filepath)
+    }
     return filepath
   }
 
@@ -140,7 +147,7 @@ export async function doResumableDownload({
   // with nothing deleting the .tmp, so the download could never recover on its
   // own. Discard and start clean. (Ports upstream #1202.)
   if (startByte > totalBytes && totalBytes > 0) {
-    logger.warn(
+    console.warn(
       `[Download] Discarding stale partial for ${filepath}: .tmp is ${startByte}B but the server reports ${totalBytes}B`
     )
     await deleteFileIfExists(tempPath)
@@ -159,6 +166,7 @@ export async function doResumableDownload({
       headers: { ...baseHeaders, ...hdrs },
       signal,
       timeout,
+      beforeRedirect: assertSafeRedirectTarget,
     })
 
   let response = await fetchStream(headers)
@@ -257,29 +265,35 @@ export async function doResumableDownload({
         // Atomically move the completed .tmp file to the final path
         await rename(tempPath, filepath)
       } catch (renameError) {
-        // A parallel job may have completed the same file first — treat as success
-        // if the destination already exists at the expected size.
-        const existing = await getFileStatsIfExists(filepath)
-        if (existing && Number(existing.size) === totalBytes && totalBytes > 0) {
-          // fall through to resolve
-        } else {
-          reject(renameError)
+        try {
+          // A parallel job may have completed the same file first.
+          const existing = await getFileStatsIfExists(filepath)
+          if (!existing || Number(existing.size) !== totalBytes || totalBytes <= 0) {
+            reject(renameError)
+            return
+          }
+        } catch (statError) {
+          reject(statError)
           return
         }
       }
-      if (onProgress) {
-        onProgress({
-          downloadedBytes,
-          totalBytes,
-          lastProgressTime: Date.now(),
-          lastDownloadedBytes: downloadedBytes,
-          url,
-        })
+      try {
+        if (onProgress) {
+          onProgress({
+            downloadedBytes,
+            totalBytes,
+            lastProgressTime: Date.now(),
+            lastDownloadedBytes: downloadedBytes,
+            url,
+          })
+        }
+        if (onComplete) {
+          await onComplete(url, filepath)
+        }
+        resolve(filepath)
+      } catch (error) {
+        reject(error)
       }
-      if (onComplete) {
-        await onComplete(url, filepath)
-      }
-      resolve(filepath)
     })
 
     // Start stall timer and pipe: response -> progressStream -> writeStream
@@ -327,7 +341,7 @@ export async function doResumableDownloadWithRetry({
 
       onAttemptError?.(error, attempt)
       if (isAborted) {
-        throw new Error(`Download aborted for URL: ${url}`)
+        throw new Error(`Download aborted from ${downloadUrlOriginForLog(url)}`)
       }
 
       if (attempt < max_retries && isNetworkError) {

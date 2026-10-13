@@ -1,7 +1,7 @@
 <div align="center">
-<img src="admin/public/project_nomad_logo.png" width="200" height="200"/>
+<img src="admin/public/nomad-primary.svg" width="200" alt="Project NOMAD"/>
 
-# Project N.O.M.A.D. — Mac edition
+# Project NOMAD — Mac edition
 
 </div>
 
@@ -24,6 +24,10 @@ It drops the `nomad` command bundle in `~/Applications/project-nomad`, then runs
 Homebrew, Xcode Command Line Tools, Rosetta, OrbStack, native Ollama, the container stack, the database, and the offline help library are all handled for you. It's idempotent — re-running repairs anything that broke.
 
 Admin lands at `http://localhost:8080`, or `http://nomad.local:8080` from any device on the same network. Full command reference: `man nomad` (and per-command pages, e.g. `man nomad-update`).
+
+## About security
+
+The Command Center has no login. Anyone who can reach it on your local network can use its administration features. Keep it on a trusted network and do not forward its port to the internet. To report a vulnerability in this fork, use the [private reporting form](SECURITY.md).
 
 ## What's in it
 

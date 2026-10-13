@@ -1,27 +1,27 @@
 # Your data drive
 
 {% callout type="info" title="This page is for external-drive installs" %}
-If you chose an external drive (SSD or HDD) as your data root during install, everything below applies. If you installed N.O.M.A.D. onto your Mac's internal disk, the unplug / replug / move-the-drive-to-another-Mac behavior on this page isn't relevant — your data goes wherever the Mac goes. The "What's NOT on the drive" table and the backup guidance at the bottom still apply (those describe internal-disk paths that exist regardless).
+If you chose an external drive (SSD or HDD) as your data root during install, everything below applies. If you installed NOMAD onto your Mac's internal disk, the unplug / replug / move-the-drive-to-another-Mac behavior on this page isn't relevant — your data goes wherever the Mac goes. The "What's NOT on the drive" table and the backup guidance at the bottom still apply (those describe internal-disk paths that exist regardless).
 {% /callout %}
 
-On the Mac edition, N.O.M.A.D. is designed so you can unplug the data drive and take it with you — across town, across the country, between Macs. The drive carries the content and models; the Mac itself only carries the database and your secrets.
+On the Mac edition, NOMAD is designed so you can unplug the data drive and take it with you — across town, across the country, between Macs. The drive carries the content and models; the Mac itself only carries the database and your secrets.
 
-If a laptop dies, you can plug the drive into another Mac and bring up N.O.M.A.D. with the same content and models. The install code is also on the drive, so the bootstrap doesn't need internet for the install itself (Homebrew, Ollama, and OrbStack still pull their own installers the first time).
+If a laptop dies, you can plug the drive into another Mac and bring up NOMAD with the same content and models. The install code is also on the drive, so the bootstrap doesn't need internet for the install itself (Homebrew, Ollama, and OrbStack still pull their own installers the first time).
 
 ---
 
 ## What's on the drive
 
-When you installed N.O.M.A.D., the installer put everything onto `<your-data-drive>/project-nomad/`. That directory contains:
+When you installed NOMAD, the installer put everything onto `<your-data-drive>/project-nomad/`. That directory contains:
 
 | Path | What it is |
 |---|---|
 | `storage/` | The Information Library (ZIM files), Maps, Workshop's STL library at `storage/stl-library/`, RAG document uploads at `storage/kb_uploads/`, FlatNotes data at `storage/flatnotes/`, and more. The big stuff. |
 | `ollama-models/` | Your downloaded AI models. Anywhere from a few GB to over 200 GB depending on your tier. |
-| `quick-chat.html` | A standalone browser page that lets you chat with your models on any Mac the drive plugs into, without installing N.O.M.A.D. proper. |
+| `quick-chat.html` | A standalone browser page that lets you chat with your models on any Mac the drive plugs into, without installing NOMAD proper. |
 | `quick-chat.sh` | A small script that starts a minimal Ollama daemon pointing at the drive's models and opens `quick-chat.html`. |
-| `install-nomad.command` | A double-clickable script that installs the full N.O.M.A.D. stack on a new Mac, using the bundled installer on the drive. |
-| `install-bundle/` | A mirror of the N.O.M.A.D. installer itself. Lets `install-nomad.command` run without an internet connection for the install code. |
+| `install-nomad.command` | A double-clickable script that installs the full NOMAD stack on a new Mac, using the bundled installer on the drive. |
+| `install-bundle/` | A mirror of the NOMAD installer itself. Lets `install-nomad.command` run without an internet connection for the install code. |
 
 ## What's NOT on the drive
 
@@ -62,15 +62,15 @@ re-runs the bring-up pass after a re-plug and confirms everything is back.
 
 ## Moving the drive to another Mac
 
-Two paths, depending on whether the destination Mac already has N.O.M.A.D. installed.
+Two paths, depending on whether the destination Mac already has NOMAD installed.
 
-### Destination Mac already has N.O.M.A.D.
+### Destination Mac already has NOMAD
 
-Plug the drive in. Within a few seconds N.O.M.A.D. detects it and shows an **"Adopt this drive?"** banner across the Command Center and Settings:
+Plug the drive in. Within a few seconds NOMAD detects it and shows an **"Adopt this drive?"** banner across the Command Center and Settings:
 
 > **A NOMAD drive is plugged in** — Use '<drive-name>' as this Mac's library?
 
-Click **Adopt this drive** and N.O.M.A.D. takes care of the rest:
+Click **Adopt this drive** and NOMAD takes care of the rest:
 
 1. It re-points this Mac's data root at the drive and restarts the content services so they bind to the drive's `storage/`. This is a brief blip — a few seconds of downtime while the stack recreates.
 2. It then reconciles the catalog against the drive's files, so the drive's **entire** library shows up — Information Library (ZIM), Workshop (STL), Maps, and AI models all appear, with no manual rescan. In particular you do **not** need to run `nomad stl scan` — the adopt flow runs the Workshop index for you.
@@ -79,26 +79,26 @@ The whole adopt usually takes under a minute. The banner is dismissible if you'd
 
 If the drive mounts under a different path on the second Mac (e.g. `/Volumes/DriveA` vs `/Volumes/DriveA 1`), the detection and adopt logic handle it — they scan `/Volumes/` for a drive carrying a `project-nomad/` library, so the path it mounts at doesn't matter.
 
-**Drive-wins while plugged; ejecting reverts.** Adopting makes the drive this Mac's active library for as long as it stays plugged in. When you eject the drive, N.O.M.A.D. notices it's gone and reverts to this Mac's own library — restarting the content stack and re-reconciling so the catalog reflects the internal library again, with no phantom entries for the now-absent drive. Until that revert completes, the same "Unplugging the drive" behavior above applies (content services error until the revert finishes).
+**Drive-wins while plugged; ejecting reverts.** Adopting makes the drive this Mac's active library for as long as it stays plugged in. When you eject the drive, NOMAD notices it's gone and reverts to this Mac's own library — restarting the content stack and re-reconciling so the catalog reflects the internal library again, with no phantom entries for the now-absent drive. Until that revert completes, the same "Unplugging the drive" behavior above applies (content services error until the revert finishes).
 
-### Destination Mac doesn't have N.O.M.A.D. yet
+### Destination Mac doesn't have NOMAD yet
 
 Plug the drive into the new Mac. Open Finder, navigate to the `project-nomad/` folder on the drive, and double-click **install-nomad.command**.
 
 The script opens Terminal and:
 
-1. Detects that no N.O.M.A.D. is installed on this Mac.
+1. Detects that no NOMAD is installed on this Mac.
 2. Confirms with you before doing anything.
 3. Runs the installer from the bundled copy on the drive (`install-bundle/nomad install`). No internet needed for the install code itself — though Homebrew, Ollama, and OrbStack will still download themselves on first-time install.
 4. When the installer asks where to store data, point it at this drive.
 
-Within roughly 10–30 minutes — mostly waiting for Homebrew, OrbStack, and Ollama to install on the new Mac — the new Mac has a working N.O.M.A.D. using the same content and models as the source Mac.
+Within roughly 10–30 minutes — mostly waiting for Homebrew, OrbStack, and Ollama to install on the new Mac — the new Mac has a working NOMAD using the same content and models as the source Mac.
 
 ---
 
 ## Chat-only on any Mac
 
-If you don't want a full N.O.M.A.D. install on a second Mac and just want to use the AI Assistant with your existing models, double-click **quick-chat.sh** instead. It:
+If you don't want a full NOMAD install on a second Mac and just want to use the AI Assistant with your existing models, double-click **quick-chat.sh** instead. It:
 
 1. Installs Ollama via Homebrew if it's not already there. If Homebrew itself isn't installed, the script asks if it should install Homebrew first — one prompt for consent, then one sudo password during the Homebrew install, then it continues into the Ollama install automatically.
 2. Sets `OLLAMA_MODELS` to point at the drive's model cache.
@@ -107,7 +107,7 @@ If you don't want a full N.O.M.A.D. install on a second Mac and just want to use
 
 That's a chat surface with no Command Center, no Workshop, no Wikipedia, no admin — it's only chat against your local models. Useful for a quick session on someone else's Mac or your travel laptop without committing to a full install.
 
-The quick-chat.sh on your drive is regenerated each time you run `nomad install` on the source Mac, so a re-install picks up any bootstrap improvements from newer N.O.M.A.D. versions.
+The quick-chat.sh on your drive is regenerated each time you run `nomad install` on the source Mac, so a re-install picks up any bootstrap improvements from newer NOMAD versions.
 
 ---
 

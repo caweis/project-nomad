@@ -5,6 +5,8 @@ import {
   RemoteZimFileEntry,
 } from '../../types/zim.js'
 import { parseCatalogLanguages } from '../utils/catalog_languages.js'
+import { filenameFromDownloadUrl } from '../utils/download_filename.js'
+import { downloadUrlOriginForLog } from '../utils/download_url_log.js'
 import axios from 'axios'
 import { XMLParser } from 'fast-xml-parser'
 import {
@@ -147,7 +149,7 @@ export class ZimService {
 
       // downloadLink['href'] will end with .meta4, we need to remove that to get the actual download URL
       const download_url = downloadLink['href'].substring(0, downloadLink['href'].length - 6)
-      const file_name = download_url.split('/').pop() || `${entry.title}.zim`
+      const file_name = filenameFromDownloadUrl(download_url) || `${entry.title}.zim`
       const sizeBytes = parseInt(downloadLink['length'], 10)
 
       return {
@@ -196,10 +198,8 @@ export class ZimService {
         textNodeName: '#text',
       })
       return parseCatalogLanguages(parser.parse(res.data))
-    } catch (error) {
-      logger.warn(
-        `[ZimService] Catalog language list unavailable: ${error instanceof Error ? error.message : error}`
-      )
+    } catch {
+      logger.warn('[ZimService] Catalog language list unavailable')
       return []
     }
   }
@@ -207,7 +207,9 @@ export class ZimService {
   async downloadRemote(url: string): Promise<{ filename: string; jobId?: string }> {
     const parsed = new URL(url)
     if (!parsed.pathname.endsWith('.zim')) {
-      throw new Error(`Invalid ZIM file URL: ${url}. URL must end with .zim`)
+      throw new Error(
+        `Invalid ZIM file URL from ${downloadUrlOriginForLog(url)}. URL must end with .zim`
+      )
     }
 
     const existing = await RunDownloadJob.getActiveByUrl(url)
@@ -216,7 +218,7 @@ export class ZimService {
     }
 
     // Extract the filename from the URL
-    const filename = url.split('/').pop()
+    const filename = filenameFromDownloadUrl(url)
     if (!filename) {
       throw new Error('Could not determine filename from URL')
     }
@@ -243,7 +245,7 @@ export class ZimService {
       throw new Error('Failed to dispatch download job')
     }
 
-    logger.info(`[ZimService] Dispatched background download job for ZIM file: ${filename}`)
+    logger.info('[ZimService] Dispatched background ZIM download job')
 
     return {
       filename,
@@ -259,10 +261,10 @@ export class ZimService {
   /**
    * Best-effort lookup of the current catalog entry for each curated resource
    * id (curated ids ARE Kiwix book names, e.g. `wikipedia_en_medicine_maxi`),
-   * via the OPDS `name` exact filter. Any failure — offline appliance, a book
-   * missing from the catalog, an unparseable entry — simply yields no map
-   * entry, so the caller falls back to the static manifest URL exactly as
-   * before this lookup existed.
+   * via the OPDS `name` filter. Flavoured books may be indexed under their
+   * base name, with the flavour stored separately in OPDS. Any failure — an
+   * offline appliance, a missing book, an unparseable entry — leaves no map
+   * entry, so the caller falls back to the static manifest URL.
    */
   private async getLatestCatalogEntries(
     resourceIds: string[]
@@ -273,54 +275,62 @@ export class ZimService {
     await Promise.all(
       resourceIds.map(async (id) => {
         try {
-          const res = await axios.get(OPDS_ENTRIES_URL, {
-            params: { name: id },
-            responseType: 'text',
-            timeout: 10_000,
-          })
-
           const parser = new XMLParser({
             ignoreAttributes: false,
             attributeNamePrefix: '',
             textNodeName: '#text',
           })
-          const parsed = parser.parse(res.data)
-          if (!isRawListRemoteZimFilesResponse(parsed)) return
+          const cut = id.lastIndexOf('_')
+          const names = cut > 0 ? [id, id.slice(0, cut)] : [id]
 
-          const entries = parsed.feed.entry
-            ? Array.isArray(parsed.feed.entry)
-              ? parsed.feed.entry
-              : [parsed.feed.entry]
-            : []
-          const entry = entries.find((e: unknown) => isRawRemoteZimFileEntry(e))
-          if (!entry) return
+          for (const name of names) {
+            const res = await axios.get(OPDS_ENTRIES_URL, {
+              params: { name },
+              responseType: 'text',
+              timeout: 10_000,
+            })
+            const parsed = parser.parse(res.data)
+            if (!isRawListRemoteZimFilesResponse(parsed)) continue
 
-          const downloadLink = entry.link.find((link: any) => {
-            return (
-              typeof link === 'object' &&
-              'rel' in link &&
-              'href' in link &&
-              'type' in link &&
-              link.type === 'application/x-zim'
-            )
-          })
-          if (!downloadLink) return
+            const entries = parsed.feed.entry
+              ? Array.isArray(parsed.feed.entry)
+                ? parsed.feed.entry
+                : [parsed.feed.entry]
+              : []
+            let newest: ZimCatalogResult | null = null
 
-          // href ends with .meta4; strip it to get the actual download URL.
-          const download_url = downloadLink.href.substring(0, downloadLink.href.length - 6)
-          const filename = download_url.split('/').pop()
-          if (!filename) return
+            for (const entry of entries) {
+              if (!isRawRemoteZimFileEntry(entry)) continue
+              const links = Array.isArray(entry.link) ? entry.link : entry.link ? [entry.link] : []
+              const downloadLink = links.find(
+                (link: any) =>
+                  link &&
+                  typeof link.href === 'string' &&
+                  link.href.endsWith('.zim.meta4') &&
+                  link.type === 'application/x-zim'
+              )
+              if (!downloadLink) continue
 
-          // The dated filename is the catalog's version of record. Also guards
-          // against the name filter returning a different book than requested.
-          const parsedName = CollectionManifestService.parseZimFilename(filename)
-          if (!parsedName || parsedName.resource_id !== id) return
+              const downloadUrl = downloadLink.href.slice(0, -6)
+              const filename = filenameFromDownloadUrl(downloadUrl)
+              if (!filename) continue
 
-          results.set(id, { version: parsedName.version, download_url })
-        } catch (error) {
-          logger.warn(
-            `[ZimService] Catalog lookup failed for ${id} (${error instanceof Error ? error.message : 'unknown error'}); using manifest URL`
-          )
+              // A base-name query can return other flavours. Only the full
+              // filename stem identifies the requested curated resource.
+              const parsedName = CollectionManifestService.parseZimFilename(filename)
+              if (!parsedName || parsedName.resource_id !== id) continue
+              if (!newest || parsedName.version > newest.version) {
+                newest = { version: parsedName.version, download_url: downloadUrl }
+              }
+            }
+
+            if (newest) {
+              results.set(id, newest)
+              break
+            }
+          }
+        } catch {
+          logger.warn('[ZimService] Catalog lookup failed; using manifest URL')
         }
       })
     )
@@ -337,12 +347,12 @@ export class ZimService {
 
     const category = spec.categories.find((c) => c.slug === categorySlug)
     if (!category) {
-      throw new Error(`Category not found: ${categorySlug}`)
+      throw new Error('Category not found')
     }
 
     const tier = category.tiers.find((t) => t.slug === tierSlug)
     if (!tier) {
-      throw new Error(`Tier not found: ${tierSlug}`)
+      throw new Error('Tier not found')
     }
 
     const allResources = CollectionManifestService.resolveTierResources(tier, category.tiers)
@@ -373,17 +383,19 @@ export class ZimService {
       const resolved = resolveZimDownload(resource, latestByResource.get(resource.id) ?? null)
       if (resolved.url !== resource.url) {
         logger.info(
-          `[ZimService] Resolved ${resource.id} to catalog version ${resolved.version} (manifest pinned ${resource.version})`
+          `[ZimService] Resolved catalog version ${resolved.version} (manifest pinned ${resource.version})`
         )
       }
 
       const existingJob = await RunDownloadJob.getActiveByUrl(resolved.url)
       if (existingJob) {
-        logger.warn(`[ZimService] Download already in progress for ${resolved.url}, skipping.`)
+        logger.warn(
+          `[ZimService] Download already in progress from ${downloadUrlOriginForLog(resolved.url)}, skipping.`
+        )
         continue
       }
 
-      const filename = resolved.url.split('/').pop()
+      const filename = filenameFromDownloadUrl(resolved.url)
       if (!filename) continue
 
       downloadFilenames.push(filename)
@@ -402,6 +414,7 @@ export class ZimService {
           resource_id: resource.id,
           version: resolved.version,
           collection_ref: categorySlug,
+          skip_embedding: resource.skip_embedding,
         },
       })
     }
@@ -427,7 +440,8 @@ export class ZimService {
     try {
       await new KiwixLibraryService().rebuildFromDisk()
     } catch (err) {
-      logger.error('[ZimService] Failed to rebuild kiwix library XML from disk:', err)
+      logger.error('[ZimService] Failed to rebuild kiwix library XML from disk')
+      throw err
     }
 
     if (restart) {
@@ -475,11 +489,7 @@ export class ZimService {
         // Legacy glob-mode container: restart to pick up the new ZIM. The restart
         // intercept in DockerService migrates it to library mode in the process.
         logger.info('[ZimService] No more ZIM downloads pending - restarting KIWIX container')
-        await this.dockerService
-          .affectContainer(SERVICE_NAMES.KIWIX, 'restart')
-          .catch((error) => {
-            logger.error(`[ZimService] Failed to restart KIWIX container:`, error) // Don't stop the download completion, just log the error.
-          })
+        await this.dockerService.affectContainer(SERVICE_NAMES.KIWIX, 'restart')
       }
     }
 
@@ -488,7 +498,7 @@ export class ZimService {
       // Skip Wikipedia files (managed separately)
       if (url.includes('wikipedia_en_')) continue
 
-      const filename = url.split('/').pop()
+      const filename = filenameFromDownloadUrl(url)
       if (!filename) continue
 
       const parsed = CollectionManifestService.parseZimFilename(filename)
@@ -516,7 +526,7 @@ export class ZimService {
             installed_at: DateTime.now(),
           }
         )
-        logger.info(`[ZimService] Created InstalledResource entry for: ${parsed.resource_id}`)
+        logger.info('[ZimService] Created InstalledResource entry')
 
         // Remove the superseded prior version's file if every safety rail passes.
         // The InstalledResource row already points at the new file, so delete the
@@ -535,17 +545,19 @@ export class ZimService {
         if (decision.delete && decision.path) {
           try {
             await deleteFileIfExists(decision.path)
-            logger.info(`[ZimService] Removed superseded ${parsed.resource_id} file: ${decision.path}`)
+            logger.info('[ZimService] Removed superseded file')
             // The replaced version's passages go with it, so retrieval does not
             // mix two editions of the same archive. The new file is indexed on
             // its own schedule, under its own path.
             await this._purgeKnowledgeOf(decision.path)
           } catch (err) {
-            logger.warn(`[ZimService] Failed to remove superseded file ${decision.path}:`, err)
+            logger.error('[ZimService] Failed to remove superseded file')
+            throw err
           }
         }
       } catch (error) {
-        logger.error(`[ZimService] Failed to create InstalledResource for ${filename}:`, error)
+        logger.error('[ZimService] Failed to create InstalledResource')
+        throw error
       }
     }
   }
@@ -568,10 +580,8 @@ export class ZimService {
       if (!qdrantInstalled) return
       const ragService = new RagService(this.dockerService, new OllamaService())
       await ragService.purgeOrphanedSource(filePath)
-    } catch (error) {
-      logger.error(
-        `[ZimService] Could not purge vectors for ${filePath}; the storage scan will catch it: ${error instanceof Error ? error.message : error}`
-      )
+    } catch {
+      logger.error('[ZimService] Could not purge vectors; the storage scan will retry')
     }
   }
 
@@ -609,7 +619,7 @@ export class ZimService {
         .where('resource_id', parsed.resource_id)
         .where('resource_type', 'zim')
         .delete()
-      logger.info(`[ZimService] Deleted InstalledResource entry for: ${parsed.resource_id}`)
+      logger.info('[ZimService] Deleted InstalledResource entry')
     }
   }
 
@@ -665,7 +675,7 @@ export class ZimService {
     const selectedOption = options.find((opt) => opt.id === optionId)
 
     if (!selectedOption) {
-      throw new Error(`Invalid Wikipedia option: ${optionId}`)
+      throw new Error('Invalid Wikipedia option')
     }
 
     const currentSelection = await this.getWikipediaSelection()
@@ -680,10 +690,10 @@ export class ZimService {
       if (currentSelection?.filename) {
         try {
           await this.delete(currentSelection.filename)
-          logger.info(`[ZimService] Deleted Wikipedia file: ${currentSelection.filename}`)
-        } catch (error) {
+          logger.info('[ZimService] Deleted Wikipedia file')
+        } catch {
           // File might already be deleted, that's OK
-          logger.warn(`[ZimService] Could not delete Wikipedia file (may already be gone): ${currentSelection.filename}`)
+          logger.warn('[ZimService] Could not delete Wikipedia file (may already be gone)')
         }
       }
 
@@ -706,8 +716,8 @@ export class ZimService {
       // Restart Kiwix to reflect the change
       await this.dockerService
         .affectContainer(SERVICE_NAMES.KIWIX, 'restart')
-        .catch((error) => {
-          logger.error(`[ZimService] Failed to restart Kiwix after Wikipedia removal:`, error)
+        .catch(() => {
+          logger.error('[ZimService] Failed to restart Kiwix after Wikipedia removal')
         })
 
       return { success: true, message: 'Wikipedia removed' }
@@ -725,7 +735,7 @@ export class ZimService {
     }
 
     // Extract filename from URL
-    const filename = selectedOption.url.split('/').pop()
+    const filename = filenameFromDownloadUrl(selectedOption.url)
     if (!filename) {
       throw new Error('Could not determine filename from URL')
     }
@@ -769,7 +779,7 @@ export class ZimService {
       throw new Error('Failed to dispatch download job')
     }
 
-    logger.info(`[ZimService] Started Wikipedia download for ${optionId}: ${filename}`)
+    logger.info('[ZimService] Started Wikipedia download')
 
     return {
       success: true,
@@ -782,7 +792,9 @@ export class ZimService {
     const selection = await this.getWikipediaSelection()
 
     if (!selection || selection.url !== url) {
-      logger.warn(`[ZimService] Wikipedia download complete callback for unknown URL: ${url}`)
+      logger.warn(
+        `[ZimService] Wikipedia download complete callback for unknown URL from ${downloadUrlOriginForLog(url)}`
+      )
       return
     }
 
@@ -791,7 +803,7 @@ export class ZimService {
       selection.status = 'installed'
       await selection.save()
 
-      logger.info(`[ZimService] Wikipedia download completed successfully: ${selection.filename}`)
+      logger.info('[ZimService] Wikipedia download completed successfully')
 
       // Delete prior versions of THIS specific Wikipedia variant only — match by
       // filename stem (the name minus its _YYYY-MM(-DD).zim date). The earlier blanket
@@ -808,9 +820,9 @@ export class ZimService {
         for (const oldFile of wikipediaFiles) {
           try {
             await this.delete(oldFile)
-            logger.info(`[ZimService] Deleted old Wikipedia file: ${oldFile}`)
-          } catch (error) {
-            logger.warn(`[ZimService] Could not delete old Wikipedia file: ${oldFile}`, error)
+            logger.info('[ZimService] Deleted old Wikipedia file')
+          } catch {
+            logger.warn('[ZimService] Could not delete old Wikipedia file')
           }
         }
       }
@@ -818,7 +830,7 @@ export class ZimService {
       // Download failed - keep the selection record but mark as failed
       selection.status = 'failed'
       await selection.save()
-      logger.error(`[ZimService] Wikipedia download failed for: ${selection.filename}`)
+      logger.error('[ZimService] Wikipedia download failed')
     }
   }
 }

@@ -65,6 +65,7 @@ export const DECK_BY_KEY: Record<string, DeckKey> = {
   // Knowledge & maps
   nomad_kiwix_server: 'knowledge-maps', // Information Library (Kiwix)
   nomad_kolibri: 'knowledge-maps', // Education Platform
+  nomad_translate: 'knowledge-maps', // Translated Library
   maps: 'knowledge-maps', // Maps — hardcoded feature tile
 
   // Health & supplies

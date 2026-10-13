@@ -2,6 +2,7 @@ import { IconArrowUp, IconCheck, IconExternalLink } from '@tabler/icons-react'
 import StyledButton from '~/components/StyledButton'
 import AppManageMenu, { AppMenuItem } from '~/components/AppManageMenu'
 import HostCommandButton from '~/components/HostCommandButton'
+import ModifiedTag from '~/components/ModifiedTag'
 import { ServiceSlim } from '../../types/services'
 import { getServiceLink } from '~/lib/navigation'
 import { extractTag } from '~/lib/imageTag'
@@ -84,7 +85,7 @@ export default function SupplyDepotCard({
   function renderActions() {
     // Everything past Open (and a conditional Update) collapses into one "⋯"
     // overflow menu so the card's action row stays compact: lifecycle (Stop/Start,
-    // Restart), then the custom-app cluster (Edit / Pull latest / Logs /
+    // Restart), Edit (every app), then the custom-app cluster (Pull latest / Logs /
     // Auto-update), then a divider and the destructive zone (Delete for custom
     // apps, then Wipe & reinstall). Mirrors apps.tsx; the only difference is each
     // item calls a handlers.* prop instead of opening an inline modal.
@@ -111,15 +112,19 @@ export default function SupplyDepotCard({
         }
       }
 
+      // Edit is on every installed app. On a shipped app the changes are merged
+      // into the setup it came with, and the catalog stops re-syncing it (the
+      // "modified" tag on the card says so).
+      items.push({
+        kind: 'action',
+        icon: 'IconPencil',
+        label: 'Edit',
+        onClick: () => handlers.onEditCustom(record),
+        disabled: loading,
+      })
+
       if (record.is_custom) {
         items.push(
-          {
-            kind: 'action',
-            icon: 'IconPencil',
-            label: 'Edit',
-            onClick: () => handlers.onEditCustom(record),
-            disabled: loading,
-          },
           {
             kind: 'action',
             icon: 'IconArrowUp',
@@ -293,7 +298,12 @@ export default function SupplyDepotCard({
       <p className="mt-2 flex-1 text-sm text-text-secondary">{record.description}</p>
 
       <div className="mt-3 flex items-center justify-between gap-2 text-sm">
-        <div className="text-text-muted">{renderVersion()}</div>
+        {/* The tag sits with the version rather than in the title row, which a long
+            name already fills (the title truncates). */}
+        <div className="flex flex-wrap items-center gap-2 text-text-muted">
+          {renderVersion()}
+          {!!record.is_user_modified && !record.is_custom && <ModifiedTag />}
+        </div>
         {docLink && (
           <a
             href={docLink}
