@@ -53,6 +53,25 @@ if _validate_bundle_subtree "$TMP/cand"; then ok "valid subtree accepted"; else 
 rm -rf "$TMP/cand/man"
 if _validate_bundle_subtree "$TMP/cand"; then bad "missing man/ validated"; else ok "missing man/ rejected"; fi
 
+echo "== upgrade reseeds services =="
+load
+EVENTS="$TMP/upgrade-events"
+dc() { printf 'dc %s\n' "$*" >> "$EVENTS"; }
+step_run_admin_migrations() { printf 'migrate\n' >> "$EVENTS"; }
+step_seed_admin_services() { printf 'seed\n' >> "$EVENTS"; }
+_reconcile_open_webui() { :; }
+_print_admin_image_build() { :; }
+_upgrade_compose_one admin 0
+check "admin-only upgrade applies migrations and seeder" \
+  "$(tail -2 "$EVENTS" | tr '\n' ' ')" "migrate seed "
+: > "$EVENTS"
+_upgrade_compose_one redis 0
+if grep -Eq 'migrate|seed' "$EVENTS"; then bad "Redis upgrade reseeded admin"; else ok "Redis upgrade leaves admin catalog alone"; fi
+: > "$EVENTS"
+_upgrade_compose_stack 0
+check "stack upgrade applies migrations and seeder" \
+  "$(tail -2 "$EVENTS" | tr '\n' ' ')" "migrate seed "
+
 echo
 echo "results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]]

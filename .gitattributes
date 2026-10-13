@@ -1,0 +1,2 @@
+# The translation container executes this script under /bin/sh.
+install/nomad-translate/entrypoint.sh text eol=lf

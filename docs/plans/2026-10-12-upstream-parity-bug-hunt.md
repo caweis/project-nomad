@@ -94,3 +94,64 @@ tests from 18 spec files after the production build. Typecheck passes, and
 targeted lint passes for the new helper and tests; `rag_service.ts` and the
 repository still have pre-existing lint errors. Commit `be9750a1` is pushed
 to draft PR #62. No live knowledge-base sweep was run.
+
+## Follow-up: preserve chat text on session failure (2026-10-13)
+
+The chat handler waits for session creation before showing the user's message.
+The API wrapper returns `undefined` when that request fails, so the handler
+returns without showing the text or a failure state. Upstream `fa34d6df`
+fixes the same call order.
+
+- [x] Render the user message before awaiting session creation.
+- [x] Show an actionable assistant error when creation returns no session or throws.
+- [x] Build, typecheck, run the configured unit suite, inspect the diff, and commit.
+
+### Review
+
+The source now calls `setMessages` before the session request and appends a
+visible error if the request fails or returns no session. Typecheck and the
+production build pass in the isolated checkout. The configured Adonis suite
+passes 287 tests. This codebase has no chat component test harness; interactive
+verification of the failure state remains pending. ESLint ignores this TSX
+file under the current config, and Prettier reports formatting differences in
+untouched portions of the file.
+Commit `0b85ad29` contains the chat change locally. The browser failure state
+has not been exercised against a running admin instance.
+
+## Follow-up: offline library translation (2026-10-13)
+
+Chris chose to include upstream offline translation while retaining Apple
+Silicon support. Trace the upstream service, model acquisition, image build,
+admin route, and installer path before porting. Keep the translation service
+local to the NOMAD stack and verify model and image architecture requirements.
+
+The upstream Bergamot 0.4.5 image targets amd64. Its source build hardcodes an
+SSE flag and fails on arm64. A native arm64 CTranslate2 image loaded an Argos
+English-to-French model and translated a sentence locally. Use that engine for
+the Mac image. It translates text nodes so article tags and link targets remain
+byte-for-byte intact. Pin the initial model archives and validate extraction.
+The catalog names a versioned image that must be published before release.
+
+- [x] Compare upstream translation implementation and dependencies with this fork.
+- [x] Add the arm64 image build and Supply Depot/macOS update wiring.
+- [x] Port the application flow and add focused regression coverage.
+- [x] Run build, tests, image validation, and installer checks; document any live limits.
+
+### Review
+
+The arm64 image built locally. The first-start container downloaded and
+verified the pinned French model under a read-only root filesystem and served
+a translated fixture article. Separate Spanish and German model packages
+translated the same sentence in an arm64 container. The final proxy's language
+link set a cookie and redirected back to the translated page. A real ZIM page
+returned translated HTML, with all 106 original link targets and script bodies
+unchanged. An 8 MB asset and an oversized 5 MB HTML response were byte-identical
+through the proxy. The Python suite passes 19 tests, including an entity form
+that previously made text spans overlap.
+
+The admin build and typecheck pass. The configured Adonis suite passes 287
+tests. `bash -n install/macos/nomad` passes, and the update helper suite passes
+16 checks, including reseeding on admin and full-stack upgrades. Targeted
+ESLint still reports nine pre-existing Prettier errors in the seeder's
+reseed block; the added lines produce none. The image has not been published,
+and the live NOMAD stack was not changed.

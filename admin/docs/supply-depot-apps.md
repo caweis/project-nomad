@@ -4,7 +4,7 @@ The Supply Depot is where you install apps onto your NOMAD. Each one runs in its
 
 This page covers what you need to know to get going with each app *on NOMAD specifically*: whether you log in, where your files end up, and anything to have on hand first. It does not teach the apps themselves. Each is its own open-source project with its own documentation, and there's a link out to that for every one.
 
-A note on logins: a couple of these apps have their own accounts, separate from your NOMAD login. Where one asks you to sign in, the starting credentials are below.
+A note on logins: some apps have their own accounts. Where one asks you to sign in, the starting credentials are below.
 
 ---
 
@@ -19,6 +19,18 @@ Offline copies of Wikipedia, medical references, how-to guides, and full encyclo
 **Your data:** Libraries live in the `zim` folder on your NOMAD (the same `zim` you see in File Browser). Each one is a single self-contained file, so backing up that folder backs up everything you've collected.
 
 **Works offline:** Fully offline, which is the entire point. Everything you read is served from files already on your NOMAD. Downloading new libraries is the only part that needs a connection.
+
+## Translated Library {% #translated-library %}
+
+Read English articles from your Information Library in French, Spanish, or German. The language controls appear at the top of each article. Links and the library navigation stay in place when you switch languages.
+
+**Powered by:** [CTranslate2](https://github.com/OpenNMT/CTranslate2) with [Argos translation models](https://github.com/argosopentech/argospm-index) · **Source:** [Project NOMAD](https://github.com/caweis/project-nomad)
+
+**First time you open it:** Install Translated Library from Supply Depot. It installs Information Library if needed, then downloads the selected language models. French, Spanish, and German are selected by default. If the download fails, the library still opens in its original language. Restart the service when you have a connection to retry.
+
+**Your data:** Models are stored in `translate/models` on your NOMAD data drive. Articles stay in the Information Library's `zim` folder. Translation runs on your NOMAD's CPU.
+
+**Works offline:** Once a model is downloaded, article translation uses no internet connection. Downloading a model for the first time requires a connection. Machine translation can make mistakes, so check important information against the original article.
 
 ## Education Platform {% #education-platform %}
 
