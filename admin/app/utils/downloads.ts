@@ -9,6 +9,7 @@ import { createWriteStream } from 'fs'
 import { rename } from 'fs/promises'
 import path from 'path'
 import logger from '@adonisjs/core/services/logger'
+import { assertNotPrivateUrl, assertSafeRedirectTarget } from '../validators/common.js'
 
 /**
  * A gated source rejected this install's credentials (401/403).
@@ -53,6 +54,7 @@ export async function doResumableDownload({
   allowedMimeTypes,
   requestHeaders,
 }: DoResumableDownloadParams): Promise<string> {
+  assertNotPrivateUrl(url)
   const dirname = path.dirname(filepath)
   await ensureDirectoryExists(dirname)
 
@@ -81,6 +83,7 @@ export async function doResumableDownload({
       signal,
       timeout,
       headers: baseHeaders,
+      beforeRedirect: assertSafeRedirectTarget,
     })
   } catch (error: any) {
     // A 401/403 here is not a network problem, and the raw axios message
@@ -159,6 +162,7 @@ export async function doResumableDownload({
       headers: { ...baseHeaders, ...hdrs },
       signal,
       timeout,
+      beforeRedirect: assertSafeRedirectTarget,
     })
 
   let response = await fetchStream(headers)

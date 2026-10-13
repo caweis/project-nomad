@@ -1,10 +1,12 @@
 import { test } from '@japa/runner'
-import { assertNotPrivateUrl } from '../../app/validators/common.js'
+import { assertNotPrivateUrl, assertSafeRedirectTarget } from '../../app/validators/common.js'
 
 // Must be blocked — loopback / link-local / unspecified / cloud-IMDS, in every
 // encoding. The bracketed-IPv6 cases are the live bypass this fix closes.
 const BLOCKED = [
   'http://localhost/',
+  'http://localhost./',
+  'http://files.localhost/',
   'http://127.0.0.1/',
   'http://127.0.0.5:8080/x',
   'http://0.0.0.0/',
@@ -38,9 +40,36 @@ test.group('assertNotPrivateUrl (SSRF guard)', () => {
       assert.throws(() => assertNotPrivateUrl(url))
     })
   }
+  test('blocks non-HTTP download schemes', ({ assert }) => {
+    assert.throws(() => assertNotPrivateUrl('file:///etc/hosts'))
+  })
   for (const url of ALLOWED) {
     test(`allows ${url}`, ({ assert }) => {
       assert.doesNotThrow(() => assertNotPrivateUrl(url))
     })
   }
+})
+
+test.group('redirect target guard', () => {
+  test('rejects a redirect to loopback', ({ assert }) => {
+    assert.throws(() =>
+      assertSafeRedirectTarget({ protocol: 'http:', hostname: '127.0.0.1', port: 8080 })
+    )
+  })
+
+  test('rejects a redirect to cloud metadata', ({ assert }) => {
+    assert.throws(() =>
+      assertSafeRedirectTarget({ protocol: 'http:', hostname: '169.254.169.254' })
+    )
+  })
+
+  test('allows a LAN mirror redirect', ({ assert }) => {
+    assert.doesNotThrow(() =>
+      assertSafeRedirectTarget({ protocol: 'https:', hostname: '192.168.1.10' })
+    )
+  })
+
+  test('rejects non-HTTP redirects', ({ assert }) => {
+    assert.throws(() => assertSafeRedirectTarget({ protocol: 'file:', hostname: 'example.com' }))
+  })
 })
