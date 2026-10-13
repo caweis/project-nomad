@@ -18,12 +18,34 @@ function check(name: string, fn: () => void) {
 }
 
 check('replaces an existing tag', () =>
-  assert.equal(buildUpdatedImageRef('ollama/ollama:0.23.1', '0.23.2'), 'ollama/ollama:0.23.2'))
+  assert.equal(buildUpdatedImageRef('ollama/ollama:0.23.1', '0.23.2'), 'ollama/ollama:0.23.2')
+)
 check('keeps a registry/owner/name path', () =>
-  assert.equal(buildUpdatedImageRef('ghcr.io/owner/app:v1', 'v2'), 'ghcr.io/owner/app:v2'))
+  assert.equal(buildUpdatedImageRef('ghcr.io/owner/app:v1', 'v2'), 'ghcr.io/owner/app:v2')
+)
 check('adds a tag when none is present', () =>
-  assert.equal(buildUpdatedImageRef('busybox', 'latest'), 'busybox:latest'))
+  assert.equal(buildUpdatedImageRef('busybox', 'latest'), 'busybox:latest')
+)
 check('library image with tag', () =>
-  assert.equal(buildUpdatedImageRef('docker.io/library/nginx:1.0', '1.2'), 'docker.io/library/nginx:1.2'))
+  assert.equal(
+    buildUpdatedImageRef('docker.io/library/nginx:1.0', '1.2'),
+    'docker.io/library/nginx:1.2'
+  )
+)
+check('digest pin is replaced with a tag', () =>
+  assert.equal(
+    buildUpdatedImageRef('ghcr.io/owner/app@sha256:abc123', 'v2'),
+    'ghcr.io/owner/app:v2'
+  )
+)
+check('registry port is kept when the image has no tag', () =>
+  assert.equal(buildUpdatedImageRef('registry.local:5000/app', 'v2'), 'registry.local:5000/app:v2')
+)
+check('registry port is kept when replacing a tag', () =>
+  assert.equal(
+    buildUpdatedImageRef('registry.local:5000/app:v1', 'v2'),
+    'registry.local:5000/app:v2'
+  )
+)
 
 console.log(`\n${passed} passed`)
