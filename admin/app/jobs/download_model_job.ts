@@ -1,4 +1,4 @@
-import { Job } from 'bullmq'
+import { Job, UnrecoverableError } from 'bullmq'
 import { QueueService } from '#services/queue_service'
 import { createHash } from 'crypto'
 import logger from '@adonisjs/core/services/logger'
@@ -63,7 +63,9 @@ export class DownloadModelJob {
       logger.error(
         `[DownloadModelJob] Failed to initiate download for model ${modelName}: ${result.message}`
       )
-      throw new Error(`Failed to initiate download for model: ${result.message}`)
+      const message = `Failed to initiate download for model: ${result.message}`
+      if (result.retryable === false) throw new UnrecoverableError(message)
+      throw new Error(message)
     }
 
     logger.info(`[DownloadModelJob] Successfully completed download for model ${modelName}`)

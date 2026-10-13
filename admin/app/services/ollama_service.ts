@@ -23,6 +23,8 @@ import { NOMAD_API_DEFAULT_BASE_URL } from '../../constants/misc.js'
 const NOMAD_MODELS_API_PATH = '/api/v1/ollama/models'
 const MODELS_CACHE_FILE = path.join(process.cwd(), 'storage', 'ollama-models-cache.json')
 const CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000 // 24 hours
+const PERMANENT_MODEL_PULL_ERROR =
+  /(?:model|manifest).*?(?:not found|does not exist)|refusing to pull unmapped model|unauthorized|newer version of Ollama/i
 
 /**
  * Whether native Ollama survives a cancelled reply, as last measured. Module
@@ -68,7 +70,10 @@ export class OllamaService {
    * @param model Model name to download
    * @returns Success status and message
    */
-  async downloadModel(model: string, progressCallback?: (percent: number) => void): Promise<{ success: boolean; message: string }> {
+  async downloadModel(
+    model: string,
+    progressCallback?: (percent: number) => void
+  ): Promise<{ success: boolean; message: string; retryable?: boolean }> {
     try {
       await this._ensureDependencies()
       if (!this.ollama) {
@@ -76,8 +81,9 @@ export class OllamaService {
       }
 
       // See if model is already installed
-      const installedModels = await this.getModels()
-      if (installedModels && installedModels.some((m) => m.name === model)) {
+      const installedModels = await this.getModels(true)
+      const normalizedName = (name: string) => (name.includes(':') ? name : `${name}:latest`)
+      if (installedModels?.some((m) => normalizedName(m.name) === normalizedName(model))) {
         logger.info(`[OllamaService] Model "${model}" is already installed.`)
         return { success: true, message: 'Model is already installed.' }
       }
@@ -100,6 +106,13 @@ export class OllamaService {
         }
       }
 
+      // A finished stream alone does not prove that the model landed. Include
+      // embedding models and account for Ollama's implicit :latest tag.
+      const installedAfter = await this.getModels(true)
+      if (!installedAfter?.some((m) => normalizedName(m.name) === normalizedName(model))) {
+        throw new Error('Ollama ended the pull, but the model is not installed.')
+      }
+
       logger.info(`[OllamaService] Model "${model}" downloaded successfully.`)
       return { success: true, message: 'Model downloaded successfully.' }
     } catch (error) {
@@ -111,7 +124,8 @@ export class OllamaService {
       const message =
         error instanceof Error && error.message ? error.message : 'Failed to download model.'
       logger.error(`[OllamaService] Failed to download model "${model}": ${message}`)
-      return { success: false, message }
+      const permanent = PERMANENT_MODEL_PULL_ERROR.test(message)
+      return { success: false, message, retryable: !permanent }
     }
   }
 
