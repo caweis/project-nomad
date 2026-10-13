@@ -61,6 +61,10 @@ admin/public/assets
 
 # Admin specific development files
 admin/storage
+admin/coverage/
+admin/.nyc_output/
+coverage/
+.coverage
 
 # Python bytecode (install/nomad-translate helper scripts)
 __pycache__/
