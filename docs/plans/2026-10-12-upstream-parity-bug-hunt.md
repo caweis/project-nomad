@@ -196,3 +196,34 @@ typecheck pass. The full Adonis suite passes 290 tests from 20 spec files.
 The test file passes ESLint; the map service has existing lint findings outside
 the changed request. The test uses a mocked HEAD request and did not fetch a
 remote map or change the live stack.
+
+## Follow-up: integrate the fork's existing v1.35 parity branch (2026-10-13)
+
+The fork had 21 unmerged commits on `claude/busy-babbage-apnxan` covering chat
+pictures, upload cleanup, branding, and other v1.35 changes. Preview the merge
+in an isolated worktree. Keep the native ARM64 translation implementation and
+the verified fixes on this branch when resolving overlap.
+
+- [x] Merge the existing branch in a temporary worktree and audit every conflict.
+- [x] Run the full affected build and test gates, plus checks for the merged
+      features' wiring and Mac update script.
+- [x] Fast-forward the PR branch to the verified merge commit and update the PR.
+
+### Review
+
+Merge commit `de1573fb` retains the fork's ARM64 translation service and the
+verified download replacement path while bringing in the existing v1.35 chat,
+container, and documentation work. The full standalone sweep caught a broken
+Translated Library documentation anchor; the map now points to the heading
+present in the page. All 78 standalone files pass after that correction.
+
+The merged tree passes TypeScript typecheck, the admin production build, 290
+Adonis unit tests from 20 files, 19 translation tests with Python 3.11, and 16
+Mac update checks. Shell syntax and catalog JSON validation pass. Focused lint
+on the new helpers passes. Repository-wide lint remains red with 3,364
+findings, compared with 3,365 on the PR branch before the merge. The build
+prints an existing Node deprecation warning and a Vite chunk-size warning.
+
+The native translation container and a real Kiwix article were tested locally
+before the merge. The registry image has not been published, and the merged
+admin UI and installer have not been exercised on a live Mac installation.
