@@ -402,6 +402,7 @@ export class ZimService {
           resource_id: resource.id,
           version: resolved.version,
           collection_ref: categorySlug,
+          skip_embedding: resource.skip_embedding,
         },
       })
     }

@@ -7,6 +7,13 @@ import { DockerService } from '#services/docker_service'
 import { ZimService } from '#services/zim_service'
 import { MapService } from '#services/map_service'
 import { EmbedFileJob } from './embed_file_job.js'
+import { RagService } from '#services/rag_service'
+import { OllamaService } from '#services/ollama_service'
+import { isSafeOldContentPath } from '../utils/content_path.js'
+import { decideDownloadIngest } from '../utils/content_reindex_decision.js'
+import { ZIM_STORAGE_PATH } from '../utils/fs.js'
+import { SERVICE_NAMES } from '../../constants/service_names.js'
+import { join } from 'node:path'
 
 export class RunDownloadJob {
   static get queue() {
@@ -47,6 +54,7 @@ export class RunDownloadJob {
         job.updateProgress(Math.floor(progressPercent))
       },
       async onComplete(url) {
+        let oldFilePath: string | null = null
         try {
           // Create InstalledResource entry if metadata was provided
           if (resourceMetadata) {
@@ -60,7 +68,7 @@ export class RunDownloadJob {
               .where('resource_id', resourceMetadata.resource_id)
               .where('resource_type', filetype as 'zim' | 'map')
               .first()
-            const oldFilePath = oldEntry?.file_path ?? null
+            oldFilePath = oldEntry?.file_path ?? null
 
             const installed = await InstalledResource.updateOrCreate(
               { resource_id: resourceMetadata.resource_id, resource_type: filetype as 'zim' | 'map' },
@@ -76,14 +84,24 @@ export class RunDownloadJob {
 
             // Delete the old file if it differs from the new one
             if (oldFilePath && oldFilePath !== filepath) {
-              try {
-                await deleteFileIfExists(oldFilePath)
-                console.log(`[RunDownloadJob] Deleted old file: ${oldFilePath}`)
-              } catch (deleteError) {
+              const storageRoot = filetype === 'zim'
+                ? join(process.cwd(), ZIM_STORAGE_PATH)
+                : filetype === 'map'
+                  ? join(process.cwd(), 'storage/maps/pmtiles')
+                  : null
+              if (!storageRoot || !isSafeOldContentPath(oldFilePath, resourceMetadata.resource_id, storageRoot)) {
                 console.warn(
-                  `[RunDownloadJob] Failed to delete old file ${oldFilePath}:`,
-                  deleteError
+                  `[RunDownloadJob] Refusing to delete unexpected old file path for ${resourceMetadata.resource_id}: ${oldFilePath}`
                 )
+                oldFilePath = null
+              } else {
+                try {
+                  await deleteFileIfExists(oldFilePath)
+                  console.log(`[RunDownloadJob] Deleted old file: ${oldFilePath}`)
+                } catch (deleteError) {
+                  console.warn(`[RunDownloadJob] Failed to delete old file ${oldFilePath}:`, deleteError)
+                  oldFilePath = null
+                }
               }
             }
 
@@ -110,14 +128,41 @@ export class RunDownloadJob {
             // restarts Kiwix.
             await zimService.downloadRemoteSuccessCallback([url], true, job.id)
 
-            // Dispatch an embedding job for the downloaded ZIM file
-            try {
+            // Only an installed knowledge base can consume embeddings. The
+            // macOS Ollama URL exists even when the AI tile is not installed.
+            const qdrantInstalled = !!(await dockerService.getServiceURL(SERVICE_NAMES.QDRANT))
+            const isReplacement = !!oldFilePath && oldFilePath !== filepath
+            const { default: KVStore } = await import('#models/kv_store')
+            const policyRaw = qdrantInstalled && !resourceMetadata?.skip_embedding && !isReplacement
+              ? await KVStore.getValue('rag.defaultIngestPolicy')
+              : null
+            const decision = decideDownloadIngest(
+              qdrantInstalled,
+              resourceMetadata?.skip_embedding === true,
+              isReplacement,
+              policyRaw === 'Manual' ? 'Manual' : 'Always'
+            )
+            if (decision === 'purge_old' && oldFilePath) {
+              await new RagService(dockerService, new OllamaService()).purgeIndexedSource(oldFilePath)
+            } else if (decision === 'reconcile' && oldFilePath) {
+              const outcome = await new RagService(dockerService, new OllamaService())
+                .reconcileReplacedContentFile({
+                  oldFilePath,
+                  newFilePath: filepath,
+                  fileName: url.split('/').pop() || '',
+                })
+              console.log(`[RunDownloadJob] KB reconciliation for ${filepath}: ${outcome}`)
+            } else if (decision === 'pending') {
+              const { default: KbIngestState } = await import('#models/kb_ingest_state')
+              await KbIngestState.firstOrCreate(
+                { file_path: filepath },
+                { file_path: filepath, state: 'pending_decision', chunks_embedded: 0 }
+              )
+            } else if (decision === 'embed') {
               await EmbedFileJob.dispatch({
                 fileName: url.split('/').pop() || '',
                 filePath: filepath,
               })
-            } catch (error) {
-              console.error(`[RunDownloadJob] Error dispatching EmbedFileJob for URL ${url}:`, error)
             }
           } else if (filetype === 'map') {
             const mapsService = new MapService()

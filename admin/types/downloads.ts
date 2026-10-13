@@ -44,6 +44,8 @@ export type RunDownloadJobParams = Omit<
     /** True when this download was triggered by content auto-update — drives the
      * per-resource backoff success/failure recording in the job + worker. */
     auto?: boolean
+    /** Video and other browse-only ZIMs must not enter the AI knowledge base. */
+    skip_embedding?: boolean
   }
 }
 

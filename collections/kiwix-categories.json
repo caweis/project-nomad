@@ -1,5 +1,5 @@
 {
-  "spec_version": "2026-03-15",
+  "spec_version": "2026-10-12",
   "categories": [
     {
       "name": "Medicine",
@@ -141,6 +141,7 @@
               "title": "Canadian Prepper: Winter Prepping",
               "description": "Video guides for winter survival and cold weather emergencies",
               "url": "https://download.kiwix.org/zim/videos/canadian_prepper_winterprepping_en_2026-02.zim",
+              "skip_embedding": true,
               "size_mb": 1340
             },
             {
@@ -149,6 +150,7 @@
               "title": "Canadian Prepper: Bug Out Roll",
               "description": "Essential gear selection for your bug-out bag",
               "url": "https://download.kiwix.org/zim/videos/canadian_prepper_bugoutroll_en_2025-08.zim",
+              "skip_embedding": true,
               "size_mb": 975
             }
           ]
@@ -189,6 +191,7 @@
               "title": "Canadian Prepper: Bug Out Concepts",
               "description": "Strategies and planning for emergency evacuation",
               "url": "https://download.kiwix.org/zim/videos/canadian_prepper_bugoutconcepts_en_2026-02.zim",
+              "skip_embedding": true,
               "size_mb": 2890
             },
             {
@@ -197,6 +200,7 @@
               "title": "Urban Prepper",
               "description": "Comprehensive urban emergency preparedness video series",
               "url": "https://download.kiwix.org/zim/videos/urban-prepper_en_all_2026-02.zim",
+              "skip_embedding": true,
               "size_mb": 2240
             }
           ]
@@ -213,6 +217,7 @@
               "title": "Canadian Prepper: Prepping Food",
               "description": "Long-term food storage and survival meal preparation",
               "url": "https://download.kiwix.org/zim/videos/canadian-prepper_en_preppingfood_2026-07.zim",
+              "skip_embedding": true,
               "size_mb": 2160
             },
             {
@@ -528,6 +533,7 @@
               "title": "Learning Self-Reliance: Homesteading",
               "description": "Beekeeping, animal husbandry, and sustainable living practices",
               "url": "https://download.kiwix.org/zim/videos/lrnselfreliance_en_all_2026-06.zim",
+              "skip_embedding": true,
               "size_mb": 3790
             },
             {

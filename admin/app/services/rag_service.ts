@@ -28,6 +28,7 @@ import KVStore from '#models/kv_store'
 import { ZIMExtractionService } from './zim_extraction_service.js'
 import { ZIM_BATCH_SIZE } from '../../constants/zim_extraction.js'
 import { hasMoreArticleBatches } from '../utils/zim_batch_decision.js'
+import { decideContentReindex, type ReindexOutcome } from '../utils/content_reindex_decision.js'
 import { ProcessAndEmbedFileResponse, ProcessZIMFileResponse, RAGResult, RerankedRAGResult, StoredFileInfo } from '../../types/rag.js'
 import type { KbIngestStateValue } from '../../types/kb_ingest_state.js'
 
@@ -91,6 +92,19 @@ export class RagService {
   private async _ensureDependencies() {
     if (!this.qdrant) {
       await this._initializeQdrantClient()
+    }
+  }
+
+  public async checkQdrantHealth(): Promise<boolean> {
+    try {
+      await this._ensureDependencies()
+      await this.qdrant!.getCollections()
+      return true
+    } catch {
+      this.qdrant = null
+      this.qdrantInitPromise = null
+      this.ensuredCollections.clear()
+      return false
     }
   }
 
@@ -1558,11 +1572,46 @@ export class RagService {
     return sources
   }
 
-  /**
-   * Delete all Qdrant points associated with a given source path and remove
-   * the corresponding file from disk if it lives under the uploads directory.
-   * @param source - Full source path as stored in Qdrant payloads
-   */
+  /** Preserve the old file's indexing choice when a downloaded ZIM replaces it. */
+  public async reconcileReplacedContentFile(params: {
+    oldFilePath: string
+    newFilePath: string
+    fileName: string
+  }): Promise<ReindexOutcome> {
+    const { oldFilePath, newFilePath, fileName } = params
+    const isReplacement = !!oldFilePath && oldFilePath !== newFilePath
+    const qdrantInstalled = isReplacement
+      ? !!(await this.dockerService.getServiceURL(SERVICE_NAMES.QDRANT))
+      : false
+    const oldState = isReplacement && qdrantInstalled
+      ? await KbIngestState.query().where('file_path', oldFilePath).first()
+      : null
+    const oldFileWasIndexed = oldState?.state === 'indexed'
+    const qdrantRunning = oldFileWasIndexed ? await this.checkQdrantHealth() : false
+    const outcome = decideContentReindex({
+      isReplacement,
+      qdrantInstalled,
+      oldFileWasIndexed,
+      qdrantRunning,
+    })
+
+    if (outcome === 'reindex') {
+      await this.purgeIndexedSource(oldFilePath)
+      const { EmbedFileJob } = await import('#jobs/embed_file_job')
+      await EmbedFileJob.dispatch({ fileName, filePath: newFilePath })
+    }
+    return outcome
+  }
+
+  /** Remove a source's state and vectors without touching its file on disk. */
+  public async purgeIndexedSource(source: string): Promise<void> {
+    await this._ensureCollection(RagService.CONTENT_COLLECTION_NAME, RagService.EMBEDDING_DIMENSION)
+    await this.qdrant!.delete(RagService.CONTENT_COLLECTION_NAME, {
+      filter: { must: [{ key: 'source', match: { value: source } }] },
+    })
+    await KbIngestState.remove(source)
+  }
+
   /**
    * Drop every point for a source whose file is already gone, and forget its
    * ingest state (caweis#50).
@@ -1578,20 +1627,9 @@ export class RagService {
    */
   public async purgeOrphanedSource(source: string): Promise<void> {
     try {
-      // The client has to exist before it is used. ZimService.delete builds a
-      // fresh RagService for each delete, and on that instance `this.qdrant`
-      // was still null: the delete threw a TypeError, the catch below
-      // swallowed it, and deleting a ZIM never touched its passages. The
-      // sweep only worked because scanAndSyncStorage had set the client up
-      // first. Ensuring the collection, as deleteFileBySource does, also
-      // keeps a delete on a fresh install from failing on a missing one.
+      // Keep state-first ordering here: the orphan sweep discovers leftover
+      // Qdrant points and retries them if the vector delete fails.
       await this._ensureCollection(RagService.CONTENT_COLLECTION_NAME, RagService.EMBEDDING_DIMENSION)
-
-      // State row first, points second (upstream 565ec8ce). The sweep finds
-      // orphans by what is still in Qdrant, so if a failure lands between the
-      // two, leftover points are found and retried on the next sweep. Points
-      // first would instead risk a state row that nothing ever looks at again.
-      // Both steps are idempotent, so a retry from either state is safe.
       await KbIngestState.remove(source)
       await this.qdrant!.delete(RagService.CONTENT_COLLECTION_NAME, {
         filter: { must: [{ key: 'source', match: { value: source } }] },
