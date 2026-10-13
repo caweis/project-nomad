@@ -189,6 +189,11 @@ export async function doResumableDownload({
     }
   }
 
+  if (!headers.Range && response.status === 206) {
+    response.data.destroy()
+    throw new Error('Download server returned a partial response without a range request')
+  }
+
   return new Promise((resolve, reject) => {
     let downloadedBytes = startByte
     let lastProgressTime = Date.now()
@@ -261,6 +266,10 @@ export async function doResumableDownload({
 
     writeStream.on('finish', async () => {
       clearStallTimer()
+      if (totalBytes > 0 && downloadedBytes !== totalBytes) {
+        reject(new Error(`Incomplete download: received ${downloadedBytes} of ${totalBytes} bytes`))
+        return
+      }
       try {
         // Atomically move the completed .tmp file to the final path
         await rename(tempPath, filepath)

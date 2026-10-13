@@ -92,7 +92,7 @@ async def get_body_json(request: Request) -> Dict[str, Any]:
     body = await get_body_bytes(request)
 
     try:
-        return json.loads(body)
+        parsed = json.loads(body)
     except json.JSONDecodeError as e:
         logger.error(
             f"Invalid JSON in request body: {e}",
@@ -106,3 +106,10 @@ async def get_body_json(request: Request) -> Dict[str, Any]:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid JSON in request body: {str(e)}",
         )
+
+    if not isinstance(parsed, dict):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="JSON request body must be an object",
+        )
+    return parsed
