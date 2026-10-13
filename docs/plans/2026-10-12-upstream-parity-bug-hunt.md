@@ -253,3 +253,30 @@ production build pass. The new test file passes ESLint; `zim_service.ts` still
 has 19 lint findings outside this change. The test used a local catalog
 fixture; it did not fetch a live catalog or change installed libraries.
 Commit `6b5ec700` holds the code and test.
+
+## Follow-up: report failed model pulls accurately (2026-10-13)
+
+The installed Ollama client already throws on in-band stream errors, so the
+fork does not need upstream's stream parser. The service still returns success
+after a completed stream without checking that the model appeared in Ollama's
+installed list. The queue also retries a known missing model on its fixed
+40-attempt schedule.
+
+- [x] Reproduce a clean stream with no installed model and a permanent missing
+      model error in focused service and job tests.
+- [x] Verify the installed model before reporting success; classify a missing
+      model as nonretryable for the job while keeping transient failures retryable.
+- [x] Run the full test, build, typecheck, and lint gates; review the diff and
+      update draft PR #62.
+
+### Review
+
+All four initial regressions failed against the prior service and job. The
+final suite adds a transient connection case; all five pass. The Ollama client
+already raises an exception for an in-band error frame, so the fix verifies
+the installed model after the stream and passes a permanent-failure signal to
+BullMQ. The full Adonis suite passes 297 tests from 22 spec files. All 78
+standalone files, TypeScript typecheck, and the admin production build pass.
+The new test file passes ESLint; the changed service and job retain 19 older
+lint findings outside the new logic. No live model pull was run. Commit
+`37af3ca0` holds the code and tests.

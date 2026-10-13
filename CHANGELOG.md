@@ -105,6 +105,10 @@ Notable changes to the macOS distribution layer of this fork. Format follows
   included, and the same happened to any interrupted upload, the Workshop's
   200 MB files too. NOMAD now names its upload files, and clears the ones that
   nothing has written to for six hours, at startup and then every hour.
+- A model download now reports failure if Ollama finishes its stream without
+  installing the model. A model name Ollama cannot find stops retrying; a
+  connection failure can still retry. Bare model names match an installed
+  `:latest` tag, including embedding models. (Adapts upstream 37818a32.)
 - Answers that drew on your knowledge base now list their sources underneath:
   the archive each passage came from, with its date where the archive records
   one, or the file name for something you uploaded. Only what the assistant
