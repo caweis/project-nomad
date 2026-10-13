@@ -288,11 +288,9 @@ export class RagService {
 
     if (expansions.length > 0) {
       expanded = `${expanded} ${expansions.join(' ')}`
-      logger.debug(`[RAG] Query expanded with domain terms: "${expanded}"`)
+      logger.debug('[RAG] Query expanded with domain terms')
     }
 
-    logger.debug(`[RAG] Original query: "${query}"`)
-    logger.debug(`[RAG] Preprocessed query: "${expanded}"`)
     return expanded
   }
 
@@ -488,9 +486,9 @@ export class RagService {
         // Combine and dedup keywords
         const allKeywords = [...new Set([...structuralKeywords, ...contentKeywords])]
 
-        logger.debug(`[RAG] Extracted keywords for chunk ${origIndex}: [${allKeywords.join(', ')}]`)
+        logger.debug(`[RAG] Extracted ${allKeywords.length} keywords for chunk ${origIndex}`)
         if (structuralKeywords.length > 0) {
-          logger.debug(`[RAG]   - Structural: [${structuralKeywords.join(', ')}], Content: [${contentKeywords.join(', ')}]`)
+          logger.debug(`[RAG]   - Structural: ${structuralKeywords.length}, content: ${contentKeywords.length}`)
         }
 
         return {
@@ -528,13 +526,8 @@ export class RagService {
       }
 
       logger.debug(`[RAG] Successfully embedded and stored ${points.length}/${chunks.length} chunks`)
-      if (points.length > 0) {
-        logger.debug(`[RAG] First successful chunk preview: "${chunks[successfulChunkIndices[0]].substring(0, 100)}..."`)
-      }
-
       return { chunks: points.length }
     } catch (error) {
-      console.error(error)
       logger.error('[RAG] Error embedding text:', error)
       return null
     }
@@ -711,7 +704,7 @@ export class RagService {
     // This prevents race conditions where early batches complete after later ones
     const shouldDelete = deleteAfterEmbedding && !hasMoreBatches
     if (shouldDelete) {
-      logger.info(`[RAG] Final batch complete, deleting ZIM file: ${filepath}`)
+      logger.info('[RAG] Final batch complete, deleting ZIM file')
       await deleteFileIfExists(filepath)
     } else if (!hasMoreBatches) {
       logger.info(`[RAG] Final batch complete, but file deletion was not requested`)
@@ -757,7 +750,7 @@ export class RagService {
     }
 
     if (deleteAfterEmbedding) {
-      logger.info(`[RAG] Embedding complete, deleting uploaded file: ${filepath}`)
+      logger.info('[RAG] Embedding complete, deleting uploaded file')
       await deleteFileIfExists(filepath)
     }
 
@@ -790,12 +783,12 @@ export class RagService {
       // sync. Return before any processing or deletion so the in-progress download
       // is left untouched; the completed `.zim` is picked up on the next pass.
       if (filepath.endsWith('.tmp')) {
-        logger.debug(`[RAG] Skipping partial download (not yet complete): ${filepath}`)
+        logger.debug('[RAG] Skipping partial download (not yet complete)')
         return { success: true, message: 'Skipped partial download (still in progress).' }
       }
 
       const fileType = determineFileType(filepath)
-      logger.debug(`[RAG] Processing file: ${filepath} (detected type: ${fileType})`)
+      logger.debug(`[RAG] Processing file (detected type: ${fileType})`)
 
       if (fileType === 'unknown') {
         return { success: false, message: 'Unsupported file type.' }
@@ -863,7 +856,7 @@ export class RagService {
     collection?: string
   ): Promise<Array<{ text: string; score: number; metadata?: Record<string, any> }>> {
     try {
-      logger.debug(`[RAG] Starting similarity search for query: "${query}"`)
+      logger.debug('[RAG] Starting similarity search')
 
       await this._ensureCollection(
         RagService.CONTENT_COLLECTION_NAME,
@@ -897,7 +890,7 @@ export class RagService {
       // Preprocess query for better matching
       const processedQuery = this.preprocessQuery(query)
       const keywords = this.extractKeywords(processedQuery)
-      logger.debug(`[RAG] Extracted keywords: [${keywords.join(', ')}]`)
+      logger.debug(`[RAG] Extracted ${keywords.length} query keywords`)
 
       // Generate embedding for the query with search_query prefix
       const ollamaClient = await this.ollamaService.getClient()
@@ -965,10 +958,10 @@ export class RagService {
 
       const rerankedResults = this.rerankResults(resultsWithMetadata, keywords, query)
 
-      logger.debug(`[RAG] Top 3 results after reranking:`)
+      logger.debug('[RAG] Top 3 scores after reranking:')
       rerankedResults.slice(0, 3).forEach((result, idx) => {
         logger.debug(
-          `[RAG]   ${idx + 1}. Score: ${result.finalScore.toFixed(4)} (semantic: ${result.score.toFixed(4)}) - "${result.text.substring(0, 100)}..."`
+          `[RAG]   ${idx + 1}. Score: ${result.finalScore.toFixed(4)} (semantic: ${result.score.toFixed(4)})`
         )
       })
 
@@ -1112,7 +1105,7 @@ export class RagService {
 
         if (count > 0) {
           logger.debug(
-            `[RAG] Source diversity penalty for "${sourceKey}": ${result.finalScore.toFixed(4)} → ${diverseScore.toFixed(4)} (seen ${count}x)`
+            `[RAG] Source diversity penalty: ${result.finalScore.toFixed(4)} → ${diverseScore.toFixed(4)} (seen ${count}x)`
           )
         }
 
@@ -1532,7 +1525,7 @@ export class RagService {
           filter: { must: [{ key: 'source', match: { value: source } }] },
         })
       } catch (err) {
-        logger.error(`[RAG] Failed to delete prior points for ${source}; aborting re-embed:`, err)
+        logger.error('[RAG] Failed to delete prior points; aborting re-embed:', err)
         return {
           success: false,
           code: 'delete_failed',
@@ -1562,7 +1555,7 @@ export class RagService {
         message: force ? 'Re-embed queued for this file.' : 'Indexing queued for this file.',
       }
     } catch (err) {
-      logger.error(`[RAG] Failed to dispatch embed job for ${source}:`, err)
+      logger.error('[RAG] Failed to dispatch embed job:', err)
       return {
         success: false,
         code: 'dispatch_failed',
@@ -1686,7 +1679,7 @@ export class RagService {
         },
       })
 
-      logger.info(`[RAG] Deleted all points for source: ${source}`)
+      logger.info('[RAG] Deleted all points for source')
 
       /** Delete the physical file only if it lives inside the uploads directory.
       * resolve() normalises path traversal sequences (e.g. "/../..") before the
@@ -1697,7 +1690,7 @@ export class RagService {
       const resolvedSource = resolve(source)
       if (resolvedSource.startsWith(uploadsAbsPath + sep)) {
         await deleteFileIfExists(resolvedSource)
-        logger.info(`[RAG] Deleted uploaded file from disk: ${resolvedSource}`)
+        logger.info('[RAG] Deleted uploaded file from disk')
       } else {
         logger.warn(`[RAG] File was removed from knowledge base but doesn't live in Nomad's uploads directory, so it can't be safely removed. Skipping deletion of physical file...`)
       }
@@ -1747,15 +1740,15 @@ export class RagService {
       // Dispatch an EmbedFileJob for each discovered file
       for (const fileInfo of filesToEmbed) {
         try {
-          logger.info(`[RAG] Dispatching embed job for: ${fileInfo.source}`)
+          logger.info('[RAG] Dispatching embed job for Nomad doc')
           await EmbedFileJob.dispatch({
             filePath: fileInfo.path,
             fileName: fileInfo.source,
           })
-          logger.info(`[RAG] Successfully dispatched job for ${fileInfo.source}`)
+          logger.info('[RAG] Successfully dispatched Nomad doc embed job')
         } catch (fileError) {
           logger.error(
-            `[RAG] Error dispatching job for file ${fileInfo.source}:`,
+            '[RAG] Error dispatching Nomad doc embed job:',
             fileError
           )
         }
@@ -1986,7 +1979,7 @@ export class RagService {
           const fileName = filePath.split(/[/\\]/).pop() || filePath
           const stats = await getFileStatsIfExists(filePath)
 
-          logger.info(`[RAG] Dispatching embed job for: ${fileName}`)
+          logger.info('[RAG] Dispatching embed job for stored file')
           const result = await EmbedFileJob.dispatch({
             filePath: filePath,
             fileName: fileName,
@@ -1996,12 +1989,12 @@ export class RagService {
           // in-flight dispatches (created:false) must not inflate the toast.
           if (result.created) {
             queuedCount++
-            logger.debug(`[RAG] Successfully dispatched job for ${fileName}`)
+            logger.debug('[RAG] Successfully dispatched stored-file embed job')
           } else {
-            logger.debug(`[RAG] Embed job already in-flight for ${fileName}, not counted`)
+            logger.debug('[RAG] Stored-file embed job already in-flight, not counted')
           }
         } catch (fileError) {
-          logger.error(`[RAG] Error dispatching job for file ${filePath}:`, fileError)
+          logger.error('[RAG] Error dispatching stored-file embed job:', fileError)
         }
       }
 

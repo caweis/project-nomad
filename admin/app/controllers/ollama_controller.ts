@@ -189,7 +189,7 @@ export default class OllamaController {
         ? await this.rewriteQueryWithContext(reqData.messages, reqData.model)
         : null
 
-      logger.debug(`[OllamaController] Rewritten query for RAG: "${rewrittenQuery}"`)
+      logger.debug(`[OllamaController] RAG query ${rewrittenQuery ? 'ready' : 'skipped'}`)
       // Provenance for the answer about to be generated (upstream #1179),
       // surfaced under it as "Sources". Stays empty whenever retrieval was off
       // or found nothing, which is the honest result: no context, no citations.
@@ -370,7 +370,7 @@ export default class OllamaController {
           const messageCount = await this.chatService.getMessageCount(sessionId)
           if (messageCount <= 2 && userContent) {
             this.chatService.generateTitle(sessionId, userContent, fullContent, reqData.model).catch((err) => {
-              logger.error(`[OllamaController] Title generation failed: ${err instanceof Error ? err.message : err}`)
+              logger.error(`[OllamaController] Title generation failed: ${err instanceof Error ? err.name : 'unknown error'}`)
             })
           }
         }
@@ -394,7 +394,7 @@ export default class OllamaController {
         const messageCount = await this.chatService.getMessageCount(sessionId)
         if (messageCount <= 2 && userContent) {
           this.chatService.generateTitle(sessionId, userContent, result.message.content, reqData.model).catch((err) => {
-            logger.error(`[OllamaController] Title generation failed: ${err instanceof Error ? err.message : err}`)
+            logger.error(`[OllamaController] Title generation failed: ${err instanceof Error ? err.name : 'unknown error'}`)
           })
         }
       }
@@ -547,7 +547,7 @@ export default class OllamaController {
       return rewrittenQuery
     } catch (error) {
       logger.error(
-        `[RAG] Query rewriting failed: ${error instanceof Error ? error.message : error}`
+        `[RAG] Query rewriting failed: ${error instanceof Error ? error.name : 'unknown error'}`
       )
       // Fallback to last user message if rewriting fails
       return lastUserMessage?.content || null

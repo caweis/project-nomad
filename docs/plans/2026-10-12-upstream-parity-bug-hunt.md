@@ -583,3 +583,23 @@ utility pass ESLint. The touched services have the same or fewer ESLint
 errors than the prior commit. The download-status response exposes only the
 origin and a safe filename, and the retry retains the original URL in its
 job parameters.
+
+## Keep private RAG text out of logs
+
+**Scope:** Search and ingest debug messages print the user's query,
+retrieved passages, document keywords, and local source paths. Keep numeric
+retrieval diagnostics without copying that text into application logs.
+
+- [x] Trace the log statements from chat rewrite through retrieval and ingest.
+- [x] Remove direct query, passage, keyword, and source-path interpolation.
+- [x] Typecheck, build, run the full Adonis suite, and review remaining RAG logs.
+- [ ] Commit, push, and update draft PR #62.
+
+### Review
+
+The affected debug and info messages now report operation names, counts,
+file type, and scores without the private input text. Title and query rewrite
+failure logs use error type rather than error message. Typecheck and production
+build pass. The full Adonis run discovers 29 spec files and passes 324 tests.
+The existing Vite large-chunk warning remains. This was verified against the
+source log calls and build, without a running Qdrant service.

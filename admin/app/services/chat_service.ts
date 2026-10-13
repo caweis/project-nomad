@@ -388,7 +388,7 @@ export class ChatService {
       logger.info(`[ChatService] Generated title for session ${sessionId}`)
     } catch (error) {
       logger.error(
-        `[ChatService] Failed to generate title for session ${sessionId}: ${error instanceof Error ? error.message : error}`
+        `[ChatService] Failed to generate title for session ${sessionId}: ${error instanceof Error ? error.name : 'unknown error'}`
       )
       // Fall back to truncated user message
       try {
