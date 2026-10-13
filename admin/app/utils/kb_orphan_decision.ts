@@ -1,80 +1,75 @@
 import { sep } from 'node:path'
 
-/**
- * The pure core of the knowledge base orphan sweep (caweis#50).
- *
- * `scanAndSyncStorage` already builds both halves of the answer in one pass:
- * `sourcesInQdrant` from a facet query, and the embeddable files found by
- * walking storage. It only ever asked one direction — "is this file on disk
- * already embedded?" — and never the reverse, "does this Qdrant source still
- * have a file behind it?".
- *
- * Nothing else asked either. `ZimService.delete` removes the file, the Kiwix
- * library entry and the `installed_resources` row without touching Qdrant, so
- * a deleted ZIM's passages stayed retrievable in chat, and a replaced file left
- * its old points sitting beside the new ones. On a box with no internet, an
- * answer drawn from content the user deleted is not something they can check
- * against anything else.
- *
- * Only `node:path` is imported, which keeps this runnable under bare
- * `node --experimental-strip-types` for the standalone tests.
- *
- * Ported from upstream #1227 (their issue #1170), which this fork's scan has
- * the same gap in.
- */
+/** A single sweep must not remove most of a root's indexed sources. */
+export const ORPHAN_PURGE_MAX_FRACTION = 0.5
+/** Ignore the fraction for small cleanups, where one deletion skews it. */
+export const ORPHAN_PURGE_MIN_GUARDED = 5
 
-/**
- * Which Qdrant sources have no file behind them any more.
- *
- * Returns `null` — meaning "do nothing this cycle" — when the disk scan came
- * back empty. An empty file list is indistinguishable from a filesystem hiccup
- * or a storage mount that has not come up yet, and wrongly reaping a healthy
- * knowledge base is far worse than skipping one sweep. The caller must treat
- * `null` as "no information", never as "no orphans".
- */
-export function decideOrphans(
-  sourcesInQdrant: string[],
-  embeddableFiles: string[]
-): string[] | null {
-  if (embeddableFiles.length === 0) return null
+export type WithheldOrphans = {
+  root: string
+  count: number
+  reason: 'empty_root' | 'mass_removal'
+}
 
-  const onDisk = new Set(embeddableFiles)
-  return sourcesInQdrant.filter((source) => !onDisk.has(source))
+export type OrphanDecision = {
+  orphans: string[]
+  withheld: WithheldOrphans[]
 }
 
 /**
- * Narrow Qdrant's sources to the ones the disk scan can actually speak for:
- * those under the roots it walked, meaning the roots it listed on this pass,
- * not the roots it meant to list.
+ * A root is only eligible if this scan actually walked it. A present but
+ * empty folder is not proof its volume is mounted: boot creates the ZIM
+ * directory even when an external drive is absent. An unexpectedly large
+ * purge under a partly populated root is withheld for the same reason.
  *
- * This guard is load-bearing, not defensive dressing, twice over.
- *
- * NOMAD embeds its own bundled documentation into the same knowledge base
- * (`discoverNomadDocs`), and those files live outside both scan roots. Without
- * this filter the first sweep would find every one of them "missing from disk"
- * and purge the product's own docs out of the knowledge base.
- *
- * And the scan skips a root that is not there rather than failing, because a
- * fresh install has no kb_uploads until the first upload. A missing zim root
- * next to a kb_uploads with files in it still yields a non-empty file list, so
- * decideOrphans' empty-scan guard passes, and if the configured roots were
- * passed here every ZIM in the index would be an orphan purged in one batch:
- * hours of re-embedding, from pressing Sync. Only walked roots are passed, so a
- * missing one contributes no candidates, while a root that was walked and held
- * nothing still gives up its orphans. (Upstream f8a29693.)
- *
- * Filtering by scanned root rather than by a list of known-safe names means a
- * future embedding source added outside these roots is left alone by default
- * instead of being reaped the first time it appears.
+ * Use every file found on disk to decide whether an indexed source still
+ * exists. A file type that is no longer embeddable must not be purged merely
+ * because the current classifier does not recognize it.
  */
-export function filterOrphanCandidates(sourcesInQdrant: string[], scannedRoots: string[]): string[] {
+export function decideOrphans(input: {
+  sourcesInQdrant: string[]
+  filesOnDisk: string[]
+  embeddableFiles: string[]
+  scannedRoots: string[]
+}): OrphanDecision {
+  const onDisk = new Set(input.filesOnDisk)
+  const orphans: string[] = []
+  const withheld: WithheldOrphans[] = []
+
+  for (const root of new Set(input.scannedRoots)) {
+    const indexed = filterOrphanCandidates(input.sourcesInQdrant, [root])
+    const missing = indexed.filter((source) => !onDisk.has(source))
+    if (missing.length === 0) continue
+
+    if (filterOrphanCandidates(input.embeddableFiles, [root]).length === 0) {
+      withheld.push({ root, count: missing.length, reason: 'empty_root' })
+      continue
+    }
+
+    if (
+      missing.length >= ORPHAN_PURGE_MIN_GUARDED &&
+      missing.length / indexed.length > ORPHAN_PURGE_MAX_FRACTION
+    ) {
+      withheld.push({ root, count: missing.length, reason: 'mass_removal' })
+      continue
+    }
+
+    orphans.push(...missing)
+  }
+
+  return { orphans, withheld }
+}
+
+/**
+ * Only paths below a walked root can be called missing. The trailing separator
+ * keeps sibling names such as /storage/zim-backup out of /storage/zim.
+ * Bundled NOMAD docs live outside both storage roots and stay untouched.
+ */
+export function filterOrphanCandidates(sources: string[], scannedRoots: string[]): string[] {
   const prefixes = scannedRoots
-    // A trailing separator matters: without it "/storage/zim-backup" shares a
-    // string prefix with "/storage/zim" and would be swept.
-    .filter((p) => typeof p === 'string' && p !== '')
-    .map((p) => (p.endsWith(sep) ? p : p + sep))
+    .filter((root) => typeof root === 'string' && root !== '')
+    .map((root) => (root.endsWith(sep) ? root : root + sep))
 
   if (prefixes.length === 0) return []
-
-  return sourcesInQdrant.filter((source) => prefixes.some((prefix) => source.startsWith(prefix)))
+  return sources.filter((source) => prefixes.some((prefix) => source.startsWith(prefix)))
 }
