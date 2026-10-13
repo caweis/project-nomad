@@ -312,19 +312,7 @@ export default function Chat({
     async (content: string) => {
       let sessionId = activeSessionId
 
-      // Create a new session if none exists
-      if (!sessionId) {
-        const newSession = await api.createChatSession('New Chat', selectedModel)
-        if (newSession) {
-          sessionId = newSession.id
-          setActiveSessionId(sessionId)
-          queryClient.invalidateQueries({ queryKey: ['chatSessions'] })
-        } else {
-          return
-        }
-      }
-
-      // Add user message to UI
+      // Show the text before session creation can delay or fail.
       const userMessage: ChatMessage = {
         id: `msg-${Date.now()}`,
         role: 'user',
@@ -333,6 +321,32 @@ export default function Chat({
       }
 
       setMessages((prev) => [...prev, userMessage])
+
+      if (!sessionId) {
+        let newSession: Awaited<ReturnType<typeof api.createChatSession>>
+        try {
+          newSession = await api.createChatSession('New Chat', selectedModel)
+        } catch {
+          newSession = undefined
+        }
+
+        if (!newSession) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `msg-${Date.now()}-error`,
+              role: 'assistant',
+              content: 'Chat could not start. Send your message again.',
+              timestamp: new Date(),
+            },
+          ])
+          return
+        }
+
+        sessionId = newSession.id
+        setActiveSessionId(sessionId)
+        queryClient.invalidateQueries({ queryKey: ['chatSessions'] })
+      }
 
       const chatMessages = [
         ...messages.map((m) => ({ role: m.role, content: m.content })),
