@@ -429,6 +429,7 @@ export class ZimService {
       await new KiwixLibraryService().rebuildFromDisk()
     } catch (err) {
       logger.error('[ZimService] Failed to rebuild kiwix library XML from disk:', err)
+      throw err
     }
 
     if (restart) {
@@ -476,11 +477,7 @@ export class ZimService {
         // Legacy glob-mode container: restart to pick up the new ZIM. The restart
         // intercept in DockerService migrates it to library mode in the process.
         logger.info('[ZimService] No more ZIM downloads pending - restarting KIWIX container')
-        await this.dockerService
-          .affectContainer(SERVICE_NAMES.KIWIX, 'restart')
-          .catch((error) => {
-            logger.error(`[ZimService] Failed to restart KIWIX container:`, error) // Don't stop the download completion, just log the error.
-          })
+        await this.dockerService.affectContainer(SERVICE_NAMES.KIWIX, 'restart')
       }
     }
 
@@ -542,11 +539,13 @@ export class ZimService {
             // its own schedule, under its own path.
             await this._purgeKnowledgeOf(decision.path)
           } catch (err) {
-            logger.warn(`[ZimService] Failed to remove superseded file ${decision.path}:`, err)
+            logger.error(`[ZimService] Failed to remove superseded file ${decision.path}:`, err)
+            throw err
           }
         }
       } catch (error) {
         logger.error(`[ZimService] Failed to create InstalledResource for ${filename}:`, error)
+        throw error
       }
     }
   }

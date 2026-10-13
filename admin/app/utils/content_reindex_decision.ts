@@ -3,6 +3,7 @@ export type ReindexOutcome =
   | 'qdrant_not_installed'
   | 'old_not_indexed'
   | 'qdrant_not_running'
+  | 'already_indexed'
   | 'reindex'
 
 export interface ContentReindexInput {

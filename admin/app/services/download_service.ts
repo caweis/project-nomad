@@ -91,7 +91,7 @@ export class DownloadService {
         return { success: false, message: 'Cannot retry: missing URL or filepath in job data' }
       }
       await job.remove().catch(() => {})
-      await RunDownloadJob.dispatch(params)
+      await RunDownloadJob.dispatch({ ...params, resumeCompletion: true })
       return { success: true, message: `Retrying download for ${params.url}` }
     }
 

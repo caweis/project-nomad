@@ -7,6 +7,8 @@ export type DoResumableDownloadParams = {
   onProgress?: (progress: DoResumableDownloadProgress) => void
   onComplete?: (url: string, path: string) => void | Promise<void>
   forceNew?: boolean
+  /** Re-run post-download work for a verified final file after a failed job. */
+  resumeCompletion?: boolean
   /**
    * Extra HTTP request headers sent on BOTH the HEAD probe and the GET stream.
    * Used for gated self-hosted curated content (upstream #1172) to carry the
@@ -47,6 +49,13 @@ export type RunDownloadJobParams = Omit<
     /** Video and other browse-only ZIMs must not enter the AI knowledge base. */
     skip_embedding?: boolean
   }
+  /** Persisted by the worker before it changes the installed-resource row. */
+  completionContext?: {
+    oldFilePath: string | null
+    oldFileWasIndexed: boolean
+    ingestDecision: 'skip' | 'purge_old' | 'reconcile' | 'pending' | 'embed'
+  }
+  completionDone?: boolean
 }
 
 export type DownloadJobWithProgress = {

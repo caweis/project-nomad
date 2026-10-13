@@ -1577,6 +1577,7 @@ export class RagService {
     oldFilePath: string
     newFilePath: string
     fileName: string
+    oldFileWasIndexed?: boolean
   }): Promise<ReindexOutcome> {
     const { oldFilePath, newFilePath, fileName } = params
     const isReplacement = !!oldFilePath && oldFilePath !== newFilePath
@@ -1586,7 +1587,7 @@ export class RagService {
     const oldState = isReplacement && qdrantInstalled
       ? await KbIngestState.query().where('file_path', oldFilePath).first()
       : null
-    const oldFileWasIndexed = oldState?.state === 'indexed'
+    const oldFileWasIndexed = params.oldFileWasIndexed ?? oldState?.state === 'indexed'
     const qdrantRunning = oldFileWasIndexed ? await this.checkQdrantHealth() : false
     const outcome = decideContentReindex({
       isReplacement,
@@ -1597,6 +1598,10 @@ export class RagService {
 
     if (outcome === 'reindex') {
       await this.purgeIndexedSource(oldFilePath)
+      // A retry can follow a finished embed job before the download job marks
+      // completion. Keep the replacement's indexed vectors in that case.
+      const newState = await KbIngestState.query().where('file_path', newFilePath).first()
+      if (newState?.state === 'indexed') return 'already_indexed'
       const { EmbedFileJob } = await import('#jobs/embed_file_job')
       await EmbedFileJob.dispatch({ fileName, filePath: newFilePath })
     }

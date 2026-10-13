@@ -202,11 +202,13 @@ export class MapService implements IMapService {
             await deleteFileIfExists(decision.path)
             logger.info(`[MapService] Removed superseded ${parsed.resource_id} file: ${decision.path}`)
           } catch (err) {
-            logger.warn(`[MapService] Failed to remove superseded file ${decision.path}:`, err)
+            logger.error(`[MapService] Failed to remove superseded file ${decision.path}:`, err)
+            throw err
           }
         }
       } catch (error) {
         logger.error(`[MapService] Failed to create InstalledResource for ${filename}:`, error)
+        throw error
       }
     }
   }
