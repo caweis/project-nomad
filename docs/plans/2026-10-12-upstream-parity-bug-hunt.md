@@ -656,7 +656,7 @@ filenames, and exception objects during download and library maintenance.
 - [x] Trace affected library and download log calls.
 - [x] Keep operation status in logs without path, filename, or raw error text.
 - [x] Run full tests, typecheck, build, focused lint comparison, and source review.
-- [ ] Commit, push, and update draft PR #62.
+- [x] Commit, push, and update draft PR #62.
 
 ### Review
 
@@ -667,3 +667,11 @@ The full Adonis suite passes 327 tests. The map dedup and Wikipedia reconcile
 standalone suites pass 6 and 4 checks. Typecheck and production build pass;
 Vite still reports its large-chunk warning. Focused lint counts are unchanged
 or lower in the three touched services. A live library rebuild was not run.
+Commit `b3d17ac9` is pushed to draft PR #62.
+
+## Dependency audit disposition
+
+The current admin audit reports 29 advisories: 14 high and 15 moderate, with
+none critical. npm suggests major-version changes for every affected direct
+package. [Issue #63](https://github.com/caweis/project-nomad/issues/63) tracks
+the integration work and remaining advisory review.
