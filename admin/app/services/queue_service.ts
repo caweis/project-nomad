@@ -1,13 +1,9 @@
 import { Queue } from 'bullmq'
 import queueConfig from '#config/queue'
 
-// Process-wide singleton. Each BullMQ `Queue` opens two ioredis connections
-// (one for commands, one blocking). Constructing a fresh QueueService per
-// dispatch / status lookup never shared the `queues` cache, so every call
-// opened a new pair and none were closed — under sustained job churn (a
-// multi-batch ZIM ingestion enqueues a continuation every few seconds) that
-// saturates Redis's maxclients within hours. getInstance() shares one cache
-// for the process lifetime so each queue connects exactly once.
+// Process-wide singleton. Reuse Queue objects for each name and share their
+// command connection through queueConfig. A fresh QueueService per dispatch
+// would discard this cache and leave clients behind during long ingests.
 export class QueueService {
   private queues: Map<string, Queue> = new Map()
 

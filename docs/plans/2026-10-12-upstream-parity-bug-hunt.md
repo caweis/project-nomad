@@ -446,7 +446,7 @@ to the fork's six catalog files. The catalog currently has 117 unique URLs.
       spec versions and decode them through the app validators.
 - [x] Verify URL extraction, successful and failed probes, workflow syntax,
       and every live catalog link.
-- [ ] Review, commit, push, and update the parity ledger and draft PR #62.
+- [x] Review, commit, push, and update the parity ledger and draft PR #62.
 
 ### Review
 
@@ -464,9 +464,9 @@ empty catalogs, and malformed JSON. The workflow YAML parses. Two new Adonis
 tests decode the changed catalogs with the app's Vine schemas. Node 24
 typecheck and production build pass; the full Adonis suite passes 304 tests
 across 24 spec files. Focused lint, formatting, shell syntax, and the video
-ZIM catalog check pass. A GitHub Actions run on the new workflow remains to
-be observed after the push. Issue #65 tracks a future DC map source.
-Publication is pending.
+ZIM catalog check pass. The GitHub Actions URL validation jobs, admin
+validation, and shell checks passed on the catalog commit. Issue #65 tracks a
+future DC map source. The reporting choice in issue #55 remains open.
 
 ## Finish Night Ops theme colors in shared shells
 
@@ -479,7 +479,7 @@ text on its sand surface. Keep the light theme's appearance.
       the generated styles for the changed classes.
 - [x] Build, typecheck, and run the relevant dark-mode contrast suite.
 - [ ] Inspect light and dark rendering on a running Command Center.
-- [ ] Review, commit, push, update PR #62, and record the device-check limit.
+- [x] Review, commit, push, update PR #62, and record the device-check limit.
 
 ### Review
 
@@ -489,4 +489,30 @@ Measured text contrast against the existing tokens is 16.84:1 (light) and
 links, and 5.85:1 and 7.80:1 for Debug Info. The admin build and TypeScript
 typecheck pass; the existing dark-mode contrast suite passes five checks.
 Prettier still reports the three touched TSX files, and it reports their
-unchanged HEAD versions too. A running Command Center has not been checked.
+unchanged HEAD versions too. Commit 25aa3f2e is pushed and described in
+draft PR #62. A running Command Center has not been checked.
+
+## Reuse and defer the Redis queue connection
+
+**Scope:** Adapt upstream f4af81ef's queue connection to the macOS admin.
+Use one ioredis client for BullMQ producers and workers, with a lazy first
+connection, bounded reconnect delay, and an error listener. Keep the Mac
+Compose health gates; its Linux entrypoint script does not run here.
+
+- [x] Add ioredis as a direct dependency and update the queue config.
+- [x] Add a focused regression for the connection options and first-dial
+      behavior without touching the installed Redis service.
+- [x] Typecheck, build, run the focused and full relevant suites, and inspect
+      the dependency audit for regressions.
+- [ ] Review, commit, push, update PR #62, and record the live-install limit.
+
+### Review
+
+The new regression failed against the plain config and passed after the
+change. Node 24 typecheck and production build pass. The full Adonis run
+discovers 25 spec files and passes 305 tests. Prettier passes on the changed
+queue files. The npm audit remains at 29 advisories (14 high, 15 moderate,
+none critical). An isolated Redis container confirmed that the compiled
+connection starts in `wait`, returns PONG when used, and enqueues a readable
+BullMQ job. The container was removed after the smoke test. The installed
+NOMAD service was not changed.

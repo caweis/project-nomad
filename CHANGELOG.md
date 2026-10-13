@@ -202,6 +202,9 @@ Notable changes to the macOS distribution layer of this fork. Format follows
   c9a1a763.)
 
 ### Maintainer tools
+- Background job queues now share one Redis command connection per process.
+  The connection opens when needed and retries with a capped delay after a
+  Redis interruption.
 - `node ace eval:retrieval` scores knowledge base search against a written-down
   set of questions and the documents that should answer them, so a change to
   retrieval can be checked against numbers rather than a few queries typed by
