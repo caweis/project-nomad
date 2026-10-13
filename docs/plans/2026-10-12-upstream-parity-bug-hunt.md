@@ -225,8 +225,10 @@ findings, compared with 3,365 on the PR branch before the merge. The build
 prints an existing Node deprecation warning and a Vite chunk-size warning.
 
 The native translation container and a real Kiwix article were tested locally
-before the merge. The registry image has not been published, and the merged
-admin UI and installer have not been exercised on a live Mac installation.
+before the merge. The versioned ARM64 image was published through GitHub
+Actions run 38400883872, and an anonymous registry request returned 200 for
+its manifest. The merged admin UI and installer have not been exercised on a
+live Mac installation.
 
 ## Follow-up: resolve flavoured ZIM catalog entries (2026-10-13)
 
