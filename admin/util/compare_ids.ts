@@ -15,8 +15,8 @@ export const MAX_COMPARE = 5
  * Rules (in order):
  *   1. Split on commas.
  *   2. Trim whitespace from each segment.
- *   3. Parse each segment as a base-10 integer.
- *   4. Drop any result that is not a finite integer > 0.
+ *   3. Accept decimal digits only, then parse as a base-10 integer.
+ *   4. Drop any result that is not a safe integer > 0.
  *   5. Dedupe, preserving first-occurrence order.
  *   6. Cap the list at MAX_COMPARE entries; extras are silently dropped.
  *
@@ -40,10 +40,14 @@ export function parseCompareIds(raw: string): number[] {
     const trimmed = segment.trim()
     if (trimmed === '') continue
 
+    // Number() accepts forms such as 2.0, 1e2, and 0x10. URL ids use
+    // decimal digits only; accepting alternate syntax weakens validation.
+    if (!/^\d+$/.test(trimmed)) continue
+
     const n = Number(trimmed)
 
-    // Must be a finite integer greater than zero.
-    if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) continue
+    // Reject values that cannot be represented exactly by JavaScript.
+    if (!Number.isSafeInteger(n) || n <= 0) continue
 
     if (seen.has(n)) continue
 
