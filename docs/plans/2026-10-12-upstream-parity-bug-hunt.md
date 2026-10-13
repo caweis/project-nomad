@@ -633,7 +633,7 @@ arbitrary exception messages as a user-visible failure reason.
 - [x] Remove content-derived values from worker and extractor logs.
 - [x] Bound the failure reason saved to the job and ingest state.
 - [x] Add a failure-reason regression and run the affected tests, typecheck, build, and diff review.
-- [ ] Commit, push, and update draft PR #62.
+- [x] Commit, push, and update draft PR #62.
 
 ### Review
 
@@ -647,3 +647,23 @@ existing large-chunk warning. The test file passes focused lint; the mapper
 retains one existing lint finding. Existing lint findings in the job and RAG
 service did not increase, and the extractor has fewer. A live embedding job
 was not run.
+
+## Keep library paths out of service logs
+
+**Scope:** ZIM, map, and Kiwix services still print local paths, catalog
+filenames, and exception objects during download and library maintenance.
+
+- [x] Trace affected library and download log calls.
+- [x] Keep operation status in logs without path, filename, or raw error text.
+- [x] Run full tests, typecheck, build, focused lint comparison, and source review.
+- [ ] Commit, push, and update draft PR #62.
+
+### Review
+
+ZIM, map, and Kiwix logs now state the operation without local file paths or
+filenames. Catalog lookup errors no longer copy upstream exception text, and
+invalid category, tier, and Wikipedia option errors omit the supplied value.
+The full Adonis suite passes 327 tests. The map dedup and Wikipedia reconcile
+standalone suites pass 6 and 4 checks. Typecheck and production build pass;
+Vite still reports its large-chunk warning. Focused lint counts are unchanged
+or lower in the three touched services. A live library rebuild was not run.

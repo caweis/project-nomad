@@ -194,7 +194,7 @@ export class MapService implements IMapService {
             installed_at: DateTime.now(),
           }
         )
-        logger.info(`[MapService] Created InstalledResource entry for: ${parsed.resource_id}`)
+        logger.info('[MapService] Created InstalledResource entry')
 
         // Remove the superseded prior version's file if every safety rail passes.
         // Maps have no library index, so deleting the recorded old file is enough.
@@ -208,14 +208,14 @@ export class MapService implements IMapService {
         if (decision.delete && decision.path) {
           try {
             await deleteFileIfExists(decision.path)
-            logger.info(`[MapService] Removed superseded ${parsed.resource_id} file: ${decision.path}`)
+            logger.info('[MapService] Removed superseded file')
           } catch (err) {
-            logger.error(`[MapService] Failed to remove superseded file ${decision.path}:`, err)
+            logger.error('[MapService] Failed to remove superseded file')
             throw err
           }
         }
       } catch (error) {
-        logger.error(`[MapService] Failed to create InstalledResource for ${filename}:`, error)
+        logger.error('[MapService] Failed to create InstalledResource')
         throw error
       }
     }
@@ -309,7 +309,7 @@ export class MapService implements IMapService {
       })
 
       if (response.status !== 200) {
-        throw new Error(`Failed to fetch file info: ${response.status} ${response.statusText}`)
+        throw new Error(`Failed to fetch file info: HTTP ${response.status}`)
       }
 
       const contentLength = response.headers['content-length']
@@ -425,10 +425,8 @@ export class MapService implements IMapService {
         }
       })
 
-    const deduped = pickNewestPerRegion(entries, (kept, dropped) => {
-      logger.warn(
-        `[MapService] Duplicate map region "${kept.regionName}": using "${kept.name}" over "${dropped.name}" (keeping newest)`
-      )
+    const deduped = pickNewestPerRegion(entries, () => {
+      logger.warn('[MapService] Duplicate map region; keeping newest file')
     })
 
     for (const entry of deduped) {
@@ -506,7 +504,7 @@ export class MapService implements IMapService {
         .where('resource_id', parsed.resource_id)
         .where('resource_type', 'map')
         .delete()
-      logger.info(`[MapService] Deleted InstalledResource entry for: ${parsed.resource_id}`)
+      logger.info('[MapService] Deleted InstalledResource entry')
     }
   }
 

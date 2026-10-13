@@ -198,10 +198,8 @@ export class ZimService {
         textNodeName: '#text',
       })
       return parseCatalogLanguages(parser.parse(res.data))
-    } catch (error) {
-      logger.warn(
-        `[ZimService] Catalog language list unavailable: ${error instanceof Error ? error.message : error}`
-      )
+    } catch {
+      logger.warn('[ZimService] Catalog language list unavailable')
       return []
     }
   }
@@ -247,7 +245,7 @@ export class ZimService {
       throw new Error('Failed to dispatch download job')
     }
 
-    logger.info(`[ZimService] Dispatched background download job for ZIM file: ${filename}`)
+    logger.info('[ZimService] Dispatched background ZIM download job')
 
     return {
       filename,
@@ -331,10 +329,8 @@ export class ZimService {
               break
             }
           }
-        } catch (error) {
-          logger.warn(
-            `[ZimService] Catalog lookup failed for ${id} (${error instanceof Error ? error.message : 'unknown error'}); using manifest URL`
-          )
+        } catch {
+          logger.warn('[ZimService] Catalog lookup failed; using manifest URL')
         }
       })
     )
@@ -351,12 +347,12 @@ export class ZimService {
 
     const category = spec.categories.find((c) => c.slug === categorySlug)
     if (!category) {
-      throw new Error(`Category not found: ${categorySlug}`)
+      throw new Error('Category not found')
     }
 
     const tier = category.tiers.find((t) => t.slug === tierSlug)
     if (!tier) {
-      throw new Error(`Tier not found: ${tierSlug}`)
+      throw new Error('Tier not found')
     }
 
     const allResources = CollectionManifestService.resolveTierResources(tier, category.tiers)
@@ -387,7 +383,7 @@ export class ZimService {
       const resolved = resolveZimDownload(resource, latestByResource.get(resource.id) ?? null)
       if (resolved.url !== resource.url) {
         logger.info(
-          `[ZimService] Resolved ${resource.id} to catalog version ${resolved.version} (manifest pinned ${resource.version})`
+          `[ZimService] Resolved catalog version ${resolved.version} (manifest pinned ${resource.version})`
         )
       }
 
@@ -444,7 +440,7 @@ export class ZimService {
     try {
       await new KiwixLibraryService().rebuildFromDisk()
     } catch (err) {
-      logger.error('[ZimService] Failed to rebuild kiwix library XML from disk:', err)
+      logger.error('[ZimService] Failed to rebuild kiwix library XML from disk')
       throw err
     }
 
@@ -530,7 +526,7 @@ export class ZimService {
             installed_at: DateTime.now(),
           }
         )
-        logger.info(`[ZimService] Created InstalledResource entry for: ${parsed.resource_id}`)
+        logger.info('[ZimService] Created InstalledResource entry')
 
         // Remove the superseded prior version's file if every safety rail passes.
         // The InstalledResource row already points at the new file, so delete the
@@ -549,18 +545,18 @@ export class ZimService {
         if (decision.delete && decision.path) {
           try {
             await deleteFileIfExists(decision.path)
-            logger.info(`[ZimService] Removed superseded ${parsed.resource_id} file: ${decision.path}`)
+            logger.info('[ZimService] Removed superseded file')
             // The replaced version's passages go with it, so retrieval does not
             // mix two editions of the same archive. The new file is indexed on
             // its own schedule, under its own path.
             await this._purgeKnowledgeOf(decision.path)
           } catch (err) {
-            logger.error(`[ZimService] Failed to remove superseded file ${decision.path}:`, err)
+            logger.error('[ZimService] Failed to remove superseded file')
             throw err
           }
         }
       } catch (error) {
-        logger.error(`[ZimService] Failed to create InstalledResource for ${filename}:`, error)
+        logger.error('[ZimService] Failed to create InstalledResource')
         throw error
       }
     }
@@ -584,10 +580,8 @@ export class ZimService {
       if (!qdrantInstalled) return
       const ragService = new RagService(this.dockerService, new OllamaService())
       await ragService.purgeOrphanedSource(filePath)
-    } catch (error) {
-      logger.error(
-        `[ZimService] Could not purge vectors for ${filePath}; the storage scan will catch it: ${error instanceof Error ? error.message : error}`
-      )
+    } catch {
+      logger.error('[ZimService] Could not purge vectors; the storage scan will retry')
     }
   }
 
@@ -625,7 +619,7 @@ export class ZimService {
         .where('resource_id', parsed.resource_id)
         .where('resource_type', 'zim')
         .delete()
-      logger.info(`[ZimService] Deleted InstalledResource entry for: ${parsed.resource_id}`)
+      logger.info('[ZimService] Deleted InstalledResource entry')
     }
   }
 
@@ -681,7 +675,7 @@ export class ZimService {
     const selectedOption = options.find((opt) => opt.id === optionId)
 
     if (!selectedOption) {
-      throw new Error(`Invalid Wikipedia option: ${optionId}`)
+      throw new Error('Invalid Wikipedia option')
     }
 
     const currentSelection = await this.getWikipediaSelection()
@@ -696,10 +690,10 @@ export class ZimService {
       if (currentSelection?.filename) {
         try {
           await this.delete(currentSelection.filename)
-          logger.info(`[ZimService] Deleted Wikipedia file: ${currentSelection.filename}`)
-        } catch (error) {
+          logger.info('[ZimService] Deleted Wikipedia file')
+        } catch {
           // File might already be deleted, that's OK
-          logger.warn(`[ZimService] Could not delete Wikipedia file (may already be gone): ${currentSelection.filename}`)
+          logger.warn('[ZimService] Could not delete Wikipedia file (may already be gone)')
         }
       }
 
@@ -722,8 +716,8 @@ export class ZimService {
       // Restart Kiwix to reflect the change
       await this.dockerService
         .affectContainer(SERVICE_NAMES.KIWIX, 'restart')
-        .catch((error) => {
-          logger.error(`[ZimService] Failed to restart Kiwix after Wikipedia removal:`, error)
+        .catch(() => {
+          logger.error('[ZimService] Failed to restart Kiwix after Wikipedia removal')
         })
 
       return { success: true, message: 'Wikipedia removed' }
@@ -785,7 +779,7 @@ export class ZimService {
       throw new Error('Failed to dispatch download job')
     }
 
-    logger.info(`[ZimService] Started Wikipedia download for ${optionId}: ${filename}`)
+    logger.info('[ZimService] Started Wikipedia download')
 
     return {
       success: true,
@@ -809,7 +803,7 @@ export class ZimService {
       selection.status = 'installed'
       await selection.save()
 
-      logger.info(`[ZimService] Wikipedia download completed successfully: ${selection.filename}`)
+      logger.info('[ZimService] Wikipedia download completed successfully')
 
       // Delete prior versions of THIS specific Wikipedia variant only — match by
       // filename stem (the name minus its _YYYY-MM(-DD).zim date). The earlier blanket
@@ -826,9 +820,9 @@ export class ZimService {
         for (const oldFile of wikipediaFiles) {
           try {
             await this.delete(oldFile)
-            logger.info(`[ZimService] Deleted old Wikipedia file: ${oldFile}`)
-          } catch (error) {
-            logger.warn(`[ZimService] Could not delete old Wikipedia file: ${oldFile}`, error)
+            logger.info('[ZimService] Deleted old Wikipedia file')
+          } catch {
+            logger.warn('[ZimService] Could not delete old Wikipedia file')
           }
         }
       }
@@ -836,7 +830,7 @@ export class ZimService {
       // Download failed - keep the selection record but mark as failed
       selection.status = 'failed'
       await selection.save()
-      logger.error(`[ZimService] Wikipedia download failed for: ${selection.filename}`)
+      logger.error('[ZimService] Wikipedia download failed')
     }
   }
 }
