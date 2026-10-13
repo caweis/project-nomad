@@ -5,6 +5,7 @@ import { readContextLength, readModelfileNumCtx } from '../utils/context_window.
 import { FALLBACK_RECOMMENDED_OLLAMA_MODELS, MLX_HIGHLIGHT_MODELS, MODEL_DESCRIPTION_OVERRIDES } from '../../constants/ollama.js'
 import { withMlxPullNames } from '../../util/mlx.js'
 import { normalizeNonStreamed, ThinkTagSplitter } from '../utils/think_stream.js'
+import { shouldConstrainStructuredOutput } from '../utils/structured_output.js'
 import { abortWith } from '../utils/abortable_stream.js'
 import { canCancelGeneration, MIN_CANCEL_SAFE_OLLAMA } from '../utils/cancel_safety.js'
 import { visionFromShow } from '../utils/model_capabilities.js'
@@ -171,15 +172,18 @@ export class OllamaService {
     if (!this.ollama) {
       throw new Error('Ollama client is not initialized.')
     }
+    const { format, ...request } = chatRequest
+    const structured = shouldConstrainStructuredOutput(env.get('NOMAD_AI_BACKEND'), format)
     const response = await this.ollama.chat({
-      ...chatRequest,
+      ...request,
+      ...(structured ? { format } : {}),
       stream: false,
     })
     const { content, thinking } = normalizeNonStreamed(
       response.message.content,
       response.message.thinking
     )
-    return { ...response, message: { ...response.message, content, thinking } }
+    return { ...response, message: { ...response.message, content, thinking }, structured }
   }
 
   /**
