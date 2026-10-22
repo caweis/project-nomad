@@ -5,7 +5,7 @@ import { QueueService } from '../../app/services/queue_service.js'
 import { STABLE_VECTOR_ID_SCHEME } from '../../util/embed_jobs.js'
 
 test.group('embedding retry idempotence', () => {
-  test('two attempts at one batch enqueue the same continuation job', async ({ assert }) => {
+  test('repeated dispatch for one batch enqueues the same continuation job', async ({ assert }) => {
     const original = QueueService.getInstance
     const added: Array<{ data: any; options: any }> = []
     ;(QueueService as any).getInstance = () => ({
@@ -24,6 +24,8 @@ test.group('embedding retry idempotence', () => {
       })
       const runId = added[0].data.runId
       assert.isString(runId)
+      assert.equal(added[0].options.attempts, 1)
+      assert.notProperty(added[0].options, 'backoff')
       await EmbedFileJob.dispatch({
         filePath: '/library/book.zim',
         fileName: 'book.zim',
@@ -39,6 +41,7 @@ test.group('embedding retry idempotence', () => {
       assert.notEqual(first.jobId, added[1].options.jobId)
       assert.equal(added[1].options.jobId, added[2].options.jobId)
       assert.equal(added[1].data.runId, added[2].data.runId)
+      assert.equal(added[1].options.attempts, 1)
     } finally {
       ;(QueueService as any).getInstance = original
     }
