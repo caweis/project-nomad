@@ -16,6 +16,11 @@ import {
   ensureDirectoryExists,
 } from '../utils/fs.js'
 import { join, resolve, sep } from 'path'
+import { rename } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+import axios from 'axios'
 import urlJoin from 'url-join'
 import { RunDownloadJob } from '#jobs/run_download_job'
 import logger from '@adonisjs/core/services/logger'
@@ -25,6 +30,17 @@ import { CollectionManifestService } from './collection_manifest_service.js'
 import { pickNewestPerRegion, type MapRegionEntry } from '../utils/map_region_dedup.js'
 import { decideSupersededDeletion } from '../utils/superseded_resource.js'
 import type { CollectionWithStatus, MapsSpec } from '../../types/collections.js'
+import {
+  latestProtomapsBuild,
+  PMTILES_BINARY_PATH,
+  PROTOMAPS_BUILDS_METADATA_URL,
+  WORLD_BASEMAP_FILENAME,
+  WORLD_BASEMAP_SOURCE_NAME,
+  worldBasemapExtractArgs,
+} from '../../constants/world_basemap.js'
+
+const execFileAsync = promisify(execFile)
+let worldBasemapInFlight: Promise<void> | null = null
 
 const BASE_ASSETS_MIME_TYPES = [
   'application/gzip',
@@ -50,7 +66,7 @@ export class MapService implements IMapService {
 
   async listRegions() {
     const files = (await this.listAllMapStorageItems()).filter(
-      (item) => item.type === 'file' && item.name.endsWith('.pmtiles')
+      (item) => item.type === 'file' && item.name.endsWith('.pmtiles') && item.name !== WORLD_BASEMAP_FILENAME
     )
 
     return {
@@ -302,7 +318,6 @@ export class MapService implements IMapService {
       }
 
       // Perform a HEAD request to get the content length
-      const { default: axios } = await import('axios')
       const response = await axios.head(url, {
         timeout: 30_000,
         beforeRedirect: assertSafeRedirectTarget,
@@ -343,7 +358,7 @@ export class MapService implements IMapService {
     * e.g. user is accessing from "example.com", but we would by default generate "localhost:8080/..." so maps would
     * fail to load.
     */
-    const sources = this.generateSourcesArray(host, regions)
+    const sources = this.generateSourcesArray(host, regions, await this.checkWorldBasemapExists())
     const baseUrl = this.getPublicFileBaseUrl(host, this.basemapsAssetsDir)
 
     const styles = await this.generateStylesFile(
@@ -367,12 +382,63 @@ export class MapService implements IMapService {
   }
 
   async ensureBaseAssets(): Promise<boolean> {
-    const exists = await this.checkBaseAssetsExist()
-    if (exists) {
-      return true
+    if (!(await this.ensureBaseAssetFiles())) return false
+    try {
+      await this.ensureWorldBasemap()
+    } catch (error) {
+      logger.warn(`[MapService] World basemap is unavailable: ${error instanceof Error ? error.message : error}`)
     }
+    return true
+  }
 
-    return await this.downloadBaseAssets()
+  private async ensureBaseAssetFiles(): Promise<boolean> {
+    return (await this.checkBaseAssetsExist()) || this.downloadBaseAssets()
+  }
+
+  async checkWorldBasemapExists(): Promise<boolean> {
+    const file = resolve(join(this.baseDirPath, 'pmtiles', WORLD_BASEMAP_FILENAME))
+    const stats = await getFileStatsIfExists(file)
+    return !!stats && Number(stats.size) > 0
+  }
+
+  async provisionWorldBasemap(): Promise<boolean> {
+    // The ordinary ensureBaseAssets path already attempts extraction. Calling it
+    // again here would duplicate a failed extraction on a single button press.
+    if (!(await this.ensureBaseAssetFiles())) return false
+    await this.ensureWorldBasemap()
+    return this.checkWorldBasemapExists()
+  }
+
+  private async ensureWorldBasemap(): Promise<void> {
+    if (await this.checkWorldBasemapExists()) return
+    if (worldBasemapInFlight) return worldBasemapInFlight
+    worldBasemapInFlight = this.setupWorldBasemap().finally(() => {
+      worldBasemapInFlight = null
+    })
+    return worldBasemapInFlight
+  }
+
+  private async setupWorldBasemap(): Promise<void> {
+    const dir = resolve(join(this.baseDirPath, 'pmtiles'))
+    const target = resolve(join(dir, WORLD_BASEMAP_FILENAME))
+    const partial = resolve(join(dir, `world-${randomUUID()}.partial`))
+    if (!target.startsWith(dir + sep) || !partial.startsWith(dir + sep)) {
+      throw new Error('Invalid world basemap path')
+    }
+    await ensureDirectoryExists(dir)
+    try {
+      const response = await axios.get(PROTOMAPS_BUILDS_METADATA_URL, { timeout: 15_000 })
+      const build = latestProtomapsBuild(response.data)
+      await execFileAsync(PMTILES_BINARY_PATH, worldBasemapExtractArgs(build.url, partial), {
+        timeout: 5 * 60_000,
+        maxBuffer: 256 * 1024,
+      })
+      const stats = await getFileStatsIfExists(partial)
+      if (!stats || Number(stats.size) === 0) throw new Error('World basemap extraction produced no data')
+      await rename(partial, target)
+    } finally {
+      await deleteFileIfExists(partial)
+    }
   }
 
   private async checkBaseAssetsExist(useCache: boolean = true): Promise<boolean> {
@@ -404,9 +470,18 @@ export class MapService implements IMapService {
     return await listDirectoryContentsRecursive(this.baseDirPath)
   }
 
-  private generateSourcesArray(host: string | null, regions: FileEntry[]): BaseStylesFile['sources'][] {
+  private generateSourcesArray(host: string | null, regions: FileEntry[], worldExists = false): BaseStylesFile['sources'][] {
     const sources: BaseStylesFile['sources'][] = []
     const baseUrl = this.getPublicFileBaseUrl(host, 'pmtiles')
+    if (worldExists) {
+      sources.push({
+        [WORLD_BASEMAP_SOURCE_NAME]: {
+          type: 'vector',
+          attribution: PMTILES_ATTRIBUTION,
+          url: `pmtiles://${urlJoin(baseUrl, WORLD_BASEMAP_FILENAME)}`,
+        },
+      })
+    }
 
     // Dedupe by region, keeping only the newest file per region. Both
     // "washington.pmtiles" and "washington_2025-12.pmtiles" reduce to the region
@@ -481,6 +556,7 @@ export class MapService implements IMapService {
     if (!fileName.endsWith('.pmtiles')) {
       fileName += '.pmtiles'
     }
+    if (fileName === WORLD_BASEMAP_FILENAME) throw new Error('Base map cannot be deleted as a region')
 
     const basePath = resolve(join(this.baseDirPath, 'pmtiles'))
     const fullPath = resolve(join(basePath, fileName))

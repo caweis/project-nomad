@@ -1,11 +1,16 @@
 import { Job } from 'bullmq'
 import { QueueService } from '#services/queue_service'
 import { EmbedJobWithProgress } from '../../types/rag.js'
-import { mapEmbedJob, isContinuationBatch, safeEmbedFailureReason } from '../../util/embed_jobs.js'
+import {
+  continuationJobId,
+  mapEmbedJob,
+  isContinuationBatch,
+  safeEmbedFailureReason,
+} from '../../util/embed_jobs.js'
 import { RagService } from '#services/rag_service'
 import { DockerService } from '#services/docker_service'
 import { OllamaService } from '#services/ollama_service'
-import { createHash } from 'crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import logger from '@adonisjs/core/services/logger'
 import KbIngestState from '#models/kb_ingest_state'
 
@@ -14,7 +19,7 @@ export interface EmbedFileJobParams {
   fileName: string
   fileSize?: number
   // Batch processing for large ZIM files
-  batchOffset?: number  // Current batch offset (for ZIM files)
+  batchOffset?: number // Current batch offset (for ZIM files)
   totalArticles?: number // Total articles in ZIM (for progress tracking)
   isFinalBatch?: boolean // Whether this is the last batch (prevents premature deletion)
   // Accumulated chunk count carried across batched ZIM continuation dispatches,
@@ -25,6 +30,8 @@ export interface EmbedFileJobParams {
   // Subject/collection tag stored on every Qdrant point and the ingest-state
   // row (upstream #1063). Optional — absent means uncategorized.
   collection?: string
+  /** Shared by every batch in one indexing run; retries retain it. */
+  runId?: string
 }
 
 export class EmbedFileJob {
@@ -41,7 +48,8 @@ export class EmbedFileJob {
   }
 
   async handle(job: Job) {
-    const { filePath, fileName, batchOffset, totalArticles, collection } = job.data as EmbedFileJobParams
+    const { filePath, fileName, batchOffset, totalArticles, collection } =
+      job.data as EmbedFileJobParams
 
     // Only the direct KB-upload controller passes `collection` on dispatch; the other
     // dispatch sites (scan/sync, re-embed, single-file Index, and this job's own ZIM
@@ -64,17 +72,25 @@ export class EmbedFileJob {
       // Check if Ollama and Qdrant services are ready
       const existingModels = await ollamaService.getModels()
       if (!existingModels) {
-        logger.warn('[EmbedFileJob] Ollama service not ready yet. Will retry...')
+        logger.warn(
+          '[EmbedFileJob] Ollama service not ready. Start indexing again when it is available.'
+        )
         throw new Error('Ollama service not ready yet')
       }
 
       const qdrantUrl = await dockerService.getServiceURL('nomad_qdrant')
       if (!qdrantUrl) {
-        logger.warn('[EmbedFileJob] Qdrant service not ready yet. Will retry...')
+        logger.warn(
+          '[EmbedFileJob] Qdrant service not ready. Start indexing again when it is available.'
+        )
         throw new Error('Qdrant service not ready yet')
       }
 
       logger.info('[EmbedFileJob] Services ready. Processing file')
+
+      // An explicit restart can encounter pre-upgrade random-ID points. Clear
+      // those before writing stable IDs while keeping points from prior batches.
+      await ragService.purgeLegacyPointIds(filePath)
 
       // Update progress starting
       await job.updateProgress(5)
@@ -109,9 +125,7 @@ export class EmbedFileJob {
       // For ZIM files with batching, check if more batches are needed
       if (result.hasMoreBatches) {
         const nextOffset = (batchOffset || 0) + (result.articlesProcessed || 0)
-        logger.info(
-          `[EmbedFileJob] Batch complete. Dispatching next batch at offset ${nextOffset}`
-        )
+        logger.info(`[EmbedFileJob] Batch complete. Dispatching next batch at offset ${nextOffset}`)
 
         // Dispatch next batch (not final yet), threading the running chunk
         // count forward — the continuation is a NEW job, so without this the
@@ -121,6 +135,7 @@ export class EmbedFileJob {
           filePath,
           fileName,
           batchOffset: nextOffset,
+          runId: job.data.runId ?? job.id ?? EmbedFileJob.getJobId(filePath),
           totalArticles: totalArticles || result.totalArticles,
           isFinalBatch: false, // Explicitly not final
           chunksSoFar: chunksSoFarNext,
@@ -130,9 +145,7 @@ export class EmbedFileJob {
         })
 
         // Calculate progress based on articles processed
-        const progress = totalArticles
-          ? Math.round((nextOffset / totalArticles) * 100)
-          : 50
+        const progress = totalArticles ? Math.round((nextOffset / totalArticles) * 100) : 50
 
         await job.updateProgress(progress)
         await job.updateData({
@@ -195,15 +208,12 @@ export class EmbedFileJob {
         error: failureReason,
       })
 
-      // Persist `failed` only when retries are exhausted — marking on every
-      // transient blip would suppress BullMQ's retry-driven recovery (upstream
-      // gates this on UnrecoverableError; we gate on the final attempt).
-      if (job.attemptsMade + 1 >= (job.opts?.attempts ?? 1)) {
-        try {
-          await KbIngestState.markFailed(filePath, failureReason)
-        } catch {
-          logger.warn('[EmbedFileJob] Failed to persist failed state')
-        }
+      // Embedding jobs have one attempt. A stalled or unavailable service must
+      // surface a failed file for an explicit restart, never launch another chain.
+      try {
+        await KbIngestState.markFailed(filePath, failureReason)
+      } catch {
+        logger.warn('[EmbedFileJob] Failed to persist failed state')
       }
 
       throw new Error(failureReason)
@@ -213,9 +223,9 @@ export class EmbedFileJob {
   static async listActiveJobs(): Promise<EmbedJobWithProgress[]> {
     const queueService = QueueService.getInstance()
     const queue = queueService.getQueue(this.queue)
-    // Include 'failed' so the Processing Queue surfaces files whose embedding
-    // exhausted its retries — otherwise "queued N" files vanish from the UI with
-    // no reason shown. mapEmbedJob lifts BullMQ's failedReason into the DTO.
+    // Include 'failed' so the Processing Queue surfaces a stopped embedding
+    // job instead of letting it vanish from the UI. mapEmbedJob lifts BullMQ's
+    // failedReason into the DTO.
     const jobs = await queue.getJobs(['waiting', 'active', 'delayed', 'failed'])
 
     return jobs.map((job) => mapEmbedJob(job))
@@ -233,20 +243,19 @@ export class EmbedFileJob {
     const queue = queueService.getQueue(this.queue)
     const jobId = this.getJobId(params.filePath)
     const isContinuation = isContinuationBatch(params.batchOffset)
+    if (isContinuation && !params.runId) {
+      throw new Error('A continuation batch requires its parent run ID.')
+    }
+    const runId = params.runId ?? randomUUID()
 
     const addOptions: NonNullable<Parameters<typeof queue.add>[2]> = {
-      attempts: 30,
-      backoff: {
-        type: 'fixed',
-        delay: 60000, // Check every 60 seconds for service readiness
-      },
+      attempts: 1,
       removeOnComplete: { count: 50 }, // Keep last 50 completed jobs for history
       removeOnFail: { count: 20 }, // Keep last 20 failed jobs for debugging
     }
-    // Initial dispatches pin the deterministic jobId so a re-run (UI re-click,
-    // sync rescan) is idempotent. Continuation batches must NOT pin it, or
-    // BullMQ dedupe silently swallows them against the locked/lingering parent
-    // and the ZIM stops embedding after the first batch. See isContinuationBatch().
+    // Each offset gets a distinct ID within this run. A stalled parent may be
+    // picked up twice, but both attempts enqueue the same next batch. A new
+    // indexing run receives a new run ID so retained old jobs cannot absorb it.
     if (!isContinuation) {
       addOptions.jobId = jobId
 
@@ -276,13 +285,13 @@ export class EmbedFileJob {
           // Best-effort: fall through to add, which dedupes onto whatever remains.
         }
       }
+    } else {
+      addOptions.jobId = continuationJobId(runId, params.batchOffset!)
     }
 
-    const job = await queue.add(this.key, params, addOptions)
+    const job = await queue.add(this.key, { ...params, runId }, addOptions)
 
-    const continuationLabel = isContinuation
-      ? ` (continuation @ offset ${params.batchOffset})`
-      : ''
+    const continuationLabel = isContinuation ? ` (continuation @ offset ${params.batchOffset})` : ''
     logger.info(`[EmbedFileJob] Dispatched embedding job${continuationLabel}`)
 
     return {

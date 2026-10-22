@@ -10,6 +10,7 @@ import {
 } from '#validators/common'
 import { inject } from '@adonisjs/core'
 import type { HttpContext } from '@adonisjs/core/http'
+import logger from '@adonisjs/core/services/logger'
 
 @inject()
 export default class MapsController {
@@ -18,9 +19,11 @@ export default class MapsController {
   async index({ inertia }: HttpContext) {
     const baseAssetsCheck = await this.mapService.ensureBaseAssets()
     const regionFiles = await this.mapService.listRegions()
+    const worldBasemapExists = await this.mapService.checkWorldBasemapExists()
     return inertia.render('maps', {
       maps: {
         baseAssetsExist: baseAssetsCheck,
+        worldBasemapExists,
         regionFiles: regionFiles.files,
       },
     })
@@ -31,6 +34,18 @@ export default class MapsController {
     if (payload.url) assertNotPrivateUrl(payload.url)
     await this.mapService.downloadBaseAssets(payload.url)
     return { success: true }
+  }
+
+  async setupWorldBasemap({ response }: HttpContext) {
+    try {
+      const ready = await this.mapService.provisionWorldBasemap()
+      if (ready) return { success: true }
+    } catch (error) {
+      // The map remains usable with regional files, and the UI explains how to retry.
+      const message = error instanceof Error ? error.message : String(error)
+      logger.warn(`[MapService] Could not set up world basemap: ${message}`)
+    }
+    return response.status(500).send({ message: 'Could not download the base map. Check the internet connection and try again.' })
   }
 
   async downloadRemote({ request }: HttpContext) {

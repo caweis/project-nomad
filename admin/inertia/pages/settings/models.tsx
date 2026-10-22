@@ -13,6 +13,7 @@ import { useModals } from '~/context/ModalContext'
 import StyledModal from '~/components/StyledModal'
 import { ModelResponse } from 'ollama'
 import { SERVICE_NAMES } from '../../../constants/service_names'
+import { RAG_MIN_RELEVANCE_PRESETS, RESPONSE_STYLE_PRESETS } from '../../../constants/ollama'
 import Switch from '~/components/inputs/Switch'
 import Select from '~/components/inputs/Select'
 import {
@@ -31,7 +32,7 @@ export default function ModelsPage(props: {
   models: {
     availableModels: NomadOllamaModel[]
     installedModels: ModelResponse[]
-    settings: { chatSuggestionsEnabled: boolean; aiAssistantCustomName: string; autoThinking: boolean; tasksModel: string; ragEnabled: boolean; contextWindow: string }
+    settings: { chatSuggestionsEnabled: boolean; aiAssistantCustomName: string; autoThinking: boolean; responseStyle: string; tasksModel: string; ragEnabled: boolean; minRelevance: string; relevanceCheck: boolean; contextWindow: string }
   }
   // True when admin is configured to talk to a native (Homebrew) Ollama at
   // OLLAMA_HOST instead of managing the Docker container itself. Set by
@@ -114,7 +115,10 @@ export default function ModelsPage(props: {
     props.models.settings.chatSuggestionsEnabled
   )
   const [autoThinking, setAutoThinking] = useState(props.models.settings.autoThinking)
+  const [responseStyle, setResponseStyle] = useState(props.models.settings.responseStyle)
   const [ragEnabled, setRagEnabled] = useState(props.models.settings.ragEnabled)
+  const [minRelevance, setMinRelevance] = useState(props.models.settings.minRelevance)
+  const [relevanceCheck, setRelevanceCheck] = useState(props.models.settings.relevanceCheck)
   const [tasksModel, setTasksModel] = useState(props.models.settings.tasksModel)
   const [contextWindow, setContextWindow] = useState(props.models.settings.contextWindow)
   const [aiAssistantCustomName, setAiAssistantCustomName] = useState(
@@ -388,6 +392,17 @@ export default function ModelsPage(props: {
                 label="Model Thinking"
                 description="Let capable models show their reasoning before answering. Off by default; slower but more thorough."
               />
+              <Select
+                name="responseStyle"
+                label="Response style"
+                helpText="Choose how the assistant samples its words. Auto respects a model's own settings when available."
+                value={responseStyle}
+                options={RESPONSE_STYLE_PRESETS}
+                onChange={(value) => {
+                  setResponseStyle(value)
+                  updateSettingMutation.mutate({ key: 'ai.responseStyle', value })
+                }}
+              />
               <Switch
                 checked={ragEnabled}
                 onChange={(newVal) => {
@@ -396,6 +411,32 @@ export default function ModelsPage(props: {
                 }}
                 label="Knowledge Base Retrieval"
                 description="Search your knowledge base for relevant documents before answering. Turn it off to skip that search when your knowledge base is small or empty — replies come back sooner and use less memory. This is the same switch as the one in the chat window."
+              />
+              <Select
+                name="minRelevance"
+                label="Retrieval relevance"
+                helpText="Skip passages with a low relevance score before they reach the answer. This applies after the search reranks results."
+                value={minRelevance}
+                options={[
+                  { value: 'auto', label: 'Auto (balanced)' },
+                  ...RAG_MIN_RELEVANCE_PRESETS.map((preset) => ({
+                    value: String(preset.value),
+                    label: preset.label,
+                  })),
+                ]}
+                onChange={(value) => {
+                  setMinRelevance(value)
+                  updateSettingMutation.mutate({ key: 'rag.minRelevance', value })
+                }}
+              />
+              <Switch
+                checked={relevanceCheck}
+                onChange={(value) => {
+                  setRelevanceCheck(value)
+                  updateSettingMutation.mutate({ key: 'rag.relevanceCheck', value })
+                }}
+                label="Check for off-topic passages"
+                description="Ask the tasks model whether retrieved passages match your question before including them in the answer. Adds a model call to each retrieval; off by default."
               />
               <Input
                 name="aiAssistantCustomName"

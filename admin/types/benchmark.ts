@@ -51,6 +51,18 @@ export type AIScores = Pick<
   'ai_tokens_per_second' | 'ai_model_used' | 'ai_time_to_first_token'
 >
 
+export type SystemBenchmarkRawsV2 = {
+  cpu_events_single: number
+  cpu_events_multi: number
+  cpu_benchmark_threads: number
+  cpu_total_events: number
+  cpu_total_time: number
+  memory_ops_per_sec: number
+  memory_threads: number
+  disk_read_mb_per_sec: number
+  disk_write_mb_per_sec: number
+}
+
 // Slim version for lists
 export type BenchmarkResultSlim = Pick<
   BenchmarkResult,

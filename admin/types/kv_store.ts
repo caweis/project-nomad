@@ -15,6 +15,8 @@ export const KV_STORE_SCHEMA = {
   // truthiness check — the default is ON, so an absent value must not read as
   // false.
   'rag.enabled':                'boolean',
+  'rag.minRelevance':           'string',
+  'rag.relevanceCheck':         'boolean',
   'system.updateAvailable':     'boolean',
   'system.latestVersion':       'string',
   'system.earlyAccess':         'boolean',
@@ -29,6 +31,7 @@ export const KV_STORE_SCHEMA = {
   // Global default for model "thinking"/reasoning. Off by default; a per-request
   // preference (resolved client-side) overrides it. Ported from upstream #1079.
   'ai.autoThinking':            'boolean',
+  'ai.responseStyle':           'string',
   // Model used for short ancillary AI work — chat titles, suggestion chips, and
   // RAG query rewriting — instead of whichever model the user is chatting with.
   // Unset/null keeps the previous behaviour: titles and query rewrites reuse the
