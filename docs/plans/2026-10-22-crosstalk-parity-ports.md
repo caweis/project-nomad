@@ -14,7 +14,7 @@
 
 - [x] Confirm the fork and Crosstalk branch heads, clean working tree, current call paths, and parity ledger.
 - [x] Create a single-writer working branch from `origin/main`.
-- [x] Chris chose automatic retries with stable Qdrant entry IDs; keep the queue recoverable without duplicate indexing.
+- [x] Chris first chose automatic retries with stable Qdrant entry IDs, then chose to disable automatic retries. Keep stable IDs for an explicit restart.
 - [x] Add retained focused regressions for the ports; confirm the Kiwix parser failure before its fix.
 
 ## Ports in dependency order
@@ -22,7 +22,7 @@
 - [x] Retrieval relevance floor: adapt `rag.minRelevance` to the fork's search and chat injection path; test post-rerank filtering and no-context/citation behavior.
 - [x] Optional off-topic judge: add `rag.relevanceCheck`, structured verdict parsing, fail-open handling, and focused tests after the floor.
 - [x] Response style: add `ai.responseStyle` and sampler helpers, wire native Ollama and oMLX compatibility requests, settings UI, and direct tests.
-- [x] Score v2 local calculation: port Linux raw measurements and the frozen formula, retain Mac's native v1 path, and test reference-score equality. Public v2 submission remains blocked by automatic approval review pending an explicit disclosure decision.
+- [x] Score v2 local calculation: port Linux raw measurements and the frozen formula, retain Mac's native v1 path, and test reference-score equality. Chris chose to keep v2 results local.
 - [x] World basemap: adapt upstream provisioning to the Mac service and MapLibre page, retain existing regional maps, and test idempotence and missing-map messaging.
 - [x] Expandable Kiwix rows: keep virtualization, add measured expansion and keyboard support, and test row data and interaction behavior.
 - [x] Embedding stall recovery: use stable point and per-run continuation IDs, and prove a stalled batch cannot fork a second continuation chain.
@@ -56,6 +56,27 @@ TSX component passed formatting and the production build.
 
 The v2 leaderboard endpoint would send additional hardware and workload
 metadata. Automatic approval review rejected that new submission path without
-specific authorization, so the branch stores Score v2 locally and blocks v2
-results from the legacy v1 endpoint. A Mac Score v2 policy decision is pending;
-Macs keep their existing native benchmark until it is resolved.
+specific authorization, and Chris chose to keep Score v2 local. The branch
+blocks v2 results from the legacy v1 endpoint. Chris chose an experimental Mac
+v2 result alongside the existing native legacy benchmark.
+
+## Follow-up: final picker choices
+
+- [x] Disable BullMQ automatic embedding retries, mark the first failed attempt
+  as failed, and keep stable Qdrant point IDs for an explicit fresh start.
+- [x] Add an experimental Mac Score v2 path with the arm64 sysbench workload in the
+  Linux VM and the fixed 8B model through native Ollama. Preserve the Mac
+  native legacy benchmark; label v2 as experimental and local-only.
+- [x] Add retained regressions for the changed queue policy, Mac v2 path, and
+  legacy result when experimental v2 cannot run.
+- [x] Repeat typecheck, build, focused and full regression/coverage gates.
+- [x] Update the parity ledger, PR description and decision record; do not run
+  the installed Mac's bare `nomad upgrade` while this work is a draft PR.
+
+The follow-up gate passed 371 Adonis tests, 4 runner checks, and 84 standalone
+suites. The focused rerun passed 12 cases. Admin statement coverage was 27.89%.
+The installed Mac's native Ollama endpoint responded from the benchmark worker,
+but the 8B Mac benchmark has not run end to end; #56 tracks that acceptance.
+Repository-wide lint still fails on existing findings tracked in #66.
+Draft PR #74 and issue #76 now record Chris's final choices. The branch has
+the follow-up code, while the installed Mac remains on `main`.
