@@ -101,6 +101,39 @@ export default class BenchmarkResult extends BaseModel {
   @column()
   declare benchmark_flavor: string | null
 
+  @column()
+  declare cpu_events_single: number | null
+  @column()
+  declare cpu_events_multi: number | null
+  @column()
+  declare cpu_benchmark_threads: number | null
+  @column()
+  declare cpu_total_events: number | null
+  @column()
+  declare cpu_total_time: number | null
+  @column()
+  declare memory_ops_per_sec: number | null
+  @column()
+  declare memory_threads: number | null
+  @column()
+  declare disk_read_mb_per_sec: number | null
+  @column()
+  declare disk_write_mb_per_sec: number | null
+  @column({ columnName: 'nomad_score_v2', serializeAs: 'nomad_score_v2' })
+  declare nomad_score_v2: number | null
+  @column()
+  declare ollama_version: string | null
+  @column()
+  declare sysbench_digest: string | null
+  @column()
+  declare run_environment: string | null
+  @column()
+  declare storage_path_type: string | null
+  @column({
+    consume: (value: number | null) => (value === null || value === undefined ? null : Boolean(value)),
+  })
+  declare gpu_compute_detected: boolean | null
+
   @column.dateTime({ autoCreate: true })
   declare created_at: DateTime
 

@@ -2,6 +2,7 @@ import { inject } from '@adonisjs/core'
 import { ChatRequest, ChatResponse, Ollama } from 'ollama'
 import { ModelVisionCapability, NomadModelInfo, NomadOllamaModel } from '../../types/ollama.js'
 import { readContextLength, readModelfileNumCtx } from '../utils/context_window.js'
+import { readModelfileSamplers } from '../utils/sampler.js'
 import { FALLBACK_RECOMMENDED_OLLAMA_MODELS, MLX_HIGHLIGHT_MODELS, MODEL_DESCRIPTION_OVERRIDES } from '../../constants/ollama.js'
 import { withMlxPullNames } from '../../util/mlx.js'
 import { normalizeNonStreamed, ThinkTagSplitter } from '../utils/think_stream.js'
@@ -286,6 +287,7 @@ export class OllamaService {
         vision: visionFromShow(info.capabilities, env.get('NOMAD_AI_BACKEND')),
         contextLength: readContextLength(info.model_info),
         modelfileNumCtx: readModelfileNumCtx(info.parameters),
+        modelfileSamplers: readModelfileSamplers(info.parameters),
         parameterSize: info.details?.parameter_size,
         quantizationLevel: info.details?.quantization_level,
         rawModelInfo: info.model_info,

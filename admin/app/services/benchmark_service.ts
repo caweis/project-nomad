@@ -23,7 +23,10 @@ import type {
   RepositorySubmitResponse,
   RepositoryStats,
   PlatformMetadata,
+  SystemBenchmarkRawsV2,
 } from '../../types/benchmark.js'
+import { calculateNomadScoreV2 } from '../utils/score_v2.js'
+import { getFreeBytes } from '../utils/image_disk_preflight.js'
 import { mapDockerArch } from '../utils/host_arch.js'
 import { deriveOsName, detectContainerEngine } from '../utils/platform_metadata.js'
 import { randomUUID, createHmac } from 'node:crypto'
@@ -31,7 +34,15 @@ import { DockerService } from './docker_service.js'
 import { SERVICE_NAMES } from '../../constants/service_names.js'
 import { BROADCAST_CHANNELS } from '../../constants/broadcast.js'
 import Dockerode from 'dockerode'
-import { unlinkSync, mkdirSync, openSync, writeSync, fdatasyncSync, closeSync, readSync } from 'node:fs'
+import {
+  unlinkSync,
+  mkdirSync,
+  openSync,
+  writeSync,
+  fdatasyncSync,
+  closeSync,
+  readSync,
+} from 'node:fs'
 import { join } from 'node:path'
 import { execSync } from 'node:child_process'
 
@@ -43,12 +54,12 @@ const BENCHMARK_HMAC_SECRET = '778ba65d0bc0e23119e5ffce4b3716648a7d071f0a47ec3f'
 
 // Re-export default weights for use in service
 const SCORE_WEIGHTS = {
-  ai_tokens_per_second: 0.30,
+  ai_tokens_per_second: 0.3,
   cpu: 0.25,
   memory: 0.15,
-  ai_ttft: 0.10,
-  disk_read: 0.10,
-  disk_write: 0.10,
+  ai_ttft: 0.1,
+  disk_read: 0.1,
+  disk_write: 0.1,
 }
 
 // Benchmark configuration constants
@@ -68,6 +79,9 @@ const SYSBENCH_CONTAINER_NAME = 'nomad_benchmark_sysbench'
 
 // Reference model for AI benchmark - small but meaningful
 const AI_BENCHMARK_MODEL = 'llama3.2:1b'
+const AI_BENCHMARK_MODEL_V2 = 'llama3.1:8b'
+const AI_BENCHMARK_V2_RUNS = 3
+const AI_BENCHMARK_MODEL_MIN_FREE_BYTES = 6.5 * 1024 ** 3
 const AI_BENCHMARK_PROMPT = 'Explain recursion in programming in exactly 100 words.'
 
 // The benchmark runs inside the long-lived worker process. A pooled keep-alive
@@ -179,7 +193,10 @@ export class BenchmarkService {
   /**
    * Submit benchmark results to central repository
    */
-  async submitToRepository(benchmarkId?: string, anonymous?: boolean): Promise<RepositorySubmitResponse> {
+  async submitToRepository(
+    benchmarkId?: string,
+    anonymous?: boolean
+  ): Promise<RepositorySubmitResponse> {
     const result = benchmarkId
       ? await this.getResultById(benchmarkId)
       : await this.getLatestResult()
@@ -190,15 +207,27 @@ export class BenchmarkService {
 
     // Only allow full benchmarks with AI data to be submitted to repository
     if (result.benchmark_type !== 'full') {
-      throw new Error('Only full benchmarks can be shared with the community. Run a Full Benchmark to share your results.')
+      throw new Error(
+        'Only full benchmarks can be shared with the community. Run a Full Benchmark to share your results.'
+      )
     }
 
     if (!result.ai_tokens_per_second || result.ai_tokens_per_second <= 0) {
-      throw new Error('Benchmark must include AI performance data. Ensure AI Assistant is installed and run a Full Benchmark.')
+      throw new Error(
+        'Benchmark must include AI performance data. Ensure AI Assistant is installed and run a Full Benchmark.'
+      )
     }
 
     if (result.submitted_to_repository) {
       throw new Error('Benchmark result has already been submitted')
+    }
+
+    // Score v2 uses a different server contract. Sending its 8B AI metric in
+    // the legacy v1 payload would mislabel the run on the public leaderboard.
+    if (result.nomad_score_v2 != null) {
+      throw new Error(
+        'Score v2 leaderboard sharing is not available yet; this result remains saved locally.'
+      )
     }
 
     const submission: RepositorySubmission = {
@@ -224,9 +253,7 @@ export class BenchmarkService {
       // Generate HMAC signature for submission verification
       const timestamp = Date.now().toString()
       const payload = timestamp + JSON.stringify(submission)
-      const signature = createHmac('sha256', BENCHMARK_HMAC_SECRET)
-        .update(payload)
-        .digest('hex')
+      const signature = createHmac('sha256', BENCHMARK_HMAC_SECRET).update(payload).digest('hex')
 
       const response = await axios.post(
         'https://benchmark.projectnomad.us/api/v1/submit',
@@ -254,7 +281,7 @@ export class BenchmarkService {
       const detail = error.response?.data?.error || error.message || 'Unknown error'
       const statusCode = error.response?.status
       logger.error(`Failed to submit benchmark to repository: ${detail} (Status: ${statusCode})`)
-      
+
       // Create an error with the status code and raw detail attached for proper
       // handling upstream (the controller surfaces `detail` as the user-facing reason).
       const err: any = new Error(`Failed to submit benchmark: ${detail}`)
@@ -314,7 +341,10 @@ export class BenchmarkService {
           diskType = 'nvme'
         } else if (primaryDisk.type?.toLowerCase().includes('ssd')) {
           diskType = 'ssd'
-        } else if (primaryDisk.type?.toLowerCase().includes('hdd') || primaryDisk.interfaceType === 'SATA') {
+        } else if (
+          primaryDisk.type?.toLowerCase().includes('hdd') ||
+          primaryDisk.interfaceType === 'SATA'
+        ) {
           diskType = 'hdd'
         }
       }
@@ -327,13 +357,20 @@ export class BenchmarkService {
           const vendor = g.vendor?.toLowerCase() || ''
           const model = g.model?.toLowerCase() || ''
           // NVIDIA GPUs are always discrete
-          if (vendor.includes('nvidia') || model.includes('geforce') || model.includes('rtx') || model.includes('quadro')) {
+          if (
+            vendor.includes('nvidia') ||
+            model.includes('geforce') ||
+            model.includes('rtx') ||
+            model.includes('quadro')
+          ) {
             return true
           }
           // AMD discrete GPUs (Radeon, not integrated APU graphics)
-          if ((vendor.includes('amd') || vendor.includes('ati')) &&
-              (model.includes('radeon') || model.includes('rx ') || model.includes('vega')) &&
-              !model.includes('graphics')) {
+          if (
+            (vendor.includes('amd') || vendor.includes('ati')) &&
+            (model.includes('radeon') || model.includes('rx ') || model.includes('vega')) &&
+            !model.includes('graphics')
+          ) {
             return true
           }
           // Any GPU with dedicated VRAM > 512MB is likely discrete
@@ -351,18 +388,26 @@ export class BenchmarkService {
           const dockerInfo = await this.dockerService.docker.info()
           const runtimes = dockerInfo.Runtimes || {}
           if ('nvidia' in runtimes) {
-            logger.info('[BenchmarkService] NVIDIA container runtime detected, querying GPU model via nvidia-smi')
+            logger.info(
+              '[BenchmarkService] NVIDIA container runtime detected, querying GPU model via nvidia-smi'
+            )
 
-            const systemService = new (await import('./system_service.js')).SystemService(this.dockerService)
+            const systemService = new (await import('./system_service.js')).SystemService(
+              this.dockerService
+            )
             const nvidiaInfo = await systemService.getNvidiaSmiInfo()
             if (Array.isArray(nvidiaInfo) && nvidiaInfo.length > 0) {
               gpuModel = nvidiaInfo[0].model
             } else {
-              logger.warn(`[BenchmarkService] NVIDIA runtime detected but failed to get GPU info: ${typeof nvidiaInfo === 'string' ? nvidiaInfo : JSON.stringify(nvidiaInfo)}`)
+              logger.warn(
+                `[BenchmarkService] NVIDIA runtime detected but failed to get GPU info: ${typeof nvidiaInfo === 'string' ? nvidiaInfo : JSON.stringify(nvidiaInfo)}`
+              )
             }
           }
         } catch (dockerError) {
-          logger.warn(`[BenchmarkService] Could not query Docker info for GPU detection: ${dockerError.message}`)
+          logger.warn(
+            `[BenchmarkService] Could not query Docker info for GPU detection: ${dockerError.message}`
+          )
         }
       }
 
@@ -401,7 +446,9 @@ export class BenchmarkService {
             if (dockerInfo.Architecture === 'aarch64') {
               cpuModel = `Apple Silicon (${cpu.physicalCores || cpu.cores}‑core)`
             }
-          } catch { /* ignore */ }
+          } catch {
+            /* ignore */
+          }
           if (!cpuModel || cpuModel.length < 3) {
             cpuModel = `Apple Silicon (${cpu.cores}-core)`
           }
@@ -488,6 +535,10 @@ export class BenchmarkService {
     this._updateStatus('starting', 'Starting benchmark...')
 
     try {
+      if (!this._isMacOS() && includeAI && (type === 'full' || type === 'ai')) {
+        await this._preflightModelDiskSpace()
+      }
+
       // Detect hardware
       const hardware = await this.getHardwareInfo()
 
@@ -509,21 +560,33 @@ export class BenchmarkService {
       // benchmarks did not run (AI-only). Mirrors the _isMacOS() branch inside
       // _runSystemBenchmarks — deterministic within a run.
       let benchmarkFlavor: string | null = null
+      let systemRaws: SystemBenchmarkRawsV2 | null = null
 
       if (type === 'full' || type === 'system') {
         benchmarkFlavor = this._isMacOS() ? 'native' : 'sysbench'
-        systemScores = await this._runSystemBenchmarks()
+        const systemRun = await this._runSystemBenchmarks(hardware.cpu_threads)
+        systemScores = systemRun.scores
+        systemRaws = systemRun.raws
       }
 
       // Run AI benchmark if requested and Ollama is available
       let aiScores: Partial<AIScores> = {}
+      let ollamaVersion: string | null = null
       if (includeAI && (type === 'full' || type === 'ai')) {
         try {
-          aiScores = await this._runAIBenchmark()
+          if (this._isMacOS()) {
+            aiScores = await this._runAIBenchmark()
+          } else {
+            const measured = await this._runAIBenchmarkV2()
+            aiScores = measured.scores
+            ollamaVersion = measured.ollamaVersion
+          }
         } catch (error) {
           // For AI-only benchmarks, failing is fatal - don't save useless results with all zeros
           if (type === 'ai') {
-            throw new Error(`AI benchmark failed: ${error.message}. Make sure AI Assistant is installed and running.`)
+            throw new Error(
+              `AI benchmark failed: ${error.message}. Make sure AI Assistant is installed and running.`
+            )
           }
           // For full benchmarks, AI is optional - continue without it
           logger.warn(`AI benchmark skipped: ${error.message}`)
@@ -533,6 +596,23 @@ export class BenchmarkService {
       // Calculate NOMAD score
       this._updateStatus('calculating_score', 'Calculating NOMAD score...')
       const nomadScore = this._calculateNomadScore(systemScores, aiScores)
+      let nomadScoreV2: number | null = null
+      if (type === 'full' && systemRaws && aiScores.ai_tokens_per_second) {
+        try {
+          nomadScoreV2 = calculateNomadScoreV2({
+            ai_tokens_per_second: aiScores.ai_tokens_per_second,
+            cpu_events_single: systemRaws.cpu_events_single,
+            cpu_events_multi: systemRaws.cpu_events_multi,
+            memory_ops_per_sec: systemRaws.memory_ops_per_sec,
+            disk_read_mb_per_sec: systemRaws.disk_read_mb_per_sec,
+            disk_write_mb_per_sec: systemRaws.disk_write_mb_per_sec,
+          })
+        } catch (error) {
+          logger.warn(
+            `[BenchmarkService] Score v2 was not computed: ${error instanceof Error ? error.message : error}`
+          )
+        }
+      }
 
       // Save result
       const result = await BenchmarkResult.create({
@@ -558,6 +638,23 @@ export class BenchmarkService {
         os_version: platform.os_version,
         container_engine: platform.container_engine,
         benchmark_flavor: benchmarkFlavor,
+        cpu_events_single: systemRaws?.cpu_events_single ?? null,
+        cpu_events_multi: systemRaws?.cpu_events_multi ?? null,
+        cpu_benchmark_threads: systemRaws?.cpu_benchmark_threads ?? null,
+        cpu_total_events: systemRaws?.cpu_total_events ?? null,
+        cpu_total_time: systemRaws?.cpu_total_time ?? null,
+        memory_ops_per_sec: systemRaws?.memory_ops_per_sec ?? null,
+        memory_threads: systemRaws?.memory_threads ?? null,
+        disk_read_mb_per_sec: systemRaws?.disk_read_mb_per_sec ?? null,
+        disk_write_mb_per_sec: systemRaws?.disk_write_mb_per_sec ?? null,
+        nomad_score_v2: nomadScoreV2,
+        ollama_version: ollamaVersion,
+        sysbench_digest: systemRaws ? await this._resolveSysbenchDigest() : null,
+        // The daemon's Linux OS string also describes WSL2 and other VMs.
+        // Leave the environment unknown unless the macOS installer proved it.
+        run_environment: this._isMacOS() ? 'macos-vm' : null,
+        storage_path_type: null,
+        gpu_compute_detected: null,
       })
 
       this._updateStatus('completed', 'Benchmark completed successfully')
@@ -577,16 +674,19 @@ export class BenchmarkService {
    * Run system benchmarks — uses native Node.js benchmarks on macOS (sysbench is amd64-only
    * and would run under Rosetta emulation giving inaccurate results), sysbench on Linux.
    */
-  private async _runSystemBenchmarks(): Promise<SystemScores> {
+  private async _runSystemBenchmarks(
+    multiThreads: number
+  ): Promise<{ scores: SystemScores; raws: SystemBenchmarkRawsV2 | null }> {
     if (this._isMacOS()) {
-      return this._runNativeBenchmarks()
+      return { scores: await this._runNativeBenchmarks(), raws: null }
     }
 
     // Linux path: use sysbench in Docker
     await this._ensureSysbenchImage()
 
     this._updateStatus('running_cpu', 'Running CPU benchmark...')
-    const cpuResult = await this._runSysbenchCpu()
+    const cpuSingle = await this._runSysbenchCpu(1)
+    const cpuResult = await this._runSysbenchCpu(multiThreads)
 
     this._updateStatus('running_memory', 'Running memory benchmark...')
     const memoryResult = await this._runSysbenchMemory()
@@ -598,10 +698,35 @@ export class BenchmarkService {
     const diskWriteResult = await this._runSysbenchDiskWrite()
 
     return {
-      cpu_score: this._normalizeScore(cpuResult.events_per_second, REFERENCE_SCORES.cpu_events_per_second),
-      memory_score: this._normalizeScore(memoryResult.operations_per_second, REFERENCE_SCORES.memory_ops_per_second),
-      disk_read_score: this._normalizeScore(diskReadResult.read_mb_per_sec, REFERENCE_SCORES.disk_read_mb_per_sec),
-      disk_write_score: this._normalizeScore(diskWriteResult.write_mb_per_sec, REFERENCE_SCORES.disk_write_mb_per_sec),
+      scores: {
+        cpu_score: this._normalizeScore(
+          cpuResult.events_per_second,
+          REFERENCE_SCORES.cpu_events_per_second
+        ),
+        memory_score: this._normalizeScore(
+          memoryResult.operations_per_second,
+          REFERENCE_SCORES.memory_ops_per_second
+        ),
+        disk_read_score: this._normalizeScore(
+          diskReadResult.read_mb_per_sec,
+          REFERENCE_SCORES.disk_read_mb_per_sec
+        ),
+        disk_write_score: this._normalizeScore(
+          diskWriteResult.write_mb_per_sec,
+          REFERENCE_SCORES.disk_write_mb_per_sec
+        ),
+      },
+      raws: {
+        cpu_events_single: cpuSingle.events_per_second,
+        cpu_events_multi: cpuResult.events_per_second,
+        cpu_benchmark_threads: multiThreads,
+        cpu_total_events: cpuResult.total_events,
+        cpu_total_time: cpuResult.total_time,
+        memory_ops_per_sec: memoryResult.operations_per_second,
+        memory_threads: 4,
+        disk_read_mb_per_sec: diskReadResult.read_mb_per_sec,
+        disk_write_mb_per_sec: diskWriteResult.write_mb_per_sec,
+      },
     }
   }
 
@@ -609,6 +734,9 @@ export class BenchmarkService {
    * Detect if running on macOS (inside Docker Desktop on Mac or natively)
    */
   private _isMacOS(): boolean {
+    // The macOS installer passes this explicitly. Prefer it over linuxkit or
+    // host.docker.internal, which Docker Desktop can also expose on Windows.
+    if (process.env.HOST_PLATFORM) return process.env.HOST_PLATFORM === 'darwin'
     try {
       const dockerInfo = execSync('cat /proc/version 2>/dev/null || echo ""', { encoding: 'utf8' })
       // Docker Desktop on macOS uses linuxkit kernel
@@ -648,10 +776,22 @@ export class BenchmarkService {
     const diskWriteMbPerSec = await this._nativeDiskWriteBenchmark()
 
     return {
-      cpu_score: this._normalizeScore(cpuEventsPerSec, REFERENCE_SCORES_NATIVE.cpu_events_per_second),
-      memory_score: this._normalizeScore(memoryOpsPerSec, REFERENCE_SCORES_NATIVE.memory_ops_per_second),
-      disk_read_score: this._normalizeScore(diskReadMbPerSec, REFERENCE_SCORES_NATIVE.disk_read_mb_per_sec),
-      disk_write_score: this._normalizeScore(diskWriteMbPerSec, REFERENCE_SCORES_NATIVE.disk_write_mb_per_sec),
+      cpu_score: this._normalizeScore(
+        cpuEventsPerSec,
+        REFERENCE_SCORES_NATIVE.cpu_events_per_second
+      ),
+      memory_score: this._normalizeScore(
+        memoryOpsPerSec,
+        REFERENCE_SCORES_NATIVE.memory_ops_per_second
+      ),
+      disk_read_score: this._normalizeScore(
+        diskReadMbPerSec,
+        REFERENCE_SCORES_NATIVE.disk_read_mb_per_sec
+      ),
+      disk_write_score: this._normalizeScore(
+        diskWriteMbPerSec,
+        REFERENCE_SCORES_NATIVE.disk_write_mb_per_sec
+      ),
     }
   }
 
@@ -681,7 +821,9 @@ export class BenchmarkService {
     const elapsed = (Date.now() - start) / 1000
     const eventsPerSec = events / elapsed
 
-    logger.info(`[BenchmarkService] Native CPU: ${eventsPerSec.toFixed(1)} events/sec (${events} events in ${elapsed.toFixed(1)}s)`)
+    logger.info(
+      `[BenchmarkService] Native CPU: ${eventsPerSec.toFixed(1)} events/sec (${events} events in ${elapsed.toFixed(1)}s)`
+    )
     return eventsPerSec
   }
 
@@ -711,7 +853,9 @@ export class BenchmarkService {
     const elapsed = (Date.now() - start) / 1000
     const opsPerSec = operations / elapsed
 
-    logger.info(`[BenchmarkService] Native memory: ${opsPerSec.toFixed(0)} ops/sec (${operations} ops in ${elapsed.toFixed(1)}s)`)
+    logger.info(
+      `[BenchmarkService] Native memory: ${opsPerSec.toFixed(0)} ops/sec (${operations} ops in ${elapsed.toFixed(1)}s)`
+    )
     return opsPerSec
   }
 
@@ -740,14 +884,22 @@ export class BenchmarkService {
       closeSync(fd)
       const elapsed = (Date.now() - start) / 1000
 
-      const mbPerSec = (totalSize / (1024 * 1024)) / elapsed
+      const mbPerSec = totalSize / (1024 * 1024) / elapsed
       logger.info(`[BenchmarkService] Native disk write: ${mbPerSec.toFixed(1)} MB/s`)
 
-      try { unlinkSync(filePath) } catch { /* ignore */ }
+      try {
+        unlinkSync(filePath)
+      } catch {
+        /* ignore */
+      }
       return mbPerSec
     } catch (error) {
       logger.error(`[BenchmarkService] Disk write benchmark failed: ${error.message}`)
-      try { unlinkSync(filePath) } catch { /* ignore */ }
+      try {
+        unlinkSync(filePath)
+      } catch {
+        /* ignore */
+      }
       return 0
     }
   }
@@ -776,7 +928,13 @@ export class BenchmarkService {
       closeSync(fd)
 
       // Clear OS cache hint (best effort — may not fully clear on macOS/Docker)
-      try { execSync('sync 2>/dev/null; echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true', { encoding: 'utf8' }) } catch { /* ignore */ }
+      try {
+        execSync('sync 2>/dev/null; echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true', {
+          encoding: 'utf8',
+        })
+      } catch {
+        /* ignore */
+      }
 
       // Read the file
       const readBuf = Buffer.alloc(chunkSize)
@@ -791,14 +949,22 @@ export class BenchmarkService {
       closeSync(fdRead)
       const elapsed = (Date.now() - start) / 1000
 
-      const mbPerSec = (read / (1024 * 1024)) / elapsed
+      const mbPerSec = read / (1024 * 1024) / elapsed
       logger.info(`[BenchmarkService] Native disk read: ${mbPerSec.toFixed(1)} MB/s`)
 
-      try { unlinkSync(filePath) } catch { /* ignore */ }
+      try {
+        unlinkSync(filePath)
+      } catch {
+        /* ignore */
+      }
       return mbPerSec
     } catch (error) {
       logger.error(`[BenchmarkService] Disk read benchmark failed: ${error.message}`)
-      try { unlinkSync(filePath) } catch { /* ignore */ }
+      try {
+        unlinkSync(filePath)
+      } catch {
+        /* ignore */
+      }
       return 0
     }
   }
@@ -808,126 +974,269 @@ export class BenchmarkService {
    */
   private async _runAIBenchmark(): Promise<AIScores> {
     try {
+      this._updateStatus('running_ai', 'Running AI benchmark...')
 
-    this._updateStatus('running_ai', 'Running AI benchmark...')
+      const ollamaAPIURL = await this.dockerService.getServiceURL(SERVICE_NAMES.OLLAMA)
+      if (!ollamaAPIURL) {
+        throw new Error(
+          'AI Assistant service location could not be determined. Ensure AI Assistant is installed and running.'
+        )
+      }
 
-    const ollamaAPIURL = await this.dockerService.getServiceURL(SERVICE_NAMES.OLLAMA)
-    if (!ollamaAPIURL) {
-      throw new Error('AI Assistant service location could not be determined. Ensure AI Assistant is installed and running.')
-    }
+      // Check if Ollama is available
+      try {
+        await benchRequestWithRetry(() =>
+          axios.get(`${ollamaAPIURL}/api/tags`, { timeout: 5000, ...BENCH_AXIOS_OPTS })
+        )
+      } catch (error) {
+        const errorCode = error.code || error.response?.status || 'unknown'
+        throw new Error(
+          `Ollama is not running or not accessible (${errorCode}). Ensure AI Assistant is installed and running.`
+        )
+      }
 
-    // Check if Ollama is available
-    try {
-      await benchRequestWithRetry(() =>
-        axios.get(`${ollamaAPIURL}/api/tags`, { timeout: 5000, ...BENCH_AXIOS_OPTS })
-      )
-    } catch (error) {
-      const errorCode = error.code || error.response?.status || 'unknown'
-      throw new Error(`Ollama is not running or not accessible (${errorCode}). Ensure AI Assistant is installed and running.`)
-    }
+      // Check if the benchmark model is available, pull if not
+      const ollamaService = new (await import('./ollama_service.js')).OllamaService()
+      const modelResponse = await ollamaService.downloadModel(AI_BENCHMARK_MODEL)
+      if (!modelResponse.success) {
+        throw new Error(`Model does not exist and failed to download: ${modelResponse.message}`)
+      }
 
-    // Check if the benchmark model is available, pull if not
-    const ollamaService = new (await import('./ollama_service.js')).OllamaService()
-    const modelResponse = await ollamaService.downloadModel(AI_BENCHMARK_MODEL)
-    if (!modelResponse.success) {
-      throw new Error(`Model does not exist and failed to download: ${modelResponse.message}`)
-    }
+      // Run inference benchmark.
+      //
+      // We measure TTFT and steady-state tok/s from STREAMED chunk-arrival
+      // timestamps on this (client) side — identically for every backend — and
+      // deliberately ignore the backends' self-reported durations. Native Ollama
+      // reports a decode-only eval_duration, but the oMLX proxy fabricates
+      // eval_duration from the FULL upstream wall-clock (model load + prefill +
+      // decode), which made oMLX look far slower than it actually is. A warm-up
+      // pass first loads the model so its load cost is excluded for both backends
+      // (Ollama keeps models warm via keep-alive; oMLX would otherwise cold-load).
+      try {
+        await axios.post(
+          `${ollamaAPIURL}/api/generate`,
+          {
+            model: AI_BENCHMARK_MODEL,
+            prompt: 'warm up',
+            stream: false,
+            options: { num_predict: 1 },
+          },
+          { timeout: 120000, ...BENCH_AXIOS_OPTS }
+        )
+      } catch (error) {
+        // Warm-up is best-effort — the timed run below still works if it fails.
+        // But log the swallowed failure: silently discarding it makes a run whose
+        // cold-load exclusion did not actually apply indistinguishable from a
+        // clean one after the fact. (Ports the logging half of upstream #1164.)
+        logger.warn(
+          `[BenchmarkService] AI warm-up failed (${error instanceof Error ? error.message : error}); the first timed run may include model-load time.`
+        )
+      }
 
-    // Run inference benchmark.
-    //
-    // We measure TTFT and steady-state tok/s from STREAMED chunk-arrival
-    // timestamps on this (client) side — identically for every backend — and
-    // deliberately ignore the backends' self-reported durations. Native Ollama
-    // reports a decode-only eval_duration, but the oMLX proxy fabricates
-    // eval_duration from the FULL upstream wall-clock (model load + prefill +
-    // decode), which made oMLX look far slower than it actually is. A warm-up
-    // pass first loads the model so its load cost is excluded for both backends
-    // (Ollama keeps models warm via keep-alive; oMLX would otherwise cold-load).
-    try {
-      await axios.post(
+      const startTime = Date.now()
+      let firstTokenTime = 0
+      let lastTokenTime = 0
+      let streamedChunks = 0
+      let finalEvalCount = 0
+
+      // Plain axios (not benchRequestWithRetry) so the retry wrapper can't consume
+      // the stream body; connectivity is already validated by the /api/tags check
+      // and the warm-up above.
+      const streamResponse = await axios.post(
         `${ollamaAPIURL}/api/generate`,
-        { model: AI_BENCHMARK_MODEL, prompt: 'warm up', stream: false, options: { num_predict: 1 } },
-        { timeout: 120000, ...BENCH_AXIOS_OPTS }
+        { model: AI_BENCHMARK_MODEL, prompt: AI_BENCHMARK_PROMPT, stream: true },
+        { timeout: 120000, ...BENCH_AXIOS_OPTS, responseType: 'stream' }
       )
-    } catch (error) {
-      // Warm-up is best-effort — the timed run below still works if it fails.
-      // But log the swallowed failure: silently discarding it makes a run whose
-      // cold-load exclusion did not actually apply indistinguishable from a
-      // clean one after the fact. (Ports the logging half of upstream #1164.)
-      logger.warn(
-        `[BenchmarkService] AI warm-up failed (${error instanceof Error ? error.message : error}); the first timed run may include model-load time.`
-      )
-    }
 
-    const startTime = Date.now()
-    let firstTokenTime = 0
-    let lastTokenTime = 0
-    let streamedChunks = 0
-    let finalEvalCount = 0
-
-    // Plain axios (not benchRequestWithRetry) so the retry wrapper can't consume
-    // the stream body; connectivity is already validated by the /api/tags check
-    // and the warm-up above.
-    const streamResponse = await axios.post(
-      `${ollamaAPIURL}/api/generate`,
-      { model: AI_BENCHMARK_MODEL, prompt: AI_BENCHMARK_PROMPT, stream: true },
-      { timeout: 120000, ...BENCH_AXIOS_OPTS, responseType: 'stream' }
-    )
-
-    await new Promise<void>((resolve, reject) => {
-      const stream = streamResponse.data as NodeJS.ReadableStream
-      let buffer = ''
-      stream.on('data', (chunk: Buffer) => {
-        buffer += chunk.toString('utf8')
-        let nl = buffer.indexOf('\n')
-        while (nl >= 0) {
-          const line = buffer.slice(0, nl).trim()
-          buffer = buffer.slice(nl + 1)
-          nl = buffer.indexOf('\n')
-          if (!line) continue
-          let obj: { response?: string; eval_count?: number; error?: string }
-          try {
-            obj = JSON.parse(line)
-          } catch {
-            continue // ignore partial / non-JSON lines
+      await new Promise<void>((resolve, reject) => {
+        const stream = streamResponse.data as NodeJS.ReadableStream
+        let buffer = ''
+        stream.on('data', (chunk: Buffer) => {
+          buffer += chunk.toString('utf8')
+          let nl = buffer.indexOf('\n')
+          while (nl >= 0) {
+            const line = buffer.slice(0, nl).trim()
+            buffer = buffer.slice(nl + 1)
+            nl = buffer.indexOf('\n')
+            if (!line) continue
+            let obj: { response?: string; eval_count?: number; error?: string }
+            try {
+              obj = JSON.parse(line)
+            } catch {
+              continue // ignore partial / non-JSON lines
+            }
+            if (obj.error) {
+              reject(new Error(obj.error))
+              return
+            }
+            if (typeof obj.response === 'string' && obj.response.length > 0) {
+              const now = Date.now()
+              if (!firstTokenTime) firstTokenTime = now
+              lastTokenTime = now
+              streamedChunks++
+            }
+            if (obj.eval_count) finalEvalCount = obj.eval_count
           }
-          if (obj.error) {
-            reject(new Error(obj.error))
-            return
-          }
-          if (typeof obj.response === 'string' && obj.response.length > 0) {
-            const now = Date.now()
-            if (!firstTokenTime) firstTokenTime = now
-            lastTokenTime = now
-            streamedChunks++
-          }
-          if (obj.eval_count) finalEvalCount = obj.eval_count
-        }
+        })
+        stream.on('end', () => resolve())
+        stream.on('error', reject)
       })
-      stream.on('end', () => resolve())
-      stream.on('error', reject)
-    })
 
-    if (!firstTokenTime) {
-      throw new Error('AI benchmark produced no output tokens')
-    }
+      if (!firstTokenTime) {
+        throw new Error('AI benchmark produced no output tokens')
+      }
 
-    // Token count: the backend's eval_count when present, else streamed chunks.
-    // Decode rate: tokens over the wall-clock span from first to last token
-    // (prefill excluded). TTFT: first token arrival minus request start (prefill
-    // only — model load was excluded by the warm-up pass).
-    const tokenCount = finalEvalCount || streamedChunks
-    const decodeSeconds = Math.max((lastTokenTime - firstTokenTime) / 1000, 0.001)
-    const tokensPerSecond = tokenCount / decodeSeconds
-    const ttftMs = firstTokenTime - startTime
+      // Token count: the backend's eval_count when present, else streamed chunks.
+      // Decode rate: tokens over the wall-clock span from first to last token
+      // (prefill excluded). TTFT: first token arrival minus request start (prefill
+      // only — model load was excluded by the warm-up pass).
+      const tokenCount = finalEvalCount || streamedChunks
+      const decodeSeconds = Math.max((lastTokenTime - firstTokenTime) / 1000, 0.001)
+      const tokensPerSecond = tokenCount / decodeSeconds
+      const ttftMs = firstTokenTime - startTime
 
-    return {
-      ai_tokens_per_second: Math.round(tokensPerSecond * 100) / 100,
-      ai_model_used: AI_BENCHMARK_MODEL,
-      ai_time_to_first_token: Math.round(ttftMs * 100) / 100,
-    }
+      return {
+        ai_tokens_per_second: Math.round(tokensPerSecond * 100) / 100,
+        ai_model_used: AI_BENCHMARK_MODEL,
+        ai_time_to_first_token: Math.round(ttftMs * 100) / 100,
+      }
     } catch (error) {
       throw new Error(`AI benchmark failed: ${error.message}`)
+    }
+  }
+
+  /** Check the first-run model download against available root-filesystem space. */
+  private async _preflightModelDiskSpace(): Promise<void> {
+    let url: string | null
+    try {
+      url = await this.dockerService.getServiceURL(SERVICE_NAMES.OLLAMA)
+    } catch {
+      return // The AI stage will report an unavailable service.
+    }
+    if (!url) return
+
+    try {
+      const tags = await axios.get(`${url}/api/tags`, { timeout: 5000, ...BENCH_AXIOS_OPTS })
+      if (
+        tags.data?.models?.some((model: { name?: string }) => model.name === AI_BENCHMARK_MODEL_V2)
+      ) {
+        return
+      }
+    } catch {
+      return // The AI stage will report an unavailable service.
+    }
+
+    let freeBytes: number | null
+    try {
+      const systemService = new (await import('./system_service.js')).SystemService(
+        this.dockerService
+      )
+      freeBytes = await getFreeBytes(systemService)
+    } catch {
+      return // An uncertain measurement must not block the benchmark.
+    }
+    if (freeBytes !== null && freeBytes < AI_BENCHMARK_MODEL_MIN_FREE_BYTES) {
+      const gib = (bytes: number) => (bytes / 1024 ** 3).toFixed(1)
+      throw new Error(
+        `Not enough free disk space to download ${AI_BENCHMARK_MODEL_V2}. ` +
+          `${gib(AI_BENCHMARK_MODEL_MIN_FREE_BYTES)} GiB is required; ${gib(freeBytes)} GiB is free.`
+      )
+    }
+  }
+
+  /** The Linux Score v2 workload: the frozen 8B model, warm-up, and median of three runs. */
+  private async _runAIBenchmarkV2(): Promise<{ scores: AIScores; ollamaVersion: string }> {
+    const url = await this.dockerService.getServiceURL(SERVICE_NAMES.OLLAMA)
+    if (!url) throw new Error('AI Assistant service location could not be determined')
+    const version = await benchRequestWithRetry(() =>
+      axios.get(`${url}/api/version`, { timeout: 5000, ...BENCH_AXIOS_OPTS })
+    )
+    const ollamaVersion = version.data?.version
+    if (typeof ollamaVersion !== 'string' || !ollamaVersion) {
+      throw new Error('Ollama did not report its version')
+    }
+    const { OllamaService } = await import('./ollama_service.js')
+    const ollamaService = new OllamaService()
+    const pulled = await ollamaService.downloadModel(AI_BENCHMARK_MODEL_V2)
+    if (!pulled.success) throw new Error(`Could not install benchmark model: ${pulled.message}`)
+
+    await this._unloadResidentModels(url)
+    try {
+      this._updateStatus('running_ai', 'Warming up AI benchmark model...')
+      await this._singleV2Inference(url)
+      const runs: { tps: number; ttft: number }[] = []
+      for (let i = 0; i < AI_BENCHMARK_V2_RUNS; i++) {
+        this._updateStatus(
+          'running_ai',
+          `Running AI benchmark (${i + 1}/${AI_BENCHMARK_V2_RUNS})...`
+        )
+        runs.push(await this._singleV2Inference(url))
+      }
+      runs.sort((a, b) => a.tps - b.tps)
+      const median = runs[1]
+      return {
+        scores: {
+          ai_tokens_per_second: Math.round(median.tps * 100) / 100,
+          ai_model_used: AI_BENCHMARK_MODEL_V2,
+          ai_time_to_first_token: Math.round(median.ttft * 100) / 100,
+        },
+        ollamaVersion,
+      }
+    } finally {
+      await this._unloadResidentModels(url)
+    }
+  }
+
+  private async _singleV2Inference(url: string): Promise<{ tps: number; ttft: number }> {
+    const result = await axios.post(
+      `${url}/api/generate`,
+      {
+        model: AI_BENCHMARK_MODEL_V2,
+        prompt: AI_BENCHMARK_PROMPT,
+        stream: false,
+        options: { num_predict: 256 },
+      },
+      { timeout: 120000, ...BENCH_AXIOS_OPTS }
+    )
+    const tokens = Number(result.data?.eval_count)
+    const duration = Number(result.data?.eval_duration)
+    const promptDuration = Number(result.data?.prompt_eval_duration)
+    if (!Number.isFinite(tokens) || tokens <= 0 || !Number.isFinite(duration) || duration <= 0) {
+      throw new Error('AI benchmark did not report valid token and decode durations')
+    }
+    const tps = tokens / (duration / 1e9)
+    const ttft = Number.isFinite(promptDuration) && promptDuration > 0 ? promptDuration / 1e6 : 0
+    if (!Number.isFinite(tps) || tps <= 0 || ttft <= 0) {
+      throw new Error('AI benchmark did not report valid throughput and first-token time')
+    }
+    return { tps, ttft }
+  }
+
+  private async _unloadResidentModels(url: string): Promise<void> {
+    try {
+      const response = await axios.get(`${url}/api/ps`, { timeout: 5000, ...BENCH_AXIOS_OPTS })
+      for (const model of response.data?.models ?? []) {
+        const name = model.name || model.model
+        if (!name) continue
+        await axios
+          .post(
+            `${url}/api/generate`,
+            { model: name, keep_alive: 0 },
+            {
+              timeout: 15000,
+              ...BENCH_AXIOS_OPTS,
+            }
+          )
+          .catch((error) =>
+            logger.warn(
+              `[BenchmarkService] Could not unload model: ${error instanceof Error ? error.message : error}`
+            )
+          )
+      }
+    } catch (error) {
+      logger.warn(
+        `[BenchmarkService] Could not inspect resident models: ${error instanceof Error ? error.message : error}`
+      )
     }
   }
 
@@ -1014,15 +1323,31 @@ export class BenchmarkService {
     }
   }
 
+  private async _resolveSysbenchDigest(): Promise<string> {
+    try {
+      const info = await this.dockerService.docker.getImage(SYSBENCH_IMAGE).inspect()
+      const digest = (info?.RepoDigests ?? [])
+        .find((entry: string) => entry.includes('@sha256:'))
+        ?.split('@')[1]
+      if (digest) return digest
+    } catch (error) {
+      logger.warn(
+        `[BenchmarkService] Could not inspect sysbench digest: ${error instanceof Error ? error.message : error}`
+      )
+    }
+    return SYSBENCH_IMAGE.split('@')[1]
+  }
+
   /**
    * Run sysbench CPU benchmark
    */
-  private async _runSysbenchCpu(): Promise<SysbenchCpuResult> {
+  private async _runSysbenchCpu(threads: number): Promise<SysbenchCpuResult> {
+    if (!Number.isInteger(threads) || threads < 1) throw new Error('Invalid CPU thread count')
     const output = await this._runSysbenchCommand([
       'sysbench',
       'cpu',
       '--cpu-max-prime=20000',
-      '--threads=4',
+      `--threads=${threads}`,
       '--time=30',
       'run',
     ])
@@ -1032,10 +1357,17 @@ export class BenchmarkService {
     const totalTimeMatch = output.match(/total time:\s*([\d.]+)s/i)
     const totalEventsMatch = output.match(/total number of events:\s*(\d+)/i)
 
+    const eventsPerSecond = eventsMatch ? Number(eventsMatch[1]) : 0
+    const totalTime = totalTimeMatch ? Number(totalTimeMatch[1]) : 30
+    if (!Number.isFinite(eventsPerSecond) || eventsPerSecond <= 0) {
+      throw new Error('sysbench CPU output has no positive events/sec')
+    }
     return {
-      events_per_second: eventsMatch ? parseFloat(eventsMatch[1]) : 0,
-      total_time: totalTimeMatch ? parseFloat(totalTimeMatch[1]) : 30,
-      total_events: totalEventsMatch ? parseInt(totalEventsMatch[1]) : 0,
+      events_per_second: eventsPerSecond,
+      total_time: totalTime,
+      total_events: totalEventsMatch
+        ? Number(totalEventsMatch[1])
+        : Math.round(eventsPerSecond * totalTime),
     }
   }
 
@@ -1057,8 +1389,12 @@ export class BenchmarkService {
     const transferMatch = output.match(/([\d.]+)\s*MiB\/sec/i)
     const timeMatch = output.match(/total time:\s*([\d.]+)s/i)
 
+    const operationsPerSecond = opsMatch ? Number(opsMatch[1]) : 0
+    if (!Number.isFinite(operationsPerSecond) || operationsPerSecond <= 0) {
+      throw new Error('sysbench memory output has no positive operations/sec')
+    }
     return {
-      operations_per_second: opsMatch ? parseFloat(opsMatch[1]) : 0,
+      operations_per_second: operationsPerSecond,
       transfer_rate_mb_per_sec: transferMatch ? parseFloat(transferMatch[1]) : 0,
       total_time: timeMatch ? parseFloat(timeMatch[1]) : 0,
     }
@@ -1074,7 +1410,7 @@ export class BenchmarkService {
       'sh',
       '-c',
       'sysbench fileio --file-total-size=1G --file-num=4 prepare && ' +
-        'sysbench fileio --file-total-size=1G --file-num=4 --file-test-mode=seqrd --time=30 run && ' +
+        'sysbench fileio --file-total-size=1G --file-num=4 --file-test-mode=seqrd --file-extra-flags=direct --time=30 run && ' +
         'sysbench fileio --file-total-size=1G --file-num=4 cleanup',
     ])
 
@@ -1082,12 +1418,18 @@ export class BenchmarkService {
     const readMatch = output.match(/read,\s*MiB\/s:\s*([\d.]+)/i)
     const readsPerSecMatch = output.match(/reads\/s:\s*([\d.]+)/i)
 
-    logger.debug(`[BenchmarkService] Disk read output parsing - read: ${readMatch?.[1]}, reads/s: ${readsPerSecMatch?.[1]}`)
+    logger.debug(
+      `[BenchmarkService] Disk read output parsing - read: ${readMatch?.[1]}, reads/s: ${readsPerSecMatch?.[1]}`
+    )
 
+    const readMbPerSec = readMatch ? Number(readMatch[1]) : 0
+    if (!Number.isFinite(readMbPerSec) || readMbPerSec <= 0) {
+      throw new Error('sysbench disk read output has no positive MiB/s')
+    }
     return {
       reads_per_second: readsPerSecMatch ? parseFloat(readsPerSecMatch[1]) : 0,
       writes_per_second: 0,
-      read_mb_per_sec: readMatch ? parseFloat(readMatch[1]) : 0,
+      read_mb_per_sec: readMbPerSec,
       write_mb_per_sec: 0,
       total_time: 30,
     }
@@ -1103,7 +1445,7 @@ export class BenchmarkService {
       'sh',
       '-c',
       'sysbench fileio --file-total-size=1G --file-num=4 prepare && ' +
-        'sysbench fileio --file-total-size=1G --file-num=4 --file-test-mode=seqwr --time=30 run && ' +
+        'sysbench fileio --file-total-size=1G --file-num=4 --file-test-mode=seqwr --file-extra-flags=direct --time=30 run && ' +
         'sysbench fileio --file-total-size=1G --file-num=4 cleanup',
     ])
 
@@ -1111,13 +1453,19 @@ export class BenchmarkService {
     const writeMatch = output.match(/written,\s*MiB\/s:\s*([\d.]+)/i)
     const writesPerSecMatch = output.match(/writes\/s:\s*([\d.]+)/i)
 
-    logger.debug(`[BenchmarkService] Disk write output parsing - written: ${writeMatch?.[1]}, writes/s: ${writesPerSecMatch?.[1]}`)
+    logger.debug(
+      `[BenchmarkService] Disk write output parsing - written: ${writeMatch?.[1]}, writes/s: ${writesPerSecMatch?.[1]}`
+    )
 
+    const writeMbPerSec = writeMatch ? Number(writeMatch[1]) : 0
+    if (!Number.isFinite(writeMbPerSec) || writeMbPerSec <= 0) {
+      throw new Error('sysbench disk write output has no positive MiB/s')
+    }
     return {
       reads_per_second: 0,
       writes_per_second: writesPerSecMatch ? parseFloat(writesPerSecMatch[1]) : 0,
       read_mb_per_sec: 0,
-      write_mb_per_sec: writeMatch ? parseFloat(writeMatch[1]) : 0,
+      write_mb_per_sec: writeMbPerSec,
       total_time: 30,
     }
   }
@@ -1144,7 +1492,7 @@ export class BenchmarkService {
 
       // Wait for completion
       await container.wait()
-      
+
       // Get logs after container has finished
       const logs = await container.logs({
         stdout: true,
@@ -1152,7 +1500,8 @@ export class BenchmarkService {
       })
 
       // Parse logs (Docker logs include header bytes)
-      const output = logs.toString('utf8')
+      const output = logs
+        .toString('utf8')
         .replace(/[\x00-\x08]/g, '') // Remove control characters
         .trim()
 

@@ -1,11 +1,11 @@
 import { Job } from 'bullmq'
 import { QueueService } from '#services/queue_service'
 import { EmbedJobWithProgress } from '../../types/rag.js'
-import { mapEmbedJob, isContinuationBatch, safeEmbedFailureReason } from '../../util/embed_jobs.js'
+import { continuationJobId, mapEmbedJob, isContinuationBatch, safeEmbedFailureReason } from '../../util/embed_jobs.js'
 import { RagService } from '#services/rag_service'
 import { DockerService } from '#services/docker_service'
 import { OllamaService } from '#services/ollama_service'
-import { createHash } from 'crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import logger from '@adonisjs/core/services/logger'
 import KbIngestState from '#models/kb_ingest_state'
 
@@ -25,6 +25,8 @@ export interface EmbedFileJobParams {
   // Subject/collection tag stored on every Qdrant point and the ingest-state
   // row (upstream #1063). Optional — absent means uncategorized.
   collection?: string
+  /** Shared by every batch in one indexing run; retries retain it. */
+  runId?: string
 }
 
 export class EmbedFileJob {
@@ -76,6 +78,11 @@ export class EmbedFileJob {
 
       logger.info('[EmbedFileJob] Services ready. Processing file')
 
+      // Upgrades can resume a job that already wrote random-ID points. A retry
+      // must clear those before it writes stable IDs; this leaves stable points
+      // from an earlier attempt or batch in place.
+      await ragService.purgeLegacyPointIds(filePath)
+
       // Update progress starting
       await job.updateProgress(5)
       await job.updateData({
@@ -121,6 +128,7 @@ export class EmbedFileJob {
           filePath,
           fileName,
           batchOffset: nextOffset,
+          runId: job.data.runId ?? job.id ?? EmbedFileJob.getJobId(filePath),
           totalArticles: totalArticles || result.totalArticles,
           isFinalBatch: false, // Explicitly not final
           chunksSoFar: chunksSoFarNext,
@@ -233,6 +241,10 @@ export class EmbedFileJob {
     const queue = queueService.getQueue(this.queue)
     const jobId = this.getJobId(params.filePath)
     const isContinuation = isContinuationBatch(params.batchOffset)
+    if (isContinuation && !params.runId) {
+      throw new Error('A continuation batch requires its parent run ID.')
+    }
+    const runId = params.runId ?? randomUUID()
 
     const addOptions: NonNullable<Parameters<typeof queue.add>[2]> = {
       attempts: 30,
@@ -243,10 +255,9 @@ export class EmbedFileJob {
       removeOnComplete: { count: 50 }, // Keep last 50 completed jobs for history
       removeOnFail: { count: 20 }, // Keep last 20 failed jobs for debugging
     }
-    // Initial dispatches pin the deterministic jobId so a re-run (UI re-click,
-    // sync rescan) is idempotent. Continuation batches must NOT pin it, or
-    // BullMQ dedupe silently swallows them against the locked/lingering parent
-    // and the ZIM stops embedding after the first batch. See isContinuationBatch().
+    // Each offset gets a distinct ID within this run. A stalled parent may be
+    // picked up twice, but both attempts enqueue the same next batch. A new
+    // indexing run receives a new run ID so retained old jobs cannot absorb it.
     if (!isContinuation) {
       addOptions.jobId = jobId
 
@@ -276,9 +287,11 @@ export class EmbedFileJob {
           // Best-effort: fall through to add, which dedupes onto whatever remains.
         }
       }
+    } else {
+      addOptions.jobId = continuationJobId(runId, params.batchOffset!)
     }
 
-    const job = await queue.add(this.key, params, addOptions)
+    const job = await queue.add(this.key, { ...params, runId }, addOptions)
 
     const continuationLabel = isContinuation
       ? ` (continuation @ offset ${params.batchOffset})`

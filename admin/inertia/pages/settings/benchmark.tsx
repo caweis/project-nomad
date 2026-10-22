@@ -185,6 +185,7 @@ export default function BenchmarkPage(props: {
     latestResult.benchmark_type === 'full' &&
     latestResult.ai_tokens_per_second !== null &&
     latestResult.ai_tokens_per_second > 0 &&
+    latestResult.nomad_score_v2 == null &&
     !latestResult.submitted_to_repository
 
   // Handle Full Benchmark click with pre-flight check
@@ -479,7 +480,7 @@ export default function BenchmarkPage(props: {
                     <div className="shrink-0">
                       <CircularGauge
                         value={latestResult.nomad_score}
-                        label="NOMAD Score"
+                        label={latestResult.nomad_score_v2 != null ? 'Legacy Score' : 'NOMAD Score'}
                         size="lg"
                         variant="cpu"
                         subtext="out of 100"
@@ -487,14 +488,27 @@ export default function BenchmarkPage(props: {
                       />
                     </div>
                     <div className="flex-1 space-y-4">
-                      <div
-                        className={`text-5xl font-bold ${getScoreColor(latestResult.nomad_score)}`}
-                      >
-                        {latestResult.nomad_score.toFixed(1)}
-                      </div>
-                      <p className="text-desert-stone-dark">
-                        Your NOMAD Score is a weighted composite of all benchmark results.
-                      </p>
+                      {latestResult.nomad_score_v2 != null ? (
+                        <>
+                          <div className="text-5xl font-bold text-desert-green">
+                            {latestResult.nomad_score_v2.toFixed(1)}
+                          </div>
+                          <p className="text-desert-stone-dark">
+                            NOMAD Score v2 is an uncapped index. The Crosstalk reference build scores 1000.
+                            Your legacy score is {latestResult.nomad_score.toFixed(1)} / 100.
+                          </p>
+                          <Alert type="info" title="Saved locally" message="Score v2 leaderboard sharing is not available in this build." variant="bordered" />
+                        </>
+                      ) : (
+                        <>
+                          <div className={`text-5xl font-bold ${getScoreColor(latestResult.nomad_score)}`}>
+                            {latestResult.nomad_score.toFixed(1)}
+                          </div>
+                          <p className="text-desert-stone-dark">
+                            Your NOMAD Score is a weighted composite of all benchmark results.
+                          </p>
+                        </>
+                      )}
 
                       {/* Share with Community - Only for full benchmarks with AI data */}
                       {canShareBenchmark && (
@@ -559,7 +573,7 @@ export default function BenchmarkPage(props: {
                       {/* Show message for partial benchmarks */}
                       {latestResult &&
                         !latestResult.submitted_to_repository &&
-                        !canShareBenchmark && (
+                        !canShareBenchmark && latestResult.nomad_score_v2 == null && (
                           <Alert
                             type="info"
                             title="Partial Benchmark"
@@ -761,7 +775,7 @@ export default function BenchmarkPage(props: {
                       <div>
                         <div className="text-desert-stone-dark">NOMAD Score</div>
                         <div className="font-bold text-desert-green">
-                          {latestResult.nomad_score.toFixed(1)}
+                          {(latestResult.nomad_score_v2 ?? latestResult.nomad_score).toFixed(1)}
                         </div>
                       </div>
                     </div>
@@ -970,7 +984,7 @@ export default function BenchmarkPage(props: {
                                   <td className="p-3 capitalize">{result.benchmark_type}</td>
                                   <td className="p-3">
                                     <span className="font-bold text-desert-green">
-                                      {result.nomad_score.toFixed(1)}
+                                      {(result.nomad_score_v2 ?? result.nomad_score).toFixed(1)}
                                     </span>
                                   </td>
                                   <td className="p-3 font-mono text-xs">

@@ -90,4 +90,23 @@ check('an off-ladder window is refused', () => {
   assert.ok(validateSettingValue('ai.contextWindow', '0'))
 })
 
+check('retrieval relevance accepts auto and values within 0–1', () => {
+  ok('rag.minRelevance', 'auto')
+  ok('rag.minRelevance', '0')
+  ok('rag.minRelevance', '0.62')
+  ok('rag.minRelevance', '1')
+})
+check('retrieval relevance rejects invalid values', () => {
+  bad('rag.minRelevance', 'Infinity')
+  bad('rag.minRelevance', '-0.1')
+  bad('rag.minRelevance', '1.1')
+  bad('rag.minRelevance', 0.62)
+})
+
+check('response style accepts the four profiles and rejects unrecognised values', () => {
+  for (const style of ['auto', 'focused', 'creative', 'off']) ok('ai.responseStyle', style)
+  bad('ai.responseStyle', 'turbo')
+  bad('ai.responseStyle', 0.7)
+})
+
 console.log(`\n${passed} passed`)

@@ -132,7 +132,8 @@ export class ZimService {
     })
 
     const mapped: (RemoteZimFileEntry | null)[] = filtered.map((entry: RawRemoteZimFileEntry) => {
-      const downloadLink = entry.link.find((link: any) => {
+      const links = Array.isArray(entry.link) ? entry.link : entry.link ? [entry.link] : []
+      const downloadLink = links.find((link: any) => {
         return (
           typeof link === 'object' &&
           'rel' in link &&
@@ -159,8 +160,15 @@ export class ZimService {
         summary: entry.summary,
         size_bytes: sizeBytes || 0,
         download_url: download_url,
-        author: entry.author.name,
+        author: entry.author?.name ?? '',
         file_name: file_name,
+        language: entry.language,
+        category: entry.category,
+        tags: entry.tags,
+        article_count: entry.articleCount,
+        media_count: entry.mediaCount,
+        publisher: entry.publisher?.name,
+        issued: entry['dc:issued'],
       }
     })
 

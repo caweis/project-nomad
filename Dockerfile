@@ -1,10 +1,10 @@
-FROM node:22-slim AS base
+FROM node:24-bookworm-slim AS base
 
 # Install bash & curl for entrypoint script compatibility, graphicsmagick for pdf2pic, and vips-dev & build-base for sharp.
 # python3-ezdxf + python3-matplotlib: DXF thumbnail renderer (dxf_thumb.py, headless via Agg).
 # openscad + xvfb: SCAD thumbnail renderer (xvfb-run provides virtual framebuffer for OpenSCAD's GLX requirement).
 # openssl: generates the self-signed TLS cert for HTTPS-only Supply Depot apps (MeshCore Web) — the
-# node:22-slim base ships libssl but not the openssl CLI the cert helper execs.
+# The Node base ships libssl but not the openssl CLI the cert helper execs.
 # Base-layer change: triggers a full multi-arch rebuild (~25 min for arm64 + amd64) — same class as adding ghostscript in #6.
 RUN apt-get update && apt-get install -y \
     bash curl openssl graphicsmagick ghostscript libvips-dev build-essential \
@@ -58,6 +58,28 @@ FROM base
 ARG VERSION=dev
 ARG BUILD_DATE
 ARG VCS_REF
+ARG TARGETARCH
+
+# go-pmtiles extracts the low-zoom offline world map. Pin each architecture's
+# release archive so Mac hosts running arm64 Linux containers get the same CLI.
+ARG PMTILES_VERSION=1.30.2
+ARG PMTILES_SHA256_AMD64=2cd3aa18868297fc88425038f794efdc0995e0275f4ca16fa496dd79e245a40c
+ARG PMTILES_SHA256_ARM64=804cdf071834e1156af554c1a26cc42b56b9cde5a2db9c6e3653d16fb846d5fa
+RUN set -eux; \
+    case "${TARGETARCH:-amd64}" in \
+      amd64) PMTILES_ARCH=x86_64; PMTILES_SHA256="${PMTILES_SHA256_AMD64}" ;; \
+      arm64) PMTILES_ARCH=arm64; PMTILES_SHA256="${PMTILES_SHA256_ARM64}" ;; \
+      *) echo "Unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    TARBALL="go-pmtiles_${PMTILES_VERSION}_Linux_${PMTILES_ARCH}.tar.gz"; \
+    cd /tmp; \
+    curl -fsSL -o "$TARBALL" \
+      "https://github.com/protomaps/go-pmtiles/releases/download/v${PMTILES_VERSION}/${TARBALL}"; \
+    echo "${PMTILES_SHA256}  ${TARBALL}" | sha256sum -c -; \
+    tar -xzf "$TARBALL" -C /usr/local/bin pmtiles; \
+    rm -f "$TARBALL"; \
+    chmod +x /usr/local/bin/pmtiles; \
+    /usr/local/bin/pmtiles version
 
 # Labels
 LABEL org.opencontainers.image.title="Project NOMAD" \

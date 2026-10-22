@@ -96,7 +96,8 @@ test.group('mapEmbedJob', () => {
 
 test.group('isContinuationBatch', () => {
   // The crux of the multi-batch ZIM fix: only batchOffset > 0 is a continuation
-  // (and so must skip the deterministic jobId). An initial dispatch keeps it.
+  // (and receives a distinct per-run-and-offset job ID). Initial dispatches
+  // keep the per-file job ID used by the UI and scanner.
   test('initial dispatch (undefined offset) is not a continuation', ({ assert }) => {
     assert.isFalse(isContinuationBatch(undefined))
   })
