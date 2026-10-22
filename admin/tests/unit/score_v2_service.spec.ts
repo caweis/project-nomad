@@ -2,6 +2,8 @@ import { test } from '@japa/runner'
 import axios from 'axios'
 import { BenchmarkService } from '#services/benchmark_service'
 import { SystemService } from '#services/system_service'
+import BenchmarkResult from '#models/benchmark_result'
+import { SCORE_V2_REFERENCE } from '../../app/utils/score_v2.js'
 
 test.group('Score v2 benchmark wiring', () => {
   test('uses the installer host platform before Docker Desktop heuristics', ({ assert }) => {
@@ -59,6 +61,152 @@ test.group('Score v2 benchmark wiring', () => {
     const run = await (service as any)._runSystemBenchmarks(8)
     assert.isNull(run.raws)
     assert.equal(run.scores.cpu_score, 0.5)
+  })
+
+  test('stores Mac experimental v2 measurements separately from its legacy AI score', async ({
+    assert,
+  }) => {
+    const originalCreate = BenchmarkResult.create
+    let saved: Record<string, any> | undefined
+    ;(BenchmarkResult as any).create = async (values: Record<string, any>) => {
+      saved = values
+      return values
+    }
+    try {
+      const service = new BenchmarkService({} as any)
+      ;(service as any)._isMacOS = () => true
+      ;(service as any)._updateStatus = () => undefined
+      ;(service as any).getHardwareInfo = async () => ({
+        cpu_model: 'Apple M4',
+        cpu_cores: 10,
+        cpu_threads: 10,
+        ram_bytes: 16 * 1024 ** 3,
+        disk_type: 'ssd',
+        gpu_model: 'Apple GPU',
+      })
+      ;(service as any)._detectPlatformMetadata = async () => ({
+        cpu_architecture: 'arm64',
+        os_name: 'macOS',
+        os_version: '15',
+        container_engine: 'OrbStack',
+      })
+      ;(service as any)._runSystemBenchmarks = async () => ({
+        scores: { cpu_score: 0.5, memory_score: 0.5, disk_read_score: 0.5, disk_write_score: 0.5 },
+        raws: null,
+      })
+      ;(service as any)._runAIBenchmark = async () => ({
+        ai_tokens_per_second: 37,
+        ai_model_used: 'llama3.2:1b',
+        ai_time_to_first_token: 60,
+      })
+      ;(service as any)._runExperimentalMacScoreV2 = async () => ({
+        raws: {
+          ...SCORE_V2_REFERENCE,
+          cpu_benchmark_threads: 10,
+          cpu_total_events: 100,
+          cpu_total_time: 30,
+          memory_threads: 4,
+        },
+        scores: {
+          ai_tokens_per_second: SCORE_V2_REFERENCE.ai_tokens_per_second,
+          ai_model_used: 'llama3.1:8b',
+          ai_time_to_first_token: 120,
+        },
+        ollamaVersion: '0.12.0',
+      })
+      ;(service as any)._resolveSysbenchDigest = async () => 'sha256:test'
+
+      await service.runFullBenchmark()
+      assert.equal(saved?.ai_tokens_per_second, 37)
+      assert.equal(saved?.score_v2_ai_tokens_per_second, 13.2)
+      assert.equal(saved?.nomad_score_v2, 1000)
+      assert.equal(saved?.benchmark_flavor, 'native')
+      assert.equal(saved?.run_environment, 'macos-vm')
+      assert.equal(saved?.sysbench_digest, 'sha256:test')
+    } finally {
+      ;(BenchmarkResult as any).create = originalCreate
+    }
+  })
+
+  test('keeps a Mac legacy result when experimental v2 cannot run', async ({ assert }) => {
+    const originalCreate = BenchmarkResult.create
+    let saved: Record<string, any> | undefined
+    ;(BenchmarkResult as any).create = async (values: Record<string, any>) => {
+      saved = values
+      return values
+    }
+    try {
+      const service = new BenchmarkService({} as any)
+      ;(service as any)._isMacOS = () => true
+      ;(service as any)._updateStatus = () => undefined
+      ;(service as any).getHardwareInfo = async () => ({
+        cpu_model: 'Apple M4',
+        cpu_cores: 10,
+        cpu_threads: 10,
+        ram_bytes: 16 * 1024 ** 3,
+        disk_type: 'ssd',
+        gpu_model: 'Apple GPU',
+      })
+      ;(service as any)._detectPlatformMetadata = async () => ({
+        cpu_architecture: 'arm64',
+        os_name: 'macOS',
+        os_version: '15',
+        container_engine: 'OrbStack',
+      })
+      ;(service as any)._runSystemBenchmarks = async () => ({
+        scores: { cpu_score: 0.5, memory_score: 0.5, disk_read_score: 0.5, disk_write_score: 0.5 },
+        raws: null,
+      })
+      ;(service as any)._runAIBenchmark = async () => ({
+        ai_tokens_per_second: 37,
+        ai_model_used: 'llama3.2:1b',
+        ai_time_to_first_token: 60,
+      })
+      ;(service as any)._runExperimentalMacScoreV2 = async () => {
+        throw new Error('native Ollama unavailable')
+      }
+
+      await service.runFullBenchmark()
+      assert.equal(saved?.ai_tokens_per_second, 37)
+      assert.isAbove(saved?.nomad_score, 0)
+      assert.isNull(saved?.nomad_score_v2)
+      assert.isNull(saved?.score_v2_ai_tokens_per_second)
+      assert.isNull(saved?.cpu_events_single)
+    } finally {
+      ;(BenchmarkResult as any).create = originalCreate
+    }
+  })
+
+  test('routes Mac v2 through sysbench and the native Ollama daemon', async ({ assert }) => {
+    const service = new BenchmarkService({} as any)
+    const calls: string[] = []
+    ;(service as any)._preflightModelDiskSpace = async (url: string) => {
+      calls.push(`disk:${url}`)
+    }
+    ;(service as any)._runSysbenchBenchmarks = async (threads: number) => {
+      calls.push(`sysbench:${threads}`)
+      return { raws: { ...SCORE_V2_REFERENCE } }
+    }
+    ;(service as any)._runAIBenchmarkV2 = async (url: string) => {
+      calls.push(`ai:${url}`)
+      return {
+        scores: {
+          ai_tokens_per_second: 13.2,
+          ai_model_used: 'llama3.1:8b',
+          ai_time_to_first_token: 120,
+        },
+        ollamaVersion: '0.12.0',
+      }
+    }
+
+    const measured = await (service as any)._runExperimentalMacScoreV2(10)
+    assert.deepEqual(calls, [
+      'disk:http://host.docker.internal:11434',
+      'sysbench:10',
+      'ai:http://host.docker.internal:11434',
+    ])
+    assert.equal(measured.raws.cpu_events_single, SCORE_V2_REFERENCE.cpu_events_single)
+    assert.equal(measured.scores.ai_tokens_per_second, 13.2)
   })
 
   test('rejects invalid AI raw metrics instead of estimating Score v2', async ({ assert }) => {

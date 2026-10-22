@@ -82,6 +82,7 @@ const AI_BENCHMARK_MODEL = 'llama3.2:1b'
 const AI_BENCHMARK_MODEL_V2 = 'llama3.1:8b'
 const AI_BENCHMARK_V2_RUNS = 3
 const AI_BENCHMARK_MODEL_MIN_FREE_BYTES = 6.5 * 1024 ** 3
+const MAC_NATIVE_OLLAMA_URL = 'http://host.docker.internal:11434'
 const AI_BENCHMARK_PROMPT = 'Explain recursion in programming in exactly 100 words.'
 
 // The benchmark runs inside the long-lived worker process. A pooled keep-alive
@@ -596,16 +597,33 @@ export class BenchmarkService {
       // Calculate NOMAD score
       this._updateStatus('calculating_score', 'Calculating NOMAD score...')
       const nomadScore = this._calculateNomadScore(systemScores, aiScores)
+      let v2Raws = systemRaws
+      let v2AiScores = aiScores
+      if (type === 'full' && this._isMacOS()) {
+        try {
+          // The Mac legacy score keeps its native Node/1B workload. Score v2
+          // uses the same sysbench and 8B workload as Linux, but its system
+          // portion runs inside the Mac's Linux VM, so it remains experimental.
+          const measured = await this._runExperimentalMacScoreV2(hardware.cpu_threads)
+          v2Raws = measured.raws
+          v2AiScores = measured.scores
+          ollamaVersion = measured.ollamaVersion
+        } catch (error) {
+          logger.warn(
+            `[BenchmarkService] Experimental Mac Score v2 was not measured: ${error instanceof Error ? error.message : error}`
+          )
+        }
+      }
       let nomadScoreV2: number | null = null
-      if (type === 'full' && systemRaws && aiScores.ai_tokens_per_second) {
+      if (type === 'full' && v2Raws && v2AiScores.ai_tokens_per_second) {
         try {
           nomadScoreV2 = calculateNomadScoreV2({
-            ai_tokens_per_second: aiScores.ai_tokens_per_second,
-            cpu_events_single: systemRaws.cpu_events_single,
-            cpu_events_multi: systemRaws.cpu_events_multi,
-            memory_ops_per_sec: systemRaws.memory_ops_per_sec,
-            disk_read_mb_per_sec: systemRaws.disk_read_mb_per_sec,
-            disk_write_mb_per_sec: systemRaws.disk_write_mb_per_sec,
+            ai_tokens_per_second: v2AiScores.ai_tokens_per_second,
+            cpu_events_single: v2Raws.cpu_events_single,
+            cpu_events_multi: v2Raws.cpu_events_multi,
+            memory_ops_per_sec: v2Raws.memory_ops_per_sec,
+            disk_read_mb_per_sec: v2Raws.disk_read_mb_per_sec,
+            disk_write_mb_per_sec: v2Raws.disk_write_mb_per_sec,
           })
         } catch (error) {
           logger.warn(
@@ -631,6 +649,8 @@ export class BenchmarkService {
         ai_tokens_per_second: aiScores.ai_tokens_per_second || null,
         ai_model_used: aiScores.ai_model_used || null,
         ai_time_to_first_token: aiScores.ai_time_to_first_token || null,
+        score_v2_ai_tokens_per_second:
+          nomadScoreV2 !== null ? (v2AiScores.ai_tokens_per_second ?? null) : null,
         nomad_score: nomadScore,
         submitted_to_repository: false,
         cpu_architecture: platform.cpu_architecture,
@@ -638,18 +658,18 @@ export class BenchmarkService {
         os_version: platform.os_version,
         container_engine: platform.container_engine,
         benchmark_flavor: benchmarkFlavor,
-        cpu_events_single: systemRaws?.cpu_events_single ?? null,
-        cpu_events_multi: systemRaws?.cpu_events_multi ?? null,
-        cpu_benchmark_threads: systemRaws?.cpu_benchmark_threads ?? null,
-        cpu_total_events: systemRaws?.cpu_total_events ?? null,
-        cpu_total_time: systemRaws?.cpu_total_time ?? null,
-        memory_ops_per_sec: systemRaws?.memory_ops_per_sec ?? null,
-        memory_threads: systemRaws?.memory_threads ?? null,
-        disk_read_mb_per_sec: systemRaws?.disk_read_mb_per_sec ?? null,
-        disk_write_mb_per_sec: systemRaws?.disk_write_mb_per_sec ?? null,
+        cpu_events_single: v2Raws?.cpu_events_single ?? null,
+        cpu_events_multi: v2Raws?.cpu_events_multi ?? null,
+        cpu_benchmark_threads: v2Raws?.cpu_benchmark_threads ?? null,
+        cpu_total_events: v2Raws?.cpu_total_events ?? null,
+        cpu_total_time: v2Raws?.cpu_total_time ?? null,
+        memory_ops_per_sec: v2Raws?.memory_ops_per_sec ?? null,
+        memory_threads: v2Raws?.memory_threads ?? null,
+        disk_read_mb_per_sec: v2Raws?.disk_read_mb_per_sec ?? null,
+        disk_write_mb_per_sec: v2Raws?.disk_write_mb_per_sec ?? null,
         nomad_score_v2: nomadScoreV2,
         ollama_version: ollamaVersion,
-        sysbench_digest: systemRaws ? await this._resolveSysbenchDigest() : null,
+        sysbench_digest: v2Raws ? await this._resolveSysbenchDigest() : null,
         // The daemon's Linux OS string also describes WSL2 and other VMs.
         // Leave the environment unknown unless the macOS installer proved it.
         run_environment: this._isMacOS() ? 'macos-vm' : null,
@@ -681,6 +701,12 @@ export class BenchmarkService {
       return { scores: await this._runNativeBenchmarks(), raws: null }
     }
 
+    return this._runSysbenchBenchmarks(multiThreads)
+  }
+
+  private async _runSysbenchBenchmarks(
+    multiThreads: number
+  ): Promise<{ scores: SystemScores; raws: SystemBenchmarkRawsV2 }> {
     // Linux path: use sysbench in Docker
     await this._ensureSysbenchImage()
 
@@ -1106,10 +1132,10 @@ export class BenchmarkService {
   }
 
   /** Check the first-run model download against available root-filesystem space. */
-  private async _preflightModelDiskSpace(): Promise<void> {
+  private async _preflightModelDiskSpace(urlOverride?: string): Promise<void> {
     let url: string | null
     try {
-      url = await this.dockerService.getServiceURL(SERVICE_NAMES.OLLAMA)
+      url = urlOverride ?? (await this.dockerService.getServiceURL(SERVICE_NAMES.OLLAMA))
     } catch {
       return // The AI stage will report an unavailable service.
     }
@@ -1144,9 +1170,11 @@ export class BenchmarkService {
     }
   }
 
-  /** The Linux Score v2 workload: the frozen 8B model, warm-up, and median of three runs. */
-  private async _runAIBenchmarkV2(): Promise<{ scores: AIScores; ollamaVersion: string }> {
-    const url = await this.dockerService.getServiceURL(SERVICE_NAMES.OLLAMA)
+  /** Score v2's frozen 8B model, warm-up, and median of three runs. */
+  private async _runAIBenchmarkV2(
+    urlOverride?: string
+  ): Promise<{ scores: AIScores; ollamaVersion: string }> {
+    const url = urlOverride ?? (await this.dockerService.getServiceURL(SERVICE_NAMES.OLLAMA))
     if (!url) throw new Error('AI Assistant service location could not be determined')
     const version = await benchRequestWithRetry(() =>
       axios.get(`${url}/api/version`, { timeout: 5000, ...BENCH_AXIOS_OPTS })
@@ -1155,10 +1183,29 @@ export class BenchmarkService {
     if (typeof ollamaVersion !== 'string' || !ollamaVersion) {
       throw new Error('Ollama did not report its version')
     }
-    const { OllamaService } = await import('./ollama_service.js')
-    const ollamaService = new OllamaService()
-    const pulled = await ollamaService.downloadModel(AI_BENCHMARK_MODEL_V2)
-    if (!pulled.success) throw new Error(`Could not install benchmark model: ${pulled.message}`)
+    if (urlOverride) {
+      // oMLX mode routes the admin's default client through an MLX proxy.
+      // Score v2's fixed Ollama model must go to the separate native daemon.
+      const { Ollama } = await import('ollama')
+      const client = new Ollama({ host: url })
+      const installed = await client.list()
+      if (!installed.models.some((model) => model.name === AI_BENCHMARK_MODEL_V2)) {
+        this._updateStatus('downloading_ai_model', 'Downloading Score v2 model...')
+        const stream = await client.pull({ model: AI_BENCHMARK_MODEL_V2, stream: true })
+        for await (const chunk of stream) {
+          if (chunk.status === 'success') break
+        }
+        const verified = await client.list()
+        if (!verified.models.some((model) => model.name === AI_BENCHMARK_MODEL_V2)) {
+          throw new Error('Ollama ended the pull, but the Score v2 model is not installed')
+        }
+      }
+    } else {
+      const { OllamaService } = await import('./ollama_service.js')
+      const ollamaService = new OllamaService()
+      const pulled = await ollamaService.downloadModel(AI_BENCHMARK_MODEL_V2)
+      if (!pulled.success) throw new Error(`Could not install benchmark model: ${pulled.message}`)
+    }
 
     await this._unloadResidentModels(url)
     try {
@@ -1185,6 +1232,15 @@ export class BenchmarkService {
     } finally {
       await this._unloadResidentModels(url)
     }
+  }
+
+  private async _runExperimentalMacScoreV2(
+    multiThreads: number
+  ): Promise<{ raws: SystemBenchmarkRawsV2; scores: AIScores; ollamaVersion: string }> {
+    await this._preflightModelDiskSpace(MAC_NATIVE_OLLAMA_URL)
+    const system = await this._runSysbenchBenchmarks(multiThreads)
+    const ai = await this._runAIBenchmarkV2(MAC_NATIVE_OLLAMA_URL)
+    return { raws: system.raws, scores: ai.scores, ollamaVersion: ai.ollamaVersion }
   }
 
   private async _singleV2Inference(url: string): Promise<{ tps: number; ttft: number }> {

@@ -121,6 +121,10 @@ export default class BenchmarkResult extends BaseModel {
   declare disk_write_mb_per_sec: number | null
   @column({ columnName: 'nomad_score_v2', serializeAs: 'nomad_score_v2' })
   declare nomad_score_v2: number | null
+  // Mac full runs retain their 1B legacy AI measurement in
+  // ai_tokens_per_second; v2's separate 8B measurement lives here.
+  @column()
+  declare score_v2_ai_tokens_per_second: number | null
   @column()
   declare ollama_version: string | null
   @column()
@@ -130,7 +134,8 @@ export default class BenchmarkResult extends BaseModel {
   @column()
   declare storage_path_type: string | null
   @column({
-    consume: (value: number | null) => (value === null || value === undefined ? null : Boolean(value)),
+    consume: (value: number | null) =>
+      value === null || value === undefined ? null : Boolean(value),
   })
   declare gpu_compute_detected: boolean | null
 

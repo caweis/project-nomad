@@ -172,7 +172,9 @@ export default function BenchmarkPage(props: {
     onError: (error: any) => {
       // Check if this is a 409 Conflict error (already submitted)
       if (error.status === 409) {
-        setSubmitError('A benchmark for this system with the same or higher score has already been submitted.')
+        setSubmitError(
+          'A benchmark for this system with the same or higher score has already been submitted.'
+        )
       } else {
         setSubmitError(error.message)
       }
@@ -187,6 +189,8 @@ export default function BenchmarkPage(props: {
     latestResult.ai_tokens_per_second > 0 &&
     latestResult.nomad_score_v2 == null &&
     !latestResult.submitted_to_repository
+  const latestIsExperimentalMacV2 =
+    latestResult?.nomad_score_v2 != null && latestResult.run_environment === 'macos-vm'
 
   // Handle Full Benchmark click with pre-flight check
   const handleFullBenchmarkClick = () => {
@@ -298,13 +302,16 @@ export default function BenchmarkPage(props: {
 
   // Listen for benchmark progress via SSE (backup for async mode)
   useEffect(() => {
-    const unsubscribe = subscribe(BROADCAST_CHANNELS.BENCHMARK_PROGRESS, (data: BenchmarkProgressWithID) => {
-      setProgress(data)
-      if (data.status === 'completed' || data.status === 'error') {
-        setIsRunning(false)
-        refetchLatest()
+    const unsubscribe = subscribe(
+      BROADCAST_CHANNELS.BENCHMARK_PROGRESS,
+      (data: BenchmarkProgressWithID) => {
+        setProgress(data)
+        if (data.status === 'completed' || data.status === 'error') {
+          setIsRunning(false)
+          refetchLatest()
+        }
       }
-    })
+    )
 
     return () => {
       unsubscribe()
@@ -458,7 +465,7 @@ export default function BenchmarkPage(props: {
                       >
                         Install it
                       </Link>{' '}
-                      to run full benchmarks and share results with the community.
+                      to run full benchmarks.
                     </p>
                   )}
                 </div>
@@ -490,18 +497,32 @@ export default function BenchmarkPage(props: {
                     <div className="flex-1 space-y-4">
                       {latestResult.nomad_score_v2 != null ? (
                         <>
+                          {latestIsExperimentalMacV2 && (
+                            <p className="text-sm font-semibold text-desert-green">
+                              Experimental Mac Score v2
+                            </p>
+                          )}
                           <div className="text-5xl font-bold text-desert-green">
                             {latestResult.nomad_score_v2.toFixed(1)}
                           </div>
                           <p className="text-desert-stone-dark">
-                            NOMAD Score v2 is an uncapped index. The Crosstalk reference build scores 1000.
+                            {latestIsExperimentalMacV2
+                              ? 'This score uses sysbench in your Mac’s Linux VM and an 8B model in native Ollama. Mac calibration is pending, so compare it only with other runs on this Mac.'
+                              : 'NOMAD Score v2 is an uncapped index. The Crosstalk reference build scores 1000.'}{' '}
                             Your legacy score is {latestResult.nomad_score.toFixed(1)} / 100.
                           </p>
-                          <Alert type="info" title="Saved locally" message="Score v2 leaderboard sharing is not available in this build." variant="bordered" />
+                          <Alert
+                            type="info"
+                            title="Saved locally"
+                            message="Score v2 stays on this device."
+                            variant="bordered"
+                          />
                         </>
                       ) : (
                         <>
-                          <div className={`text-5xl font-bold ${getScoreColor(latestResult.nomad_score)}`}>
+                          <div
+                            className={`text-5xl font-bold ${getScoreColor(latestResult.nomad_score)}`}
+                          >
                             {latestResult.nomad_score.toFixed(1)}
                           </div>
                           <p className="text-desert-stone-dark">
@@ -573,7 +594,8 @@ export default function BenchmarkPage(props: {
                       {/* Show message for partial benchmarks */}
                       {latestResult &&
                         !latestResult.submitted_to_repository &&
-                        !canShareBenchmark && latestResult.nomad_score_v2 == null && (
+                        !canShareBenchmark &&
+                        latestResult.nomad_score_v2 == null && (
                           <Alert
                             type="info"
                             title="Partial Benchmark"
@@ -777,6 +799,9 @@ export default function BenchmarkPage(props: {
                         <div className="font-bold text-desert-green">
                           {(latestResult.nomad_score_v2 ?? latestResult.nomad_score).toFixed(1)}
                         </div>
+                        {latestIsExperimentalMacV2 && (
+                          <div className="text-xs text-desert-stone-dark">Experimental Mac v2</div>
+                        )}
                       </div>
                     </div>
                     <IconChevronDown
@@ -986,6 +1011,12 @@ export default function BenchmarkPage(props: {
                                     <span className="font-bold text-desert-green">
                                       {(result.nomad_score_v2 ?? result.nomad_score).toFixed(1)}
                                     </span>
+                                    {result.nomad_score_v2 != null &&
+                                      result.run_environment === 'macos-vm' && (
+                                        <span className="block text-xs text-desert-stone-dark">
+                                          Experimental Mac v2
+                                        </span>
+                                      )}
                                   </td>
                                   <td className="p-3 font-mono text-xs">
                                     {result.builder_tag || '—'}
