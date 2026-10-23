@@ -5,7 +5,7 @@
  *
  * Regression guard for the digest-as-version bug: digest-pinned images (and
  * registry-port refs) must never render a raw 64-char digest in the Version
- * column. Shared by settings/apps.tsx + SupplyDepotCard.
+ * display and Update dialog in Supply Depot.
  */
 import assert from 'node:assert/strict'
 import { extractTag } from '../../inertia/lib/imageTag.ts'

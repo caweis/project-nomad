@@ -796,7 +796,7 @@ export default function EasySetupWizard(props: {
             <StyledButton
               variant="primary"
               className="mt-4"
-              onClick={() => router.visit('/settings/apps')}
+              onClick={() => router.visit('/supply-depot')}
             >
               Manage Apps
             </StyledButton>
