@@ -417,6 +417,10 @@ router
 
     router.get('/wikipedia', [ZimController, 'getWikipediaState'])
     router.post('/wikipedia/select', [ZimController, 'selectWikipedia'])
+    router.get('/custom-libraries', [ZimController, 'listCustomLibraries'])
+    router.post('/custom-libraries', [ZimController, 'addCustomLibrary'])
+    router.delete('/custom-libraries/:id', [ZimController, 'removeCustomLibrary'])
+    router.get('/custom-libraries/:id/browse', [ZimController, 'browseCustomLibrary'])
     router.delete('/:filename', [ZimController, 'delete'])
   })
   .prefix('/api/zim')

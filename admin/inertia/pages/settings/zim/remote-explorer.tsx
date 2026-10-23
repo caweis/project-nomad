@@ -11,7 +11,7 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import StyledTable from '~/components/StyledTable'
 import SettingsLayout from '~/layouts/SettingsLayout'
 import { Head } from '@inertiajs/react'
-import { ListRemoteZimFilesResponse, RemoteZimFileEntry } from '../../../../types/zim'
+import { CustomLibraryListing, ListRemoteZimFilesResponse, RemoteZimFileEntry } from '../../../../types/zim'
 import { formatBytes } from '~/lib/util'
 import StyledButton from '~/components/StyledButton'
 import { useModals } from '~/context/ModalContext'
@@ -31,12 +31,14 @@ import StyledSectionHeader from '~/components/StyledSectionHeader'
 import type { CategoryWithStatus, SpecTier } from '../../../../types/collections'
 import useDownloads from '~/hooks/useDownloads'
 import ActiveDownloads from '~/components/ActiveDownloads'
+import CustomLibraryBrowser from '~/components/CustomLibraryBrowser'
 import { SERVICE_NAMES } from '../../../../constants/service_names'
 
 const CURATED_CATEGORIES_KEY = 'curated-categories'
 const WIKIPEDIA_STATE_KEY = 'wikipedia-state'
 const CATALOG_LANGUAGES_KEY = 'catalog-languages'
 const LANGUAGE_STORAGE_KEY = 'nomad:zim-library-language'
+const SOURCE_STORAGE_KEY = 'nomad:zim-library-source'
 const LANGUAGE_LIST_FRESH_MS = 60 * 60 * 1000
 
 export default function ZimRemoteExplorer() {
@@ -51,6 +53,23 @@ export default function ZimRemoteExplorer() {
 
   const [query, setQuery] = useState('')
   const [queryUI, setQueryUI] = useState('')
+  const [selectedSourceId, setSelectedSourceId] = useState<number | null>(() => {
+    try {
+      const saved = localStorage.getItem(SOURCE_STORAGE_KEY)
+      const id = Number(saved)
+      return saved && Number.isSafeInteger(id) && id > 0 ? id : null
+    } catch {
+      return null
+    }
+  })
+  const handleSourceChange = useCallback((id: number | null) => {
+    setSelectedSourceId(id)
+    try {
+      localStorage.setItem(SOURCE_STORAGE_KEY, id === null ? 'default' : String(id))
+    } catch {
+      // Browsing still works when the browser blocks local storage.
+    }
+  }, [])
   // Catalog language filter (upstream dde8aa55), remembered per browser:
   // someone browsing in their own language wants it on every visit. Storage can
   // throw (private mode, blocked site data); the filter still works, it just is
@@ -141,6 +160,7 @@ export default function ZimRemoteExplorer() {
       },
       refetchOnWindowFocus: false,
       placeholderData: keepPreviousData,
+      enabled: selectedSourceId === null,
     })
 
   const flatData = useMemo(() => {
@@ -167,6 +187,7 @@ export default function ZimRemoteExplorer() {
 
   const fetchOnBottomReached = useCallback(
     (parentRef?: HTMLDivElement | null) => {
+      if (selectedSourceId !== null) return
       if (parentRef) {
         const { scrollHeight, scrollTop, clientHeight } = parentRef
         //once the user has scrolled within 200px of the bottom of the table, fetch more data if we can
@@ -180,7 +201,7 @@ export default function ZimRemoteExplorer() {
         }
       }
     },
-    [fetchNextPage, isFetching, hasMore, flatData.length]
+    [fetchNextPage, isFetching, hasMore, flatData.length, selectedSourceId]
   )
 
   const virtualizer = useVirtualizer({
@@ -231,6 +252,35 @@ export default function ZimRemoteExplorer() {
     } catch (error) {
       console.error('Error downloading file:', error)
     }
+  }
+
+  function confirmCustomDownload(file: CustomLibraryListing['files'][number]) {
+    openModal(
+      <StyledModal
+        title="Confirm download"
+        onConfirm={async () => {
+          closeAllModals()
+          try {
+            const started = await api.downloadRemoteZimFile(file.url, {
+              title: file.name,
+              size_bytes: file.size_bytes ?? undefined,
+            })
+            if (!started) throw new Error('Download request failed')
+            invalidateDownloads()
+          } catch {
+            addNotification({ message: 'Could not start this ZIM download.', type: 'error' })
+          }
+        }}
+        onCancel={closeAllModals}
+        open={true}
+        confirmText="Download"
+        cancelText="Cancel"
+        confirmVariant="primary"
+      >
+        <p>Download {file.name}{file.size_bytes === null ? '' : ` (${formatBytes(file.size_bytes)})`}? The file will appear in Kiwix when it is ready.</p>
+      </StyledModal>,
+      'confirm-custom-zim-download'
+    )
   }
 
   // Category/tier handlers
@@ -415,7 +465,12 @@ export default function ZimRemoteExplorer() {
             <p className="text-text-muted mt-4">No curated content categories available.</p>
           )}
           <StyledSectionHeader title="Browse the Kiwix Library" className="mt-12 mb-4" />
-          {catalogUnavailable ? (
+          <CustomLibraryBrowser
+            selectedSourceId={selectedSourceId}
+            onSelectSource={handleSourceChange}
+            onDownload={confirmCustomDownload}
+          />
+          {selectedSourceId === null && (catalogUnavailable ? (
             <div className="mt-4 flex flex-col items-center justify-center rounded-lg border border-border-subtle bg-surface-primary px-6 py-12 text-center">
               <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-surface-secondary">
                 <IconCloudOff className="h-6 w-6 text-text-muted" />
@@ -538,7 +593,7 @@ export default function ZimRemoteExplorer() {
                 rowLines
               />
             </>
-          )}
+          ))}
           <ActiveDownloads filetype="zim" withHeader />
         </main>
       </div>
