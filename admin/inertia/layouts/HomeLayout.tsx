@@ -48,7 +48,7 @@ export default function HomeLayout({ children }: { children: React.ReactNode }) 
     ...(aiAssistantInstallStatus.isInstalled
       ? [{ name: aiAssistantName, href: '/settings/models', icon: IconWand, current: false }]
       : []),
-    { name: 'Supply Depot', href: '/settings/apps', icon: IconBuildingStore, current: false },
+    { name: 'Supply Depot', href: '/supply-depot', icon: IconBuildingStore, current: false },
     { name: 'Benchmark', href: '/settings/benchmark', icon: IconChartBar, current: false },
     { name: 'Content Explorer', href: '/settings/zim/remote-explorer', icon: IconZoom, current: false },
     { name: 'Content Manager', href: '/settings/zim', icon: IconFolder, current: false },

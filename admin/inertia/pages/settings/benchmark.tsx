@@ -406,7 +406,7 @@ export default function BenchmarkPage(props: {
                       onDismiss={() => setShowAIRequiredAlert(false)}
                     >
                       <Link
-                        href="/settings/apps"
+                        href="/supply-depot"
                         className="text-sm text-desert-green hover:underline mt-2 inline-block font-medium"
                       >
                         Go to Apps to install {aiAssistantName} →
@@ -452,7 +452,7 @@ export default function BenchmarkPage(props: {
                       <span className="text-amber-600">Note:</span> {aiAssistantName} is not
                       installed.
                       <Link
-                        href="/settings/apps"
+                        href="/supply-depot"
                         className="text-desert-green hover:underline ml-1"
                       >
                         Install it

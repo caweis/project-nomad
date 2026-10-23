@@ -1,6 +1,6 @@
 /**
- * Display version for a container image reference, used by both Supply Depot
- * surfaces (settings/apps.tsx table + SupplyDepotCard). An image ref is
+ * Display version for a container image reference. The Supply Depot card and
+ * Update dialog use this shared parser. An image ref is
  * `[registry[:port]/]name[:tag][@digest]`. We split off any digest first, then
  * read the tag after the LAST '/' (a registry port also uses ':'). A raw 64-char
  * digest is never surfaced as a "version": a digest pin (or a digest-shaped tag)

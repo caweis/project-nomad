@@ -495,7 +495,7 @@ export default function Home(props: {
               Add a link
             </button>
             <a
-              href="/settings/apps"
+              href="/supply-depot"
               className="inline-flex items-center gap-2 rounded border-desert-green border-2 bg-desert-green hover:bg-transparent hover:text-black text-white transition-colors px-4 py-2 font-semibold"
             >
               <IconApps size={20} />
