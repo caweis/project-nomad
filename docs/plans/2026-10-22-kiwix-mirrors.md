@@ -17,7 +17,7 @@ Issue #37 tracks Crosstalk's custom library sources. The source commit is 62e75f
 - [x] Add source selection, management dialog, folder browser, and download confirmation to Content Explorer.
 - [x] Run typecheck, production build, full regression and coverage gate, and changed-file lint review.
 - [x] Verify the migration, API, and browser with a disposable MySQL container and local directory listing.
-- [ ] Commit and open a draft PR. Keep it draft until GitHub Actions runs and installed-Mac acceptance is complete.
+- [x] Commit and open draft PR #78. Keep it draft until GitHub checks run and installed-Mac acceptance is complete.
 
 ## Review
 
@@ -25,4 +25,4 @@ The production build and full test run passed: 342 Adonis tests and 79 standalon
 
 In the isolated preview, migration seeded five built-in mirrors. HTTP checks covered listing, source creation and removal, a rejected loopback URL, a rejected path escape, and protected built-in rows. The browser opened a local mirror folder, showed its ZIM file and download confirmation, and returned to the default catalog after the test source was removed. No ZIM download was started.
 
-GitHub reports Actions as enabled, but PR #74 has no workflow run; issue #75 tracks that gap. The installed Mac has not been upgraded to this branch. Keep the PR in draft review.
+GitHub reports Actions as enabled, but PRs #74 and #78 have no workflow checks; issue #75 tracks that gap. The installed Mac has not been upgraded to this branch. PR #78 remains in draft review.
