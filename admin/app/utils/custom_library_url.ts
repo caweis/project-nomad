@@ -1,5 +1,3 @@
-import { lookup } from 'node:dns'
-import type { LookupFunction } from 'node:net'
 import { load } from 'cheerio'
 import { assertNotPrivateUrl } from '../validators/common.js'
 
@@ -34,27 +32,6 @@ export function resolveLibraryPath(baseUrl: string, path: string): string {
     throw new Error('Library path must stay under its saved source')
   }
   return target.toString()
-}
-
-/** Check the address actually returned by DNS, not just the displayed hostname. */
-export function validateResolvedAddress(address: string): void {
-  const authority = address.includes(':') ? `[${address}]` : address
-  assertNotPrivateUrl(`http://${authority}/`)
-}
-
-/** Node calls this at connection time for the initial host and every redirect. */
-export const safeLibraryLookup: LookupFunction = (hostname, options, callback) => {
-  lookup(hostname, { ...options, all: true }, (error, addresses) => {
-    if (error) return callback(error, '')
-    if (addresses.length === 0) return callback(new Error('Library host has no addresses'), '')
-    try {
-      for (const address of addresses) validateResolvedAddress(address.address)
-    } catch {
-      return callback(new Error('Library host resolved to a blocked address'), '')
-    }
-    if (options.all) return callback(null, addresses)
-    callback(null, addresses[0].address, addresses[0].family)
-  })
 }
 
 function parseListingSize(text: string): number | null {

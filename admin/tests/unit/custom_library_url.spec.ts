@@ -4,9 +4,8 @@ import {
   normalizeLibraryBaseUrl,
   parseLibraryListing,
   resolveLibraryPath,
-  safeLibraryLookup,
-  validateResolvedAddress,
 } from '../../app/utils/custom_library_url.js'
+import { safeRemoteLookup, validateResolvedAddress } from '../../app/utils/safe_remote_lookup.js'
 
 test.group('custom Kiwix library URL guard', () => {
   test('normalizes an HTTPS mirror root and preserves a LAN mirror', () => {
@@ -60,7 +59,7 @@ test.group('custom Kiwix library URL guard', () => {
 
   test('rejects a hostname that resolves to loopback at connection time', async () => {
     await new Promise<void>((resolve, reject) => {
-      safeLibraryLookup('localhost', { all: false }, (error) => {
+      safeRemoteLookup('localhost', { all: false }, (error) => {
         if (!error) return reject(new Error('Loopback DNS result was accepted'))
         resolve()
       })

@@ -8,8 +8,11 @@ import { deleteFileIfExists, ensureDirectoryExists, getFileStatsIfExists } from 
 import { createWriteStream } from 'node:fs'
 import { rename } from 'node:fs/promises'
 import path from 'node:path'
+import { Agent as HttpAgent } from 'node:http'
+import { Agent as HttpsAgent } from 'node:https'
 import { assertNotPrivateUrl, assertSafeRedirectTarget } from '../validators/common.js'
 import { downloadUrlOriginForLog } from './download_url_log.js'
+import { safeRemoteLookup } from './safe_remote_lookup.js'
 
 /**
  * A gated source rejected this install's credentials (401/403).
@@ -76,6 +79,9 @@ export async function doResumableDownload({
   // Authorization, upstream #1172). Gated sources need the auth header on the
   // HEAD too, or the probe 401s before the GET is reached.
   const baseHeaders: Record<string, string> = { ...DOWNLOAD_HEADERS, ...requestHeaders }
+  const httpAgent = new HttpAgent({ lookup: safeRemoteLookup })
+  const httpsAgent = new HttpsAgent({ lookup: safeRemoteLookup })
+  const connectionOptions = { httpAgent, httpsAgent, proxy: false as const }
 
   // Get file info with HEAD request first
   let headResponse
@@ -85,6 +91,7 @@ export async function doResumableDownload({
       timeout,
       headers: baseHeaders,
       beforeRedirect: assertSafeRedirectTarget,
+      ...connectionOptions,
     })
   } catch (error: any) {
     // A 401/403 here is not a network problem, and the raw axios message
@@ -167,6 +174,7 @@ export async function doResumableDownload({
       signal,
       timeout,
       beforeRedirect: assertSafeRedirectTarget,
+      ...connectionOptions,
     })
 
   let response = await fetchStream(headers)

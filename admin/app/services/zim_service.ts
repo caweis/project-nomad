@@ -46,9 +46,9 @@ import {
   normalizeLibraryBaseUrl,
   parseLibraryListing,
   resolveLibraryPath,
-  safeLibraryLookup,
   type LibraryListing,
 } from '../utils/custom_library_url.js'
+import { safeRemoteLookup } from '../utils/safe_remote_lookup.js'
 import type { CategoryWithStatus, WikipediaSpec } from '../../types/collections.js'
 
 const ZIM_MIME_TYPES = ['application/x-zim', 'application/x-openzim', 'application/octet-stream']
@@ -917,8 +917,8 @@ export class ZimService {
         maxContentLength: LIBRARY_LISTING_MAX_BYTES,
         maxRedirects: 0,
         proxy: false,
-        httpAgent: new HttpAgent({ lookup: safeLibraryLookup }),
-        httpsAgent: new HttpsAgent({ lookup: safeLibraryLookup }),
+        httpAgent: new HttpAgent({ lookup: safeRemoteLookup }),
+        httpsAgent: new HttpsAgent({ lookup: safeRemoteLookup }),
         headers: { Accept: 'text/html' },
       })
       return parseLibraryListing(response.data, url, source.base_url)
