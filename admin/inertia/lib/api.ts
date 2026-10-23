@@ -3,6 +3,8 @@ import {
   ListCatalogLanguagesResponse,
   ListRemoteZimFilesResponse,
   ListZimFilesResponse,
+  CustomLibrarySource,
+  CustomLibraryListing,
 } from '../../types/zim'
 import { ServiceSlim } from '../../types/services'
 import { FileEntry } from '../../types/files'
@@ -648,6 +650,31 @@ class API {
       const response = await this.client.get<ListCatalogLanguagesResponse>('/zim/catalog-languages')
       return response.data.languages
     })()
+  }
+
+  async listCustomLibraries(): Promise<CustomLibrarySource[]> {
+    const response = await this.client.get<CustomLibrarySource[]>('/zim/custom-libraries')
+    return response.data
+  }
+
+  async addCustomLibrary(name: string, baseUrl: string): Promise<CustomLibrarySource> {
+    const response = await this.client.post<{ library: CustomLibrarySource }>(
+      '/zim/custom-libraries',
+      { name, base_url: baseUrl }
+    )
+    return response.data.library
+  }
+
+  async removeCustomLibrary(id: number): Promise<void> {
+    await this.client.delete(`/zim/custom-libraries/${id}`)
+  }
+
+  async browseCustomLibrary(id: number, path: string): Promise<CustomLibraryListing> {
+    const response = await this.client.get<CustomLibraryListing>(
+      `/zim/custom-libraries/${id}/browse`,
+      { params: { path } }
+    )
+    return response.data
   }
 
   async listZimFiles() {

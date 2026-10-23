@@ -1,4 +1,4 @@
-import { ZimService } from '#services/zim_service'
+import { CustomLibraryError, ZimService } from '#services/zim_service'
 import {
   assertNotPrivateUrl,
   downloadCategoryTierValidator,
@@ -6,7 +6,12 @@ import {
   remoteDownloadWithMetadataValidator,
   selectWikipediaValidator,
 } from '#validators/common'
-import { listRemoteZimValidator } from '#validators/zim'
+import {
+  addCustomLibraryValidator,
+  browseCustomLibraryValidator,
+  customLibraryIdValidator,
+  listRemoteZimValidator,
+} from '#validators/zim'
 import { inject } from '@adonisjs/core'
 import type { HttpContext } from '@adonisjs/core/http'
 
@@ -88,5 +93,47 @@ export default class ZimController {
   async selectWikipedia({ request }: HttpContext) {
     const payload = await request.validateUsing(selectWikipediaValidator)
     return this.zimService.selectWikipedia(payload.optionId)
+  }
+
+  async listCustomLibraries() {
+    return this.zimService.listCustomLibraries()
+  }
+
+  async addCustomLibrary({ request, response }: HttpContext) {
+    const payload = await request.validateUsing(addCustomLibraryValidator)
+    try {
+      const library = await this.zimService.addCustomLibrary(payload.name, payload.base_url)
+      return response.status(201).send({ library })
+    } catch (error) {
+      if (error instanceof CustomLibraryError) {
+        return response.status(error.status).send({ message: error.message })
+      }
+      throw error
+    }
+  }
+
+  async removeCustomLibrary({ request, response }: HttpContext) {
+    const payload = await request.validateUsing(customLibraryIdValidator)
+    try {
+      await this.zimService.removeCustomLibrary(payload.params.id)
+      return { message: 'Library source removed' }
+    } catch (error) {
+      if (error instanceof CustomLibraryError) {
+        return response.status(error.status).send({ message: error.message })
+      }
+      throw error
+    }
+  }
+
+  async browseCustomLibrary({ request, response }: HttpContext) {
+    const payload = await request.validateUsing(browseCustomLibraryValidator)
+    try {
+      return await this.zimService.browseCustomLibrary(payload.params.id, payload.path)
+    } catch (error) {
+      if (error instanceof CustomLibraryError) {
+        return response.status(error.status).send({ message: error.message })
+      }
+      throw error
+    }
   }
 }

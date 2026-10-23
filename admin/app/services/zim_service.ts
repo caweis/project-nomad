@@ -8,6 +8,8 @@ import { parseCatalogLanguages } from '../utils/catalog_languages.js'
 import { filenameFromDownloadUrl } from '../utils/download_filename.js'
 import { downloadUrlOriginForLog } from '../utils/download_url_log.js'
 import axios from 'axios'
+import { Agent as HttpAgent } from 'node:http'
+import { Agent as HttpsAgent } from 'node:https'
 import { XMLParser } from 'fast-xml-parser'
 import {
   classifyCatalogFetchError,
@@ -32,6 +34,7 @@ import { join, resolve, sep } from 'path'
 import { WikipediaOption, WikipediaState } from '../../types/downloads.js'
 import WikipediaSelection from '#models/wikipedia_selection'
 import InstalledResource from '#models/installed_resource'
+import CustomLibrarySource from '#models/custom_library_source'
 import { RunDownloadJob } from '#jobs/run_download_job'
 import { SERVICE_NAMES } from '../../constants/service_names.js'
 import { CollectionManifestService } from './collection_manifest_service.js'
@@ -39,9 +42,23 @@ import { decideSupersededDeletion } from '../utils/superseded_resource.js'
 import { resolveZimDownload, type ZimCatalogResult } from '../utils/zim_download_resolution.js'
 import { isGatedResource } from '../utils/hosted_content.js'
 import { getHostedContentHeaders } from '../utils/hosted_content_auth.js'
+import {
+  normalizeLibraryBaseUrl,
+  parseLibraryListing,
+  resolveLibraryPath,
+  type LibraryListing,
+} from '../utils/custom_library_url.js'
+import { safeRemoteLookup } from '../utils/safe_remote_lookup.js'
 import type { CategoryWithStatus, WikipediaSpec } from '../../types/collections.js'
 
 const ZIM_MIME_TYPES = ['application/x-zim', 'application/x-openzim', 'application/octet-stream']
+const LIBRARY_LISTING_MAX_BYTES = 5 * 1024 * 1024
+
+export class CustomLibraryError extends Error {
+  constructor(message: string, public readonly status: number) {
+    super(message)
+  }
+}
 
 @inject()
 export class ZimService {
@@ -789,9 +806,11 @@ export class ZimService {
   }
 
   async onWikipediaDownloadComplete(url: string, success: boolean): Promise<void> {
+    const filename = filenameFromDownloadUrl(url)
+    if (!filename || !filename.startsWith('wikipedia_en_')) return
     const selection = await this.getWikipediaSelection()
-
-    if (!selection || selection.url !== url) {
+    const isSelectedFile = selection?.filename === filename || selection?.url === url
+    if (selection?.status === 'downloading' && !isSelectedFile) {
       logger.warn(
         `[ZimService] Wikipedia download complete callback for unknown URL from ${downloadUrlOriginForLog(url)}`
       )
@@ -799,9 +818,30 @@ export class ZimService {
     }
 
     if (success) {
-      // Update status to installed
-      selection.status = 'installed'
-      await selection.save()
+      let optionId = isSelectedFile ? selection!.option_id : 'unknown'
+      try {
+        const options = await this.getWikipediaOptions()
+        const matched = options.find(
+          (option) => option.url && filenameFromDownloadUrl(option.url) === filename
+        )
+        if (matched) optionId = matched.id
+      } catch {
+        // The saved selection still identifies this file when the catalog is unavailable.
+      }
+      if (selection) {
+        selection.option_id = optionId
+        selection.url = url
+        selection.filename = filename
+        selection.status = 'installed'
+        await selection.save()
+      } else {
+        await WikipediaSelection.create({
+          option_id: optionId,
+          url,
+          filename,
+          status: 'installed',
+        })
+      }
 
       logger.info('[ZimService] Wikipedia download completed successfully')
 
@@ -810,27 +850,80 @@ export class ZimService {
       // `startsWith('wikipedia_en_')` match treated distinct corpora as competing
       // versions, so finishing one Wikipedia download silently wiped the curated
       // medicine/simple/wikivoyage tiers a preparedness user had installed (issue #884).
-      if (selection.filename) {
-        const existingFiles = await this.list()
-        const wikipediaFiles = findReplacedWikipediaFiles(
-          selection.filename,
-          existingFiles.files.map((f) => f.name)
-        )
+      const existingFiles = await this.list()
+      const wikipediaFiles = findReplacedWikipediaFiles(
+        filename,
+        existingFiles.files.map((f) => f.name)
+      )
 
-        for (const oldFile of wikipediaFiles) {
-          try {
-            await this.delete(oldFile)
-            logger.info('[ZimService] Deleted old Wikipedia file')
-          } catch {
-            logger.warn('[ZimService] Could not delete old Wikipedia file')
-          }
+      for (const oldFile of wikipediaFiles) {
+        try {
+          await this.delete(oldFile)
+          logger.info('[ZimService] Deleted old Wikipedia file')
+        } catch {
+          logger.warn('[ZimService] Could not delete old Wikipedia file')
         }
       }
     } else {
-      // Download failed - keep the selection record but mark as failed
-      selection.status = 'failed'
-      await selection.save()
-      logger.error('[ZimService] Wikipedia download failed')
+      if (selection && isSelectedFile) {
+        selection.status = 'failed'
+        await selection.save()
+        logger.error('[ZimService] Wikipedia download failed')
+      }
+    }
+  }
+
+  async listCustomLibraries(): Promise<CustomLibrarySource[]> {
+    return CustomLibrarySource.query().orderBy('id', 'asc')
+  }
+
+  async addCustomLibrary(name: string, baseUrl: string): Promise<CustomLibrarySource> {
+    let normalizedUrl: string
+    try {
+      normalizedUrl = normalizeLibraryBaseUrl(baseUrl)
+    } catch {
+      throw new CustomLibraryError(
+        'Enter an HTTP or HTTPS library URL that is not local to this device',
+        400
+      )
+    }
+    const count = await CustomLibrarySource.query().count('* as total')
+    if (Number(count[0].$extras.total) >= 10) {
+      throw new CustomLibraryError('Maximum of 10 library sources reached', 400)
+    }
+    return CustomLibrarySource.create({ name, base_url: normalizedUrl })
+  }
+
+  async removeCustomLibrary(id: number): Promise<void> {
+    const source = await CustomLibrarySource.find(id)
+    if (!source) throw new CustomLibraryError('Library source not found', 404)
+    if (source.is_default) throw new CustomLibraryError('Built-in mirrors cannot be removed', 403)
+    await source.delete()
+  }
+
+  async browseCustomLibrary(id: number, path: string = ''): Promise<LibraryListing> {
+    const source = await CustomLibrarySource.find(id)
+    if (!source) throw new CustomLibraryError('Library source not found', 404)
+    let url: string
+    try {
+      url = resolveLibraryPath(source.base_url, path)
+    } catch {
+      throw new CustomLibraryError('Library path must stay under its saved source', 400)
+    }
+    try {
+      const response = await axios.get<string>(url, {
+        responseType: 'text',
+        timeout: 15000,
+        maxContentLength: LIBRARY_LISTING_MAX_BYTES,
+        maxRedirects: 0,
+        proxy: false,
+        httpAgent: new HttpAgent({ lookup: safeRemoteLookup }),
+        httpsAgent: new HttpsAgent({ lookup: safeRemoteLookup }),
+        headers: { Accept: 'text/html' },
+      })
+      return parseLibraryListing(response.data, url, source.base_url)
+    } catch {
+      throw new CustomLibraryError('Could not browse this library directory', 502)
     }
   }
 }

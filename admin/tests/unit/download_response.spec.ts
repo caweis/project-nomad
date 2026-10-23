@@ -109,3 +109,47 @@ test('a complete response is published with its exact bytes', async () => {
     await rm(directory, { recursive: true, force: true })
   }
 })
+
+test('downloads check resolved addresses at connection time for HEAD and GET', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nomad-download-address-'))
+  const filepath = join(directory, 'file.bin')
+  const originalHead = axios.head
+  const originalGet = axios.get
+  let checked = 0
+
+  const checkOptions = async (options: any) => {
+    assert.equal(options.proxy, false)
+    assert.equal(typeof options.httpAgent?.options?.lookup, 'function')
+    assert.equal(typeof options.httpsAgent?.options?.lookup, 'function')
+    await new Promise<void>((resolve, reject) => {
+      options.httpAgent.options.lookup('localhost', { all: false }, (error: Error | null) => {
+        if (!error) return reject(new Error('Loopback DNS result was accepted'))
+        resolve()
+      })
+    })
+    checked++
+  }
+
+  try {
+    ;(axios as any).head = async (_url: string, options: any) => {
+      await checkOptions(options)
+      return { headers: { 'content-length': '5', 'content-type': 'application/octet-stream' } }
+    }
+    ;(axios as any).get = async (_url: string, options: any) => {
+      await checkOptions(options)
+      return { status: 200, data: Readable.from([Buffer.from('hello')]) }
+    }
+
+    await doResumableDownload({
+      url: 'https://example.com/file.bin',
+      filepath,
+      timeout: 30000,
+      allowedMimeTypes: [],
+    })
+    assert.equal(checked, 2)
+  } finally {
+    ;(axios as any).head = originalHead
+    ;(axios as any).get = originalGet
+    await rm(directory, { recursive: true, force: true })
+  }
+})

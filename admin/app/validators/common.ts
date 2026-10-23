@@ -31,8 +31,8 @@ export function assertNotPrivateUrl(urlString: string): void {
     .replace(/\.$/, '')
 
   // Not an IP literal → a DNS name. Block the obvious `localhost` alias; allow
-  // everything else (LAN names like `my-nas` stay usable). DNS rebinding is out
-  // of scope — it would need a resolve-and-recheck at fetch time.
+  // everything else (LAN names like `my-nas` stay usable). Fetch callers must
+  // also use safeRemoteLookup so DNS answers are checked at connection time.
   if (!ipaddr.isValid(hostname)) {
     if (hostname === 'localhost' || hostname.endsWith('.localhost')) {
       throw new Error(`Download URL must not point to localhost: ${hostname}`)
