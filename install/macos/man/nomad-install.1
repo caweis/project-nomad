@@ -11,6 +11,7 @@
 .Op Fl -models Ar names
 .Op Fl -no-models
 .Op Fl -yes
+.Op Fl -offline
 .Sh DESCRIPTION
 .Nm nomad install
 brings up the complete Project NOMAD stack on this Mac: it installs the
@@ -66,6 +67,29 @@ with
 .Ic nomad models pull .
 .It Fl -yes , Fl y
 Assume yes to confirmation prompts and run non-interactively.
+.It Fl -offline
+Install with no network. The container images must already be loaded with
+.Ic docker load ,
+and Xcode Command Line Tools, Homebrew, OrbStack, and Ollama must already be
+installed; a missing one stops the install with a message instead of a
+download.
+Images are never pulled, model downloads are skipped (Ollama serves the models
+already on the data root), and the services catalog is pointed at the image
+tags listed in
+.Pa <data-root>/offline-pack/images/catalog.tsv
+(override the pack location with
+.Ev NOMAD_OFFLINE_PACK ) .
+The setting is saved as
+.Ev NOMAD_OFFLINE=1
+in the
+.Pa .env
+file so later
+.Ic nomad up
+and
+.Ic nomad restart
+also start containers without pulling. Setting the environment variable
+.Ev NOMAD_OFFLINE
+to 1 or 0 overrides it for one run.
 .El
 .Sh EXAMPLES
 .Bl -tag -width Ds
@@ -76,6 +100,8 @@ Install onto an external drive, pull the medium model tier, and answer all
 prompts automatically.
 .It Ic nomad install --no-models
 Bring up the stack now and defer model downloads.
+.It Ic nomad install --offline --data-root /Volumes/NOMAD/project-nomad --backend ollama --yes
+Install from an offline pack on the data drive with no internet connection.
 .El
 .Sh SEE ALSO
 .Xr nomad 1 ,

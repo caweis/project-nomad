@@ -7,6 +7,7 @@
 # Usage:
 #   bash nomad install [--data-root PATH] [--tier auto|tiny|small|medium|large|xl|dreamy]
 #                      [--models "names..."] [--no-models] [--yes] [--backend ollama|omlx]
+#                      [--offline]   # no downloads: images pre-loaded from an offline pack
 #   bash nomad check   [system|stack|install|all]   # default: all (writes log)
 #                                            # install = pre-flight inventory
 #   bash nomad backend [show|ollama|omlx]            # show or switch the AI backend
@@ -740,7 +741,27 @@ _ai_endpoint_lines() {
 # Compose wrapper — base compose.yaml has platform: linux/amd64 baked in for
 # the amd64-only GHCR images, so no override-layering needed. Injects
 # NOMAD_OLLAMA_URL (per-backend) so compose interpolates the admin's OLLAMA_HOST.
-dc() { NOMAD_OLLAMA_URL="$(_admin_ollama_url)" docker compose -f "$COMPOSE_BASE" --env-file "$ENV_FILE" "$@"; }
+dc() {
+  # Offline: compose.yaml sets pull_policy: always, so every `up` would try the
+  # registry and fail. --pull never overrides it and uses the local images.
+  if _offline && [[ "${1:-}" == "up" ]]; then shift; set -- up --pull never "$@"; fi
+  NOMAD_OLLAMA_URL="$(_admin_ollama_url)" docker compose -f "$COMPOSE_BASE" --env-file "$ENV_FILE" "$@"
+}
+
+# ─── offline mode ─────────────────────────────────────────────────────────────
+# --offline / NOMAD_OFFLINE=1: install with no network. Images were docker-load'ed
+# from an offline pack beforehand, and CLT/Homebrew/OrbStack/Ollama were installed
+# from it, so every step that would download something either uses what is
+# already on disk or stops with a clear message. NOMAD_OFFLINE=1 is persisted in
+# .env so later `nomad up` / `restart` never pull; NOMAD_OFFLINE=0 overrides.
+_offline() { [[ "${NOMAD_OFFLINE:-0}" == 1 ]]; }
+_offline_die() { die "offline mode: $1 is not installed and can't be downloaded. Install it from the offline pack (install-offline.command), then re-run."; }
+# Pack dir: NOMAD_OFFLINE_PACK, else <data root>/offline-pack.
+_offline_pack_dir() {
+  if [[ -n "${NOMAD_OFFLINE_PACK:-}" ]]; then printf '%s\n' "$NOMAD_OFFLINE_PACK"; return; fi
+  local root; root="$(grep '^NOMAD_DATA_ROOT=' "$ENV_FILE" 2>/dev/null | cut -d= -f2-)" || true
+  [[ -z "$root" ]] || printf '%s\n' "$root/offline-pack"
+}
 
 # ─── sudo bootstrap ───────────────────────────────────────────────────────────
 sudo_bootstrap() {
@@ -1282,6 +1303,7 @@ step_deps() {
 
   # Xcode CLT
   if ! /usr/bin/xcode-select -p >/dev/null 2>&1; then
+    _offline && _offline_die "Xcode Command Line Tools"
     log "installing Xcode Command Line Tools (system dialog will appear)"
     /usr/bin/xcode-select --install 2>/dev/null || true
     log "waiting for CLT install (5–20 min)..."
@@ -1293,6 +1315,7 @@ step_deps() {
 
   # Homebrew
   if ! command -v brew >/dev/null 2>&1; then
+    _offline && _offline_die "Homebrew"
     log "installing Homebrew"
     NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
     [[ -x /opt/homebrew/bin/brew ]] && eval "$(/opt/homebrew/bin/brew shellenv)"
@@ -1321,10 +1344,10 @@ step_deps() {
     fi
   fi
 
-  brew update --quiet || warn "brew update hiccup — continuing"
+  _offline || brew update --quiet || warn "brew update hiccup — continuing"
 
-  # jq
-  command -v jq >/dev/null 2>&1 || brew install jq
+  # jq (/usr/bin/jq ships with macOS 15+)
+  command -v jq >/dev/null 2>&1 || { _offline && _offline_die "jq"; brew install jq; }
   ok "jq $(jq --version)"
 
   # Rosetta on Apple Silicon
@@ -1750,6 +1773,7 @@ step_orbstack() {
     [[ -d "$p" ]] && app="$p" && break
   done
   if [[ -z "$app" ]]; then
+    _offline && _offline_die "OrbStack"
     log "installing OrbStack via brew cask"
     brew install --cask orbstack
     [[ -x /opt/homebrew/bin/brew ]] && eval "$(/opt/homebrew/bin/brew shellenv)"
@@ -1802,7 +1826,7 @@ _probe_ollama_chat_or_warn() {
 
 step_ollama_native() {
   section "Native Ollama (Metal)"
-  command -v ollama >/dev/null 2>&1 || brew install ollama
+  command -v ollama >/dev/null 2>&1 || { _offline && _offline_die "Ollama"; brew install ollama; }
   ok "ollama $(ollama --version 2>/dev/null | head -1)"
 
   # Pre-flight: the llama.cpp runner (llama-server) must actually be on disk.
@@ -2807,6 +2831,10 @@ step_pull_embedding_quick() {
     ok "embedding model $m already present"
     return 0
   fi
+  if _offline; then
+    warn "offline: embedding model $m not found and can't be downloaded — RAG is degraded until you 'nomad models pull $m'"
+    return 0
+  fi
   log "pre-pulling embedding model ($m, ~270 MB) so admin's RAG works the moment we wire it"
   if pull_one_model "$m" 1 1 "$(date +%s)"; then
     ok "embedding model ready"
@@ -3066,6 +3094,10 @@ prompt_for_backend() {
 # our own counter (always visible, works when piped).
 step_pull_models() {
   [[ "$SKIP_MODELS" -eq 1 ]] && return 0
+  if _offline; then
+    ok "offline: skipping model downloads — Ollama serves the models already on the drive"
+    return 0
+  fi
   local resolved_tier="$TIER"
   [[ "$resolved_tier" == "auto" ]] && resolved_tier="$(auto_tier)"
   # Size the header off the ACTUAL set being pulled (lean or full), not the
@@ -3103,6 +3135,19 @@ step_pull_models() {
 step_compose_pull() {
   section "Compose pull"
   ensure_docker_path
+  if _offline; then
+    # Images must already be loaded (docker load from the offline pack).
+    local img missing=()
+    while IFS= read -r img; do
+      [[ -n "$img" ]] || continue
+      docker image inspect "$img" >/dev/null 2>&1 || missing+=("$img")
+    done < <(dc config --images 2>/dev/null)
+    (( ${#missing[@]} == 0 )) || die "offline mode: these images aren't loaded: ${missing[*]}
+Load them first, e.g. docker load -i <offline-pack>/images/<file>.tar"
+    ok "offline: all compose images present locally — skipping pull"
+    _env_upsert NOMAD_OFFLINE 1
+    return 0
+  fi
   # Inspect dc pull's exit code, not tee's. Without PIPESTATUS, a failing pull
   # followed by a successful tee would mask the failure if pipefail were ever
   # turned off — keep the guard explicit.
@@ -3326,9 +3371,46 @@ _query_latest_tag() {
 #
 # Non-fatal on network errors — install continues even if registry queries
 # fail. The user gets the seeded pins as a fallback, which still works.
+# Offline replacement for the registry refresh. The seeder resets each service
+# to its seeded tag, which may differ from the tag saved in the offline pack
+# (e.g. kiwix-serve 3.8.1 seeded vs 3.8.2 packed). Point each row at the packed
+# image so admin finds it locally and never tries to pull. Rows come from
+# <pack>/images/catalog.tsv (service_name<TAB>image); a row is only rewritten
+# when that image is actually loaded. Digest-pinned refs are written as plain
+# repo:tag because admin matches local images by RepoTags, which carry no digest.
+_apply_offline_catalog() {
+  local db_pw="$1" pack; pack="$(_offline_pack_dir)"
+  local tsv="$pack/images/catalog.tsv"
+  if [[ ! -f "$tsv" ]]; then
+    warn "offline: no $tsv — keeping seeded image tags (apps whose image isn't loaded will fail to install)"
+    return 0
+  fi
+  local svc img applied=0 absent=0
+  while IFS=$'\t' read -r svc img; do
+    [[ -z "$svc" || -z "$img" || "$svc" == \#* ]] && continue
+    [[ "$svc$img" == *"'"* ]] && continue   # never splice a quote into SQL
+    if ! docker image inspect "$img" >/dev/null 2>&1; then
+      dim "  $svc: $img not loaded — needs network to install"
+      absent=$((absent + 1)); continue
+    fi
+    if docker exec -i -e MYSQL_PWD="$db_pw" nomad_mysql mysql -unomad_user nomad \
+        -e "UPDATE services SET container_image='${img}', updated_at=NOW() WHERE service_name='${svc}';" >/dev/null 2>&1; then
+      dim "  $svc: $img (from offline pack)"
+      applied=$((applied + 1))
+    else
+      warn "  UPDATE failed for $svc"
+    fi
+  done < "$tsv"
+  ok "offline: $applied service(s) pointed at packed images; $absent not in pack"
+}
+
 step_refresh_service_versions() {
   section "Service version refresh"
   local db_pw; db_pw="$(grep '^DB_PASSWORD=' "$ENV_FILE" | cut -d= -f2-)"
+  if _offline; then
+    _apply_offline_catalog "$db_pw"
+    return 0
+  fi
 
   # Pull the catalog of services with admin-spawned Docker images. Tab-separated
   # output. --batch suppresses the column headers and box drawing.
@@ -7099,6 +7181,7 @@ while [[ $# -gt 0 ]]; do
     --no-models)  SKIP_MODELS=1; SKIP_MODELS_EXPLICIT=1; shift ;;
     --keep-data)  KEEP_DATA=1; shift ;;
     --yes|-y)     NOMAD_YES=1; shift ;;
+    --offline)    NOMAD_OFFLINE=1; shift ;;
     --help|-h)    CMD="help"; shift ;;
     *)            EXTRA_ARGS+=("$1"); shift ;;
   esac
@@ -7110,12 +7193,20 @@ if [[ -z "$MODELS" ]]; then
 fi
 EXTRA_ARGS=("${EXTRA_ARGS[@]:-}")
 
+# Offline mode: --offline or NOMAD_OFFLINE=1 wins; otherwise inherit the value a
+# previous offline install persisted in .env.
+if [[ -z "${NOMAD_OFFLINE:-}" ]]; then
+  NOMAD_OFFLINE="$(grep '^NOMAD_OFFLINE=' "$ENV_FILE" 2>/dev/null | cut -d= -f2-)" || true
+fi
+NOMAD_OFFLINE="${NOMAD_OFFLINE:-0}"
+
 # Self-update gate — runs ONLY for install/reinstall/self-update.
 # For everything else (check, up, restart, upgrade, etc.), we skip the
 # 30s round-trip and use the local script as-is.
+# Offline mode never reaches for GitHub.
 case "$CMD" in
-  install|reinstall|self-update) self_update_nomad; self_update_compose ;;
-  refresh-compose) self_update_compose ;;
+  install|reinstall|self-update) _offline || { self_update_nomad; self_update_compose; } ;;
+  refresh-compose) _offline || self_update_compose ;;
 esac
 
 case "$CMD" in
