@@ -1,5 +1,5 @@
 {
-  "spec_version": "2026-10-13",
+  "spec_version": "2026-11-10",
   "categories": [
     {
       "name": "Medicine",
@@ -31,12 +31,12 @@
               "size_mb": 16
             },
             {
-              "id": "fas-military-medicine_en",
-              "version": "2025-06",
+              "id": "irp.fas.org_en_military-medicine",
+              "version": "2026-10",
               "title": "Military Medicine",
               "description": "Tactical and field medicine manuals",
-              "url": "https://download.kiwix.org/zim/zimit/fas-military-medicine_en_2025-06.zim",
-              "size_mb": 78
+              "url": "https://download.kiwix.org/zim/zimit/irp.fas.org_en_military-medicine_2026-10.zim",
+              "size_mb": 62
             },
             {
               "id": "wwwnc.cdc.gov_en_all",
@@ -171,19 +171,19 @@
             },
             {
               "id": "outdoors.stackexchange.com_en_all",
-              "version": "2026-02",
+              "version": "2026-10",
               "title": "The Great Outdoors Q&A",
               "description": "Answered questions on hiking, camping, navigation, and wilderness skills",
-              "url": "https://download.kiwix.org/zim/stack_exchange/outdoors.stackexchange.com_en_all_2026-02.zim",
-              "size_mb": 142
+              "url": "https://download.kiwix.org/zim/stack_exchange/outdoors.stackexchange.com_en_all_2026-10.zim",
+              "size_mb": 136
             },
             {
               "id": "ham.stackexchange.com_en_all",
-              "version": "2026-02",
+              "version": "2026-10",
               "title": "Amateur Radio Q&A",
               "description": "Answered questions on radio equipment, antennas, licensing, and emergency communications",
-              "url": "https://download.kiwix.org/zim/stack_exchange/ham.stackexchange.com_en_all_2026-02.zim",
-              "size_mb": 75
+              "url": "https://download.kiwix.org/zim/stack_exchange/ham.stackexchange.com_en_all_2026-10.zim",
+              "size_mb": 74
             },
             {
               "id": "canadian-prepper_en_bugoutconcepts",
@@ -271,11 +271,11 @@
           "resources": [
             {
               "id": "wikibooks_en_all_nopic",
-              "version": "2026-01",
+              "version": "2026-10",
               "title": "Wikibooks",
               "description": "Open-content textbooks covering math, science, computing, and more",
-              "url": "https://download.kiwix.org/zim/wikibooks/wikibooks_en_all_nopic_2026-01.zim",
-              "size_mb": 3100
+              "url": "https://download.kiwix.org/zim/wikibooks/wikibooks_en_all_nopic_2026-10.zim",
+              "size_mb": 3381
             }
           ]
         },
@@ -295,11 +295,11 @@
             },
             {
               "id": "wikiversity_en_all_maxi",
-              "version": "2026-02",
+              "version": "2026-11",
               "title": "Wikiversity",
               "description": "Tutorials, courses, and learning materials for all levels",
-              "url": "https://download.kiwix.org/zim/wikiversity/wikiversity_en_all_maxi_2026-02.zim",
-              "size_mb": 2370
+              "url": "https://download.kiwix.org/zim/wikiversity/wikiversity_en_all_maxi_2026-11.zim",
+              "size_mb": 2013
             },
             {
               "id": "libretexts.org_en_math",
@@ -343,11 +343,11 @@
           "resources": [
             {
               "id": "wikibooks_en_all_maxi",
-              "version": "2026-01",
+              "version": "2026-10",
               "title": "Wikibooks (With Images)",
               "description": "Open textbooks with full illustrations and diagrams",
-              "url": "https://download.kiwix.org/zim/wikibooks/wikibooks_en_all_maxi_2026-01.zim",
-              "size_mb": 5400
+              "url": "https://download.kiwix.org/zim/wikibooks/wikibooks_en_all_maxi_2026-10.zim",
+              "size_mb": 4521
             },
             {
               "id": "ted_mul_ted-conference",
@@ -408,19 +408,19 @@
           "resources": [
             {
               "id": "woodworking.stackexchange.com_en_all",
-              "version": "2026-02",
+              "version": "2026-10",
               "title": "Woodworking Q&A",
               "description": "Stack Exchange Q&A for carpentry, joinery, and woodcraft",
-              "url": "https://download.kiwix.org/zim/stack_exchange/woodworking.stackexchange.com_en_all_2026-02.zim",
-              "size_mb": 99
+              "url": "https://download.kiwix.org/zim/stack_exchange/woodworking.stackexchange.com_en_all_2026-10.zim",
+              "size_mb": 102
             },
             {
               "id": "mechanics.stackexchange.com_en_all",
-              "version": "2026-02",
+              "version": "2026-10",
               "title": "Motor Vehicle Maintenance Q&A",
               "description": "Stack Exchange Q&A for car and motorcycle repair",
-              "url": "https://download.kiwix.org/zim/stack_exchange/mechanics.stackexchange.com_en_all_2026-02.zim",
-              "size_mb": 321
+              "url": "https://download.kiwix.org/zim/stack_exchange/mechanics.stackexchange.com_en_all_2026-10.zim",
+              "size_mb": 326
             }
           ]
         },
@@ -432,11 +432,11 @@
           "resources": [
             {
               "id": "diy.stackexchange.com_en_all",
-              "version": "2026-02",
+              "version": "2026-10",
               "title": "DIY & Home Improvement Q&A",
               "description": "Stack Exchange Q&A for home repairs, electrical, plumbing, and construction",
-              "url": "https://download.kiwix.org/zim/stack_exchange/diy.stackexchange.com_en_all_2026-02.zim",
-              "size_mb": 1900
+              "url": "https://download.kiwix.org/zim/stack_exchange/diy.stackexchange.com_en_all_2026-10.zim",
+              "size_mb": 1990
             }
           ]
         },
@@ -473,11 +473,11 @@
           "resources": [
             {
               "id": "foss.cooking_en_all",
-              "version": "2026-02",
+              "version": "2026-11",
               "title": "FOSS Cooking",
               "description": "Quick and easy cooking guides and recipes",
-              "url": "https://download.kiwix.org/zim/zimit/foss.cooking_en_all_2026-02.zim",
-              "size_mb": 24
+              "url": "https://download.kiwix.org/zim/zimit/foss.cooking_en_all_2026-11.zim",
+              "size_mb": 30
             },
             {
               "id": "based.cooking_en_all",
@@ -497,19 +497,19 @@
           "resources": [
             {
               "id": "gardening.stackexchange.com_en_all",
-              "version": "2026-02",
+              "version": "2026-10",
               "title": "Gardening Q&A",
               "description": "Stack Exchange Q&A for growing your own food, plant care, and landscaping",
-              "url": "https://download.kiwix.org/zim/stack_exchange/gardening.stackexchange.com_en_all_2026-02.zim",
-              "size_mb": 923
+              "url": "https://download.kiwix.org/zim/stack_exchange/gardening.stackexchange.com_en_all_2026-10.zim",
+              "size_mb": 890
             },
             {
               "id": "cooking.stackexchange.com_en_all",
-              "version": "2026-02",
+              "version": "2026-10",
               "title": "Cooking Q&A",
               "description": "Stack Exchange Q&A for cooking techniques, food safety, and recipes",
-              "url": "https://download.kiwix.org/zim/stack_exchange/cooking.stackexchange.com_en_all_2026-02.zim",
-              "size_mb": 236
+              "url": "https://download.kiwix.org/zim/stack_exchange/cooking.stackexchange.com_en_all_2026-10.zim",
+              "size_mb": 228
             },
             {
               "id": "zimgit-food-preparation_en",
@@ -611,18 +611,18 @@
           "resources": [
             {
               "id": "arduino.stackexchange.com_en_all",
-              "version": "2026-02",
+              "version": "2026-10",
               "title": "Arduino Q&A",
               "description": "Stack Exchange Q&A for Arduino microcontroller projects",
-              "url": "https://download.kiwix.org/zim/stack_exchange/arduino.stackexchange.com_en_all_2026-02.zim",
-              "size_mb": 247
+              "url": "https://download.kiwix.org/zim/stack_exchange/arduino.stackexchange.com_en_all_2026-10.zim",
+              "size_mb": 248
             },
             {
               "id": "raspberrypi.stackexchange.com_en_all",
-              "version": "2026-02",
+              "version": "2026-10",
               "title": "Raspberry Pi Q&A",
               "description": "Stack Exchange Q&A for Raspberry Pi projects and troubleshooting",
-              "url": "https://download.kiwix.org/zim/stack_exchange/raspberrypi.stackexchange.com_en_all_2026-02.zim",
+              "url": "https://download.kiwix.org/zim/stack_exchange/raspberrypi.stackexchange.com_en_all_2026-10.zim",
               "size_mb": 285
             },
             {
@@ -659,18 +659,18 @@
           "resources": [
             {
               "id": "electronics.stackexchange.com_en_all",
-              "version": "2026-02",
+              "version": "2026-10",
               "title": "Electronics Q&A",
               "description": "Stack Exchange Q&A for circuit design, components, and electrical engineering",
-              "url": "https://download.kiwix.org/zim/stack_exchange/electronics.stackexchange.com_en_all_2026-02.zim",
-              "size_mb": 3800
+              "url": "https://download.kiwix.org/zim/stack_exchange/electronics.stackexchange.com_en_all_2026-10.zim",
+              "size_mb": 4064
             },
             {
               "id": "robotics.stackexchange.com_en_all",
-              "version": "2026-02",
+              "version": "2026-10",
               "title": "Robotics Q&A",
               "description": "Stack Exchange Q&A for robotics projects and automation",
-              "url": "https://download.kiwix.org/zim/stack_exchange/robotics.stackexchange.com_en_all_2026-02.zim",
+              "url": "https://download.kiwix.org/zim/stack_exchange/robotics.stackexchange.com_en_all_2026-10.zim",
               "size_mb": 233
             },
             {
