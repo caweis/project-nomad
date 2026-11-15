@@ -31,15 +31,10 @@ export default class SettingsController {
         });
     }
 
-    // Shared prop assembly for the two Supply Depot surfaces — the canonical
-    // table page (settings/apps) and the additive card page (settings/supply-depot).
-    // Both render the SAME service catalog with the SAME per-app actions, so they
-    // MUST be fed identical props; factoring this here means a change to the
-    // service list, the native-Ollama gate, or the backend-aware AI-version probe
-    // reaches both pages and they can't drift. The comments below document why
-    // each prop exists (the frontend depends on all three).
+  // Supply Depot props are assembled here so the service catalog, native
+  // Ollama state, and home pin overrides come from their canonical sources.
     private async buildSupplyDepotProps() {
-        // Link tiles are left out of both pages. They are home-screen shortcuts with no
+    // Link tiles are left out of Supply Depot. They are home-screen shortcuts with no
         // container, so every per-app action here (Start, Stop, Update, Uninstall, auto-update)
         // would act on something that does not exist; they are edited and removed on the home
         // screen instead. (Upstream's Supply Depot does not filter them out.)
@@ -88,15 +83,7 @@ export default class SettingsController {
         };
     }
 
-    async apps({ inertia }: HttpContext) {
-        return inertia.render('settings/apps', await this.buildSupplyDepotProps());
-    }
-
-    // Additive card view of the same Supply Depot catalog. Registered at the
-    // TOP-LEVEL /supply-depot route (see start/routes.ts), not under /settings —
-    // the canonical table page (settings/apps) stays the source of truth until a
-    // human verifies this card view renders on the host. Identical props to the
-    // table page via the shared helper above, so the two can't drift.
+  // Top-level card catalog. The old /settings/apps URL redirects here.
     async supplyDepot({ inertia }: HttpContext) {
         return inertia.render('settings/supply-depot', await this.buildSupplyDepotProps());
     }
@@ -112,9 +99,11 @@ export default class SettingsController {
     async maps({ inertia }: HttpContext) {
         const baseAssetsCheck = await this.mapService.ensureBaseAssets();
         const regionFiles = await this.mapService.listRegions();
+    const worldBasemapExists = await this.mapService.checkWorldBasemapExists()
         return inertia.render('settings/maps', {
             maps: {
                 baseAssetsExist: baseAssetsCheck,
+        worldBasemapExists,
                 regionFiles: regionFiles.files
             }
         });
@@ -126,7 +115,10 @@ export default class SettingsController {
         const chatSuggestionsEnabled = await KVStore.getValue('chat.suggestionsEnabled')
         const aiAssistantCustomName = await KVStore.getValue('ai.assistantCustomName')
         const autoThinking = await KVStore.getValue('ai.autoThinking')
+    const responseStyle = await KVStore.getValue('ai.responseStyle')
         const ragEnabled = await KVStore.getValue('rag.enabled')
+    const minRelevance = await KVStore.getValue('rag.minRelevance')
+    const relevanceCheck = await KVStore.getValue('rag.relevanceCheck')
         const tasksModel = await KVStore.getValue('ai.tasksModel')
         const contextWindow = await KVStore.getValue('ai.contextWindow')
         return inertia.render('settings/models', {
@@ -138,10 +130,13 @@ export default class SettingsController {
                     aiAssistantCustomName: aiAssistantCustomName ?? '',
                     // Global default for model thinking/reasoning (off by default). #1079
                     autoThinking: autoThinking ?? false,
+          responseStyle: responseStyle ?? 'auto',
                     // Knowledge base retrieval master switch (#1247). Unset
                     // means ON, so installs predating the toggle keep
                     // retrieving — same default as the server-side read.
                     ragEnabled: ragEnabled ?? true,
+          minRelevance: minRelevance ?? 'auto',
+          relevanceCheck: relevanceCheck ?? false,
                     // Model for short ancillary work — chat titles, suggestion
                     // chips, RAG query rewriting (#1244). '' means "use the chat
                     // model", the behaviour from before the setting existed. The

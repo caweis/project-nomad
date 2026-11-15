@@ -99,6 +99,7 @@ test.group('structured ancillary calls', () => {
       } as any,
       { hasDocuments: async () => true } as any,
       null as any,
+      null as any,
       null as any
     )
     const messages = [

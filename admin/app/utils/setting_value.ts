@@ -93,6 +93,21 @@ export function validateSettingValue(key: KVStoreKey, value: unknown): string | 
       }
       return null
     }
+    case 'rag.minRelevance': {
+      if (value === undefined || value === null || value === '' || value === 'auto') return null
+      const floor = Number(value)
+      if (typeof value !== 'string' || !Number.isFinite(floor) || floor < 0 || floor > 1) {
+        return 'Retrieval relevance must be a number from 0 to 1.'
+      }
+      return null
+    }
+    case 'ai.responseStyle': {
+      if (value === undefined || value === null || value === '') return null
+      if (value !== 'auto' && value !== 'focused' && value !== 'creative' && value !== 'off') {
+        return 'Response style must be auto, focused, creative, or off.'
+      }
+      return null
+    }
     default:
       return null
   }

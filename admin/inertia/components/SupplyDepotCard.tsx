@@ -7,14 +7,12 @@ import { ServiceSlim } from '../../types/services'
 import { getServiceLink } from '~/lib/navigation'
 import { extractTag } from '~/lib/imageTag'
 import { SERVICE_NAMES } from '../../constants/service_names'
+import { SERVICE_CREDENTIAL_NOTES } from '../../constants/service_credential_notes'
+import { isPinned } from '~/util/home_decks'
 import { getSupplyDepotDocLink } from '../../constants/supply_depot_docs'
 
 
-// The handler surface the card needs from its parent page. These are the SAME
-// handlers settings/apps.tsx wires to its table-row buttons; the card page
-// (settings/supply-depot.tsx) owns one copy of them and passes them down, so
-// the action behaviour is identical on both surfaces without duplicating the
-// handler bodies in two places.
+// The card receives app actions from its parent page, which owns the API calls.
 export interface SupplyDepotCardHandlers {
   onInstall: (record: ServiceSlim) => void
   onForceReinstall: (record: ServiceSlim) => void
@@ -25,31 +23,30 @@ export interface SupplyDepotCardHandlers {
   onViewLogs: (record: ServiceSlim) => void
   onDeleteCustom: (record: ServiceSlim) => void
   onToggleAutoUpdate: (record: ServiceSlim, enabled: boolean) => void
+  onTogglePin: (record: ServiceSlim, pinned: boolean) => void
 }
 
 export interface SupplyDepotCardProps {
   record: ServiceSlim
-  // Mirrors the props.* the apps.tsx AppActions / Version cell read.
+  // Service and backend state from the Supply Depot controller.
   isNativeOllama: boolean
   aiBackend?: string
   aiAssistantVersion?: string
+  pins: Record<string, boolean>
   isOnline: boolean
   isInstalling: boolean
   loading: boolean
   handlers: SupplyDepotCardHandlers
 }
 
-// One Supply Depot app rendered as a card. The action footer is a faithful port
-// of apps.tsx's AppActions component — same oMLX special-case (Native (Metal) /
-// Apple MLX pill + host-command Update/Reset, isMlx Update omission), same
-// custom-app surface (#32: Edit / Pull latest / Logs / Delete / auto-update
-// toggle), same install / start / stop / restart / force-reinstall. The Version
-// line is the same backend-aware logic as the table's Version cell.
+// One app card. The menu keeps the existing home pin, auto-update, custom-app,
+// and lifecycle actions alongside the Mac backend controls.
 export default function SupplyDepotCard({
   record,
   isNativeOllama,
   aiBackend,
   aiAssistantVersion,
+  pins,
   isOnline,
   isInstalling,
   loading,
@@ -59,7 +56,7 @@ export default function SupplyDepotCard({
 
   const docLink = getSupplyDepotDocLink(record.service_name)
 
-  // ── backend-aware version line (mirrors apps.tsx Version cell) ──────────────
+  // ── backend-aware version line ─────────────────────────────────────────────
   function renderVersion() {
     if (!record.installed) return null
     if (isNativeOllama && record.service_name === SERVICE_NAMES.OLLAMA) {
@@ -81,17 +78,26 @@ export default function SupplyDepotCard({
     return <span className="text-text-secondary">{currentTag}</span>
   }
 
-  // ── action footer (faithful port of apps.tsx AppActions) ────────────────────
+  // ── action footer ──────────────────────────────────────────────────────────
   function renderActions() {
     // Everything past Open (and a conditional Update) collapses into one "⋯"
     // overflow menu so the card's action row stays compact: lifecycle (Stop/Start,
     // Restart), Edit (every app), then the custom-app cluster (Pull latest / Logs /
     // Auto-update), then a divider and the destructive zone (Delete for custom
-    // apps, then Wipe & reinstall). Mirrors apps.tsx; the only difference is each
-    // item calls a handlers.* prop instead of opening an inline modal.
+    // apps, then Wipe & reinstall). Each item calls a handler from the page.
     const buildInstalledMenu = (): AppMenuItem[] => {
       const items: AppMenuItem[] = []
       const statusKnown = !!record.status && record.status !== 'unknown'
+      const pinned = isPinned(
+        { deckKey: record.service_name, displayOrder: record.display_order ?? 100 },
+        pins
+      )
+      items.push({
+        kind: 'action',
+        icon: 'IconPin',
+        label: pinned ? 'Unpin from home' : 'Pin to home',
+        onClick: () => handlers.onTogglePin(record, !pinned),
+      })
 
       if (statusKnown) {
         items.push({
@@ -139,14 +145,15 @@ export default function SupplyDepotCard({
             onClick: () => handlers.onViewLogs(record),
             disabled: loading,
           },
-          {
-            kind: 'toggle',
-            label: 'Auto-update',
-            checked: !!record.auto_update_enabled,
-            onChange: (enabled) => handlers.onToggleAutoUpdate(record, enabled),
-          }
         )
       }
+
+      items.push({
+        kind: 'toggle',
+        label: 'Auto-update',
+        checked: !!record.auto_update_enabled,
+        onChange: (enabled) => handlers.onToggleAutoUpdate(record, enabled),
+      })
 
       const destructive: AppMenuItem[] = []
       if (record.is_custom) {
@@ -176,6 +183,21 @@ export default function SupplyDepotCard({
       return items
     }
 
+    const openButton = (
+      <StyledButton
+        icon="IconExternalLink"
+        onClick={() => {
+          // custom_url (a reverse-proxy / local-DNS override) wins over the default port link.
+          window.open(
+            getServiceLink(record.custom_url || record.ui_location || 'unknown'),
+            '_blank'
+          )
+        }}
+      >
+        Open
+      </StyledButton>
+    )
+
     // Native Ollama: every Docker-side action routes through DockerService which
     // refuses with a "manage via CLI" error. Replace with the Native (Metal)
     // pill plus host-command Update/Reset. On 'omlx' chat runs on Apple MLX and
@@ -187,6 +209,7 @@ export default function SupplyDepotCard({
       const isMlx = aiBackend === 'omlx'
       return (
         <div className="flex flex-wrap items-center gap-2">
+          {openButton}
           <span
             className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800"
             title={
@@ -241,18 +264,7 @@ export default function SupplyDepotCard({
     const menuItems = buildInstalledMenu()
     return (
       <div className="flex flex-wrap items-center gap-2">
-        <StyledButton
-          icon="IconExternalLink"
-          onClick={() => {
-            // custom_url (a reverse-proxy / local-DNS override) wins over the default port link.
-            window.open(
-              getServiceLink(record.custom_url || record.ui_location || 'unknown'),
-              '_blank'
-            )
-          }}
-        >
-          Open
-        </StyledButton>
+        {openButton}
         {/* Curated-app version updates stay inline while an update is waiting; custom
             apps update via "Pull latest" in the menu. `!!` guard: available_update_version
             arrives as the number 0 when up to date, and a bare `&& 0` would render a
@@ -296,6 +308,11 @@ export default function SupplyDepotCard({
       </div>
 
       <p className="mt-2 flex-1 text-sm text-text-secondary">{record.description}</p>
+      {record.installed && SERVICE_CREDENTIAL_NOTES[record.service_name] && (
+        <p className="mt-1 text-xs font-medium text-desert-green-dark">
+          {SERVICE_CREDENTIAL_NOTES[record.service_name]}
+        </p>
+      )}
 
       <div className="mt-3 flex items-center justify-between gap-2 text-sm">
         {/* The tag sits with the version rather than in the title row, which a long

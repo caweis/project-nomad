@@ -8,9 +8,12 @@ export const SETTINGS_KEYS: KVStoreKey[] = [
   'ui.homeLayout',
   'rag.defaultIngestPolicy',
   'rag.enabled',
+  'rag.minRelevance',
+  'rag.relevanceCheck',
   'system.earlyAccess',
   'ai.assistantCustomName',
   'ai.autoThinking',
+  'ai.responseStyle',
   'ai.tasksModel',
   'ai.contextWindow',
   'inventory.measurementSystem',
@@ -40,4 +43,4 @@ export const SETTINGS_KEYS: KVStoreKey[] = [
   'contentAutoUpdate.windowEnd',
   'contentAutoUpdate.cooloffHours',
   'contentAutoUpdate.maxBytesPerWindow',
-];
+]

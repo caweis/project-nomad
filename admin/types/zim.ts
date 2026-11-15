@@ -12,6 +12,18 @@ export type ListZimFilesResponse = {
   next?: string
 }
 
+export type CustomLibrarySource = {
+  id: number
+  name: string
+  base_url: string
+  is_default: boolean
+}
+
+export type CustomLibraryListing = {
+  directories: { name: string; path: string }[]
+  files: { name: string; url: string; size_bytes: number | null }[]
+}
+
 export type ListRemoteZimFilesResponse = {
   items: RemoteZimFileEntry[]
   has_more: boolean
@@ -83,6 +95,13 @@ export type RemoteZimFileEntry = {
   download_url: string
   author: string
   file_name: string
+  language?: string
+  category?: string
+  tags?: string
+  article_count?: number
+  media_count?: number
+  publisher?: string
+  issued?: string
 }
 
 export type ExtractZIMContentOptions = {

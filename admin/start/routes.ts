@@ -178,7 +178,6 @@ router
 router
   .group(() => {
     router.get('/system', [SettingsController, 'system'])
-    router.get('/apps', [SettingsController, 'apps'])
     router.get('/legal', [SettingsController, 'legal'])
     router.get('/maps', [SettingsController, 'maps'])
     router.get('/models', [SettingsController, 'models'])
@@ -191,10 +190,8 @@ router
   })
   .prefix('/settings')
 
-// Supply Depot — additive card view of the app catalog (issue #31). Top-level
-// route, NOT under /settings: the canonical table page stays at /settings/apps
-// until a human verifies this card view renders on the host. Same controller,
-// same props as settings/apps (SettingsController.buildSupplyDepotProps).
+// The card page is the app catalog. Keep old bookmarks working.
+router.on('/settings/apps').redirectToPath('/supply-depot')
 router.get('/supply-depot', [SettingsController, 'supplyDepot'])
 
 router.post('/api/grocy/test-connection', [GrocyController, 'testConnection'])
@@ -217,6 +214,7 @@ router
     router.get('/curated-collections', [MapsController, 'listCuratedCollections'])
     router.post('/fetch-latest-collections', [MapsController, 'fetchLatestCollections'])
     router.post('/download-base-assets', [MapsController, 'downloadBaseAssets'])
+    router.post('/setup-world-basemap', [MapsController, 'setupWorldBasemap'])
     router.post('/download-remote', [MapsController, 'downloadRemote'])
     router.post('/download-remote-preflight', [MapsController, 'downloadRemotePreflight'])
     router.post('/download-collection', [MapsController, 'downloadCollection'])
@@ -239,6 +237,12 @@ router
   .group(() => {
     router.get('/jobs', [DownloadsController, 'index'])
     router.post('/jobs/:jobId/retry', [DownloadsController, 'retryJob'])
+    router
+      .post('/jobs/:jobId/cancel', [DownloadsController, 'cancelJob'])
+      .use(middleware.localNetworkOnly())
+    router
+      .delete('/jobs/:jobId', [DownloadsController, 'removeJob'])
+      .use(middleware.localNetworkOnly())
     router.get('/jobs/:filetype', [DownloadsController, 'filetype'])
   })
   .prefix('/api/downloads')
@@ -417,6 +421,10 @@ router
 
     router.get('/wikipedia', [ZimController, 'getWikipediaState'])
     router.post('/wikipedia/select', [ZimController, 'selectWikipedia'])
+    router.get('/custom-libraries', [ZimController, 'listCustomLibraries'])
+    router.post('/custom-libraries', [ZimController, 'addCustomLibrary'])
+    router.delete('/custom-libraries/:id', [ZimController, 'removeCustomLibrary'])
+    router.get('/custom-libraries/:id/browse', [ZimController, 'browseCustomLibrary'])
     router.delete('/:filename', [ZimController, 'delete'])
   })
   .prefix('/api/zim')

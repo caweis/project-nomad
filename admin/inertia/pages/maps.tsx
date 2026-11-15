@@ -10,7 +10,7 @@ import Alert from '~/components/Alert'
 import { parseCoordinateSearch } from '~/util/map_markers'
 
 export default function Maps(props: {
-  maps: { baseAssetsExist: boolean; regionFiles: FileEntry[] }
+  maps: { baseAssetsExist: boolean; worldBasemapExists: boolean; regionFiles: FileEntry[] }
 }) {
   // Suppress the live coordinate overlay while the cursor is over a UI overlay.
   const [isHoveringUI, setIsHoveringUI] = useState(false)
@@ -36,8 +36,8 @@ export default function Maps(props: {
 
   const alertMessage = !props.maps.baseAssetsExist
     ? 'The base map assets have not been installed. Please download them first to enable map functionality.'
-    : props.maps.regionFiles.length === 0
-      ? 'No map regions have been downloaded yet. Please download some regions to enable map functionality.'
+    : !props.maps.worldBasemapExists
+      ? 'The world base map is missing. The map may look blank outside downloaded regions. Connect to the internet and download it from Map Settings.'
       : null
 
   return (

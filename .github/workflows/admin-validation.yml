@@ -19,6 +19,11 @@ on:
 jobs:
   admin-validation:
     runs-on: ubuntu-latest
+    services:
+      redis-test:
+        image: redis:7.4-alpine
+        ports: ['16379:6379']
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
     defaults:
       run:
         working-directory: admin
@@ -28,7 +33,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version-file: 'admin/.node-version'
           cache: npm
           cache-dependency-path: admin/package-lock.json
       - run: npm ci
@@ -48,7 +53,23 @@ jobs:
           DB_USER: nomad
           DB_DATABASE: nomad
           REDIS_HOST: 127.0.0.1
-          REDIS_PORT: '6379'
+          REDIS_PORT: '16379'
+      - name: Real queue worker smoke test
+        run: node tests/integration/worker_smoke.mjs
+        env:
+          NOMAD_DISPOSABLE_REDIS: '1'
+          NODE_ENV: production
+          PORT: '3333'
+          HOST: 127.0.0.1
+          URL: http://127.0.0.1:3333
+          LOG_LEVEL: info
+          APP_KEY: 12345678901234567890123456789012
+          DB_HOST: 127.0.0.1
+          DB_PORT: '3306'
+          DB_USER: nomad
+          DB_DATABASE: nomad
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: '16379'
       - uses: actions/upload-artifact@v4
         with:
           name: admin-coverage

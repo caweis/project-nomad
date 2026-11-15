@@ -1,7 +1,9 @@
+import { compareModelsByPopularity, parseModelPulls } from '../utils/model_popularity.js'
 import { inject } from '@adonisjs/core'
 import { ChatRequest, ChatResponse, Ollama } from 'ollama'
 import { ModelVisionCapability, NomadModelInfo, NomadOllamaModel } from '../../types/ollama.js'
 import { readContextLength, readModelfileNumCtx } from '../utils/context_window.js'
+import { readModelfileSamplers } from '../utils/sampler.js'
 import { FALLBACK_RECOMMENDED_OLLAMA_MODELS, MLX_HIGHLIGHT_MODELS, MODEL_DESCRIPTION_OVERRIDES } from '../../constants/ollama.js'
 import { withMlxPullNames } from '../../util/mlx.js'
 import { normalizeNonStreamed, ThinkTagSplitter } from '../utils/think_stream.js'
@@ -286,6 +288,7 @@ export class OllamaService {
         vision: visionFromShow(info.capabilities, env.get('NOMAD_AI_BACKEND')),
         contextLength: readContextLength(info.model_info),
         modelfileNumCtx: readModelfileNumCtx(info.parameters),
+        modelfileSamplers: readModelfileSamplers(info.parameters),
         parameterSize: info.details?.parameter_size,
         quantizationLevel: info.details?.quantization_level,
         rawModelInfo: info.model_info,
@@ -481,6 +484,10 @@ export class OllamaService {
         return { models: withMlxPullNames(withHighlights, pullableKeys), hasMore: false }
       }
 
+      const hasCatalogPopularity = models.some(
+        (model) => parseModelPulls(model.estimated_pulls) !== null
+      )
+
       // oMLX mode: prepend the curated MLX-only highlight cards (the MoE et al.)
       // before annotating, so they flow through the same withMlxPullNames /
       // sort / filter / recommendedOnly pipeline as the remote catalog. Only
@@ -508,7 +515,18 @@ export class OllamaService {
       }
 
       // If recommendedOnly is true, only return the first three models (if sorted by pulls, these will be the top 3)
-      const sortedByPulls = sort === 'pulls' ? models : this.sortModels(models, 'pulls')
+      // Keep the full catalog for browsing; absent popularity is not a recommendation.
+      let candidates = models
+      if (!hasCatalogPopularity) {
+        candidates = [...FALLBACK_RECOMMENDED_OLLAMA_MODELS]
+        if (pullableKeys) {
+          candidates = withMlxPullNames(
+            this.prependMlxHighlights(candidates, pullableKeys),
+            pullableKeys
+          )
+        }
+      }
+      const sortedByPulls = this.sortModels(candidates, 'pulls')
       const firstThree = sortedByPulls.slice(0, 3)
 
       // Only return the first tag of each of these models (should be the most lightweight variant)
@@ -656,19 +674,7 @@ export class OllamaService {
   private sortModels(models: NomadOllamaModel[], sort?: 'pulls' | 'name'): NomadOllamaModel[] {
     if (sort === 'pulls') {
       // Sort by estimated pulls (it should be a string like "1.2K", "500", "4M" etc.)
-      models.sort((a, b) => {
-        const parsePulls = (pulls: string) => {
-          const multiplier = pulls.endsWith('K')
-            ? 1_000
-            : pulls.endsWith('M')
-              ? 1_000_000
-              : pulls.endsWith('B')
-                ? 1_000_000_000
-                : 1
-          return parseFloat(pulls) * multiplier
-        }
-        return parsePulls(b.estimated_pulls) - parsePulls(a.estimated_pulls)
-      })
+      models.sort(compareModelsByPopularity)
     } else if (sort === 'name') {
       models.sort((a, b) => a.name.localeCompare(b.name))
     }

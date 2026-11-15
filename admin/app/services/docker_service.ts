@@ -1,3 +1,4 @@
+import { withLogRotation } from '../utils/log_rotation.js'
 import Service from '#models/service'
 import Docker from 'dockerode'
 import logger from '@adonisjs/core/services/logger'
@@ -895,7 +896,7 @@ export class DockerService {
         name: service.service_name,
         ...(platform && { platform }),
         ...(containerConfig?.User && { User: containerConfig.User }),
-        HostConfig: gpuHostConfig,
+        HostConfig: await this._withLogRotation(gpuHostConfig),
         ...(containerConfig?.WorkingDir && { WorkingDir: containerConfig.WorkingDir }),
         ...(containerConfig?.ExposedPorts && { ExposedPorts: containerConfig.ExposedPorts }),
         ...(containerConfig?.Env && { Env: containerConfig.Env }),
@@ -1621,6 +1622,7 @@ export class DockerService {
           RestartPolicy: hostConfig.RestartPolicy || undefined,
           DeviceRequests: hostConfig.DeviceRequests || undefined,
           Devices: hostConfig.Devices || undefined,
+          LogConfig: hostConfig.LogConfig || undefined,
         },
         NetworkingConfig: inspectData.NetworkSettings?.Networks
           ? {
@@ -1640,6 +1642,7 @@ export class DockerService {
 
       let newContainer: any
       try {
+        newContainerConfig.HostConfig = await this._withLogRotation(newContainerConfig.HostConfig)
         newContainer = await this.docker.createContainer(newContainerConfig)
       } catch (createError) {
         // Rollback: rename old container back
@@ -1746,6 +1749,22 @@ export class DockerService {
       message,
     })
     logger.info(`[DockerService] [${service}] ${status}: ${message}`)
+  }
+
+  private _daemonLogDriver: Promise<string | undefined> | null = null
+
+  private async _withLogRotation<T extends Record<string, any>>(hostConfig: T): Promise<T> {
+    if (!this._daemonLogDriver) {
+      this._daemonLogDriver = this.docker
+        .info()
+        .then((info) => info.LoggingDriver)
+        .catch(() => {
+          this._daemonLogDriver = null
+          return undefined
+        })
+    }
+    const logConfig = withLogRotation(hostConfig.LogConfig, await this._daemonLogDriver)
+    return logConfig ? { ...hostConfig, LogConfig: logConfig } : hostConfig
   }
 
   private _parseContainerConfig(containerConfig: any): any {
@@ -2053,7 +2072,7 @@ export class DockerService {
           'io.project-nomad.managed': 'true',
         },
         ...(containerConfig?.User && { User: containerConfig.User }),
-        HostConfig: containerConfig?.HostConfig ?? {},
+        HostConfig: await this._withLogRotation(containerConfig?.HostConfig ?? {}),
         ...(containerConfig?.ExposedPorts && { ExposedPorts: containerConfig.ExposedPorts }),
         ...(containerConfig?.Env && { Env: containerConfig.Env }),
         ...(service.container_command ? { Cmd: service.container_command.split(' ') } : {}),
@@ -2189,7 +2208,7 @@ export class DockerService {
       const newContainer = await this.docker.createContainer({
         Image: service.container_image,
         name: service.service_name,
-        HostConfig: containerConfig?.HostConfig ?? {},
+        HostConfig: await this._withLogRotation(containerConfig?.HostConfig ?? {}),
         ...(containerConfig?.ExposedPorts && { ExposedPorts: containerConfig.ExposedPorts }),
         Cmd: KIWIX_LIBRARY_CMD.split(' '),
         ...(process.env.NODE_ENV === 'production' && {

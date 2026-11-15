@@ -1,4 +1,28 @@
 import type { EmbedJobWithProgress } from '../types/rag.js'
+import { createHash } from 'node:crypto'
+
+export const STABLE_VECTOR_ID_SCHEME = 'stable-v1'
+
+function stableUuid(parts: string[]): string {
+  const hex = createHash('sha256').update(parts.join('\0')).digest('hex')
+  // UUIDv8 marks this SHA-256-based layout as application-defined.
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-8${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`
+}
+
+/** A retry of the same chunk overwrites its Qdrant point instead of adding one. */
+export function stableVectorPointId(source: string, scope: string, chunkIndex: number): string {
+  return stableUuid(['point', source, scope, String(chunkIndex)])
+}
+
+/** Keep every section of one ZIM article grouped even when a batch is retried. */
+export function stableZimDocumentId(source: string, articlePath: string): string {
+  return stableUuid(['document', source, articlePath])
+}
+
+/** Each run and offset has one continuation job, even if a stalled parent resumes twice. */
+export function continuationJobId(runId: string, batchOffset: number): string {
+  return `embed-${createHash('sha256').update(runId).update('\0').update(String(batchOffset)).digest('hex')}`
+}
 
 const GENERIC_EMBED_FAILURE = 'Embedding failed. Check service availability and file integrity.'
 const SAFE_EMBED_FAILURES = new Set([
@@ -52,7 +76,7 @@ export interface EmbedJobLike {
 export function mapEmbedJob(job: EmbedJobLike): EmbedJobWithProgress {
   const failed = Boolean(job.failedReason)
   const dto: EmbedJobWithProgress = {
-    jobId: job.id != null ? String(job.id) : '',
+    jobId: job.id !== null && job.id !== undefined ? String(job.id) : '',
     fileName: job.data?.fileName ?? '',
     filePath: job.data?.filePath ?? '',
     progress: typeof job.progress === 'number' ? job.progress : 0,
@@ -75,9 +99,9 @@ export function mapEmbedJob(job: EmbedJobLike): EmbedJobWithProgress {
  *      (removeOnComplete keeps 50) and keeps tripping jobId dedupe.
  * Either way the ZIM stopped embedding after its first batch — every multi-batch
  * ZIM (Wikipedia, etc.) silently indexed only ~50 articles. Initial dispatches
- * (batchOffset 0 or undefined) keep the deterministic jobId so a re-run (UI
- * re-click, sync rescan) stays idempotent; continuation batches let BullMQ
- * auto-generate a unique id so each stacks as an independent queue entry.
+ * (batchOffset 0 or undefined) keep the deterministic per-file jobId. A
+ * continuation uses a distinct ID derived from its run and offset, so a
+ * stalled parent cannot fork two chains at the same offset.
  */
 export function isContinuationBatch(batchOffset?: number): boolean {
   return !!(batchOffset && batchOffset > 0)

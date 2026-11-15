@@ -4,7 +4,7 @@ export type DoResumableDownloadParams = {
   timeout: number
   allowedMimeTypes: string[]
   signal?: AbortSignal
-  onProgress?: (progress: DoResumableDownloadProgress) => void
+  onProgress?: (progress: DoResumableDownloadProgress) => void | Promise<void>
   onComplete?: (url: string, path: string) => void | Promise<void>
   forceNew?: boolean
   /** Re-run post-download work for a verified final file after a failed job. */
@@ -18,6 +18,11 @@ export type DoResumableDownloadParams = {
    * feature this fork does not ship.)
    */
   requestHeaders?: Record<string, string>
+  /** Trusted Git LFS pointer metadata; validated before publishing the file. */
+  expectedSize?: number
+  expectedSha256?: string
+  /** Signed LFS URLs must not redirect. */
+  maxRedirects?: 0
 }
 
 export type DoResumableDownloadWithRetryParams = DoResumableDownloadParams & {

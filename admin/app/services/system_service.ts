@@ -14,6 +14,8 @@ import axios from 'axios'
 import env from '#start/env'
 import KVStore from '#models/kv_store'
 import { KV_STORE_SCHEMA, KVStoreKey } from '../../types/kv_store.js'
+import { invalidateMinRelevanceCache } from '../utils/rag_relevance_setting.js'
+import { invalidateResponseStyleCache } from '../utils/response_style.js'
 import { isNewerVersion } from '../utils/version.js'
 import { CUSTOM_PORT_START, nextFreeCustomPort } from '#services/custom_app_ports'
 import { KiwixLibraryService } from '#services/kiwix_library_service'
@@ -716,6 +718,8 @@ export class SystemService {
     } else {
       await KVStore.setValue(key, value)
     }
+    if (key === 'rag.minRelevance') invalidateMinRelevanceCache()
+    if (key === 'ai.responseStyle') invalidateResponseStyleCache()
   }
 
   /**
