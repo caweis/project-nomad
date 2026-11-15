@@ -53,7 +53,7 @@ jobs:
           DB_USER: nomad
           DB_DATABASE: nomad
           REDIS_HOST: 127.0.0.1
-          REDIS_PORT: '6379'
+          REDIS_PORT: '16379'
       - name: Real queue worker smoke test
         run: node tests/integration/worker_smoke.mjs
         env:
