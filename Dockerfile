@@ -1,10 +1,10 @@
-FROM node:22-slim AS base
+FROM node:24.22.3-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54 AS base
 
 # Install bash & curl for entrypoint script compatibility, graphicsmagick for pdf2pic, and vips-dev & build-base for sharp.
 # python3-ezdxf + python3-matplotlib: DXF thumbnail renderer (dxf_thumb.py, headless via Agg).
 # openscad + xvfb: SCAD thumbnail renderer (xvfb-run provides virtual framebuffer for OpenSCAD's GLX requirement).
 # openssl: generates the self-signed TLS cert for HTTPS-only Supply Depot apps (MeshCore Web) — the
-# node:22-slim base ships libssl but not the openssl CLI the cert helper execs.
+# Node base ships libssl but not the openssl CLI the cert helper execs.
 # Base-layer change: triggers a full multi-arch rebuild (~25 min for arm64 + amd64) — same class as adding ghostscript in #6.
 RUN apt-get update && apt-get install -y \
     bash curl openssl graphicsmagick ghostscript libvips-dev build-essential \
