@@ -225,7 +225,7 @@ export class BenchmarkService {
 
     // Score v2 uses a different server contract. Sending its 8B AI metric in
     // the legacy v1 payload would mislabel the run on the public leaderboard.
-    if (result.nomad_score_v2 != null) {
+    if (result.nomad_score_v2 !== null && result.nomad_score_v2 !== undefined) {
       throw new Error(
         'Score v2 leaderboard sharing is not available yet; this result remains saved locally.'
       )
@@ -393,9 +393,7 @@ export class BenchmarkService {
               '[BenchmarkService] NVIDIA container runtime detected, querying GPU model via nvidia-smi'
             )
 
-            const systemService = new (await import('./system_service.js')).SystemService(
-              this.dockerService
-            )
+            const systemService = new SystemService(this.dockerService)
             const nvidiaInfo = await systemService.getNvidiaSmiInfo()
             if (Array.isArray(nvidiaInfo) && nvidiaInfo.length > 0) {
               gpuModel = nvidiaInfo[0].model
@@ -1022,7 +1020,8 @@ export class BenchmarkService {
       }
 
       // Check if the benchmark model is available, pull if not
-      const ollamaService = new (await import('./ollama_service.js')).OllamaService()
+      const { OllamaService } = await import('./ollama_service.js')
+      const ollamaService = new OllamaService()
       const modelResponse = await ollamaService.downloadModel(AI_BENCHMARK_MODEL)
       if (!modelResponse.success) {
         throw new Error(`Model does not exist and failed to download: ${modelResponse.message}`)
@@ -1154,9 +1153,7 @@ export class BenchmarkService {
 
     let freeBytes: number | null
     try {
-      const systemService = new (await import('./system_service.js')).SystemService(
-        this.dockerService
-      )
+      const systemService = new SystemService(this.dockerService)
       freeBytes = await getFreeBytes(systemService)
     } catch {
       return // An uncertain measurement must not block the benchmark.

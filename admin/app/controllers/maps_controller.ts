@@ -45,7 +45,9 @@ export default class MapsController {
       const message = error instanceof Error ? error.message : String(error)
       logger.warn(`[MapService] Could not set up world basemap: ${message}`)
     }
-    return response.status(500).send({ message: 'Could not download the base map. Check the internet connection and try again.' })
+    return response.status(500).send({
+      message: 'Could not download the base map. Check the internet connection and try again.',
+    })
   }
 
   async downloadRemote({ request }: HttpContext) {

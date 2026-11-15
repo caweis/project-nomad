@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { createServer } from 'node:http'
 import { mkdtemp, readFile, writeFile, rm, stat } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { networkInterfaces, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Queue, QueueEvents } from 'bullmq'
@@ -17,6 +17,12 @@ assert.equal(
 assert.ok(process.env.REDIS_PORT, 'Explicit test Redis port required')
 const adminRoot = fileURLToPath(new URL('../../', import.meta.url))
 const runId = Date.now().toString(36)
+// Exercise production DNS/address guards over a real private interface.
+const fixtureHost = Object.values(networkInterfaces()).flat().find((address) =>
+  address?.family === 'IPv4' && !address.internal &&
+  /^(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)/.test(address.address)
+)?.address
+assert.ok(fixtureHost, 'A private IPv4 interface is required for the HTTP fixture')
 const directory = await mkdtemp(join(tmpdir(), 'nomad-worker-smoke-'))
 const connection = { host: '127.0.0.1', port: Number(process.env.REDIS_PORT) }
 const redis = new Redis({ ...connection, maxRetriesPerRequest: null })
@@ -47,19 +53,13 @@ const deadline = async (fn, label, timeout = 15000) => {
   throw new Error(`${label} timed out\n${output}`)
 }
 try {
-  await server.listen(0, '127.0.0.1')
+  await server.listen(0, fixtureHost)
   await once(server, 'listening')
   await events.waitUntilReady()
   const port = server.address().port
   worker = spawn(
     process.execPath,
-    [
-      '--import',
-      join(adminRoot, 'tests/fixtures/worker_http.mjs'),
-      'ace.js',
-      'queue:work',
-      '--queue=downloads',
-    ],
+    ['ace.js', 'queue:work', '--queue=downloads'],
     {
       cwd: join(adminRoot, 'build'),
       env: { ...process.env, NODE_ENV: 'production', LOG_LEVEL: 'info' },
@@ -74,7 +74,7 @@ try {
   })
   await deadline(() => output.includes('Worker started for queue: downloads'), 'queue startup')
   const data = {
-    url: `http://fixture.nomad.test:${port}/ok`,
+    url: `http://${fixtureHost}:${port}/ok`,
     filepath: join(directory, 'success.bin'),
     timeout: 5000,
     allowedMimeTypes: [],
@@ -94,7 +94,7 @@ try {
     'run-download',
     {
       ...data,
-      url: `http://fixture.nomad.test:${port}/slow`,
+      url: `http://${fixtureHost}:${port}/slow`,
       filepath: cancelledPath,
       forceNew: true,
     },

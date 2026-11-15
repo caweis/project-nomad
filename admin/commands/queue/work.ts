@@ -17,6 +17,8 @@ import { IngestDrugDataJob } from '#jobs/ingest_drug_data_job'
 import { ContentAutoUpdateJob } from '#jobs/content_auto_update_job'
 import { AppAutoUpdateJob } from '#jobs/app_auto_update_job'
 import { AutoUpdateJob } from '#jobs/auto_update_job'
+import KbIngestState from '#models/kb_ingest_state'
+import { safeEmbedFailureReason } from '../../util/embed_jobs.js'
 
 export default class QueueWork extends BaseCommand {
   static commandName = 'queue:work'
@@ -109,51 +111,7 @@ export default class QueueWork extends BaseCommand {
         }
       )
 
-      worker.on('failed', async (job, err) => {
-        this.logger.error(`[${queueName}] Job failed: ${job?.id}, Error: ${err.message}`)
-
-        // If this was a Wikipedia download, mark it as failed in the DB
-        if (isTerminalDownloadFailure(job) && job?.data?.filetype === 'zim') {
-          try {
-            const { DockerService } = await import('#services/docker_service')
-            const { ZimService } = await import('#services/zim_service')
-            const dockerService = new DockerService()
-            const zimService = new ZimService(dockerService)
-            await zimService.onWikipediaDownloadComplete(job.data.url, false)
-          } catch (e: any) {
-            this.logger.error(
-              `[${queueName}] Failed to update Wikipedia status: ${e.message}`
-            )
-          }
-        }
-
-        // Content auto-update: on a TERMINAL failure of an auto-triggered
-        // download (retries exhausted), record the per-resource backoff failure
-        // so a perpetually-failing update self-disables. Guard on the final
-        // attempt so mid-retry failures don't over-count.
-        if (
-          (job?.data?.filetype === 'zim' || job?.data?.filetype === 'map') &&
-          job?.data?.resourceMetadata?.auto === true &&
-          shouldRecordDownloadFailure(job, err)
-        ) {
-          try {
-            const InstalledResource = (await import('#models/installed_resource')).default
-            const { recordResourceUpdateFailure } = await import(
-              '../../app/utils/content_auto_update_backoff.js'
-            )
-            const meta = job.data.resourceMetadata
-            const resource = await InstalledResource.query()
-              .where('resource_id', meta.resource_id)
-              .where('resource_type', job.data.filetype)
-              .first()
-            if (resource) await recordResourceUpdateFailure(resource, err.message)
-          } catch (e: any) {
-            this.logger.error(
-              `[${queueName}] Failed to record content auto-update backoff: ${e.message}`
-            )
-          }
-        }
-      })
+      this.registerFailureHandler(worker, queueName)
 
       worker.on('completed', (job) => {
         this.logger.info(`[${queueName}] Job completed: ${job.id}`)
@@ -176,6 +134,85 @@ export default class QueueWork extends BaseCommand {
       await Promise.all(workers.map((worker) => worker.close()))
       this.logger.info('All workers shut down gracefully.')
       process.exit(0)
+    })
+  }
+
+  private registerFailureHandler(worker: Worker, queueName: string): void {
+    worker.on('failed', async (job, err) => {
+      const isEmbeddingQueue = queueName === EmbedFileJob.queue
+      const failureReason = isEmbeddingQueue ? safeEmbedFailureReason(err) : err.message
+      this.logger.error(`[${queueName}] Job failed: ${job?.id}, Error: ${failureReason}`)
+
+      // A terminal stall is detected by BullMQ without calling the processor,
+      // so EmbedFileJob.handle() cannot persist the failed file in its catch.
+      // finishedOn distinguishes a terminal failure from a retrying attempt.
+      if (
+        isEmbeddingQueue &&
+        job?.name === EmbedFileJob.key &&
+        typeof job.finishedOn === 'number' &&
+        job.finishedOn > 0 &&
+        typeof job.data?.filePath === 'string' &&
+        job.data.filePath.trim().length > 0
+      ) {
+        const filePath = job.data.filePath
+        try {
+          await job.updateData({
+            ...job.data,
+            status: 'failed',
+            failedAt: job.finishedOn,
+            error: failureReason,
+          })
+        } catch {
+          this.logger.error(`[${queueName}] Failed to update embedding job failure state`)
+        }
+
+        // Keep the writes independent: a Redis error must not suppress the
+        // durable file state, and persistence errors must not reject the listener.
+        try {
+          await KbIngestState.markFailed(filePath, failureReason)
+        } catch {
+          this.logger.error(`[${queueName}] Failed to persist embedding file failure state`)
+        }
+      }
+
+      // If this was a Wikipedia download, mark it as failed in the DB
+      if (isTerminalDownloadFailure(job) && job?.data?.filetype === 'zim') {
+        try {
+          const { DockerService } = await import('#services/docker_service')
+          const { ZimService } = await import('#services/zim_service')
+          const dockerService = new DockerService()
+          const zimService = new ZimService(dockerService)
+          await zimService.onWikipediaDownloadComplete(job.data.url, false)
+        } catch (e: any) {
+          this.logger.error(`[${queueName}] Failed to update Wikipedia status: ${e.message}`)
+        }
+      }
+
+      // Content auto-update: on a TERMINAL failure of an auto-triggered
+      // download (retries exhausted), record the per-resource backoff failure
+      // so a perpetually-failing update self-disables. Guard on the final
+      // attempt so mid-retry failures don't over-count.
+      if (
+        (job?.data?.filetype === 'zim' || job?.data?.filetype === 'map') &&
+        job?.data?.resourceMetadata?.auto === true &&
+        shouldRecordDownloadFailure(job, err)
+      ) {
+        try {
+          const { default: InstalledResource } = await import('#models/installed_resource')
+          const { recordResourceUpdateFailure } =
+            await import('../../app/utils/content_auto_update_backoff.js')
+          const meta = job.data.resourceMetadata
+          const resource = await InstalledResource.query()
+            .where('resource_id', meta.resource_id)
+            .where('resource_type', job.data.filetype)
+            .first()
+          if (resource) await recordResourceUpdateFailure(resource, err.message)
+        } catch (e: any) {
+          this.logger.error(
+            `[${queueName}] Failed to record content auto-update backoff: ${e.message}`
+          )
+        }
+      }
     })
   }
 
@@ -214,26 +251,19 @@ export default class QueueWork extends BaseCommand {
    * Per-queue stall-recovery options. The drug download/ingest queues run a long
    * per-part stretch (download ~150 MB, then a heavy stream-unzip + DB upsert),
    * so they get a 30-minute lock and tolerate 3 stalled hiccups before failing.
-   * Every other queue keeps the established 10-minute lock + BullMQ's default
-   * single-strike stall count.
+   * Embedding keeps the same 30-minute lock but never automatically replays a
+   * stalled batch. Other queues keep the established 10-minute lock and stall count.
    */
   private getStallOptionsForQueue(queueName: string): {
     lockDuration: number
     maxStalledCount: number
   } {
-    // Heavy, long-running, continuation-chained workloads get a longer lock and a
-    // higher stalled tolerance so a single transient lock-renewal miss retries the
-    // batch instead of killing the whole chain. EmbedFileJob is the same shape as the
-    // drug ingest — it embeds a ZIM library in resumable batches at concurrency 1 and
-    // is CPU/memory-heavy, so a slow batch can't renew the lock mid-await. On the
-    // default maxStalledCount:1 a single stalled batch failed the chain with "job
-    // stalled more than allowable limit" (observed on a Gutenberg ZIM embed), so it
-    // gets the same treatment as the drug queues that #604 already fixed.
-    if (
-      queueName === DownloadDrugDataJob.queue ||
-      queueName === IngestDrugDataJob.queue ||
-      queueName === EmbedFileJob.queue
-    ) {
+    // BullMQ stall recovery is separate from attempts: 1. Require an explicit
+    // restart after a lost embedding lock, while allowing time for long batches.
+    if (queueName === EmbedFileJob.queue) {
+      return { lockDuration: 1_800_000, maxStalledCount: 0 }
+    }
+    if (queueName === DownloadDrugDataJob.queue || queueName === IngestDrugDataJob.queue) {
       return { lockDuration: 1_800_000, maxStalledCount: 3 }
     }
     return { lockDuration: 600_000, maxStalledCount: 1 }

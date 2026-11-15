@@ -31,10 +31,10 @@ export default class SettingsController {
         });
     }
 
-    // Supply Depot props are assembled here so the service catalog, native
-    // Ollama state, and home pin overrides come from their canonical sources.
+  // Supply Depot props are assembled here so the service catalog, native
+  // Ollama state, and home pin overrides come from their canonical sources.
     private async buildSupplyDepotProps() {
-        // Link tiles are left out of Supply Depot. They are home-screen shortcuts with no
+    // Link tiles are left out of Supply Depot. They are home-screen shortcuts with no
         // container, so every per-app action here (Start, Stop, Update, Uninstall, auto-update)
         // would act on something that does not exist; they are edited and removed on the home
         // screen instead. (Upstream's Supply Depot does not filter them out.)
@@ -83,7 +83,7 @@ export default class SettingsController {
         };
     }
 
-    // Top-level card catalog. The old /settings/apps URL redirects here.
+  // Top-level card catalog. The old /settings/apps URL redirects here.
     async supplyDepot({ inertia }: HttpContext) {
         return inertia.render('settings/supply-depot', await this.buildSupplyDepotProps());
     }
@@ -99,11 +99,11 @@ export default class SettingsController {
     async maps({ inertia }: HttpContext) {
         const baseAssetsCheck = await this.mapService.ensureBaseAssets();
         const regionFiles = await this.mapService.listRegions();
-        const worldBasemapExists = await this.mapService.checkWorldBasemapExists();
+    const worldBasemapExists = await this.mapService.checkWorldBasemapExists()
         return inertia.render('settings/maps', {
             maps: {
                 baseAssetsExist: baseAssetsCheck,
-                worldBasemapExists,
+        worldBasemapExists,
                 regionFiles: regionFiles.files
             }
         });
@@ -115,10 +115,10 @@ export default class SettingsController {
         const chatSuggestionsEnabled = await KVStore.getValue('chat.suggestionsEnabled')
         const aiAssistantCustomName = await KVStore.getValue('ai.assistantCustomName')
         const autoThinking = await KVStore.getValue('ai.autoThinking')
-        const responseStyle = await KVStore.getValue('ai.responseStyle')
+    const responseStyle = await KVStore.getValue('ai.responseStyle')
         const ragEnabled = await KVStore.getValue('rag.enabled')
-        const minRelevance = await KVStore.getValue('rag.minRelevance')
-        const relevanceCheck = await KVStore.getValue('rag.relevanceCheck')
+    const minRelevance = await KVStore.getValue('rag.minRelevance')
+    const relevanceCheck = await KVStore.getValue('rag.relevanceCheck')
         const tasksModel = await KVStore.getValue('ai.tasksModel')
         const contextWindow = await KVStore.getValue('ai.contextWindow')
         return inertia.render('settings/models', {
@@ -130,13 +130,13 @@ export default class SettingsController {
                     aiAssistantCustomName: aiAssistantCustomName ?? '',
                     // Global default for model thinking/reasoning (off by default). #1079
                     autoThinking: autoThinking ?? false,
-                    responseStyle: responseStyle ?? 'auto',
+          responseStyle: responseStyle ?? 'auto',
                     // Knowledge base retrieval master switch (#1247). Unset
                     // means ON, so installs predating the toggle keep
                     // retrieving — same default as the server-side read.
                     ragEnabled: ragEnabled ?? true,
-                    minRelevance: minRelevance ?? 'auto',
-                    relevanceCheck: relevanceCheck ?? false,
+          minRelevance: minRelevance ?? 'auto',
+          relevanceCheck: relevanceCheck ?? false,
                     // Model for short ancillary work — chat titles, suggestion
                     // chips, RAG query rewriting (#1244). '' means "use the chat
                     // model", the behaviour from before the setting existed. The

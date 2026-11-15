@@ -2,8 +2,22 @@ import { NomadOllamaModel, type ResponseStyle, type SamplerProfile } from '../ty
 
 export const SAMPLER_PRESETS: Record<Exclude<ResponseStyle, 'off'>, SamplerProfile> = {
   auto: { temperature: 0.6, topP: 1, topK: 40, minP: 0.05, repeatPenalty: 1.1, compatTopP: 0.9 },
-  focused: { temperature: 0.2, topP: 1, topK: 40, minP: 0.1, repeatPenalty: 1.05, compatTopP: 0.85 },
-  creative: { temperature: 1, topP: 1, topK: 100, minP: 0.03, repeatPenalty: 1.15, compatTopP: 0.95 },
+  focused: {
+    temperature: 0.2,
+    topP: 1,
+    topK: 40,
+    minP: 0.1,
+    repeatPenalty: 1.05,
+    compatTopP: 0.85,
+  },
+  creative: {
+    temperature: 1,
+    topP: 1,
+    topK: 100,
+    minP: 0.03,
+    repeatPenalty: 1.15,
+    compatTopP: 0.95,
+  },
 }
 export const DEFAULT_RESPONSE_STYLE: ResponseStyle = 'auto'
 export const RESPONSE_STYLE_PRESETS: { value: ResponseStyle; label: string }[] = [

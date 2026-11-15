@@ -12,6 +12,18 @@ export type ListZimFilesResponse = {
   next?: string
 }
 
+export type CustomLibrarySource = {
+  id: number
+  name: string
+  base_url: string
+  is_default: boolean
+}
+
+export type CustomLibraryListing = {
+  directories: { name: string; path: string }[]
+  files: { name: string; url: string; size_bytes: number | null }[]
+}
+
 export type ListRemoteZimFilesResponse = {
   items: RemoteZimFileEntry[]
   has_more: boolean

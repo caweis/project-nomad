@@ -24,7 +24,11 @@ import { planPrompt, splitForBudget, type BudgetMessage } from '../utils/context
 import { isRagRetrievalEnabled } from '../utils/rag_toggle.js'
 import { resolveMinFinalScore } from '../utils/rag_relevance_setting.js'
 import { resolveResponseStyle } from '../utils/response_style.js'
-import { compatSamplerParams, nativeSamplerOptions, resolveSamplerProfile } from '../utils/sampler.js'
+import {
+  compatSamplerParams,
+  nativeSamplerOptions,
+  resolveSamplerProfile,
+} from '../utils/sampler.js'
 import env from '#start/env'
 import logger from '@adonisjs/core/services/logger'
 import type { Message } from 'ollama'
@@ -261,10 +265,14 @@ export default class OllamaController {
       }
       const think: boolean | 'medium' =
         thinkingEnabled ? (reqData.model.startsWith('gpt-oss') ? 'medium' : true) : false
-      const sampler = resolveSamplerProfile(await resolveResponseStyle(), modelInfo.modelfileSamplers)
-      const samplerOptions = env.get('NOMAD_AI_BACKEND') === 'omlx'
-        ? compatSamplerParams(sampler)
-        : nativeSamplerOptions(sampler)
+      const sampler = resolveSamplerProfile(
+        await resolveResponseStyle(),
+        modelInfo.modelfileSamplers
+      )
+      const samplerOptions =
+        env.get('NOMAD_AI_BACKEND') === 'omlx'
+          ? compatSamplerParams(sampler)
+          : nativeSamplerOptions(sampler)
 
       // Separate sessionId and the resolved thinking preference from the Ollama request payload —
       // Ollama rejects unknown fields, and `think` is re-derived above (not forwarded raw).

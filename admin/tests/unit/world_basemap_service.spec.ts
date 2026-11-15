@@ -2,6 +2,36 @@ import { test } from '@japa/runner'
 import { MapService } from '#services/map_service'
 
 test.group('world basemap', () => {
+  test('serves installed map assets without starting or waiting for a world download', async ({
+    assert,
+  }) => {
+    const service = new MapService()
+    let downloadCalls = 0
+    let finishDownload!: () => void
+    const pendingDownload = new Promise<void>((resolve) => {
+      finishDownload = resolve
+    })
+    ;(service as any).ensureBaseAssetFiles = async () => true
+    ;(service as any).checkWorldBasemapExists = async () => false
+    ;(service as any).setupWorldBasemap = async () => {
+      downloadCalls++
+      await pendingDownload
+    }
+
+    const readiness = service.ensureBaseAssets()
+    try {
+      const readyBeforeDownload = await Promise.race([
+        readiness,
+        new Promise<'waiting'>((resolve) => setImmediate(() => resolve('waiting'))),
+      ])
+      assert.isTrue(readyBeforeDownload)
+      assert.equal(downloadCalls, 0)
+    } finally {
+      finishDownload()
+      await readiness
+    }
+  })
+
   test('adds the world source before regional sources', ({ assert }) => {
     const service = new MapService()
     const sources = (service as any).generateSourcesArray('localhost:8080', [], true)

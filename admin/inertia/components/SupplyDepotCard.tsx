@@ -183,6 +183,21 @@ export default function SupplyDepotCard({
       return items
     }
 
+    const openButton = (
+      <StyledButton
+        icon="IconExternalLink"
+        onClick={() => {
+          // custom_url (a reverse-proxy / local-DNS override) wins over the default port link.
+          window.open(
+            getServiceLink(record.custom_url || record.ui_location || 'unknown'),
+            '_blank'
+          )
+        }}
+      >
+        Open
+      </StyledButton>
+    )
+
     // Native Ollama: every Docker-side action routes through DockerService which
     // refuses with a "manage via CLI" error. Replace with the Native (Metal)
     // pill plus host-command Update/Reset. On 'omlx' chat runs on Apple MLX and
@@ -194,6 +209,7 @@ export default function SupplyDepotCard({
       const isMlx = aiBackend === 'omlx'
       return (
         <div className="flex flex-wrap items-center gap-2">
+          {openButton}
           <span
             className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800"
             title={
@@ -248,18 +264,7 @@ export default function SupplyDepotCard({
     const menuItems = buildInstalledMenu()
     return (
       <div className="flex flex-wrap items-center gap-2">
-        <StyledButton
-          icon="IconExternalLink"
-          onClick={() => {
-            // custom_url (a reverse-proxy / local-DNS override) wins over the default port link.
-            window.open(
-              getServiceLink(record.custom_url || record.ui_location || 'unknown'),
-              '_blank'
-            )
-          }}
-        >
-          Open
-        </StyledButton>
+        {openButton}
         {/* Curated-app version updates stay inline while an update is waiting; custom
             apps update via "Pull latest" in the menu. `!!` guard: available_update_version
             arrives as the number 0 when up to date, and a bare `&& 0` would render a

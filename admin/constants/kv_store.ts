@@ -43,4 +43,4 @@ export const SETTINGS_KEYS: KVStoreKey[] = [
   'contentAutoUpdate.windowEnd',
   'contentAutoUpdate.cooloffHours',
   'contentAutoUpdate.maxBytesPerWindow',
-];
+]

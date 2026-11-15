@@ -10,6 +10,9 @@ import { createReadStream, createWriteStream } from 'node:fs'
 import fs from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import path from 'node:path'
+import { Agent as HttpAgent } from 'node:http'
+import { Agent as HttpsAgent } from 'node:https'
+import { safeRemoteLookup } from './safe_remote_lookup.js'
 import { deleteFileIfExists, ensureDirectoryExists, getFileStatsIfExists } from './fs.js'
 import { assertNotPrivateUrl, assertSafeRedirectTarget } from '../validators/common.js'
 import { downloadUrlOriginForLog } from './download_url_log.js'
@@ -129,6 +132,11 @@ async function downloadWhileLocked({
   const sourcePath = tempPath + '.source'
   const sourceIdentity = expectedSha256 ?? createHash('sha256').update(url).digest('hex')
   const baseHeaders = { ...DOWNLOAD_HEADERS, ...requestHeaders, 'Accept-Encoding': 'identity' }
+  const connectionOptions = {
+    httpAgent: new HttpAgent({ lookup: safeRemoteLookup }),
+    httpsAgent: new HttpsAgent({ lookup: safeRemoteLookup }),
+    proxy: false as const,
+  }
   let head: Record<string, any> = {}
   // LFS signed GET URLs have a trusted pointer size and may not authorize HEAD.
   if (expectedSize === undefined) {
@@ -139,6 +147,7 @@ async function downloadWhileLocked({
         maxRedirects,
         headers: baseHeaders,
         beforeRedirect: assertSafeRedirectTarget,
+        ...connectionOptions,
       })
       head = response.headers
     } catch (error) {
@@ -198,6 +207,7 @@ async function downloadWhileLocked({
         maxRedirects,
         headers: { ...baseHeaders, ...(offset > 0 ? { Range: `bytes=${offset}-` } : {}) },
         beforeRedirect: assertSafeRedirectTarget,
+        ...connectionOptions,
       })
     } catch (error) {
       rethrowAuth(error)

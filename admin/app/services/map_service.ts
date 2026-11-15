@@ -67,7 +67,10 @@ export class MapService implements IMapService {
 
   async listRegions() {
     const files = (await this.listAllMapStorageItems()).filter(
-      (item) => item.type === 'file' && item.name.endsWith('.pmtiles') && item.name !== WORLD_BASEMAP_FILENAME
+      (item) =>
+        item.type === 'file' &&
+        item.name.endsWith('.pmtiles') &&
+        item.name !== WORLD_BASEMAP_FILENAME
     )
 
     return {
@@ -390,13 +393,9 @@ export class MapService implements IMapService {
   }
 
   async ensureBaseAssets(): Promise<boolean> {
-    if (!(await this.ensureBaseAssetFiles())) return false
-    try {
-      await this.ensureWorldBasemap()
-    } catch (error) {
-      logger.warn(`[MapService] World basemap is unavailable: ${error instanceof Error ? error.message : error}`)
-    }
-    return true
+    // Pages and styles can use installed regional maps immediately. World tiles
+    // are downloaded only through the explicit setup action in Map Settings.
+    return this.ensureBaseAssetFiles()
   }
 
   private async ensureBaseAssetFiles(): Promise<boolean> {
@@ -410,8 +409,7 @@ export class MapService implements IMapService {
   }
 
   async provisionWorldBasemap(): Promise<boolean> {
-    // The ordinary ensureBaseAssets path already attempts extraction. Calling it
-    // again here would duplicate a failed extraction on a single button press.
+    // This user-requested action owns world extraction, including retries.
     if (!(await this.ensureBaseAssetFiles())) return false
     await this.ensureWorldBasemap()
     return this.checkWorldBasemapExists()
@@ -442,7 +440,8 @@ export class MapService implements IMapService {
         maxBuffer: 256 * 1024,
       })
       const stats = await getFileStatsIfExists(partial)
-      if (!stats || Number(stats.size) === 0) throw new Error('World basemap extraction produced no data')
+      if (!stats || Number(stats.size) === 0)
+        throw new Error('World basemap extraction produced no data')
       await rename(partial, target)
     } finally {
       await deleteFileIfExists(partial)
@@ -478,7 +477,11 @@ export class MapService implements IMapService {
     return await listDirectoryContentsRecursive(this.baseDirPath)
   }
 
-  private generateSourcesArray(host: string | null, regions: FileEntry[], worldExists = false): BaseStylesFile['sources'][] {
+  private generateSourcesArray(
+    host: string | null,
+    regions: FileEntry[],
+    worldExists = false
+  ): BaseStylesFile['sources'][] {
     const sources: BaseStylesFile['sources'][] = []
     const baseUrl = this.getPublicFileBaseUrl(host, 'pmtiles')
     if (worldExists) {
@@ -564,7 +567,8 @@ export class MapService implements IMapService {
     if (!fileName.endsWith('.pmtiles')) {
       fileName += '.pmtiles'
     }
-    if (fileName === WORLD_BASEMAP_FILENAME) throw new Error('Base map cannot be deleted as a region')
+    if (fileName === WORLD_BASEMAP_FILENAME)
+      throw new Error('Base map cannot be deleted as a region')
 
     const basePath = resolve(join(this.baseDirPath, 'pmtiles'))
     const fullPath = resolve(join(basePath, fileName))

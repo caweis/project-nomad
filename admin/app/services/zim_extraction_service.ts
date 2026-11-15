@@ -115,7 +115,7 @@ export class ZIMExtractionService {
                 logger.debug(`[ZIMExtractionService]: Chosen chunking strategy: ${strategy}`)
 
                 // Generate a unique document ID. All chunks from same article will share it
-                const documentId = stableZimDocumentId(filePath, entry.path)
+        const documentId = stableZimDocumentId(filePath, entry.path)
                 const articleTitle = entry.title || entry.path
 
                 let chunks: ZIMContentChunk[]

@@ -676,7 +676,10 @@ export class RagService {
 
         // Extraction metadata - not overly relevant for search, but could be useful for debugging and future features...
         extraction_strategy: zimChunk.strategy,
-      }, undefined, `zim:${startOffset}:${i}`)
+        },
+        undefined,
+        `zim:${startOffset}:${i}`
+      )
 
       if (result) {
         totalChunks += result.chunks
