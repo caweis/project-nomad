@@ -1,3 +1,4 @@
+import { isTerminalDownloadFailure } from '../utils/download_failure.js'
 import { inject } from '@adonisjs/core'
 import { QueueService } from './queue_service.js'
 import { RunDownloadJob } from '#jobs/run_download_job'
@@ -25,11 +26,13 @@ export class DownloadService {
       .map((job) => ({
         jobId: job.id!.toString(),
         url: downloadUrlOriginForLog(job.data.url),
-        progress: parseInt(job.progress.toString(), 10),
+        progress: Number.parseInt(job.progress.toString(), 10),
         filepath: job.data.filepath ? basename(job.data.filepath).split(/[?#]/, 1)[0] : '',
         filetype: job.data.filetype,
-        status: (job.failedReason ? 'failed' : 'active') as 'active' | 'failed',
-        failedReason: job.failedReason ? downloadFailureForDisplay(job.failedReason) : undefined,
+        status: (isTerminalDownloadFailure(job) ? 'failed' : 'active') as 'active' | 'failed',
+        failedReason: isTerminalDownloadFailure(job)
+          ? downloadFailureForDisplay(job.failedReason)
+          : undefined,
       }))
 
     // Get Ollama model download jobs
@@ -39,14 +42,14 @@ export class DownloadService {
     const modelDownloads = modelJobs
       .filter((job) => job?.id != null && job.data != null)
       .map((job) => ({
-      jobId: job.id!.toString(),
-      url: job.data.modelName || 'Unknown Model', // Use model name as url
-      progress: parseInt(job.progress.toString(), 10),
-      filepath: job.data.modelName || 'Unknown Model', // Use model name as filepath
-      filetype: 'model',
-      status: (job.failedReason ? 'failed' : 'active') as 'active' | 'failed',
-      failedReason: job.failedReason || undefined,
-    }))
+        jobId: job.id!.toString(),
+        url: job.data.modelName || 'Unknown Model', // Use model name as url
+        progress: Number.parseInt(job.progress.toString(), 10),
+        filepath: job.data.modelName || 'Unknown Model', // Use model name as filepath
+        filetype: 'model',
+        status: (isTerminalDownloadFailure(job) ? 'failed' : 'active') as 'active' | 'failed',
+        failedReason: isTerminalDownloadFailure(job) ? job.failedReason : undefined,
+      }))
 
     const allDownloads = [...fileDownloads, ...modelDownloads]
 
@@ -59,6 +62,38 @@ export class DownloadService {
       if (a.status !== 'failed' && b.status === 'failed') return -1
       return b.progress - a.progress
     })
+  }
+
+  async cancelJob(jobId: string): Promise<{ success: boolean; message: string }> {
+    if (!/^[a-zA-Z0-9_-]{1,128}$/.test(jobId)) return { success: false, message: 'Invalid job ID' }
+    const queue = this.queueService.getQueue(RunDownloadJob.queue)
+    const job = await queue.getJob(jobId)
+    if (!job) return { success: false, message: 'File download job not found' }
+    if (job.data.completionContext)
+      return { success: false, message: 'The file is installed and its setup is finishing.' }
+    const state = await job.getState()
+    if (state === 'failed' || state === 'completed')
+      return { success: true, message: 'Download already stopped' }
+    // Keep the request separate from job.data: progress/completion snapshots must not overwrite it.
+    const { default: queueConfig } = await import('#config/queue')
+    const client = queueConfig.connection
+    await client.set(RunDownloadJob.cancellationKey(jobId), '1', 'EX', 86400)
+    return { success: true, message: 'Cancellation requested' }
+  }
+
+  async removeJob(jobId: string): Promise<{ success: boolean; message: string }> {
+    if (!/^[a-zA-Z0-9_-]{1,128}$/.test(jobId)) return { success: false, message: 'Invalid job ID' }
+    const queue = this.queueService.getQueue(RunDownloadJob.queue)
+    const job = await queue.getJob(jobId)
+    if (!job) return { success: true, message: 'Job already removed' }
+    const state = await job.getState()
+    if (state !== 'failed' && state !== 'completed')
+      return {
+        success: false,
+        message: 'Cancel the download and wait for it to stop before removing it.',
+      }
+    await job.remove()
+    return { success: true, message: 'Job removed' }
   }
 
   /**

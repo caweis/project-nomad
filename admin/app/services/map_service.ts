@@ -1,3 +1,4 @@
+import { regionalMapPointerAfterError } from '../utils/regional_map_lfs.js'
 import { BaseStylesFile, MapLayer } from '../../types/maps.js'
 import {
   DownloadRemoteSuccessCallback,
@@ -303,10 +304,16 @@ export class MapService implements IMapService {
 
       // Perform a HEAD request to get the content length
       const { default: axios } = await import('axios')
-      const response = await axios.head(url, {
-        timeout: 30_000,
-        beforeRedirect: assertSafeRedirectTarget,
-      })
+      let response
+      try {
+        response = await axios.head(url, {
+          timeout: 30_000,
+          beforeRedirect: assertSafeRedirectTarget,
+        })
+      } catch (error) {
+        const pointer = await regionalMapPointerAfterError(url, error)
+        return { filename, size: pointer.size }
+      }
 
       if (response.status !== 200) {
         throw new Error(`Failed to fetch file info: HTTP ${response.status}`)

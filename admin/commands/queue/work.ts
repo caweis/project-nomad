@@ -1,3 +1,7 @@
+import {
+  isTerminalDownloadFailure,
+  shouldRecordDownloadFailure,
+} from '../../app/utils/download_failure.js'
 import { BaseCommand, flags } from '@adonisjs/core/ace'
 import type { CommandOptions } from '@adonisjs/core/types/ace'
 import { Worker } from 'bullmq'
@@ -109,7 +113,7 @@ export default class QueueWork extends BaseCommand {
         this.logger.error(`[${queueName}] Job failed: ${job?.id}, Error: ${err.message}`)
 
         // If this was a Wikipedia download, mark it as failed in the DB
-        if (job?.data?.filetype === 'zim' && job?.data?.url?.includes('wikipedia_en_')) {
+        if (isTerminalDownloadFailure(job) && job?.data?.filetype === 'zim') {
           try {
             const { DockerService } = await import('#services/docker_service')
             const { ZimService } = await import('#services/zim_service')
@@ -130,7 +134,7 @@ export default class QueueWork extends BaseCommand {
         if (
           (job?.data?.filetype === 'zim' || job?.data?.filetype === 'map') &&
           job?.data?.resourceMetadata?.auto === true &&
-          job.attemptsMade >= (job.opts?.attempts ?? 1)
+          shouldRecordDownloadFailure(job, err)
         ) {
           try {
             const InstalledResource = (await import('#models/installed_resource')).default

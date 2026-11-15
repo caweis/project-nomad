@@ -7,6 +7,16 @@ import { inject } from '@adonisjs/core'
 export default class DownloadsController {
   constructor(private downloadService: DownloadService) {}
 
+  async cancelJob({ params, response }: HttpContext) {
+    const result = await this.downloadService.cancelJob(params.jobId)
+    return response.status(result.success ? 200 : 409).send(result)
+  }
+
+  async removeJob({ params, response }: HttpContext) {
+    const result = await this.downloadService.removeJob(params.jobId)
+    return response.status(result.success ? 200 : 409).send(result)
+  }
+
   async index() {
     return this.downloadService.listDownloadJobs()
   }
