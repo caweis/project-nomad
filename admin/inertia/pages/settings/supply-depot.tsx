@@ -19,24 +19,16 @@ import UpdateServiceModal from '~/components/UpdateServiceModal'
 import CustomAppModal, { CustomAppInitial } from '~/components/CustomAppModal'
 import SupplyDepotCard from '~/components/SupplyDepotCard'
 import { groupServicesByCategory } from '~/lib/supplyDepot'
+import { extractTag } from '~/lib/imageTag'
 
-function extractTag(containerImage: string): string {
-  if (!containerImage) return ''
-  const parts = containerImage.split(':')
-  return parts.length > 1 ? parts[parts.length - 1] : 'latest'
-}
-
-// Additive card view of the Supply Depot catalog (issue #31). Renders the same
-// service list as settings/apps.tsx, grouped into category sections, with the
-// same per-app actions. The handlers below are a faithful port of apps.tsx's
-// handlers — kept here (not shared via a hook) so apps.tsx is untouched; the
-// shared controller helper (SettingsController.buildSupplyDepotProps) keeps the
-// PROPS identical so the two surfaces can't drift.
+// Category-grouped Supply Depot catalog. The controller supplies service rows
+// and home pin overrides; cards keep app actions in one place.
 export default function SupplyDepotPage(props: {
   system: { services: ServiceSlim[] }
   isNativeOllama: boolean
   aiBackend?: string
   aiAssistantVersion?: string
+  pins: Record<string, boolean>
 }) {
   const { openModal, closeAllModals } = useModals()
   const { showError } = useErrorNotification()
@@ -393,6 +385,14 @@ export default function SupplyDepotPage(props: {
     }
   }
 
+  function handleTogglePin(record: ServiceSlim, pinned: boolean) {
+    router.post(
+      '/api/home/pins',
+      { key: record.service_name, pinned },
+      { preserveScroll: true, onSuccess: () => router.reload({ only: ['pins'] }) }
+    )
+  }
+
   const handlers = {
     onInstall: handleInstallService,
     onForceReinstall: confirmForceReinstall,
@@ -403,6 +403,7 @@ export default function SupplyDepotPage(props: {
     onViewLogs: handleViewLogs,
     onDeleteCustom: confirmDeleteCustomApp,
     onToggleAutoUpdate: handleToggleAutoUpdate,
+    onTogglePin: handleTogglePin,
   }
 
   return (
@@ -453,6 +454,7 @@ export default function SupplyDepotPage(props: {
                       isNativeOllama={props.isNativeOllama}
                       aiBackend={props.aiBackend}
                       aiAssistantVersion={props.aiAssistantVersion}
+                      pins={props.pins}
                       isOnline={isOnline}
                       isInstalling={isInstalling}
                       loading={loading}

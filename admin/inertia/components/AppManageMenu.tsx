@@ -31,14 +31,7 @@ export interface AppManageMenuProps {
   disabled?: boolean
 }
 
-// The single "⋯" overflow menu every Supply Depot row uses. A table row's
-// actions column is too narrow to hold Open + Update + Stop/Start + Restart +
-// the custom-app cluster + Wipe & reinstall on one line, so they wrap into a
-// ragged three-high stack. Collapsing everything past Open (and a conditional
-// Update) into this menu keeps each row on a single line. Used by BOTH surfaces
-// — settings/apps.tsx (items open inline modals) and SupplyDepotCard.tsx (items
-// call handlers.* props) — with identical behaviour; this is purely where the
-// actions live, not what they do.
+// Overflow menu for secondary app actions on a Supply Depot card.
 export default function AppManageMenu({ items, disabled }: AppManageMenuProps) {
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)

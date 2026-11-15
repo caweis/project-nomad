@@ -178,7 +178,6 @@ router
 router
   .group(() => {
     router.get('/system', [SettingsController, 'system'])
-    router.get('/apps', [SettingsController, 'apps'])
     router.get('/legal', [SettingsController, 'legal'])
     router.get('/maps', [SettingsController, 'maps'])
     router.get('/models', [SettingsController, 'models'])
@@ -191,10 +190,8 @@ router
   })
   .prefix('/settings')
 
-// Supply Depot — additive card view of the app catalog (issue #31). Top-level
-// route, NOT under /settings: the canonical table page stays at /settings/apps
-// until a human verifies this card view renders on the host. Same controller,
-// same props as settings/apps (SettingsController.buildSupplyDepotProps).
+// The card page is the app catalog. Keep old bookmarks working.
+router.on('/settings/apps').redirectToPath('/supply-depot')
 router.get('/supply-depot', [SettingsController, 'supplyDepot'])
 
 router.post('/api/grocy/test-connection', [GrocyController, 'testConnection'])
