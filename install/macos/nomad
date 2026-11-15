@@ -3137,11 +3137,15 @@ step_compose_pull() {
   ensure_docker_path
   if _offline; then
     # Images must already be loaded (docker load from the offline pack).
-    local img missing=()
+    local img images missing=()
+    # Process-substitution hides the producer's exit status. Capture it first so
+    # invalid Compose input cannot appear to be an empty, successful image check.
+    images="$(dc config --images)" || die "offline mode: could not read Compose images; fix the configuration before installing"
+    [[ -n "$images" ]] || die "offline mode: Compose returned no images"
     while IFS= read -r img; do
       [[ -n "$img" ]] || continue
       docker image inspect "$img" >/dev/null 2>&1 || missing+=("$img")
-    done < <(dc config --images 2>/dev/null)
+    done <<< "$images"
     (( ${#missing[@]} == 0 )) || die "offline mode: these images aren't loaded: ${missing[*]}
 Load them first, e.g. docker load -i <offline-pack>/images/<file>.tar"
     ok "offline: all compose images present locally — skipping pull"
