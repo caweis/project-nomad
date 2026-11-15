@@ -429,9 +429,8 @@ export class ZimService {
   ) {
     // Check if any URL is a Wikipedia download and handle it
     for (const url of urls) {
-      if (url.includes('wikipedia_en_')) {
-        await this.onWikipediaDownloadComplete(url, true)
-      }
+      // The selection's exact URL is authoritative, including custom mirrors.
+      await this.onWikipediaDownloadComplete(url, true)
     }
 
     // Update the kiwix library XML so the newly downloaded ZIM(s) are served.
@@ -792,9 +791,7 @@ export class ZimService {
     const selection = await this.getWikipediaSelection()
 
     if (!selection || selection.url !== url) {
-      logger.warn(
-        `[ZimService] Wikipedia download complete callback for unknown URL from ${downloadUrlOriginForLog(url)}`
-      )
+      // Other ZIM downloads do not change the managed Wikipedia selection.
       return
     }
 

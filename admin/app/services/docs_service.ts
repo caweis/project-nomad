@@ -61,8 +61,13 @@ export class DocsService {
       const config = this.getConfig()
       const errors = Markdoc.validate(ast, config)
 
-      // Filter out attribute-undefined errors which may be caused by emojis and special characters
-      const criticalErrors = errors.filter((e) => e.error.id !== 'attribute-undefined')
+      // Warnings (including wrapped bold text) are renderable. Keep the existing
+      // exemption for attributes introduced by emojis and special characters.
+      const criticalErrors = errors.filter(
+        (e) =>
+          e.error.id !== 'attribute-undefined' &&
+          (e.error.level === 'error' || e.error.level === 'critical')
+      )
       if (criticalErrors.length > 0) {
         logger.error('Markdoc validation errors:', errors.map((e) => JSON.stringify(e.error)).join(', '))
         throw new Error('Markdoc validation failed')

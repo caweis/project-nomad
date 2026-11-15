@@ -239,6 +239,12 @@ router
   .group(() => {
     router.get('/jobs', [DownloadsController, 'index'])
     router.post('/jobs/:jobId/retry', [DownloadsController, 'retryJob'])
+    router
+      .post('/jobs/:jobId/cancel', [DownloadsController, 'cancelJob'])
+      .use(middleware.localNetworkOnly())
+    router
+      .delete('/jobs/:jobId', [DownloadsController, 'removeJob'])
+      .use(middleware.localNetworkOnly())
     router.get('/jobs/:filetype', [DownloadsController, 'filetype'])
   })
   .prefix('/api/downloads')

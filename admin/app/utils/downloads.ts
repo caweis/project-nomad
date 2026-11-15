@@ -3,23 +3,18 @@ import type {
   DoResumableDownloadWithRetryParams,
 } from '../../types/downloads.js'
 import axios from 'axios'
+import { lock } from 'proper-lockfile'
 import { Transform } from 'node:stream'
-import { deleteFileIfExists, ensureDirectoryExists, getFileStatsIfExists } from './fs.js'
-import { createWriteStream } from 'node:fs'
-import { rename } from 'node:fs/promises'
+import { pipeline } from 'node:stream/promises'
+import { createReadStream, createWriteStream } from 'node:fs'
+import fs from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import path from 'node:path'
+import { deleteFileIfExists, ensureDirectoryExists, getFileStatsIfExists } from './fs.js'
 import { assertNotPrivateUrl, assertSafeRedirectTarget } from '../validators/common.js'
 import { downloadUrlOriginForLog } from './download_url_log.js'
+import { contentLength, hasRoomForDownload, isMatchingResume } from './download_integrity.js'
 
-/**
- * A gated source rejected this install's credentials (401/403).
- *
- * Permanent by nature: whether this install has the entitlement key the source
- * requires is not going to change between retries. Declared here rather than
- * thrown as a BullMQ UnrecoverableError directly so this module stays free of
- * a BullMQ dependency — RunDownloadJob translates it at the queue boundary.
- * (Ports upstream #1172 + #1205.)
- */
 export class GatedContentAuthError extends Error {
   constructor(message: string) {
     super(message)
@@ -27,23 +22,87 @@ export class GatedContentAuthError extends Error {
   }
 }
 
-// Some upstream mirrors reject requests with a missing or generic User-Agent.
-// Notably, download.kiwix.org routes the large Wikimedia-family ZIMs (Wikipedia,
-// Wikiversity, Wikibooks — including the flagship full Wikipedia) to
-// dumps.wikimedia.org, which returns HTTP 403 for a default `axios/x` (or empty)
-// User-Agent per Wikimedia's UA policy. Identify ourselves descriptively so
-// those downloads succeed. Ported from upstream #1114.
-const DOWNLOAD_HEADERS: Record<string, string> = {
-  'User-Agent': 'ProjectNOMAD/1.0 (+https://projectnomad.us)',
+export class InsufficientDiskSpaceError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'InsufficientDiskSpaceError'
+  }
 }
 
-/**
- * Perform a resumable download with progress tracking
- * @param param0 - Download parameters. Leave allowedMimeTypes empty to skip mime type checking.
- * Otherwise, mime types should be in the format "application/pdf", "image/png", etc.
- * @returns Path to the downloaded file
- */
-export async function doResumableDownload({
+const DOWNLOAD_HEADERS = { 'User-Agent': 'ProjectNOMAD/1.0 (+https://projectnomad.us)' }
+
+async function requireFreeSpace(dirname: string, remaining: number): Promise<void> {
+  let stats
+  try {
+    stats = await fs.statfs(dirname)
+  } catch (error) {
+    // Some mounted filesystems cannot report free space. Writes still fail on ENOSPC.
+    console.warn(`[Download] Cannot check free space (${(error as Error).name})`)
+    return
+  }
+  const free = Number(stats.bavail) * Number(stats.bsize)
+  if (!hasRoomForDownload(remaining, free)) {
+    throw new InsufficientDiskSpaceError(
+      'Not enough free disk space: the download must leave 2 GiB free. Free some space and retry.'
+    )
+  }
+}
+
+async function matchesHash(filepath: string, sha256?: string): Promise<boolean> {
+  if (!sha256) return true
+  const hash = createHash('sha256')
+  for await (const chunk of createReadStream(filepath)) hash.update(chunk)
+  return hash.digest('hex') === sha256
+}
+
+function rethrowAuth(error: any): never {
+  const status = error?.response?.status
+  if (status === 401 || status === 403) {
+    throw new GatedContentAuthError(
+      `This content is gated behind an entitlement key this install does not have. The download server rejected the request (HTTP ${status}). If you host this content yourself, set HOSTED_CONTENT_APP_KEY in the NOMAD env.`
+    )
+  }
+  throw error
+}
+
+/** Stage and validate a download before publishing it over any installed file. */
+export async function doResumableDownload(params: DoResumableDownloadParams): Promise<string> {
+  const directory = path.dirname(params.filepath)
+  await ensureDirectoryExists(directory)
+  // Resolve directory aliases even before the destination exists.
+  const destination = path.join(await fs.realpath(directory), path.basename(params.filepath))
+  const compromised = new AbortController()
+  const signal = params.signal
+    ? AbortSignal.any([params.signal, compromised.signal])
+    : compromised.signal
+  // One owner through publication and completion, including separate worker processes.
+  const release = await lock(destination, {
+    realpath: false,
+    stale: 30000,
+    update: 10000,
+    onCompromised: (error) => compromised.abort(error),
+  })
+  let failed = false
+  try {
+    return await downloadWhileLocked({ ...params, signal })
+  } catch (error) {
+    failed = true
+    // Cleanup only while this transfer still owns the destination lock.
+    if (params.signal?.reason === 'user-cancel' && !compromised.signal.aborted) {
+      await deleteFileIfExists(destination + '.tmp')
+      await deleteFileIfExists(destination + '.tmp.source')
+    }
+    throw error
+  } finally {
+    if (!failed) await release()
+    else
+      await release().catch((error) => {
+        console.error(`[Download] Could not release destination lock (${(error as Error).name})`)
+      })
+  }
+}
+
+async function downloadWhileLocked({
   url,
   filepath,
   timeout = 30000,
@@ -54,261 +113,215 @@ export async function doResumableDownload({
   resumeCompletion = false,
   allowedMimeTypes,
   requestHeaders,
+  expectedSize,
+  expectedSha256,
+  maxRedirects,
 }: DoResumableDownloadParams): Promise<string> {
   assertNotPrivateUrl(url)
+  signal?.throwIfAborted()
+  if (expectedSha256 && !/^[a-f0-9]{64}$/.test(expectedSha256))
+    throw new Error('Invalid expected SHA-256')
+  if (expectedSize !== undefined && (!Number.isSafeInteger(expectedSize) || expectedSize <= 0))
+    throw new Error('Invalid expected download size')
   const dirname = path.dirname(filepath)
   await ensureDirectoryExists(dirname)
-
-  // Stage download to a .tmp file so consumers (e.g. Kiwix) never see a partial file
   const tempPath = filepath + '.tmp'
-
-  // Check if partial .tmp file exists for resume
-  let startByte = 0
-  let appendMode = false
-
-  const existingStats = await getFileStatsIfExists(tempPath)
-  if (existingStats && !forceNew) {
-    startByte = Number(existingStats.size)
-    appendMode = true
-  }
-
-  // Merge default headers with any caller-supplied headers (a gated source's
-  // Authorization, upstream #1172). Gated sources need the auth header on the
-  // HEAD too, or the probe 401s before the GET is reached.
-  const baseHeaders: Record<string, string> = { ...DOWNLOAD_HEADERS, ...requestHeaders }
-
-  // Get file info with HEAD request first
-  let headResponse
-  try {
-    headResponse = await axios.head(url, {
-      signal,
-      timeout,
-      headers: baseHeaders,
-      beforeRedirect: assertSafeRedirectTarget,
-    })
-  } catch (error: any) {
-    // A 401/403 here is not a network problem, and the raw axios message
-    // ("Request failed with status code 401") reads like the server is broken.
-    // Translate it: the practical cause is an install without the entitlement
-    // key the gated source requires. The downloads UI shows a fixed explanation
-    // for this error, and RunDownloadJob converts it to an
-    // UnrecoverableError so the rejection is never retried (upstream #1205).
-    const status = error?.response?.status
-    if (status === 401 || status === 403) {
-      throw new GatedContentAuthError(
-        'This content is gated behind an entitlement key this install does not have. ' +
-          `The download server rejected the request (HTTP ${status}). ` +
-          'If you host this content yourself, set HOSTED_CONTENT_APP_KEY in the NOMAD env.'
-      )
+  const sourcePath = tempPath + '.source'
+  const sourceIdentity = expectedSha256 ?? createHash('sha256').update(url).digest('hex')
+  const baseHeaders = { ...DOWNLOAD_HEADERS, ...requestHeaders, 'Accept-Encoding': 'identity' }
+  let head: Record<string, any> = {}
+  // LFS signed GET URLs have a trusted pointer size and may not authorize HEAD.
+  if (expectedSize === undefined) {
+    try {
+      const response = await axios.head(url, {
+        signal,
+        timeout,
+        maxRedirects,
+        headers: baseHeaders,
+        beforeRedirect: assertSafeRedirectTarget,
+      })
+      head = response.headers
+    } catch (error) {
+      rethrowAuth(error)
     }
+  }
+  let totalBytes = expectedSize ?? contentLength(head['content-length'])
+  if (
+    expectedSize === undefined &&
+    allowedMimeTypes?.length &&
+    !allowedMimeTypes.some((mime) => String(head['content-type'] || '').includes(mime))
+  ) {
+    throw new Error('Download MIME type is not allowed')
+  }
+  const finalStats = await getFileStatsIfExists(filepath)
+  if (
+    !forceNew &&
+    totalBytes > 0 &&
+    Number(finalStats?.size) === totalBytes &&
+    (await matchesHash(filepath, expectedSha256))
+  ) {
+    signal?.throwIfAborted()
+    if (resumeCompletion) await onComplete?.(url, filepath)
+    return filepath
+  }
+  const partial = await getFileStatsIfExists(tempPath)
+  let storedIdentity: string | undefined
+  try {
+    storedIdentity = await fs.readFile(sourcePath, 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
+  // Legacy/unattributed partials are restarted; a filename alone is not provenance.
+  let startByte =
+    !forceNew && partial && storedIdentity === sourceIdentity ? Number(partial.size) : 0
+  if (startByte === totalBytes && totalBytes > 0) {
+    if (await matchesHash(tempPath, expectedSha256)) {
+      signal?.throwIfAborted()
+      await fs.rename(tempPath, filepath)
+      await deleteFileIfExists(sourcePath)
+      await onComplete?.(url, filepath)
+      return filepath
+    }
+    startByte = 0
+  }
+  if (head['accept-ranges'] !== 'bytes' || (totalBytes > 0 && startByte > totalBytes)) startByte = 0
+  if (!startByte && partial) await deleteFileIfExists(tempPath)
+  await requireFreeSpace(dirname, Math.max(0, totalBytes - startByte))
+  await fs.writeFile(sourcePath, sourceIdentity, { mode: 0o600 })
+  const fetchStream = async (offset: number) => {
+    try {
+      return await axios.get(url, {
+        responseType: 'stream',
+        decompress: false,
+        signal,
+        timeout,
+        maxRedirects,
+        headers: { ...baseHeaders, ...(offset > 0 ? { Range: `bytes=${offset}-` } : {}) },
+        beforeRedirect: assertSafeRedirectTarget,
+      })
+    } catch (error) {
+      rethrowAuth(error)
+    }
+  }
+  let response = await fetchStream(startByte)
+  if (
+    startByte > 0 &&
+    (response.status === 200 ||
+      !isMatchingResume(response.headers?.['content-range'], startByte, totalBytes))
+  ) {
+    response.data.destroy()
+    startByte = 0
+    await deleteFileIfExists(tempPath)
+    await requireFreeSpace(dirname, totalBytes)
+    response = await fetchStream(0)
+  }
+  try {
+    signal?.throwIfAborted()
+    if (response.status !== 200 && response.status !== 206)
+      throw new Error(`Failed to download: HTTP ${response.status}`)
+    if (!startByte && response.status === 206)
+      throw new Error('Download server returned a partial response without a range request')
+    if (
+      allowedMimeTypes?.length &&
+      !allowedMimeTypes.some(
+        (mime) =>
+          String(response.headers?.['content-type'] || '')
+            .split(';')[0]
+            .trim() === mime
+      )
+    )
+      throw new Error('Download MIME type is not allowed')
+    const encoding = response.headers?.['content-encoding']
+    if (encoding && encoding !== 'identity') throw new Error('Unexpected download content encoding')
+    const responseBytes = contentLength(response.headers?.['content-length'])
+    if (startByte > 0 && !totalBytes)
+      totalBytes = Number(String(response.headers['content-range']).split('/')[1])
+    if (responseBytes > 0) {
+      if (totalBytes > 0 && startByte + responseBytes !== totalBytes)
+        throw new Error('Download size changed between HEAD and GET')
+      totalBytes = startByte + responseBytes
+    }
+    await requireFreeSpace(dirname, Math.max(0, totalBytes - startByte))
+  } catch (error) {
+    response.data.destroy()
     throw error
   }
 
-  const contentType = String(headResponse.headers['content-type'] || '')
-  const totalBytes = Number.parseInt(String(headResponse.headers['content-length'] || '0'))
-  const supportsRangeRequests = headResponse.headers['accept-ranges'] === 'bytes'
-
-  // If allowedMimeTypes is provided, check content type
-  if (allowedMimeTypes && allowedMimeTypes.length > 0) {
-    const isMimeTypeAllowed = allowedMimeTypes.some((mimeType) => contentType.includes(mimeType))
-    if (!isMimeTypeAllowed) {
-      throw new Error(`MIME type ${contentType} is not allowed`)
-    }
-  }
-
-  // If final file already exists at correct size, return early (idempotent)
-  const finalFileStats = await getFileStatsIfExists(filepath)
-  if (finalFileStats && Number(finalFileStats.size) === totalBytes && totalBytes > 0 && !forceNew) {
-    if (resumeCompletion && onComplete) {
-      await onComplete(url, filepath)
-    }
-    return filepath
-  }
-
-  // If .tmp file is already at correct size (complete but never renamed), just rename it
-  if (startByte === totalBytes && totalBytes > 0 && !forceNew) {
-    await rename(tempPath, filepath)
-    if (onComplete) {
-      await onComplete(url, filepath)
-    }
-    return filepath
-  }
-
-  // If server doesn't support range requests and we have a partial .tmp file, delete it
-  if (!supportsRangeRequests && startByte > 0) {
-    await deleteFileIfExists(tempPath)
-    startByte = 0
-    appendMode = false
-  }
-
-  // A .tmp bigger than the file now on the server cannot be a prefix of it — the
-  // publisher replaced the file under the same name (openZIM rolls builds forward).
-  // Resuming would ask for a range past the end and get a 416 on every attempt,
-  // with nothing deleting the .tmp, so the download could never recover on its
-  // own. Discard and start clean. (Ports upstream #1202.)
-  if (startByte > totalBytes && totalBytes > 0) {
-    console.warn(
-      `[Download] Discarding stale partial for ${filepath}: .tmp is ${startByte}B but the server reports ${totalBytes}B`
+  let downloadedBytes = startByte
+  let lastProgressTime = 0
+  let lastSpaceCheck = 0
+  let lastSpaceBytes = startByte
+  const stalled = new AbortController()
+  const combined = signal ? AbortSignal.any([signal, stalled.signal]) : stalled.signal
+  let stallTimer: ReturnType<typeof setTimeout> | undefined
+  const resetStallTimer = () => {
+    clearTimeout(stallTimer)
+    stallTimer = setTimeout(
+      () => stalled.abort(new Error('Download stalled - no data received for 5 minutes')),
+      5 * 60 * 1000
     )
-    await deleteFileIfExists(tempPath)
-    startByte = 0
-    appendMode = false
   }
-
-  const headers: Record<string, string> = {}
-  if (supportsRangeRequests && startByte > 0) {
-    headers.Range = `bytes=${startByte}-`
-  }
-
-  const fetchStream = (hdrs: Record<string, string>) =>
-    axios.get(url, {
-      responseType: 'stream',
-      headers: { ...baseHeaders, ...hdrs },
-      signal,
-      timeout,
-      beforeRedirect: assertSafeRedirectTarget,
-    })
-
-  let response = await fetchStream(headers)
-
-  if (response.status !== 200 && response.status !== 206) {
-    throw new Error(`Failed to download: HTTP ${response.status}`)
-  }
-
-  // If we requested a range but the server returned 200 (ignored the Range header),
-  // appending would corrupt the .tmp file — delete it and restart from byte 0.
-  if (headers.Range && response.status === 200) {
-    response.data.destroy()
-    await deleteFileIfExists(tempPath)
-    startByte = 0
-    appendMode = false
-    delete headers.Range
-    response = await fetchStream(headers)
-    if (response.status !== 200 && response.status !== 206) {
-      throw new Error(`Failed to download: HTTP ${response.status}`)
-    }
-  }
-
-  if (!headers.Range && response.status === 206) {
-    response.data.destroy()
-    throw new Error('Download server returned a partial response without a range request')
-  }
-
-  return new Promise((resolve, reject) => {
-    let downloadedBytes = startByte
-    let lastProgressTime = Date.now()
-    let lastDownloadedBytes = startByte
-
-    // Stall detection: if no data arrives for 5 minutes, abort the download
-    const STALL_TIMEOUT_MS = 5 * 60 * 1000
-    let stallTimer: ReturnType<typeof setTimeout> | null = null
-
-    const clearStallTimer = () => {
-      if (stallTimer) {
-        clearTimeout(stallTimer)
-        stallTimer = null
-      }
-    }
-
-    const resetStallTimer = () => {
-      clearStallTimer()
-      stallTimer = setTimeout(() => {
-        cleanup(new Error('Download stalled - no data received for 5 minutes'))
-      }, STALL_TIMEOUT_MS)
-    }
-
-    // Progress tracking stream to monitor data flow
-    const progressStream = new Transform({
-      transform(chunk: Buffer, _: any, callback: Function) {
-        downloadedBytes += chunk.length
-        resetStallTimer()
-
-        // Update progress tracking
+  const progress = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      downloadedBytes += chunk.length
+      resetStallTimer()
+      const check = async () => {
+        if (totalBytes > 0 && downloadedBytes > totalBytes)
+          throw new Error(`Incomplete download: received more than ${totalBytes} bytes`)
         const now = Date.now()
+        if (now - lastSpaceCheck >= 5000 || downloadedBytes - lastSpaceBytes >= 64 * 1024 ** 2) {
+          await requireFreeSpace(dirname, Math.max(0, totalBytes - downloadedBytes + chunk.length))
+          lastSpaceCheck = now
+          lastSpaceBytes = downloadedBytes
+        }
         if (onProgress && now - lastProgressTime >= 500) {
           lastProgressTime = now
-          lastDownloadedBytes = downloadedBytes
-          onProgress({
+          await onProgress({
             downloadedBytes,
             totalBytes,
-            lastProgressTime,
-            lastDownloadedBytes,
-            url,
-          })
-        }
-
-        this.push(chunk)
-        callback()
-      },
-    })
-
-    const writeStream = createWriteStream(tempPath, {
-      flags: appendMode ? 'a' : 'w',
-    })
-
-    const cleanup = (error?: Error) => {
-      clearStallTimer()
-      progressStream.destroy()
-      response.data.destroy()
-      writeStream.destroy()
-      if (error) {
-        reject(error)
-      }
-    }
-
-    response.data.on('error', cleanup)
-    progressStream.on('error', cleanup)
-    writeStream.on('error', cleanup)
-
-    signal?.addEventListener('abort', () => {
-      cleanup(new Error('Download aborted'))
-    })
-
-    writeStream.on('finish', async () => {
-      clearStallTimer()
-      if (totalBytes > 0 && downloadedBytes !== totalBytes) {
-        reject(new Error(`Incomplete download: received ${downloadedBytes} of ${totalBytes} bytes`))
-        return
-      }
-      try {
-        // Atomically move the completed .tmp file to the final path
-        await rename(tempPath, filepath)
-      } catch (renameError) {
-        try {
-          // A parallel job may have completed the same file first.
-          const existing = await getFileStatsIfExists(filepath)
-          if (!existing || Number(existing.size) !== totalBytes || totalBytes <= 0) {
-            reject(renameError)
-            return
-          }
-        } catch (statError) {
-          reject(statError)
-          return
-        }
-      }
-      try {
-        if (onProgress) {
-          onProgress({
-            downloadedBytes,
-            totalBytes,
-            lastProgressTime: Date.now(),
+            lastProgressTime: now,
             lastDownloadedBytes: downloadedBytes,
             url,
           })
         }
-        if (onComplete) {
-          await onComplete(url, filepath)
-        }
-        resolve(filepath)
-      } catch (error) {
-        reject(error)
       }
-    })
-
-    // Start stall timer and pipe: response -> progressStream -> writeStream
-    resetStallTimer()
-    response.data.pipe(progressStream).pipe(writeStream)
+      check().then(
+        () => callback(null, chunk),
+        (error) => callback(error)
+      )
+    },
   })
+  resetStallTimer()
+  try {
+    await pipeline(
+      response.data,
+      progress,
+      createWriteStream(tempPath, { flags: startByte > 0 ? 'a' : 'w' }),
+      { signal: combined }
+    )
+  } finally {
+    clearTimeout(stallTimer)
+  }
+  signal?.throwIfAborted()
+  if (totalBytes > 0 && downloadedBytes !== totalBytes)
+    throw new Error(`Incomplete download: received ${downloadedBytes} of ${totalBytes} bytes`)
+  if (!(await matchesHash(tempPath, expectedSha256))) {
+    await deleteFileIfExists(tempPath)
+    throw new Error('Download SHA-256 mismatch')
+  }
+  signal?.throwIfAborted()
+  // Concurrent jobs must not claim each other's output just because sizes match.
+  await fs.rename(tempPath, filepath)
+  await deleteFileIfExists(sourcePath)
+  await onProgress?.({
+    downloadedBytes,
+    totalBytes,
+    lastProgressTime: Date.now(),
+    lastDownloadedBytes: downloadedBytes,
+    url,
+  })
+  await onComplete?.(url, filepath)
+  return filepath
 }
 
 export async function doResumableDownloadWithRetry({

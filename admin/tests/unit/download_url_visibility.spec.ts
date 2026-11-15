@@ -60,6 +60,7 @@ test('download status omits credentials and failed-job details', async ({ assert
           return [
             {
               id: 'job-1',
+              finishedOn: 1,
               data: {
                 url: 'https://user:password@example.org/file.zim?token=secret',
                 filepath: '/tmp/file.zim?token=secret',
@@ -81,4 +82,19 @@ test('download status omits credentials and failed-job details', async ({ assert
   assert.equal(jobs[0].failedReason, 'Download failed. Retry or check the server logs.')
   assert.notInclude(JSON.stringify(jobs), 'secret')
   assert.notInclude(JSON.stringify(jobs), 'password')
+})
+
+test('a retry retains active status despite a previous attempt error', async ({ assert }) => {
+  const job = {
+    id: 'retry',
+    data: { url: 'https://example.com/file', filepath: '/tmp/file', filetype: 'zim' },
+    progress: 20,
+    failedReason: 'previous attempt failed',
+  }
+  const service = new DownloadService({
+    getQueue: (name: string) => ({ getJobs: async () => (name === 'downloads' ? [job] : []) }),
+  } as any)
+  const result = await service.listDownloadJobs()
+  assert.equal(result[0].status, 'active')
+  assert.isUndefined(result[0].failedReason)
 })
