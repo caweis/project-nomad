@@ -6,6 +6,8 @@ import { TokenChunker } from '@chonkiejs/core'
 import sharp from 'sharp'
 import { deleteFileIfExists, determineFileType, getFile, getFileStatsIfExists, listDirectoryContentsRecursive, ZIM_STORAGE_PATH } from '../utils/fs.js'
 import { computeHeadingBoost, toRetrievedChunk } from '../utils/rag_context.js'
+import { stableVectorPointId, STABLE_VECTOR_ID_SCHEME } from '../../util/embed_jobs.js'
+import { applyRelevanceFloor } from '../utils/rag_relevance.js'
 import { decideScanAction, type IngestPolicy } from '../utils/kb_ingest_decision.js'
 import { decideOrphans } from '../utils/kb_orphan_decision.js'
 import {
@@ -22,7 +24,6 @@ import mammoth from 'mammoth'
 import { OllamaService } from './ollama_service.js'
 import { SERVICE_NAMES } from '../../constants/service_names.js'
 import { removeStopwords } from 'stopword'
-import { randomUUID } from 'node:crypto'
 import { join, relative, resolve, sep } from 'node:path'
 import KVStore from '#models/kv_store'
 import { ZIMExtractionService } from './zim_extraction_service.js'
@@ -312,7 +313,8 @@ export class RagService {
   public async embedAndStoreText(
     text: string,
     metadata: Record<string, any> = {},
-    onProgress?: (percent: number) => Promise<void>
+    onProgress?: (percent: number) => Promise<void>,
+    pointScope: string = 'file'
   ): Promise<{ chunks: number } | null> {
     try {
       await this._ensureCollection(
@@ -489,10 +491,13 @@ export class RagService {
         }
 
         return {
-          id: randomUUID(), // qdrant requires either uuid or unsigned int
+          // A stalled job can run twice. Qdrant upsert then replaces the same
+          // chunk, while other articles/sections keep distinct scopes.
+          id: stableVectorPointId(sanitizedSource, pointScope, origIndex),
           vector: embeddings[position],
           payload: {
             ...metadata,
+            point_id_scheme: STABLE_VECTOR_ID_SCHEME,
             text: sanitizedText,
             chunk_index: origIndex,
             total_chunks: chunks.length,
@@ -671,7 +676,7 @@ export class RagService {
 
         // Extraction metadata - not overly relevant for search, but could be useful for debugging and future features...
         extraction_strategy: zimChunk.strategy,
-      })
+      }, undefined, `zim:${startOffset}:${i}`)
 
       if (result) {
         totalChunks += result.chunks
@@ -844,13 +849,15 @@ export class RagService {
    * @param query - The search query text
    * @param limit - Maximum number of results to return (default: 5)
    * @param scoreThreshold - Minimum similarity score threshold (default: 0.3, much lower than before)
+   * @param minFinalScore - Minimum post-rerank score (0 keeps legacy callers unchanged)
    * @returns Array of relevant text chunks with their scores
    */
   public async searchSimilarDocuments(
     query: string,
     limit: number = 5,
     scoreThreshold: number = 0.3, // Lower default threshold - was 0.7, now 0.3
-    collection?: string
+    collection?: string,
+    minFinalScore: number = 0
   ): Promise<Array<{ text: string; score: number; metadata?: Record<string, any> }>> {
     try {
       logger.debug('[RAG] Starting similarity search')
@@ -962,8 +969,12 @@ export class RagService {
         )
       })
 
-      // Apply source diversity penalty to avoid all results from the same document
-      const diverseResults = this.applySourceDiversity(rerankedResults)
+      // Relevance is judged before diversity, which only reduces duplicate sources.
+      const { survivors, belowFloor } = applyRelevanceFloor(rerankedResults, minFinalScore)
+      if (belowFloor > 0) {
+        logger.debug(`[RAG] Relevance floor ${minFinalScore} dropped ${belowFloor} chunk(s)`)
+      }
+      const diverseResults = this.applySourceDiversity(survivors)
 
       // Return top N results with enhanced metadata
       return diverseResults.slice(0, limit).map(toRetrievedChunk)
@@ -1625,6 +1636,17 @@ export class RagService {
       filter: { must: [{ key: 'source', match: { value: source } }] },
     })
     await KbIngestState.remove(source)
+  }
+
+  /** Remove pre-upgrade random-ID points while retaining every stable-ID retry write. */
+  public async purgeLegacyPointIds(source: string): Promise<void> {
+    await this._ensureCollection(RagService.CONTENT_COLLECTION_NAME, RagService.EMBEDDING_DIMENSION)
+    await this.qdrant!.delete(RagService.CONTENT_COLLECTION_NAME, {
+      filter: {
+        must: [{ key: 'source', match: { value: this.sanitizeText(source) } }],
+        must_not: [{ key: 'point_id_scheme', match: { value: STABLE_VECTOR_ID_SCHEME } }],
+      },
+    })
   }
 
   /**

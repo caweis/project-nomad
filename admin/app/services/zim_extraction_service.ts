@@ -3,7 +3,7 @@ import * as cheerio from 'cheerio'
 import { HTML_SELECTORS_TO_REMOVE, NON_CONTENT_HEADING_PATTERNS } from '../../constants/zim_extraction.js'
 import logger from '@adonisjs/core/services/logger'
 import { ExtractZIMChunkingStrategy, ExtractZIMContentOptions, ZIMContentChunk, ZIMArchiveMetadata } from '../../types/zim.js'
-import { randomUUID } from 'node:crypto'
+import { stableZimDocumentId } from '../../util/embed_jobs.js'
 import { access } from 'node:fs/promises'
 import { isValidZimFile } from '../utils/fs.js'
 import { extractStructuredContent as extractStructuredContentFromHtml } from '../../util/zim_extraction.js'
@@ -115,7 +115,7 @@ export class ZIMExtractionService {
                 logger.debug(`[ZIMExtractionService]: Chosen chunking strategy: ${strategy}`)
 
                 // Generate a unique document ID. All chunks from same article will share it
-                const documentId = randomUUID()
+                const documentId = stableZimDocumentId(filePath, entry.path)
                 const articleTitle = entry.title || entry.path
 
                 let chunks: ZIMContentChunk[]

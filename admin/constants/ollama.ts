@@ -1,4 +1,17 @@
-import { NomadOllamaModel } from '../types/ollama.js'
+import { NomadOllamaModel, type ResponseStyle, type SamplerProfile } from '../types/ollama.js'
+
+export const SAMPLER_PRESETS: Record<Exclude<ResponseStyle, 'off'>, SamplerProfile> = {
+  auto: { temperature: 0.6, topP: 1, topK: 40, minP: 0.05, repeatPenalty: 1.1, compatTopP: 0.9 },
+  focused: { temperature: 0.2, topP: 1, topK: 40, minP: 0.1, repeatPenalty: 1.05, compatTopP: 0.85 },
+  creative: { temperature: 1, topP: 1, topK: 100, minP: 0.03, repeatPenalty: 1.15, compatTopP: 0.95 },
+}
+export const DEFAULT_RESPONSE_STYLE: ResponseStyle = 'auto'
+export const RESPONSE_STYLE_PRESETS: { value: ResponseStyle; label: string }[] = [
+  { value: 'auto', label: 'Auto (recommended)' },
+  { value: 'focused', label: 'Focused (factual, repeatable)' },
+  { value: 'creative', label: 'Creative (varied, exploratory)' },
+  { value: 'off', label: 'Backend defaults' },
+]
 
 /**
  * Per-model description overrides applied at the catalog layer
@@ -193,7 +206,24 @@ export const RAG_CONTEXT_LIMITS: { maxParams: number; maxResults: number; maxTok
   { maxParams: Infinity, maxResults: 5, maxTokens: 0 }, // 13B+ (no cap)
 ]
 
+/** Minimum post-rerank score for a passage to enter a chat answer. */
+export const RAG_MIN_FINAL_SCORE = 0.62
+export const RELEVANCE_CHECK_MAX_TOKENS = 32
+export const RAG_MIN_RELEVANCE_PRESETS = [
+  { value: 0, label: 'Off — use every retrieved passage' },
+  { value: 0.55, label: 'Lenient' },
+  { value: RAG_MIN_FINAL_SCORE, label: 'Balanced (recommended)' },
+  { value: 0.66, label: 'Strict' },
+] as const
+
 export const SYSTEM_PROMPTS = {
+  relevance_check: `You check whether search results are about what a user asked.
+
+Answer true if at least one passage is about the same specific subject as the question, even if it does not state the exact answer.
+
+Answer false if the passages only share a word or a loose theme with the question. Also answer false if the user is not asking for information at all: greetings, chit-chat, or asking you to produce something new such as a poem, a joke, a translation, or a letter.
+
+Respond with JSON: {"on_topic": true} or {"on_topic": false}`,
   default: `
  Format all responses using markdown for better readability. Vanilla markdown or GitHub-flavored markdown is preferred.
  - Use **bold** and *italic* for emphasis.
@@ -203,27 +233,22 @@ export const SYSTEM_PROMPTS = {
  - Use tables when presenting structured data.
 `,
   rag_context: (context: string) => `
-Information has been retrieved from the NOMAD knowledge base that MAY be relevant to the
-user's question. It was selected by automated similarity search, which is imperfect — some
-or all of it may be unrelated to what the user actually asked.
+Information has been retrieved from the NOMAD knowledge base for the user's question. It
+cleared a relevance filter before reaching you, so it is likely on topic — but automated
+search may still miss the specific detail asked for.
 
 [Knowledge Base Context]
 ${context}
 
 HOW TO ANSWER:
-1. First, silently judge whether the context genuinely addresses the user's question. Use
-   it ONLY when it really contains relevant information. Do not force a connection that
-   isn't there: poetic, narrative, tangential, or topically-unrelated passages are NOT
-   relevant just because they share a word with the question — ignore them.
-2. When the context is relevant, base your answer on it and answer directly and specifically.
-3. When the context does not actually address the question, ignore it completely and answer
-   from your own general knowledge. Do this silently — do not mention the knowledge base,
-   the context, or the fact that it lacked an answer, and do not apologize.
-4. Never narrate your retrieval or reasoning process. Do not write "according to Context 1",
+1. When the context contains what was asked for, base your answer on it and answer directly.
+2. When it does not, ignore it and answer from your own general knowledge. Do this silently —
+   do not mention the knowledge base, the context, or the fact that it lacked an answer.
+3. Never narrate your retrieval or reasoning process. Do not write "according to Context 1",
    "the context is unrelated, but", "I couldn't find specific context", or similar. Just
    give the answer as if you simply knew it.
-5. Do not fabricate specifics (numbers, names, procedures) that are neither supported by
-   genuinely relevant context nor part of your reliable knowledge.
+4. Do not fabricate specifics (numbers, names, procedures) that are neither supported by
+   the context nor part of your reliable knowledge.
 
 Format your response using markdown for readability.
 `,

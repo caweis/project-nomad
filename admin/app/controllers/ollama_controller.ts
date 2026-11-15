@@ -3,6 +3,7 @@ import { ContextWindowService } from '#services/context_window_service'
 import { NomadMdService } from '#services/nomad_md_service'
 import { OllamaService } from '#services/ollama_service'
 import { RagService } from '#services/rag_service'
+import { RelevanceJudgeService } from '#services/relevance_judge_service'
 import { modelNameSchema } from '#validators/download'
 import { chatSchema, getAvailableModelsSchema } from '#validators/ollama'
 import KVStore from '#models/kv_store'
@@ -21,6 +22,10 @@ import {
 } from '../utils/structured_output.js'
 import { planPrompt, splitForBudget, type BudgetMessage } from '../utils/context_budget.js'
 import { isRagRetrievalEnabled } from '../utils/rag_toggle.js'
+import { resolveMinFinalScore } from '../utils/rag_relevance_setting.js'
+import { resolveResponseStyle } from '../utils/response_style.js'
+import { compatSamplerParams, nativeSamplerOptions, resolveSamplerProfile } from '../utils/sampler.js'
+import env from '#start/env'
 import logger from '@adonisjs/core/services/logger'
 import type { Message } from 'ollama'
 import { rm } from 'node:fs/promises'
@@ -42,6 +47,7 @@ export default class OllamaController {
     private chatService: ChatService,
     private ollamaService: OllamaService,
     private ragService: RagService,
+    private relevanceJudgeService: RelevanceJudgeService,
     private nomadMdService: NomadMdService,
     private contextWindowService: ContextWindowService
   ) { }
@@ -199,7 +205,8 @@ export default class OllamaController {
           rewrittenQuery,
           5, // Top 5 most relevant chunks
           0.3, // Minimum similarity score of 0.3
-          reqData.collection || undefined // Scope RAG search to a KB collection (#1063)
+          reqData.collection || undefined, // Scope RAG search to a KB collection (#1063)
+          await resolveMinFinalScore()
         )
 
         logger.debug(`[RAG] Retrieved ${relevantDocs.length} relevant documents`)
@@ -208,31 +215,37 @@ export default class OllamaController {
         if (relevantDocs.length > 0) {
           // Budgeting and rendering both moved to pure helpers so they can be
           // tested without MySQL/Qdrant/Ollama — see rag_prompt.standalone.ts.
-          // Behaviour is unchanged, quirks included.
           const limits = getContextLimitsForModel(reqData.model, RAG_CONTEXT_LIMITS)
           const trimmedDocs = trimToContextBudget(relevantDocs, limits)
+          const judgeModel = await this.relevanceJudgeService.resolveModel(reqData.model)
+          const latestQuestion =
+            reqData.messages.filter((message) => message.role === 'user').at(-1)?.content ??
+            rewrittenQuery
+          const judgment = judgeModel
+            ? await this.relevanceJudgeService.judge(latestQuestion, trimmedDocs, judgeModel)
+            : null
+          const docsForAnswer = judgment?.kept ?? trimmedDocs
 
           logger.debug(
-            `[RAG] Injecting ${trimmedDocs.length}/${relevantDocs.length} results (model: ${reqData.model}, maxResults: ${limits.maxResults}, maxTokens: ${limits.maxTokens || 'unlimited'})`
+            `[RAG] Injecting ${docsForAnswer.length}/${relevantDocs.length} results (model: ${reqData.model}, maxResults: ${limits.maxResults}, maxTokens: ${limits.maxTokens || 'unlimited'})`
           )
 
-          const contextText = buildContextBlock(trimmedDocs)
-          // From trimmedDocs, not relevantDocs: a chunk trimmed out above never
-          // reached the model, and citing it would credit the answer to a
-          // document it was not based on. The block goes in as a leading system
-          // message, which planPrompt never drops, so this is what the model
-          // reads.
-          sources = buildCitations(trimmedDocs)
+          if (docsForAnswer.length > 0) {
+            const contextText = buildContextBlock(docsForAnswer)
+            // Cite only passages that reached the model. A floor, judge, or
+            // context budget can remove a retrieved chunk before injection.
+            sources = buildCitations(docsForAnswer)
 
-          const systemMessage = {
-            role: 'system' as const,
-            content: SYSTEM_PROMPTS.rag_context(contextText),
+            const systemMessage = {
+              role: 'system' as const,
+              content: SYSTEM_PROMPTS.rag_context(contextText),
+            }
+
+            // Insert after any existing system messages.
+            const firstNonSystemIndex = reqData.messages.findIndex((msg) => msg.role !== 'system')
+            const insertIndex = firstNonSystemIndex === -1 ? 0 : firstNonSystemIndex
+            reqData.messages.splice(insertIndex, 0, systemMessage)
           }
-
-          // Insert system message at the beginning (after any existing system messages)
-          const firstNonSystemIndex = reqData.messages.findIndex((msg) => msg.role !== 'system')
-          const insertIndex = firstNonSystemIndex === -1 ? 0 : firstNonSystemIndex
-          reqData.messages.splice(insertIndex, 0, systemMessage)
         }
       }
 
@@ -240,13 +253,18 @@ export default class OllamaController {
       // per-request preference wins, otherwise the global default (ai.autoThinking, default OFF).
       // gpt-oss models take a 'medium' text param instead of true (https://docs.ollama.com/api/chat).
       // Ported from upstream #1079 — previously thinking was auto-on whenever the model was capable.
-      const thinkingCapability = await this.ollamaService.checkModelHasThinking(reqData.model)
+      const modelInfo = await this.ollamaService.getModelInfo(reqData.model)
+      const thinkingCapability = modelInfo.hasThinking
       let thinkingEnabled = false
       if (thinkingCapability) {
         thinkingEnabled = reqData.think ?? ((await KVStore.getValue('ai.autoThinking')) ?? false)
       }
       const think: boolean | 'medium' =
         thinkingEnabled ? (reqData.model.startsWith('gpt-oss') ? 'medium' : true) : false
+      const sampler = resolveSamplerProfile(await resolveResponseStyle(), modelInfo.modelfileSamplers)
+      const samplerOptions = env.get('NOMAD_AI_BACKEND') === 'omlx'
+        ? compatSamplerParams(sampler)
+        : nativeSamplerOptions(sampler)
 
       // Separate sessionId and the resolved thinking preference from the Ollama request payload —
       // Ollama rejects unknown fields, and `think` is re-derived above (not forwarded raw).
@@ -305,7 +323,12 @@ export default class OllamaController {
       const budgetedRequest = {
         ...ollamaRequest,
         messages: attachImagesToLatestUserMessage(planned.messages, normalizedImages) as Message[],
-        options: { num_ctx: contextWindow, num_predict: planned.numPredict },
+        options: {
+          num_ctx: contextWindow,
+          num_predict: planned.numPredict,
+          ...samplerOptions,
+          ...(sampler?.temperature === undefined ? {} : { temperature: sampler.temperature }),
+        },
       }
 
       if (reqData.stream) {

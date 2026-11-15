@@ -6,13 +6,11 @@ import {
   useQueryClient,
 } from '@tanstack/react-query'
 import api from '~/lib/api'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useVirtualizer } from '@tanstack/react-virtual'
-import StyledTable from '~/components/StyledTable'
+import { useCallback, useMemo, useState } from 'react'
+import VirtualizedZimCatalog from '~/components/VirtualizedZimCatalog'
 import SettingsLayout from '~/layouts/SettingsLayout'
 import { Head } from '@inertiajs/react'
 import { ListRemoteZimFilesResponse, RemoteZimFileEntry } from '../../../../types/zim'
-import { formatBytes } from '~/lib/util'
 import StyledButton from '~/components/StyledButton'
 import { useModals } from '~/context/ModalContext'
 import StyledModal from '~/components/StyledModal'
@@ -41,7 +39,6 @@ const LANGUAGE_LIST_FRESH_MS = 60 * 60 * 1000
 
 export default function ZimRemoteExplorer() {
   const queryClient = useQueryClient()
-  const tableParentRef = useRef<HTMLDivElement>(null)
 
   const { openModal, closeAllModals } = useModals()
   const { addNotification } = useNotifications()
@@ -183,17 +180,6 @@ export default function ZimRemoteExplorer() {
     [fetchNextPage, isFetching, hasMore, flatData.length]
   )
 
-  const virtualizer = useVirtualizer({
-    count: flatData.length,
-    estimateSize: () => 48, // Estimate row height
-    getScrollElement: () => tableParentRef.current,
-    overscan: 5, // Number of items to render outside the visible area
-  })
-
-  //a check on mount and after a fetch to see if the table is already scrolled to the bottom and immediately needs to fetch more data
-  useEffect(() => {
-    fetchOnBottomReached(tableParentRef.current)
-  }, [fetchOnBottomReached])
 
   async function confirmDownload(record: RemoteZimFileEntry) {
     openModal(
@@ -472,70 +458,11 @@ export default function ZimRemoteExplorer() {
                   />
                 )}
               </div>
-              <StyledTable<RemoteZimFileEntry & { actions?: any }>
-                data={flatData.map((i, idx) => {
-                  const row = virtualizer.getVirtualItems().find((v) => v.index === idx)
-                  return {
-                    ...i,
-                    height: `${row?.size || 48}px`, // Use the size from the virtualizer
-                    translateY: row?.start || 0,
-                  }
-                })}
-                ref={tableParentRef}
+              <VirtualizedZimCatalog
+                items={flatData}
                 loading={isLoading}
-                columns={[
-                  {
-                    accessor: 'title',
-                  },
-                  {
-                    accessor: 'author',
-                  },
-                  {
-                    accessor: 'summary',
-                  },
-                  {
-                    accessor: 'updated',
-                    render(record) {
-                      return new Intl.DateTimeFormat('en-US', {
-                        dateStyle: 'medium',
-                      }).format(new Date(record.updated))
-                    },
-                  },
-                  {
-                    accessor: 'size_bytes',
-                    title: 'Size',
-                    render(record) {
-                      return formatBytes(record.size_bytes)
-                    },
-                  },
-                  {
-                    accessor: 'actions',
-                    render(record) {
-                      return (
-                        <div className="flex space-x-2">
-                          <StyledButton
-                            icon={'IconDownload'}
-                            onClick={() => {
-                              confirmDownload(record)
-                            }}
-                          >
-                            Download
-                          </StyledButton>
-                        </div>
-                      )
-                    },
-                  },
-                ]}
-                className="relative overflow-x-auto overflow-y-auto h-[600px] w-full mt-4"
-                tableBodyStyle={{
-                  position: 'relative',
-                  height: `${virtualizer.getTotalSize()}px`,
-                }}
-                containerProps={{
-                  onScroll: (e) => fetchOnBottomReached(e.currentTarget as HTMLDivElement),
-                }}
-                compact
-                rowLines
+                onDownload={confirmDownload}
+                onScroll={fetchOnBottomReached}
               />
             </>
           )}

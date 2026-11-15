@@ -20,12 +20,27 @@ import Alert from '~/components/Alert'
 const CURATED_COLLECTIONS_KEY = 'curated-map-collections'
 
 export default function MapsManager(props: {
-  maps: { baseAssetsExist: boolean; regionFiles: FileEntry[] }
+  maps: { baseAssetsExist: boolean; worldBasemapExists: boolean; regionFiles: FileEntry[] }
 }) {
   const queryClient = useQueryClient()
   const { openModal, closeAllModals } = useModals()
   const { addNotification } = useNotifications()
   const [downloading, setDownloading] = useState(false)
+  const [downloadingWorld, setDownloadingWorld] = useState(false)
+
+  async function downloadWorldBasemap() {
+    setDownloadingWorld(true)
+    try {
+      const result = await api.setupWorldBasemap()
+      if (!result?.success) throw new Error('World basemap setup failed')
+      addNotification({ type: 'success', message: 'World base map downloaded.' })
+      router.reload()
+    } catch {
+      addNotification({ type: 'error', message: 'Could not download the world base map. Check the internet connection and try again.' })
+    } finally {
+      setDownloadingWorld(false)
+    }
+  }
 
   const { data: curatedCollections } = useQuery({
     queryKey: [CURATED_COLLECTIONS_KEY],
@@ -198,6 +213,21 @@ export default function MapsManager(props: {
                 icon: 'IconDownload',
                 loading: downloading,
                 onClick: () => downloadBaseAssets(),
+              }}
+            />
+          )}
+          {props.maps.baseAssetsExist && !props.maps.worldBasemapExists && (
+            <Alert
+              title="The world base map is missing. Download it while online to see the map beyond saved regions."
+              type="warning"
+              variant="solid"
+              className="my-4"
+              buttonProps={{
+                variant: 'secondary',
+                children: 'Download Base Map',
+                icon: 'IconDownload',
+                loading: downloadingWorld,
+                onClick: downloadWorldBasemap,
               }}
             />
           )}

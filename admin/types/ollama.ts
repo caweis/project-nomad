@@ -51,6 +51,17 @@ export type OllamaChatMessage = {
   content: string
 }
 
+export type ResponseStyle = 'auto' | 'focused' | 'creative' | 'off'
+
+export type SamplerProfile = {
+  temperature?: number
+  topP?: number
+  topK?: number
+  minP?: number
+  repeatPenalty?: number
+  compatTopP?: number
+}
+
 export type OllamaChatRequest = {
   model: string
   messages: OllamaChatMessage[]
@@ -103,4 +114,5 @@ export interface NomadModelInfo {
   quantizationLevel?: string
   /** Raw model_info, for exact KV-cache sizing when the metadata is complete. */
   rawModelInfo?: unknown
+  modelfileSamplers?: SamplerProfile
 }

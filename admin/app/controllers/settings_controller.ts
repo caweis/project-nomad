@@ -112,9 +112,11 @@ export default class SettingsController {
     async maps({ inertia }: HttpContext) {
         const baseAssetsCheck = await this.mapService.ensureBaseAssets();
         const regionFiles = await this.mapService.listRegions();
+        const worldBasemapExists = await this.mapService.checkWorldBasemapExists();
         return inertia.render('settings/maps', {
             maps: {
                 baseAssetsExist: baseAssetsCheck,
+                worldBasemapExists,
                 regionFiles: regionFiles.files
             }
         });
@@ -126,7 +128,10 @@ export default class SettingsController {
         const chatSuggestionsEnabled = await KVStore.getValue('chat.suggestionsEnabled')
         const aiAssistantCustomName = await KVStore.getValue('ai.assistantCustomName')
         const autoThinking = await KVStore.getValue('ai.autoThinking')
+        const responseStyle = await KVStore.getValue('ai.responseStyle')
         const ragEnabled = await KVStore.getValue('rag.enabled')
+        const minRelevance = await KVStore.getValue('rag.minRelevance')
+        const relevanceCheck = await KVStore.getValue('rag.relevanceCheck')
         const tasksModel = await KVStore.getValue('ai.tasksModel')
         const contextWindow = await KVStore.getValue('ai.contextWindow')
         return inertia.render('settings/models', {
@@ -138,10 +143,13 @@ export default class SettingsController {
                     aiAssistantCustomName: aiAssistantCustomName ?? '',
                     // Global default for model thinking/reasoning (off by default). #1079
                     autoThinking: autoThinking ?? false,
+                    responseStyle: responseStyle ?? 'auto',
                     // Knowledge base retrieval master switch (#1247). Unset
                     // means ON, so installs predating the toggle keep
                     // retrieving — same default as the server-side read.
                     ragEnabled: ragEnabled ?? true,
+                    minRelevance: minRelevance ?? 'auto',
+                    relevanceCheck: relevanceCheck ?? false,
                     // Model for short ancillary work — chat titles, suggestion
                     // chips, RAG query rewriting (#1244). '' means "use the chat
                     // model", the behaviour from before the setting existed. The
