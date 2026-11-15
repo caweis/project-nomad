@@ -657,7 +657,10 @@ export default class SystemController {
         service.friendly_name = payload.friendly_name
         service.container_image = payload.image
         service.container_config = JSON.stringify(containerConfig)
-        service.ui_location = prevScheme && uiLocation && /^\d+$/.test(uiLocation)
+    // Internal UI routes are independent of the container API port.
+    service.ui_location = service.ui_location?.startsWith('/')
+      ? service.ui_location
+      : prevScheme && uiLocation && /^\d+$/.test(uiLocation)
             ? `${prevScheme}:${uiLocation}`
             : uiLocation
         service.category = payload.category ?? service.category ?? 'custom'
