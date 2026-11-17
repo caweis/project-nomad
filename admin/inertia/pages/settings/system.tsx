@@ -268,6 +268,16 @@ export default function SettingsPage(props: {
                   />
                 </div>
               )}
+              {info?.gpuHealth?.status === 'unsupported' && (
+                <div className="lg:col-span-2">
+                  <Alert
+                    type="info"
+                    variant="bordered"
+                    title="Intel GPU acceleration unavailable"
+                    message="The bundled AI container has no Intel GPU backend enabled. AI responses use the CPU. Native and custom inference backends may support different hardware."
+                  />
+                </div>
+              )}
               {info?.graphics?.controllers && info.graphics.controllers.length > 0 && (
                 <InfoCard
                   title="Graphics"
