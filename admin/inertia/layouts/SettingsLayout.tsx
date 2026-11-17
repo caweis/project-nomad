@@ -10,6 +10,7 @@ import {
   IconHeart,
   IconMapRoute,
   IconSettings,
+  IconAdjustments,
   IconWand,
   IconZoom
 } from '@tabler/icons-react'
@@ -18,11 +19,13 @@ import StyledSidebar from '~/components/StyledSidebar'
 import CandidateDriveBanner from '~/components/CandidateDriveBanner'
 import { getServiceLink } from '~/lib/navigation'
 import useServiceInstalledStatus from '~/hooks/useServiceInstalledStatus'
+import { useSystemSetting } from '~/hooks/useSystemSetting'
 import { SERVICE_NAMES } from '../../constants/service_names'
 
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
   const { aiAssistantName } = usePage<{ aiAssistantName: string }>().props
   const aiAssistantInstallStatus = useServiceInstalledStatus(SERVICE_NAMES.OLLAMA)
+  const { data: serviceLogsUrlSetting } = useSystemSetting({ key: 'ui.serviceLogsUrl' })
 
   const navigation = [
     ...(aiAssistantInstallStatus.isInstalled ? [{ name: aiAssistantName, href: '/settings/models', icon: IconWand, current: false }] : []),
@@ -34,7 +37,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
     { name: 'Maps Manager', href: '/settings/maps', icon: IconMapRoute, current: false },
     {
       name: 'Service Logs & Metrics',
-      href: getServiceLink('9999'),
+      href: getServiceLink('9999', serviceLogsUrlSetting?.value),
       icon: IconDashboard,
       current: false,
       target: '_blank',
@@ -46,6 +49,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
       current: false,
     },
     { name: 'System', href: '/settings/system', icon: IconSettings, current: false },
+    { name: 'Advanced', href: '/settings/advanced', icon: IconAdjustments, current: false },
     { name: 'Documentation', href: '/docs', icon: IconBook, current: false },
     { name: 'Support the Project', href: '/settings/support', icon: IconHeart, current: false },
     { name: 'Legal Notices', href: '/settings/legal', icon: IconGavel, current: false },

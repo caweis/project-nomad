@@ -8,11 +8,24 @@
  * value is rejected with 422 before it reaches the KV store and the scheduler.
  */
 import assert from 'node:assert/strict'
-import {
-  validateSettingValue,
-  CONTEXT_LADDER as LADDER_FROM_VALIDATOR,
-} from '../../app/utils/setting_value.ts'
+import { registerHooks } from 'node:module'
 import { CONTEXT_LADDER } from '../../app/utils/context_window.ts'
+
+// Production uses .js specifiers; resolve their local TypeScript source here.
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    try {
+      return nextResolve(specifier, context)
+    } catch (error) {
+      if (specifier.startsWith('.') && specifier.endsWith('.js')) {
+        return nextResolve(specifier.slice(0, -3) + '.ts', context)
+      }
+      throw error
+    }
+  },
+})
+const { validateSettingValue, CONTEXT_LADDER: LADDER_FROM_VALIDATOR } =
+  await import('../../app/utils/setting_value.ts')
 
 let passed = 0
 function check(name: string, fn: () => void) {
@@ -63,9 +76,7 @@ check('an unconstrained key passes through', () => ok('chat.lastModel', 'llama3.
 
 // ── ai.contextWindow (upstream #1253) ──
 check('the context-window ladder in this validator matches the resolver', () => {
-  // The validator duplicates CONTEXT_LADDER because it must stay import-free to
-  // run standalone. This is the guard that turns drift into a failing test
-  // rather than a window the resolver can produce but the validator rejects.
+  // Guard the validator's accepted values against the resolver's output.
   assert.deepEqual([...LADDER_FROM_VALIDATOR], [...CONTEXT_LADDER])
 })
 

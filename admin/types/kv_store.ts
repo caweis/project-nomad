@@ -27,6 +27,8 @@ export const KV_STORE_SCHEMA = {
   // Home dashboard layout preference: 'grid' (traditional flat tile grid, the
   // default) or 'decks' (categorized scenario decks). Null → 'grid'.
   'ui.homeLayout':              'string',
+  // Optional Service Logs & Metrics address; unset uses this host on port 9999.
+  'ui.serviceLogsUrl': 'string',
   'ai.assistantCustomName':     'string',
   // Global default for model "thinking"/reasoning. Off by default; a per-request
   // preference (resolved client-side) overrides it. Ported from upstream #1079.
