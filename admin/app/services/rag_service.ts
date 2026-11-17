@@ -29,6 +29,7 @@ import KVStore from '#models/kv_store'
 import { ZIMExtractionService } from './zim_extraction_service.js'
 import { ZIM_BATCH_SIZE } from '../../constants/zim_extraction.js'
 import { hasMoreArticleBatches } from '../utils/zim_batch_decision.js'
+import { UnrecoverableError } from 'bullmq'
 import { decideContentReindex, type ReindexOutcome } from '../utils/content_reindex_decision.js'
 import { ProcessAndEmbedFileResponse, ProcessZIMFileResponse, RAGResult, RerankedRAGResult, StoredFileInfo } from '../../types/rag.js'
 import type { KbIngestStateValue } from '../../types/kb_ingest_state.js'
@@ -622,7 +623,8 @@ export class RagService {
     deleteAfterEmbedding: boolean,
     batchOffset?: number,
     onProgress?: (percent: number) => Promise<void>,
-    collection?: string
+    collection?: string,
+    resumeAtDirent?: number
   ): Promise<ProcessZIMFileResponse> {
     const zimExtractionService = new ZIMExtractionService()
 
@@ -633,10 +635,15 @@ export class RagService {
       `[RAG] Extracting ZIM content (batch: offset=${startOffset}, size=${ZIM_BATCH_SIZE})`
     )
 
-    const { chunks: zimChunks, articlesProcessed } = await zimExtractionService.extractZIMContent(
-      filepath,
-      { startOffset, batchSize: ZIM_BATCH_SIZE }
-    )
+    const {
+      chunks: zimChunks,
+      articlesProcessed,
+      resumeAtDirent: nextResumeAtDirent,
+    } = await zimExtractionService.extractZIMContent(filepath, {
+      startOffset,
+      batchSize: ZIM_BATCH_SIZE,
+      resumeAtDirent,
+    })
 
     logger.info(
       `[RAG] Extracted ${zimChunks.length} chunks from ZIM file with enhanced metadata`
@@ -727,6 +734,7 @@ export class RagService {
       // every sparse batch, and a batch with no text at all would have
       // advanced by zero and re-run the same window.
       articlesProcessed,
+      resumeAtDirent: nextResumeAtDirent,
     }
   }
 
@@ -778,7 +786,8 @@ export class RagService {
     deleteAfterEmbedding: boolean = false,
     batchOffset?: number,
     onProgress?: (percent: number) => Promise<void>,
-    collection?: string
+    collection?: string,
+    resumeAtDirent?: number
   ): Promise<ProcessAndEmbedFileResponse> {
     try {
       // Partial downloads stage as `<name>.zim.tmp` until the atomic rename to
@@ -808,7 +817,14 @@ export class RagService {
       // Process based on file type
       // ZIM files are handled specially since they have their own embedding workflow
       if (fileType === 'zim') {
-        return await this.processZIMFile(filepath, deleteAfterEmbedding, batchOffset, onProgress, collection)
+        return await this.processZIMFile(
+          filepath,
+          deleteAfterEmbedding,
+          batchOffset,
+          onProgress,
+          collection,
+          resumeAtDirent
+        )
       }
 
       // Extract text based on file type
@@ -839,8 +855,11 @@ export class RagService {
 
       // Embed extracted text and cleanup
       return await this.embedTextAndCleanup(extractedText, filepath, deleteAfterEmbedding, scaledProgress, collection)
-    } catch {
+    } catch (error) {
       logger.error('[RAG] Error processing and embedding file')
+      // A saved cursor beyond the archive cannot recover on retry. Let the
+      // job retain that classification while sanitizing its persisted error.
+      if (error instanceof UnrecoverableError) throw error
       return { success: false, message: 'Error processing and embedding file.' }
     }
   }
