@@ -1,4 +1,4 @@
-import { Job } from 'bullmq'
+import { Job, UnrecoverableError } from 'bullmq'
 import { QueueService } from '#services/queue_service'
 import { EmbedJobWithProgress } from '../../types/rag.js'
 import {
@@ -20,6 +20,7 @@ export interface EmbedFileJobParams {
   fileSize?: number
   // Batch processing for large ZIM files
   batchOffset?: number // Current batch offset (for ZIM files)
+  resumeAtDirent?: number // Finished directory entries; absent on older queued jobs
   totalArticles?: number // Total articles in ZIM (for progress tracking)
   isFinalBatch?: boolean // Whether this is the last batch (prevents premature deletion)
   // Accumulated chunk count carried across batched ZIM continuation dispatches,
@@ -48,7 +49,7 @@ export class EmbedFileJob {
   }
 
   async handle(job: Job) {
-    const { filePath, fileName, batchOffset, totalArticles, collection } =
+    const { filePath, fileName, batchOffset, totalArticles, collection, resumeAtDirent } =
       job.data as EmbedFileJobParams
 
     // Only the direct KB-upload controller passes `collection` on dispatch; the other
@@ -118,7 +119,8 @@ export class EmbedFileJob {
         allowDeletion,
         batchOffset,
         onProgress,
-        effectiveCollection
+        effectiveCollection,
+        resumeAtDirent
       )
 
       if (!result.success) {
@@ -142,6 +144,7 @@ export class EmbedFileJob {
           totalArticles: totalArticles || result.totalArticles,
           isFinalBatch: false, // Explicitly not final
           chunksSoFar: chunksSoFarNext,
+          ...(result.resumeAtDirent !== undefined ? { resumeAtDirent: result.resumeAtDirent } : {}),
           // Carry the tag forward — a continuation is a NEW job, so without
           // this only the first batch's points would be tagged.
           ...(effectiveCollection ? { collection: effectiveCollection } : {}),
@@ -219,6 +222,7 @@ export class EmbedFileJob {
         logger.warn('[EmbedFileJob] Failed to persist failed state')
       }
 
+      if (error instanceof UnrecoverableError) throw new UnrecoverableError(failureReason)
       throw new Error(failureReason)
     }
   }
