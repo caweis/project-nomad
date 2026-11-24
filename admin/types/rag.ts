@@ -42,6 +42,8 @@ export type ProcessAndEmbedFileResponse = {
   hasMoreBatches?: boolean
   articlesProcessed?: number
   totalArticles?: number
+  /** Finished entries in iterByPath(); continuation jobs seek here. */
+  resumeAtDirent?: number
 }
 export type ProcessZIMFileResponse = ProcessAndEmbedFileResponse
 

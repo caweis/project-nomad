@@ -178,6 +178,7 @@ router
 router
   .group(() => {
     router.get('/system', [SettingsController, 'system'])
+    router.get('/advanced', [SettingsController, 'advanced'])
     router.get('/legal', [SettingsController, 'legal'])
     router.get('/maps', [SettingsController, 'maps'])
     router.get('/models', [SettingsController, 'models'])

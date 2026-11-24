@@ -8,6 +8,7 @@ import { getSettingSchema, updateSettingSchema, validateSettingValue } from '#va
 import env from '#start/env';
 import { inject } from '@adonisjs/core';
 import type { HttpContext } from '@adonisjs/core/http'
+import { normalizeCustomUrl } from '../../util/custom_url.js'
 
 @inject()
 export default class SettingsController {
@@ -206,6 +207,12 @@ export default class SettingsController {
         });
     }
 
+  async advanced({ inertia }: HttpContext) {
+    return inertia.render('settings/advanced', {
+      advanced: { serviceLogsUrl: (await KVStore.getValue('ui.serviceLogsUrl')) ?? '' },
+    })
+  }
+
     async getSetting({ request, response }: HttpContext) {
         // Validate `key` against SETTINGS_KEYS enum so the endpoint can't be
         // used to probe arbitrary KV keys. Ports upstream b183bc6.
@@ -214,15 +221,19 @@ export default class SettingsController {
         return response.status(200).send({ key, value });
     }
 
-    async updateSetting({ request, response }: HttpContext) {
-        const reqData = await request.validateUsing(updateSettingSchema);
-        // Per-key value-format check (HH:MM windows, cool-off range, byte cap)
-        // beyond the generic key-enum validation — reject before persisting.
-        const valueError = validateSettingValue(reqData.key, reqData.value);
-        if (valueError) {
-            return response.status(422).send({ success: false, message: valueError });
-        }
-        await this.systemService.updateSetting(reqData.key, reqData.value);
-        return response.status(200).send({ success: true, message: 'Setting updated successfully' });
+  async updateSetting({ request, response }: HttpContext) {
+    const reqData = await request.validateUsing(updateSettingSchema)
+    // Per-key value-format check (HH:MM windows, cool-off range, byte cap)
+    // beyond the generic key-enum validation — reject before persisting.
+    const valueError = validateSettingValue(reqData.key, reqData.value)
+    if (valueError) {
+      return response.status(422).send({ success: false, message: valueError })
     }
+    // Normalize the stored href as well as the form input. Whitespace-only
+    // API values must clear the override just like an empty form field.
+    const value =
+      reqData.key === 'ui.serviceLogsUrl' ? normalizeCustomUrl(reqData.value) : reqData.value
+    await this.systemService.updateSetting(reqData.key, value)
+    return response.status(200).send({ success: true, message: 'Setting updated successfully' })
+  }
 }

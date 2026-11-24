@@ -24,6 +24,8 @@ server.errorHandler(() => import('#exceptions/handler'))
  */
 server.use([
   () => import('#middleware/container_bindings_middleware'),
+  // Map preflights must run before global CORS ends unmatched-origin requests.
+  () => import('#middleware/maps_cors_middleware'),
   () => import('@adonisjs/cors/cors_middleware'),
   () => import('@adonisjs/vite/vite_middleware'),
   () => import('@adonisjs/inertia/inertia_middleware'),

@@ -1,5 +1,6 @@
 import { DOWNLOAD_CANCELLED_PREFIX } from '../utils/download_failure.js'
 import { downloadRegionalMap } from '../utils/regional_map_lfs.js'
+import { publishInstalledEdition, type EditionSelection } from '#services/installed_edition_service'
 import { Job, UnrecoverableError } from 'bullmq'
 import { RunDownloadJobParams } from '../../types/downloads.js'
 import { QueueService } from '#services/queue_service'
@@ -19,7 +20,7 @@ import { isSafeOldContentPath } from '../utils/content_path.js'
 import { decideDownloadIngest } from '../utils/content_reindex_decision.js'
 import { ZIM_STORAGE_PATH } from '../utils/fs.js'
 import { SERVICE_NAMES } from '../../constants/service_names.js'
-import { basename, join } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import { downloadUrlOriginForLog } from '../utils/download_url_log.js'
 
 export class RunDownloadJob {
@@ -47,7 +48,7 @@ export class RunDownloadJob {
       allowedMimeTypes,
       forceNew,
       filetype,
-      resourceMetadata,
+      resourceMetadata: queuedMetadata,
       requestHeaders,
     } = job.data as RunDownloadJobParams
     const previousData = job.data as RunDownloadJobParams
@@ -102,44 +103,73 @@ export class RunDownloadJob {
             return
           }
 
-          let context = (job.data as RunDownloadJobParams).completionContext
-          if (!context) {
-            let oldFilePath: string | null = null
-            if (resourceMetadata) {
-              const { default: InstalledResource } = await import('#models/installed_resource')
-              const oldEntry = await InstalledResource.query()
-                .where('resource_id', resourceMetadata.resource_id)
-                .where('resource_type', filetype as 'zim' | 'map')
-                .first()
-              oldFilePath = oldEntry?.file_path ?? null
-              if (oldFilePath && oldFilePath !== filepath) {
-                const storageRoot =
-                  filetype === 'zim'
-                    ? join(process.cwd(), ZIM_STORAGE_PATH)
-                    : filetype === 'map'
-                      ? join(process.cwd(), 'storage/maps/pmtiles')
-                      : null
-                if (
-                  !storageRoot ||
-                  !isSafeOldContentPath(oldFilePath, resourceMetadata.resource_id, storageRoot)
-                ) {
-                  console.warn('[RunDownloadJob] Refusing unexpected old file path')
-                  oldFilePath = null
-                }
+          const edition =
+            queuedMetadata ??
+            (filetype === 'zim'
+              ? await ZimService.legacyDownloadEdition(completedUrl, filepath)
+              : null)
+          let resourceId = edition?.resource_id
+          const savedContext = previousData.completionContext
+          let context = savedContext
+          let oldFilePath: string | null = null
+          const qdrantInstalled =
+            filetype === 'zim' && !!(await new DockerService().getServiceURL(SERVICE_NAMES.QDRANT))
+          const storageRoot =
+            filetype === 'zim'
+              ? join(process.cwd(), ZIM_STORAGE_PATH)
+              : join(process.cwd(), 'storage/maps/pmtiles')
+
+          async function prepareCompletion(selection: EditionSelection) {
+            oldFilePath = null
+            const prior = selection.previous?.file_path
+            // After our own row was repointed a retry needs the persisted predecessor.
+            // A different current predecessor means another edition won in between.
+            const reuseSnapshot =
+              savedContext &&
+              (prior
+                ? resolve(prior) === resolve(filepath) || prior === savedContext.oldFilePath
+                : !savedContext.oldFilePath)
+            const candidate = reuseSnapshot ? savedContext.oldFilePath : prior
+            if (candidate && resolve(candidate) !== resolve(filepath) && edition) {
+              if (
+                (filetype === 'zim' || filetype === 'map') &&
+                isSafeOldContentPath(
+                  candidate,
+                  selection.resourceId,
+                  storageRoot,
+                  filetype,
+                  selection.aliases,
+                  edition.version
+                )
+              ) {
+                oldFilePath = candidate
+              } else {
+                console.warn('[RunDownloadJob] Refusing unexpected old file path')
               }
             }
-
-            const isReplacement = !!oldFilePath && oldFilePath !== filepath
-            const qdrantInstalled =
-              filetype === 'zim' &&
-              !!(await new DockerService().getServiceURL(SERVICE_NAMES.QDRANT))
+            const skipEmbedding = queuedMetadata?.skip_embedding === true || selection.skipEmbedding
+            // An older queued job may already have persisted an embed decision for a browse-only video.
+            if (
+              reuseSnapshot &&
+              oldFilePath === savedContext.oldFilePath &&
+              (!skipEmbedding ||
+                savedContext.ingestDecision === 'skip' ||
+                savedContext.ingestDecision === 'purge_old')
+            ) {
+              if (context !== savedContext) {
+                await job.updateData({ ...job.data, completionContext: savedContext })
+                context = savedContext
+              }
+              return
+            }
             const { default: KVStore } = await import('#models/kv_store')
-            const policyRaw =
-              qdrantInstalled && !resourceMetadata?.skip_embedding && !isReplacement
+            const policy =
+              qdrantInstalled && !oldFilePath && !skipEmbedding
                 ? await KVStore.getValue('rag.defaultIngestPolicy')
                 : null
+
             let oldFileWasIndexed = false
-            if (isReplacement && qdrantInstalled && oldFilePath) {
+            if (oldFilePath && qdrantInstalled) {
               const { default: KbIngestState } = await import('#models/kb_ingest_state')
               const oldState = await KbIngestState.query().where('file_path', oldFilePath).first()
               oldFileWasIndexed = oldState?.state === 'indexed'
@@ -149,42 +179,35 @@ export class RunDownloadJob {
               oldFileWasIndexed,
               ingestDecision: decideDownloadIngest(
                 qdrantInstalled,
-                resourceMetadata?.skip_embedding === true,
-                isReplacement,
-                policyRaw === 'Manual' ? 'Manual' : 'Always'
+                skipEmbedding,
+                !!oldFilePath,
+                policy === 'Manual' ? 'Manual' : 'Always'
               ),
             }
-            // Persist before repointing the DB row or deleting the old file.
-            // Both automatic retries and the manual retry path reuse this snapshot.
+            // Publication rechecks this predecessor after the checkpoint reaches Redis.
             await job.updateData({ ...job.data, completionContext: context })
           }
 
-          const oldFilePath = context.oldFilePath
+          let trackEdition = true
           try {
-            // Create InstalledResource entry if metadata was provided
-            if (resourceMetadata) {
-              const { default: InstalledResource } = await import('#models/installed_resource')
-              const { DateTime } = await import('luxon')
-              const { getFileStatsIfExists, deleteFileIfExists } = await import('../utils/fs.js')
-              const stats = await getFileStatsIfExists(filepath)
-
-              await InstalledResource.updateOrCreate(
+            if (edition && (filetype === 'zim' || filetype === 'map')) {
+              const publication = await publishInstalledEdition(
                 {
-                  resource_id: resourceMetadata.resource_id,
-                  resource_type: filetype as 'zim' | 'map',
-                },
-                {
-                  version: resourceMetadata.version,
-                  collection_ref: resourceMetadata.collection_ref,
-                  url: url,
+                  resource_id: edition.resource_id,
+                  resource_type: filetype,
+                  version: edition.version,
+                  ...(queuedMetadata && { collection_ref: queuedMetadata.collection_ref }),
+                  url,
                   file_path: filepath,
-                  file_size_bytes: stats ? Number(stats.size) : null,
-                  installed_at: DateTime.now(),
-                }
+                },
+                { preferNewest: !queuedMetadata, saveCheckpoint: prepareCompletion }
               )
-
-              // Delete the old file if it differs from the new one
-              if (oldFilePath && oldFilePath !== filepath) {
+              if (publication.status === 'missing')
+                throw new Error('Downloaded resource disappeared before completion')
+              resourceId = publication.resourceId
+              trackEdition = publication.status === 'installed'
+              if (trackEdition && oldFilePath) {
+                const { deleteFileIfExists } = await import('../utils/fs.js')
                 try {
                   await deleteFileIfExists(oldFilePath)
                   console.log('[RunDownloadJob] Deleted old file')
@@ -196,6 +219,13 @@ export class RunDownloadJob {
                 }
               }
               // Backoff clears only after every completion step succeeds below.
+            } else {
+              await prepareCompletion({
+                resourceId: '',
+                aliases: new Map(),
+                skipEmbedding: false,
+                previous: null,
+              })
             }
 
             if (filetype === 'zim') {
@@ -205,11 +235,11 @@ export class RunDownloadJob {
               // can deterministically exclude us. Without this, the check
               // counts the just-finished job as "still pending" and never
               // restarts Kiwix.
-              await zimService.downloadRemoteSuccessCallback([completedUrl], true, job.id)
+              await zimService.downloadRemoteSuccessCallback([completedUrl], true, job.id, true)
 
               // Only an installed knowledge base can consume embeddings. The
               // macOS Ollama URL exists even when the AI tile is not installed.
-              const decision = context.ingestDecision
+              const decision = trackEdition ? context?.ingestDecision : 'skip'
               if (decision === 'purge_old' && oldFilePath) {
                 await new RagService(dockerService, new OllamaService()).purgeIndexedSource(
                   oldFilePath
@@ -222,7 +252,7 @@ export class RunDownloadJob {
                   oldFilePath,
                   newFilePath: filepath,
                   fileName: basename(filepath),
-                  oldFileWasIndexed: context.oldFileWasIndexed,
+                  oldFileWasIndexed: context?.oldFileWasIndexed === true,
                 })
                 console.log(`[RunDownloadJob] KB reconciliation: ${outcome}`)
               } else if (decision === 'pending') {
@@ -241,10 +271,10 @@ export class RunDownloadJob {
               const mapsService = new MapService()
               await mapsService.downloadRemoteSuccessCallback([completedUrl], false)
             }
-            if (resourceMetadata?.auto) {
+            if (trackEdition && queuedMetadata?.auto && resourceId) {
               const { default: InstalledResource } = await import('#models/installed_resource')
               const installed = await InstalledResource.query()
-                .where('resource_id', resourceMetadata.resource_id)
+                .where('resource_id', resourceId)
                 .where('resource_type', filetype as 'zim' | 'map')
                 .firstOrFail()
               const { recordResourceUpdateSuccess } =

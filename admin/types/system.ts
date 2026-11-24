@@ -1,7 +1,13 @@
 import { Systeminformation } from 'systeminformation'
 
 export type GpuHealthStatus = {
-  status: 'ok' | 'passthrough_failed' | 'no_gpu' | 'ollama_not_installed' | 'apple_metal'
+  status:
+    | 'ok'
+    | 'passthrough_failed'
+    | 'no_gpu'
+    | 'ollama_not_installed'
+    | 'apple_metal'
+    | 'unsupported'
   hasNvidiaRuntime: boolean
   ollamaGpuAccessible: boolean
   hasAppleMetal?: boolean

@@ -19,6 +19,7 @@ import { invalidateResponseStyleCache } from '../utils/response_style.js'
 import { isNewerVersion } from '../utils/version.js'
 import { CUSTOM_PORT_START, nextFreeCustomPort } from '#services/custom_app_ports'
 import { KiwixLibraryService } from '#services/kiwix_library_service'
+import { hasOnlyIntelGpus, isBundledOllamaWithoutVulkan } from '../utils/gpu_support.js'
 
 
 // Marker the host's drive-detect agent writes when a non-active, full-library
@@ -431,9 +432,21 @@ export class SystemService {
               }
             }
           } else {
-            // si.graphics() returned controllers (host install, not Docker) — GPU is working
-            gpuHealth.status = 'ok'
-            gpuHealth.ollamaGpuAccessible = true
+            // A visible controller alone does not prove the bundled inference engine supports it.
+            // Native/remote and custom containers may supply their own Intel GPU backend.
+            let unsupportedIntel = false
+            if (!DockerService.isNativeOllama() && hasOnlyIntelGpus(graphics.controllers)) {
+              try {
+                const container = await this.dockerService.docker
+                  .getContainer(SERVICE_NAMES.OLLAMA)
+                  .inspect()
+                unsupportedIntel = isBundledOllamaWithoutVulkan(container.Config)
+              } catch {
+                // An unavailable container cannot establish which backend is in use.
+              }
+            }
+            gpuHealth.status = unsupportedIntel ? 'unsupported' : 'ok'
+            gpuHealth.ollamaGpuAccessible = !unsupportedIntel
           }
         }
       } catch {

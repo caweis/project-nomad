@@ -6,6 +6,7 @@ export const SETTINGS_KEYS: KVStoreKey[] = [
   'ui.hasVisitedEasySetup',
   'ui.theme',
   'ui.homeLayout',
+  'ui.serviceLogsUrl',
   'rag.defaultIngestPolicy',
   'rag.enabled',
   'rag.minRelevance',

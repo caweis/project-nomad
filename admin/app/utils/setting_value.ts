@@ -1,10 +1,11 @@
 import type { KVStoreKey } from '../../types/kv_store.js'
+import { checkCustomUrl, CUSTOM_URL_MESSAGES } from '../../util/custom_url.js'
 
 /**
  * Per-key value-format validation for settings keys that have constraints beyond
- * the generic key-enum check. Kept self-contained (only a type-only import, which
- * erases under `node --experimental-strip-types`) so it is standalone-testable;
- * the vine schemas in app/validators/settings.ts re-export this.
+ * the generic key-enum check. The URL setting shares the existing custom-URL
+ * rules with app launch links and link tiles. The standalone test resolves local
+ * .js imports to their TypeScript source; the Vine schemas re-export this helper.
  *
  * Ported from upstream v1.33.0, minus the `system.internetStatusTestUrl` case
  * (not a key in our fork). Returns an error message when invalid, else null.
@@ -15,10 +16,7 @@ const HHMM_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/
 /**
  * The context-window rungs accepted for `ai.contextWindow`.
  *
- * DUPLICATED ON PURPOSE from `context_window.ts`'s CONTEXT_LADDER. This module
- * keeps only type-only imports so it stays runnable under bare
- * `node --experimental-strip-types` (see the header), and a value import of the
- * real constant would break that. `settings_value_validator.standalone.ts`
+ * Mirrors `context_window.ts`'s CONTEXT_LADDER. The standalone settings test
  * asserts the two lists stay identical, so drift fails a test instead of
  * silently rejecting a window the resolver can produce.
  */
@@ -49,6 +47,20 @@ export function validateSettingValue(key: KVStoreKey, value: unknown): string | 
         return 'The per-window data cap must be a whole number of bytes (0 = unlimited).'
       }
       return null
+    }
+    case 'ui.serviceLogsUrl': {
+      if (value === undefined || value === null) return null
+      if (typeof value !== 'string') return 'Service logs URL must be a string.'
+      const trimmed = value.trim()
+      if (!trimmed) return null
+      // Do not reinterpret an explicit non-HTTP scheme as a bare hostname.
+      if (!/^https?:\/\//i.test(trimmed) && /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
+        return 'Service logs URL must use http or https.'
+      }
+      const result = checkCustomUrl(trimmed)
+      return result.problem && result.problem !== 'empty'
+        ? CUSTOM_URL_MESSAGES[result.problem]
+        : null
     }
     case 'ui.homeLayout':
       if (value !== 'grid' && value !== 'decks') {

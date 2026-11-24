@@ -7,6 +7,11 @@ import { stableZimDocumentId } from '../../util/embed_jobs.js'
 import { access } from 'node:fs/promises'
 import { isValidZimFile } from '../utils/fs.js'
 import { extractStructuredContent as extractStructuredContentFromHtml } from '../../util/zim_extraction.js'
+import { hasResumeCursor, openZimBatchRange } from '../utils/zim_batch_resume.js'
+
+// Older queued jobs have only an article offset. Yield while recounting so
+// BullMQ can renew its lock before the job switches to directory cursors.
+const LEGACY_SCAN_YIELD_EVERY = 2000
 
 export class ZIMExtractionService {
 
@@ -41,138 +46,169 @@ export class ZIMExtractionService {
      * @param filePath - Path to the ZIM file
      * @param opts - Options including maxArticles, strategy, onProgress, startOffset, and batchSize
      */
-    async extractZIMContent(
-        filePath: string,
-        opts: ExtractZIMContentOptions = {}
-    ): Promise<{ chunks: ZIMContentChunk[]; articlesProcessed: number }> {
-        try {
-            logger.info('[ZIMExtractionService]: Processing ZIM file')
-            
-            // defensive - check if file still exists before opening
-            // could have been deleted by another process or batch
-            try {
-                await access(filePath)
-            } catch {
-                logger.error('[ZIMExtractionService]: ZIM file not accessible')
-                throw new Error('ZIM file not found or not accessible')
-            }
+  async extractZIMContent(
+    filePath: string,
+    opts: ExtractZIMContentOptions = {}
+  ): Promise<{ chunks: ZIMContentChunk[]; articlesProcessed: number; resumeAtDirent?: number }> {
+    try {
+      logger.info('[ZIMExtractionService]: Processing ZIM file')
 
-            // Validate ZIM magic number before opening with native @openzim/libzim.
-            // A corrupted file (truncated download, half-written, bit-rot, etc.)
-            // causes a native C++ abort (ZimFileFormatError) that bypasses JS
-            // try/catch and kills the worker process. Read the first 4 bytes
-            // and reject anything that isn't "ZIM\x04" before handing it to the
-            // native library. Ports upstream c8cb79a (ZIM piece only).
-            if (!(await isValidZimFile(filePath))) {
-                logger.error('[ZIMExtractionService]: ZIM file failed magic-number validation')
-                throw new Error('ZIM file is invalid or corrupted')
-            }
+      // defensive - check if file still exists before opening
+      // could have been deleted by another process or batch
+      try {
+        await access(filePath)
+      } catch {
+        logger.error('[ZIMExtractionService]: ZIM file not accessible')
+        throw new Error('ZIM file not found or not accessible')
+      }
 
-            const archive = new Archive(filePath)
+      // Validate ZIM magic number before opening with native @openzim/libzim.
+      // A corrupted file (truncated download, half-written, bit-rot, etc.)
+      // causes a native C++ abort (ZimFileFormatError) that bypasses JS
+      // try/catch and kills the worker process. Read the first 4 bytes
+      // and reject anything that isn't "ZIM\x04" before handing it to the
+      // native library. Ports upstream c8cb79a (ZIM piece only).
+      if (!(await isValidZimFile(filePath))) {
+        logger.error('[ZIMExtractionService]: ZIM file failed magic-number validation')
+        throw new Error('ZIM file is invalid or corrupted')
+      }
 
-            // Extract archive-level metadata once
-            const archiveMetadata = this.extractArchiveMetadata(archive)
-            logger.info('[ZIMExtractionService]: Archive metadata extracted')
+      const archive = new Archive(filePath)
 
-            let articlesProcessed = 0
-            let articlesSkipped = 0
-            const processedPaths = new Set<string>()
-            const toReturn: ZIMContentChunk[] = []
+      // Extract archive-level metadata once
+      const archiveMetadata = this.extractArchiveMetadata(archive)
+      logger.info('[ZIMExtractionService]: Archive metadata extracted')
 
-            // Support batch processing to avoid lock timeouts on large ZIM files
-            const startOffset = opts.startOffset || 0
-            const batchSize = opts.batchSize || (opts.maxArticles || Infinity)
+      let articlesProcessed = 0
+      let articlesSkipped = 0
+      let legacyEntriesVisited = 0
+      let direntsConsumed = 0
+      const processedPaths = new Set<string>()
+      const toReturn: ZIMContentChunk[] = []
 
-            for (const entry of archive.iterByPath()) {
-                // Skip articles until we reach the start offset
-                if (articlesSkipped < startOffset) {
-                    if (this.isArticleEntry(entry) && !processedPaths.has(entry.path)) {
-                        articlesSkipped++
-                    }
-                    continue
-                }
+      // Saved cursors seek directly. Recount only for older queued jobs
+      // that carry an article offset but no directory position.
+      const startOffset = opts.startOffset || 0
+      const batchSize = opts.batchSize || opts.maxArticles || Infinity
+      const resumeAtDirent = hasResumeCursor(opts.resumeAtDirent) ? opts.resumeAtDirent : undefined
 
-                if (articlesProcessed >= batchSize) {
-                    break
-                }
+      if (resumeAtDirent !== undefined) {
+        logger.info('[ZIMExtractionService]: Seeking to dirent offset ' + resumeAtDirent)
+      } else if (startOffset > 0) {
+        logger.warn(
+          '[ZIMExtractionService]: Legacy batch has no directory cursor; scanning from the start'
+        )
+      }
 
-                if (!this.isArticleEntry(entry)) {
-                    logger.debug('[ZIMExtractionService]: Skipping non-article entry')
-                    continue
-                }
-
-                if (processedPaths.has(entry.path)) {
-                    logger.debug('[ZIMExtractionService]: Skipping duplicate entry')
-                    continue
-                }
-                processedPaths.add(entry.path)
-
-                const item = entry.item
-                const blob = item.data
-                const html = this.getCleanedHTMLString(blob.data)
-
-                const strategy = opts.strategy || this.chooseChunkingStrategy(html);
-                logger.debug(`[ZIMExtractionService]: Chosen chunking strategy: ${strategy}`)
-
-                // Generate a unique document ID. All chunks from same article will share it
-        const documentId = stableZimDocumentId(filePath, entry.path)
-                const articleTitle = entry.title || entry.path
-
-                let chunks: ZIMContentChunk[]
-
-                if (strategy === 'structured') {
-                    const structured = this.extractStructuredContent(html)
-                    chunks = structured.sections.map(s => ({
-                        text: s.text,
-                        articleTitle,
-                        articlePath: entry.path,
-                        sectionTitle: s.heading,
-                        fullTitle: `${articleTitle} - ${s.heading}`,
-                        hierarchy: `${articleTitle} > ${s.heading}`,
-                        sectionLevel: s.level,
-                        documentId,
-                        archiveMetadata,
-                        strategy,
-                    }))
-                } else {
-                    // Simple strategy - entire article as one chunk
-                    const text = this.extractTextFromHTML(html) || ''
-                    chunks = [{
-                        text,
-                        articleTitle,
-                        articlePath: entry.path,
-                        sectionTitle: articleTitle, // Same as article for simple strategy
-                        fullTitle: articleTitle,
-                        hierarchy: articleTitle,
-                        documentId,
-                        archiveMetadata,
-                        strategy,
-                    }]
-                }
-
-                logger.debug(`Extracted ${chunks.length} chunks from article using strategy: ${strategy}`)
-
-                const nonEmptyChunks = chunks.filter(c => c.text.trim().length > 0)
-                logger.debug(`After filtering empty chunks, ${nonEmptyChunks.length} chunks remain for article`)
-                toReturn.push(...nonEmptyChunks)
-                articlesProcessed++
-
-                if (opts.onProgress) {
-                    opts.onProgress(articlesProcessed, archive.articleCount)
-                }
-            }
-
-            logger.info(`[ZIMExtractionService]: Completed processing ZIM file. Total articles processed: ${articlesProcessed}`)
-            logger.debug("Total structured sections extracted:", toReturn.length)
-            // articlesProcessed is what the batch loop has to gate and advance
-            // on; see zim_batch_decision.ts. It was counted and logged all
-            // along, then thrown away here.
-            return { chunks: toReturn, articlesProcessed }
-        } catch (error) {
-            logger.error('Error processing ZIM file')
-            throw error
+      for (const entry of openZimBatchRange(archive, resumeAtDirent)) {
+        if (resumeAtDirent === undefined && articlesSkipped < startOffset) {
+          direntsConsumed++
+          legacyEntriesVisited++
+          if (legacyEntriesVisited % LEGACY_SCAN_YIELD_EVERY === 0) {
+            await new Promise<void>((resolve) => setImmediate(resolve))
+          }
+          if (this.isArticleEntry(entry) && !processedPaths.has(entry.path)) {
+            articlesSkipped++
+          }
+          continue
         }
+
+        if (articlesProcessed >= batchSize) {
+          break
+        }
+
+        // Do not count the entry fetched by the loop after a full
+        // batch: the next job still needs to process that entry.
+        direntsConsumed++
+
+        if (!this.isArticleEntry(entry)) {
+          logger.debug('[ZIMExtractionService]: Skipping non-article entry')
+          continue
+        }
+
+        if (processedPaths.has(entry.path)) {
+          logger.debug('[ZIMExtractionService]: Skipping duplicate entry')
+          continue
+        }
+        processedPaths.add(entry.path)
+
+        const item = entry.item
+        const blob = item.data
+        const html = this.getCleanedHTMLString(blob.data)
+
+        const strategy = opts.strategy || this.chooseChunkingStrategy(html)
+        logger.debug(`[ZIMExtractionService]: Chosen chunking strategy: ${strategy}`)
+
+        // Generate a unique document ID. All chunks from same article will share it
+        const documentId = stableZimDocumentId(filePath, entry.path)
+        const articleTitle = entry.title || entry.path
+
+        let chunks: ZIMContentChunk[]
+
+        if (strategy === 'structured') {
+          const structured = this.extractStructuredContent(html)
+          chunks = structured.sections.map((s) => ({
+            text: s.text,
+            articleTitle,
+            articlePath: entry.path,
+            sectionTitle: s.heading,
+            fullTitle: `${articleTitle} - ${s.heading}`,
+            hierarchy: `${articleTitle} > ${s.heading}`,
+            sectionLevel: s.level,
+            documentId,
+            archiveMetadata,
+            strategy,
+          }))
+        } else {
+          // Simple strategy - entire article as one chunk
+          const text = this.extractTextFromHTML(html) || ''
+          chunks = [
+            {
+              text,
+              articleTitle,
+              articlePath: entry.path,
+              sectionTitle: articleTitle, // Same as article for simple strategy
+              fullTitle: articleTitle,
+              hierarchy: articleTitle,
+              documentId,
+              archiveMetadata,
+              strategy,
+            },
+          ]
+        }
+
+        logger.debug(`Extracted ${chunks.length} chunks from article using strategy: ${strategy}`)
+
+        const nonEmptyChunks = chunks.filter((c) => c.text.trim().length > 0)
+        logger.debug(
+          `After filtering empty chunks, ${nonEmptyChunks.length} chunks remain for article`
+        )
+        toReturn.push(...nonEmptyChunks)
+        articlesProcessed++
+
+        if (opts.onProgress) {
+          opts.onProgress(articlesProcessed, archive.articleCount)
+        }
+      }
+
+      logger.info(
+        `[ZIMExtractionService]: Completed processing ZIM file. Total articles processed: ${articlesProcessed}`
+      )
+      logger.debug('Total structured sections extracted:', toReturn.length)
+      // articlesProcessed is what the batch loop has to gate and advance
+      // on; see zim_batch_decision.ts. It was counted and logged all
+      // along, then thrown away here.
+      const nextDirent = (resumeAtDirent ?? 0) + direntsConsumed
+      return {
+        chunks: toReturn,
+        articlesProcessed,
+        resumeAtDirent: nextDirent > 0 ? nextDirent : undefined,
+      }
+    } catch (error) {
+      logger.error('Error processing ZIM file')
+      throw error
     }
+  }
 
     private chooseChunkingStrategy(html: string, options = {
         forceStrategy: null as ExtractZIMChunkingStrategy | null,

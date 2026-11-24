@@ -1,12 +1,17 @@
 import axios from 'axios'
 import vine from '@vinejs/vine'
+import db from '@adonisjs/lucid/services/db'
+import type { TransactionClientContract } from '@adonisjs/lucid/types/database'
+import { isSafeOldContentPath, parseDatedContentFilename } from '../utils/content_path.js'
 import logger from '@adonisjs/core/services/logger'
 import { DateTime } from 'luxon'
-import { join } from 'path'
+import { basename, join } from 'node:path'
 import CollectionManifest from '#models/collection_manifest'
 import InstalledResource from '#models/installed_resource'
 import WikipediaSelection from '#models/wikipedia_selection'
 import { zimCategoriesSpecSchema, mapsSpecSchema, wikipediaSpecSchema } from '#validators/curated_collections'
+import { lockedZimCatalog, publishInstalledEdition } from './installed_edition_service.js'
+import { buildPreviousIdMap, preferZimEdition } from '../utils/resource_aliases.js'
 import { isManagedWikipediaFile } from '../utils/wikipedia_reconcile.js'
 import { isGatedResource } from '../utils/hosted_content.js'
 import {
@@ -51,33 +56,29 @@ export class CollectionManifestService {
         data: response.data,
       })
 
-      const existing = await CollectionManifest.find(type)
-      const specVersion = validated.spec_version
-
-      if (existing) {
-        const changed = existing.spec_version !== specVersion
-        existing.spec_version = specVersion
-        existing.spec_data = validated
-        existing.fetched_at = DateTime.now()
-        await existing.save()
-        return changed
-      }
-
-      // updateOrCreate, not create: two callers can race to cache the same
-      // manifest on a first boot (Easy Setup refreshes them on mount while the
-      // page's own queries ask for one), and `type` is the primary key, so the
-      // loser used to take a duplicate-key error that surfaced in the log as a
-      // spurious "failed to fetch spec".
-      await CollectionManifest.updateOrCreate(
-        { type },
-        {
-          spec_version: specVersion,
+      return await db.transaction(async (trx) => {
+        // Publish the catalog with its install-row migrations, including refreshed
+        // aliases on a spec version already cached by an older validator.
+        const existing = await CollectionManifest.query({ client: trx })
+          .where('type', type)
+          .forUpdate()
+          .first()
+        const attributes = {
+          spec_version: validated.spec_version,
           spec_data: validated,
           fetched_at: DateTime.now(),
         }
-      )
-
-      return true
+        const changed = existing?.spec_version !== attributes.spec_version
+        if (existing) await existing.merge(attributes).save()
+        else await CollectionManifest.create({ type, ...attributes }, { client: trx })
+        if (type === 'zim_categories') {
+          await this.migrateRenamedResources(
+            buildPreviousIdMap(validated as ZimCategoriesSpec),
+            trx
+          )
+        }
+        return changed
+      })
     } catch (error) {
       logger.error(`[CollectionManifestService] Failed to fetch spec for ${type}:`, error?.message || error)
       return false
@@ -163,6 +164,9 @@ export class CollectionManifestService {
         }
       }
     }
+    for (const [formerId, currentId] of buildPreviousIdMap(spec)) {
+      if (ids.has(currentId)) ids.add(formerId)
+    }
     return ids
   }
 
@@ -217,10 +221,10 @@ export class CollectionManifestService {
   // ---- Filename parsing ----
 
   static parseZimFilename(filename: string): { resource_id: string; version: string } | null {
-    const name = filename.replace(/\.zim$/, '')
-    const match = name.match(/^(.+)_(\d{4}-\d{2})$/)
-    if (!match) return null
-    return { resource_id: match[1], version: match[2] }
+    return parseDatedContentFilename(
+      filename.endsWith('.zim') ? filename : filename + '.zim',
+      'zim'
+    )
   }
 
   static parseMapFilename(filename: string): { resource_id: string; version: string } | null {
@@ -228,6 +232,29 @@ export class CollectionManifestService {
     const match = name.match(/^(.+)_(\d{4}-\d{2})$/)
     if (!match) return null
     return { resource_id: match[1], version: match[2] }
+  }
+
+  /** Preserve the installed row and its update policy when a manifest renames a book. */
+  private async migrateRenamedResources(
+    aliases: Map<string, string>,
+    trx: TransactionClientContract
+  ): Promise<void> {
+    if (!aliases.size) return
+    const rows = await InstalledResource.query({ client: trx })
+      .where('resource_type', 'zim')
+      .whereIn('resource_id', [...new Set([...aliases.keys(), ...aliases.values()])])
+      .orderBy('resource_id')
+      .forUpdate()
+    const installedIds = new Set(rows.map((row) => row.resource_id))
+    for (const row of rows) {
+      const currentId = aliases.get(row.resource_id)
+      // If both exist, keep the canonical row. Reconcile will choose the
+      // newest file actually on disk before retiring the duplicate record.
+      if (!currentId || installedIds.has(currentId)) continue
+      row.resource_id = currentId
+      await row.save()
+      installedIds.add(currentId)
+    }
   }
 
   // ---- Filesystem reconciliation ----
@@ -242,13 +269,19 @@ export class CollectionManifestService {
     try {
       const zimDir = join(process.cwd(), ZIM_STORAGE_PATH)
       await ensureDirectoryExists(zimDir)
+      // Only rows present before enumeration are eligible for removal in this scan.
+      const { zimSpec, aliases, installedBeforeScan } = await db.transaction(async (trx) => {
+        const spec = await lockedZimCatalog(trx)
+        const aliasMap = buildPreviousIdMap(spec)
+        await this.migrateRenamedResources(aliasMap, trx)
+        const rows = await InstalledResource.query({ client: trx }).where('resource_type', 'zim')
+        return { zimSpec: spec, aliases: aliasMap, installedBeforeScan: rows }
+      })
       const zimItems = await listDirectoryContents(zimDir)
-      const zimFiles = zimItems.filter((f) => f.name.endsWith('.zim'))
+      const zimFiles = zimItems.filter((f) => f.type === 'file' && f.name.endsWith('.zim'))
 
       console.log(`Found ${zimFiles.length} ZIM files on disk. Reconciling with database...`)
 
-      // Get spec for URL lookup
-      const zimSpec = await this.getCachedSpec<ZimCategoriesSpec>('zim_categories')
       const specResourceMap = new Map<string, SpecResource>()
       if (zimSpec) {
         for (const cat of zimSpec.categories) {
@@ -260,7 +293,7 @@ export class CollectionManifestService {
         }
       }
 
-      const seenZimIds = new Set<string>()
+      const newest = new Map<string, { name: string; version: string; resource_id: string }>()
 
       // Only skip the single general-Wikipedia file tracked by WikipediaSelection,
       // not every file starting with `wikipedia_en_`. Curated category tiers ship
@@ -278,31 +311,53 @@ export class CollectionManifestService {
         console.log(`Parsed ZIM filename: ${parsed ? 'recognized' : 'unrecognized'}`)
         if (!parsed) continue
 
-        seenZimIds.add(parsed.resource_id)
+        const id = aliases.get(parsed.resource_id) ?? parsed.resource_id
+        const prior = newest.get(id)
+        const candidate = { name: file.name, ...parsed }
+        if (!prior || preferZimEdition(id, candidate, prior)) newest.set(id, candidate)
+      }
 
-        const specRes = specResourceMap.get(parsed.resource_id)
-        const filePath = join(zimDir, file.name)
-        const stats = await getFileStatsIfExists(filePath)
-
-        await InstalledResource.updateOrCreate(
-          { resource_id: parsed.resource_id, resource_type: 'zim' },
+      const seen = new Set<string>()
+      for (const [resourceId, file] of newest) {
+        const publication = await publishInstalledEdition(
           {
-            version: parsed.version,
-            url: specRes?.url || '',
-            file_path: filePath,
-            file_size_bytes: stats ? Number(stats.size) : null,
-            installed_at: DateTime.now(),
-          }
+            resource_id: file.resource_id,
+            resource_type: 'zim',
+            version: file.version,
+            url: specResourceMap.get(resourceId)?.url || '',
+            file_path: join(zimDir, file.name),
+          },
+          { preferNewest: true }
         )
+        if (publication.status === 'missing') continue
+        seen.add(publication.resourceId)
         zimCount++
       }
 
-      // Remove entries for ZIM files no longer on disk
-      const existingZim = await InstalledResource.query().where('resource_type', 'zim')
-      for (const entry of existingZim) {
-        if (!seenZimIds.has(entry.resource_id)) {
-          await entry.delete()
-        }
+      for (const entry of installedBeforeScan) {
+        if (seen.has(entry.resource_id)) continue
+        await db.transaction(async (trx) => {
+          const row = await InstalledResource.query({ client: trx })
+            .where({
+              id: entry.id,
+              resource_id: entry.resource_id,
+              version: entry.version,
+              file_path: entry.file_path,
+            })
+            .forUpdate()
+            .first()
+          if (!row) return
+          // A worker can redownload the very same path after our directory snapshot.
+          // Former-ID duplicates and separately managed Wikipedia rows still retire.
+          if (
+            !aliases.has(row.resource_id) &&
+            !isManagedWikipediaFile(basename(row.file_path), managedWikipediaFilename) &&
+            isSafeOldContentPath(row.file_path, row.resource_id, zimDir, 'zim', aliases) &&
+            (await getFileStatsIfExists(row.file_path))
+          )
+            return
+          await row.delete()
+        })
       }
     } catch (error) {
       logger.error('[CollectionManifestService] Error reconciling ZIM files:', error)

@@ -21,6 +21,8 @@ export type SpecResource = {
    * another schema change.
    */
   auth?: 'nomad_app_key'
+  /** Earlier catalog IDs for the same curated ZIM. */
+  previous_ids?: string[]
   skip_embedding?: boolean
 }
 
