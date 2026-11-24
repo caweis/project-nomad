@@ -30,7 +30,7 @@ import {
   listDirectoryContents,
   ZIM_STORAGE_PATH,
 } from '../utils/fs.js'
-import { join, resolve, sep } from 'path'
+import { basename, dirname, join, resolve, sep } from 'node:path'
 import { WikipediaOption, WikipediaState } from '../../types/downloads.js'
 import WikipediaSelection from '#models/wikipedia_selection'
 import InstalledResource from '#models/installed_resource'
@@ -38,6 +38,8 @@ import CustomLibrarySource from '#models/custom_library_source'
 import { RunDownloadJob } from '#jobs/run_download_job'
 import { SERVICE_NAMES } from '../../constants/service_names.js'
 import { CollectionManifestService } from './collection_manifest_service.js'
+import { isSafeOldContentPath, parseDatedContentFilename } from '../utils/content_path.js'
+import { publishInstalledEdition } from './installed_edition_service.js'
 import { decideSupersededDeletion } from '../utils/superseded_resource.js'
 import { resolveZimDownload, type ZimCatalogResult } from '../utils/zim_download_resolution.js'
 import { isGatedResource } from '../utils/hosted_content.js'
@@ -49,7 +51,11 @@ import {
   type LibraryListing,
 } from '../utils/custom_library_url.js'
 import { safeRemoteLookup } from '../utils/safe_remote_lookup.js'
-import type { CategoryWithStatus, WikipediaSpec } from '../../types/collections.js'
+import type {
+  CategoryWithStatus,
+  WikipediaSpec,
+  ZimCategoriesSpec,
+} from '../../types/collections.js'
 
 const ZIM_MIME_TYPES = ['application/x-zim', 'application/x-openzim', 'application/octet-stream']
 const LIBRARY_LISTING_MAX_BYTES = 5 * 1024 * 1024
@@ -368,7 +374,7 @@ export class ZimService {
 
   async downloadCategoryTier(categorySlug: string, tierSlug: string): Promise<string[] | null> {
     const manifestService = new CollectionManifestService()
-    const spec = await manifestService.getSpecWithFallback<import('../../types/collections.js').ZimCategoriesSpec>('zim_categories')
+    const spec = await manifestService.getSpecWithFallback<ZimCategoriesSpec>('zim_categories')
     if (!spec) {
       throw new Error('Could not load ZIM categories spec')
     }
@@ -450,10 +456,22 @@ export class ZimService {
     return downloadFilenames.length > 0 ? downloadFilenames : null
   }
 
+  /** Recover an old queue entry from its actual file, excluding the separately managed Wikipedia selection. */
+  static async legacyDownloadEdition(url: string, filepath: string) {
+    const storageRoot = join(process.cwd(), ZIM_STORAGE_PATH)
+    if (dirname(resolve(filepath)) !== storageRoot || url.includes('wikipedia_en_')) return null
+    const filename = basename(filepath)
+    const parsed = parseDatedContentFilename(filename, 'zim')
+    if (!parsed) return null
+    const selection = await WikipediaSelection.query().first()
+    return selection?.url === url || selection?.filename === filename ? null : parsed
+  }
+
   async downloadRemoteSuccessCallback(
     urls: string[],
     restart = true,
-    currentJobId?: string | number
+    currentJobId?: string | number,
+    resourceRecorded = false
   ) {
     // Check if any URL is a Wikipedia download and handle it
     for (const url of urls) {
@@ -520,56 +538,54 @@ export class ZimService {
       }
     }
 
-    // Create InstalledResource entries for downloaded files
-    for (const url of urls) {
-      // Skip Wikipedia files (managed separately)
-      if (url.includes('wikipedia_en_')) continue
+    // The job already recorded its actual destination. A mirror URL can carry
+    // another filename, including the retired ID or a different edition.
+    if (resourceRecorded) return
 
+    // Older queued jobs may lack metadata; recover their rows from the files.
+    for (const url of urls) {
       const filename = filenameFromDownloadUrl(url)
       if (!filename) continue
-
-      const parsed = CollectionManifestService.parseZimFilename(filename)
-      if (!parsed) continue
-
       const filepath = join(process.cwd(), ZIM_STORAGE_PATH, filename)
-      const stats = await getFileStatsIfExists(filepath)
-
+      const parsed = await ZimService.legacyDownloadEdition(url, filepath)
+      if (!parsed) continue
       try {
-        // Capture the prior install for this resource_id before updateOrCreate
-        // repoints it, so we know the old file to clean up (#858).
-        const prior = await InstalledResource.query()
-          .where('resource_id', parsed.resource_id)
-          .where('resource_type', 'zim')
-          .first()
-
-        const { DateTime } = await import('luxon')
-        await InstalledResource.updateOrCreate(
-          { resource_id: parsed.resource_id, resource_type: 'zim' },
+        const publication = await publishInstalledEdition(
           {
-            version: parsed.version,
-            url: url,
+            ...parsed,
+            resource_type: 'zim',
+            url,
             file_path: filepath,
-            file_size_bytes: stats ? Number(stats.size) : null,
-            installed_at: DateTime.now(),
-          }
+          },
+          { preferNewest: true }
         )
+        if (publication.status !== 'installed') continue
+        const { resourceId, aliases, previous } = publication
+        const storageRoot = join(process.cwd(), ZIM_STORAGE_PATH)
         logger.info('[ZimService] Created InstalledResource entry')
 
         // Remove the superseded prior version's file if every safety rail passes.
         // The InstalledResource row already points at the new file, so delete the
-        // old file directly — NOT via this.delete(), which deletes by resource_id
-        // and would drop the row updateOrCreate just repointed. Kiwix is refreshed
-        // by the KIWIX container restart that fires once no more ZIM downloads are
-        // pending (it rescans the storage dir on boot), so no library rebuild is
-        // needed after the delete (#858).
+        // old file directly. The row already points at its replacement.
         const decision = decideSupersededDeletion({
-          existing: prior ? { file_path: prior.file_path, version: prior.version } : null,
+          existing: previous,
           newFilePath: filepath,
           newVersion: parsed.version,
-          newFileExists: !!stats,
-          storageBaseDir: join(process.cwd(), ZIM_STORAGE_PATH),
+          newFileExists: true,
+          storageBaseDir: storageRoot,
         })
-        if (decision.delete && decision.path) {
+        if (
+          decision.delete &&
+          decision.path &&
+          isSafeOldContentPath(
+            decision.path,
+            resourceId,
+            storageRoot,
+            'zim',
+            aliases,
+            parsed.version
+          )
+        ) {
           try {
             await deleteFileIfExists(decision.path)
             logger.info('[ZimService] Removed superseded file')
@@ -639,15 +655,12 @@ export class ZimService {
     // internet, that answer is not something the user can check anywhere else.
     await this._purgeKnowledgeOf(fullPath)
 
-    // Clean up InstalledResource entry
-    const parsed = CollectionManifestService.parseZimFilename(fileName)
-    if (parsed) {
-      await InstalledResource.query()
-        .where('resource_id', parsed.resource_id)
-        .where('resource_type', 'zim')
-        .delete()
-      logger.info('[ZimService] Deleted InstalledResource entry')
-    }
+    // An old filename can own the current row after a rename. Removing an
+    // untracked edition must leave the row for the installed file intact.
+    await InstalledResource.query()
+      .where('resource_type', 'zim')
+      .where('file_path', fullPath)
+      .delete()
   }
 
   // Wikipedia selector methods

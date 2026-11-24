@@ -1,5 +1,5 @@
 {
-  "spec_version": "2026-11-10",
+  "spec_version": "2026-11-24",
   "categories": [
     {
       "name": "Medicine",
@@ -32,6 +32,7 @@
             },
             {
               "id": "irp.fas.org_en_military-medicine",
+              "previous_ids": ["fas-military-medicine_en"],
               "version": "2026-10",
               "title": "Military Medicine",
               "description": "Tactical and field medicine manuals",
@@ -76,7 +77,7 @@
               "title": "Wikipedia Medicine",
               "description": "Curated medical articles from Wikipedia with images",
               "url": "https://download.kiwix.org/zim/wikipedia/wikipedia_en_medicine_maxi_2026-10.zim",
-              "size_mb": 2000
+              "size_mb": 1778
             },
             {
               "id": "libretexts.org_en_med",
@@ -137,6 +138,7 @@
             },
             {
               "id": "canadian-prepper_en_winterprepping",
+              "previous_ids": ["canadian_prepper_winterprepping_en"],
               "version": "2026-08",
               "title": "Canadian Prepper: Winter Prepping",
               "description": "Video guides for winter survival and cold weather emergencies",
@@ -146,6 +148,7 @@
             },
             {
               "id": "canadian-prepper_en_bugoutroll",
+              "previous_ids": ["canadian_prepper_bugoutroll_en"],
               "version": "2026-07",
               "title": "Canadian Prepper: Bug Out Roll",
               "description": "Essential gear selection for your bug-out bag",
@@ -187,6 +190,7 @@
             },
             {
               "id": "canadian-prepper_en_bugoutconcepts",
+              "previous_ids": ["canadian_prepper_bugoutconcepts_en"],
               "version": "2026-08",
               "title": "Canadian Prepper: Bug Out Concepts",
               "description": "Strategies and planning for emergency evacuation",
@@ -213,6 +217,7 @@
           "resources": [
             {
               "id": "canadian-prepper_en_preppingfood",
+              "previous_ids": ["canadian_prepper_preppingfood_en"],
               "version": "2026-07",
               "title": "Canadian Prepper: Prepping Food",
               "description": "Long-term food storage and survival meal preparation",
@@ -635,10 +640,10 @@
             },
             {
               "id": "devdocs_en_react",
-              "version": "2026-02",
+              "version": "2026-11",
               "title": "React Documentation",
               "description": "React library reference and tutorials",
-              "url": "https://download.kiwix.org/zim/devdocs/devdocs_en_react_2026-02.zim",
+              "url": "https://download.kiwix.org/zim/devdocs/devdocs_en_react_2026-11.zim",
               "size_mb": 3
             },
             {

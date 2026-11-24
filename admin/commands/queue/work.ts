@@ -2,6 +2,9 @@ import {
   isTerminalDownloadFailure,
   shouldRecordDownloadFailure,
 } from '../../app/utils/download_failure.js'
+import db from '@adonisjs/lucid/services/db'
+import { buildPreviousIdMap } from '../../app/utils/resource_aliases.js'
+import { lockedZimCatalog } from '#services/installed_edition_service'
 import { BaseCommand, flags } from '@adonisjs/core/ace'
 import type { CommandOptions } from '@adonisjs/core/types/ace'
 import { Worker } from 'bullmq'
@@ -202,11 +205,17 @@ export default class QueueWork extends BaseCommand {
           const { recordResourceUpdateFailure } =
             await import('../../app/utils/content_auto_update_backoff.js')
           const meta = job.data.resourceMetadata
-          const resource = await InstalledResource.query()
-            .where('resource_id', meta.resource_id)
-            .where('resource_type', job.data.filetype)
-            .first()
-          if (resource) await recordResourceUpdateFailure(resource, err.message)
+          await db.transaction(async (trx) => {
+            const aliases =
+              job.data.filetype === 'zim' ? buildPreviousIdMap(await lockedZimCatalog(trx)) : null
+            const resourceId = aliases?.get(meta.resource_id) ?? meta.resource_id
+            const resource = await InstalledResource.query({ client: trx })
+              .where('resource_type', job.data.filetype)
+              .where('resource_id', resourceId)
+              .forUpdate()
+              .first()
+            if (resource) await recordResourceUpdateFailure(resource, err.message)
+          })
         } catch (e: any) {
           this.logger.error(
             `[${queueName}] Failed to record content auto-update backoff: ${e.message}`
