@@ -1,12 +1,19 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import type { NextFn } from '@adonisjs/core/types/http'
+import { posix } from 'node:path'
 
 const MAP_ASSET_PREFIXES = ['/pmtiles/', '/basemaps-assets/', '/storage/maps/']
 
 /** Anonymous read access for map readers, without opening the write API. */
 export default class MapsCorsMiddleware {
   async handle({ request, response }: HttpContext, next: NextFn) {
-    const path = request.url()
+    // Match the decoded path resolved by serve-static, including encoded separators.
+    let path: string
+    try {
+      path = posix.normalize(decodeURIComponent(request.url()))
+    } catch {
+      return next()
+    }
     if (
       path !== '/api/maps/styles' &&
       !MAP_ASSET_PREFIXES.some((prefix) => path.startsWith(prefix))
@@ -33,6 +40,14 @@ export default class MapsCorsMiddleware {
       return response.status(204).send(null)
     }
 
-    return next()
+    try {
+      await next()
+    } catch (error) {
+      response.removeHeader('Access-Control-Allow-Origin')
+      throw error
+    }
+
+    // Error pages can contain app metadata; only successful map reads are public.
+    if (response.getStatus() >= 400) response.removeHeader('Access-Control-Allow-Origin')
   }
 }

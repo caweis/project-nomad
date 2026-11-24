@@ -19,7 +19,7 @@ const mapPaths = [
   '/storage/maps/pmtiles/washington.pmtiles',
 ]
 
-async function handle(path: string, method = 'GET', requestedMethod?: string) {
+async function handle(path: string, method = 'GET', requestedMethod?: string, status = 200) {
   const request = new RequestFactory().merge({ url: path, method }).create()
   request.request.headers.origin = origin
   if (requestedMethod) {
@@ -32,7 +32,7 @@ async function handle(path: string, method = 'GET', requestedMethod?: string) {
   await new MapsCorsMiddleware().handle(ctx, () =>
     new CorsMiddleware({ ...corsConfig }).handle(ctx, async () => {
       reachedAsset = true
-      ctx.response.send('map asset')
+      ctx.response.status(status).send('map asset')
     })
   )
   return { response: ctx.response, reachedAsset }
@@ -103,6 +103,49 @@ test.group('map asset CORS', () => {
     }
   })
 
+  test('does not expose paths that escape a map directory after decoding', async ({ assert }) => {
+    for (const path of [
+      '/pmtiles/..%2Fstyles/app.css',
+      '/pmtiles/%2E%2E%2Ffavicon.ico',
+      '/basemaps-assets/..%2F..%2Fapi/maps/regions',
+      '/storage/maps/..%2F..%2Fstyles/app.css',
+      '/pmtiles/../styles/app.css',
+      '/pmtiles/%E0%A4%A',
+    ]) {
+      for (const method of ['GET', 'HEAD', 'OPTIONS']) {
+        const { response } = await handle(path, method, 'GET')
+        assert.isUndefined(response.getHeader('Access-Control-Allow-Origin'), `${method} ${path}`)
+      }
+    }
+  })
+
+  test('keeps error bodies same-origin and retains successful range and cache responses', async ({
+    assert,
+  }) => {
+    for (const status of [400, 403, 404, 416, 500, 503]) {
+      const { response } = await handle('/api/maps/styles', 'GET', undefined, status)
+      assert.isUndefined(response.getHeader('Access-Control-Allow-Origin'), `status ${status}`)
+    }
+    for (const status of [200, 206, 304]) {
+      const { response } = await handle('/api/maps/styles', 'GET', undefined, status)
+      assert.equal(response.getHeader('Access-Control-Allow-Origin'), '*', `status ${status}`)
+    }
+  })
+
+  test('clears anonymous read access if the downstream handler throws', async ({ assert }) => {
+    const request = new RequestFactory().merge({ url: '/api/maps/styles', method: 'GET' }).create()
+    const ctx = new HttpContextFactory().merge({ request }).create()
+    const failure = new Error('map renderer failed')
+    await assert.rejects(
+      () =>
+        new MapsCorsMiddleware().handle(ctx, async () => {
+          throw failure
+        }),
+      failure.message
+    )
+    assert.isUndefined(ctx.response.getHeader('Access-Control-Allow-Origin'))
+  })
+
   test('does not expose write methods, even on a map asset path', async ({ assert }) => {
     for (const path of mapPaths) {
       for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
@@ -135,6 +178,7 @@ test.group('map asset CORS', () => {
     const directory = await mkdtemp(join(tmpdir(), 'nomad-map-cors-'))
     await mkdir(join(directory, 'pmtiles'))
     await writeFile(join(directory, 'pmtiles/test.pmtiles'), '0123456789')
+    await writeFile(join(directory, 'private-test.txt'), 'non-map public file')
     const staticFiles = new StaticMiddleware(directory, staticConfig)
     const server = createServer(async (req, res) => {
       const request = new RequestFactory().merge({ req, res }).create()
@@ -168,6 +212,21 @@ test.group('map asset CORS', () => {
       assert.equal(tile.headers.get('accept-ranges'), 'bytes')
       assert.isNotNull(tile.headers.get('etag'))
       assert.isNull(tile.headers.get('access-control-allow-credentials'))
+
+      const escaped = await fetch(
+        `http://127.0.0.1:${address.port}/pmtiles/..%2Fprivate-test.txt`,
+        {
+          headers: { Origin: origin },
+        }
+      )
+      assert.equal(escaped.status, 200)
+      assert.equal(await escaped.text(), 'non-map public file')
+      assert.isNull(escaped.headers.get('access-control-allow-origin'))
+
+      const missing = await fetch(`${url}.missing`, { headers: { Origin: origin } })
+      assert.equal(missing.status, 404)
+      assert.isNull(missing.headers.get('access-control-allow-origin'))
+      await missing.text()
 
       const preflight = await fetch(url, {
         method: 'OPTIONS',
