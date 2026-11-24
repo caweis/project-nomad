@@ -24,9 +24,9 @@ on:
 permissions:
   contents: read
 
-# Serialize main's scheduled/manual checks so issue creation and closure cannot race.
+# Serialize reporting runs; catalog pushes must not evict a pending weekly report.
 concurrency:
-  group: catalog-urls-${{ github.ref }}
+  group: catalog-urls-${{ github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'main-reporting' || github.run_id }}
   cancel-in-progress: false
 
 jobs:
