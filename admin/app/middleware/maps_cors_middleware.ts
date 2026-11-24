@@ -4,22 +4,24 @@ import { posix } from 'node:path'
 
 const MAP_ASSET_PREFIXES = ['/pmtiles/', '/basemaps-assets/', '/storage/maps/']
 
+function isMapAssetPath(path: string): boolean {
+  return path === '/api/maps/styles' || MAP_ASSET_PREFIXES.some((prefix) => path.startsWith(prefix))
+}
+
 /** Anonymous read access for map readers, without opening the write API. */
 export default class MapsCorsMiddleware {
   async handle({ request, response }: HttpContext, next: NextFn) {
-    // Match the decoded path resolved by serve-static, including encoded separators.
+    // The router uses the original path; static files also decode and normalize it.
+    // Both must stay inside the map namespace before granting anonymous access.
+    const rawPath = request.url()
+    if (!isMapAssetPath(rawPath)) return next()
     let path: string
     try {
-      path = posix.normalize(decodeURIComponent(request.url()))
+      path = posix.normalize(decodeURIComponent(rawPath))
     } catch {
       return next()
     }
-    if (
-      path !== '/api/maps/styles' &&
-      !MAP_ASSET_PREFIXES.some((prefix) => path.startsWith(prefix))
-    ) {
-      return next()
-    }
+    if (!isMapAssetPath(path)) return next()
 
     const method = request.method()
     const readMethod =

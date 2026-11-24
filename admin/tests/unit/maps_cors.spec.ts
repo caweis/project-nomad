@@ -1,5 +1,10 @@
 import { test } from '@japa/runner'
-import { HttpContextFactory, RequestFactory, ResponseFactory } from '@adonisjs/core/factories/http'
+import {
+  HttpContextFactory,
+  RequestFactory,
+  ResponseFactory,
+  RouterFactory,
+} from '@adonisjs/core/factories/http'
 import CorsMiddleware from '@adonisjs/cors/cors_middleware'
 import StaticMiddleware from '@adonisjs/static/static_middleware'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
@@ -7,6 +12,9 @@ import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import MapsCorsMiddleware from '#middleware/maps_cors_middleware'
+import ChatsController from '#controllers/chats_controller'
+import type { ChatService } from '#services/chat_service'
+import type { SystemService } from '#services/system_service'
 import corsConfig from '#config/cors'
 import staticConfig from '#config/static'
 
@@ -117,6 +125,51 @@ test.group('map asset CORS', () => {
         assert.isUndefined(response.getHeader('Access-Control-Allow-Origin'), `${method} ${path}`)
       }
     }
+  })
+
+  test('does not grant map CORS to other routes that normalize into the asset namespace', async ({
+    assert,
+  }) => {
+    for (const path of [
+      '/api/chat/sessions/1%2F..%2F..%2F..%2Fmaps%2Fstyles',
+      '/api/other/../../pmtiles/world.pmtiles',
+      '/api/other/%2E%2E%2F%2E%2E%2Fbasemaps-assets/sprites/light.json',
+    ]) {
+      const { response, reachedAsset } = await handle(path)
+      assert.isTrue(reachedAsset)
+      assert.isUndefined(response.getHeader('Access-Control-Allow-Origin'), path)
+    }
+  })
+
+  test('keeps successful responses from a dynamic non-map controller same-origin', async ({
+    assert,
+  }) => {
+    const url = '/api/chat/sessions/1%2F..%2F..%2F..%2Fmaps%2Fstyles'
+    const router = new RouterFactory().create()
+    router.get('/api/chat/sessions/:id', () => {})
+    router.commit()
+    const matched = router.match(url, 'GET')
+    assert.isNotNull(matched)
+    const request = new RequestFactory().merge({ url, method: 'GET' }).create()
+    request.request.headers.origin = origin
+    const ctx = new HttpContextFactory().merge({ request }).create()
+    ctx.params = matched!.params
+    const fixture = { id: '1', messages: [{ content: 'Local fixture message' }] }
+    const controller = new ChatsController(
+      {
+        getSession: async (id: number) => {
+          assert.equal(id, 1)
+          return fixture
+        },
+      } as unknown as ChatService,
+      {} as SystemService
+    )
+    await new MapsCorsMiddleware().handle(ctx, async () => {
+      assert.deepEqual(await controller.show(ctx), fixture)
+      ctx.response.send(fixture)
+    })
+    assert.equal(ctx.response.getStatus(), 200)
+    assert.isUndefined(ctx.response.getHeader('Access-Control-Allow-Origin'))
   })
 
   test('keeps error bodies same-origin and retains successful range and cache responses', async ({
